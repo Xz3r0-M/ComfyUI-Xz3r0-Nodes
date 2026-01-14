@@ -10,9 +10,10 @@
 # ============================================================================
 # 依赖和所引用的节点名称
 # ============================================================================
-torch   #   XImageSave, XLatentSave
-numpy   #   XImageSave
-Pillow  #   XImageSave
+torch           #   XImageSave, XLatentSave
+numpy           #   XImageSave
+Pillow          #   XImageSave
+safetensors     #   XLatentLoad
 
 # ============================================================================
 # 测试依赖(开发用)
