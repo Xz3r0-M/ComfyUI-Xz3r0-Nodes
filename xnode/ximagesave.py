@@ -5,6 +5,7 @@
 这个模块包含图像保存相关的节点。
 """
 
+import json
 import os
 import re
 from datetime import datetime
@@ -13,14 +14,15 @@ from typing import Tuple, List
 
 import numpy as np
 import torch
-from PIL import Image
+import folder_paths
+from PIL import Image, PngImagePlugin
 
 
 class XImageSave:
     """
     XImageSave 图像保存节点
 
-    提供图像保存功能，支持自定义文件名、子文件夹、日期时间标识符和安全防护。
+    提供图像保存功能，支持自定义文件名、子文件夹、日期时间标识符、元数据保存和安全防护。
 
     功能:
         - 保存图像到ComfyUI默认输出目录
@@ -31,6 +33,7 @@ class XImageSave:
         - 安全防护(防止路径遍历攻击，禁用路径分隔符)
         - 图像序列支持(批量保存)
         - 可调节PNG压缩级别(0-9)
+        - 元数据保存(工作流提示词、种子值、生成参数等)
         - 输出相对路径(不泄露绝对路径)
 
     输入:
@@ -38,6 +41,8 @@ class XImageSave:
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         compression_level: PNG压缩级别 0-9 (INT)
+        prompt: 工作流提示词(隐藏参数，自动注入)
+        extra_pnginfo: 额外元数据(隐藏参数，自动注入)
 
     输出:
         images: 原始图像(透传)
@@ -46,6 +51,12 @@ class XImageSave:
     使用示例:
         filename_prefix="MyImage_%Y%m%d", subfolder="人物", compression_level=6
         输出: images(原图), save_path="output/人物/MyImage_20260114.png"
+
+    元数据说明:
+        - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
+        - prompt: 包含完整的工作流提示词JSON数据
+        - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
+        - 元数据以PNG文本块形式嵌入图像，可通过图像查看器查看
     """
 
     @classmethod
@@ -71,6 +82,10 @@ class XImageSave:
                     "step": 1,
                     "tooltip": "PNG压缩级别(0=无压缩，9=最大压缩)"
                 })
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO"
             }
         }
 
@@ -79,7 +94,7 @@ class XImageSave:
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Image"
 
-    def save(self, images: torch.Tensor, filename_prefix: str, subfolder: str = "", compression_level: int = 0) -> Tuple[torch.Tensor, str]:
+    def save(self, images: torch.Tensor, filename_prefix: str, subfolder: str = "", compression_level: int = 0, prompt=None, extra_pnginfo=None) -> Tuple[torch.Tensor, str]:
         """
         保存图像到ComfyUI输出目录
 
@@ -88,6 +103,8 @@ class XImageSave:
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
             compression_level: PNG压缩级别(0-9)
+            prompt: 工作流提示词(元数据)
+            extra_pnginfo: 额外的PNG元数据
 
         Returns:
             (images, save_path): 原始图像和保存的相对路径
@@ -124,9 +141,20 @@ class XImageSave:
             # 检测同名文件并添加序列号
             final_filename = self._get_unique_filename(save_dir, filename, ".png")
 
+            # 生成PNG元数据
+            pnginfo = self._generate_pnginfo(prompt, extra_pnginfo)
+
             # 保存图像
             save_path = save_dir / final_filename
-            img_pil.save(save_path, format="PNG", compress_level=compression_level)
+            if pnginfo:
+                # 使用Pillow兼容的方式保存元数据
+                pnginfo_obj = PngImagePlugin.PngInfo()
+                for key, value in pnginfo.items():
+                    pnginfo_obj.add_text(key, value)
+                img_pil.save(save_path, format="PNG", compress_level=compression_level, pnginfo=pnginfo_obj)
+            else:
+                # 无元数据时正常保存
+                img_pil.save(save_path, format="PNG", compress_level=compression_level)
 
             # 记录相对路径
             relative_path = str(save_path.relative_to(output_dir))
@@ -137,6 +165,35 @@ class XImageSave:
 
         return (images, save_path_str)
 
+    def _generate_pnginfo(self, prompt, extra_pnginfo):
+        """
+        生成PNG元数据
+
+        Args:
+            prompt: 工作流提示词
+            extra_pnginfo: 额外的PNG元数据
+
+        Returns:
+            字典格式的PNG元数据或None
+        """
+        # 检查是否有元数据
+        if prompt is None and extra_pnginfo is None:
+            return None
+
+        # 创建元数据字典
+        pnginfo = {}
+
+        # 添加prompt元数据
+        if prompt is not None:
+            pnginfo["prompt"] = json.dumps(prompt)
+
+        # 添加额外的PNG元数据
+        if extra_pnginfo is not None:
+            for key, value in extra_pnginfo.items():
+                pnginfo[key] = json.dumps(value)
+
+        return pnginfo
+
     def _get_output_directory(self) -> Path:
         """
         获取ComfyUI默认输出目录
@@ -144,30 +201,7 @@ class XImageSave:
         Returns:
             输出目录路径
         """
-        # 尝试从环境变量获取
-        output_dir = os.environ.get("COMFYUI_OUTPUT_DIR")
-
-        if output_dir:
-            return Path(output_dir)
-
-        # 尝试从当前目录查找
-        current_dir = Path(__file__).parent.parent
-
-        # 查找可能的ComfyUI输出目录
-        possible_dirs = [
-            current_dir / "output",
-            current_dir.parent / "ComfyUI" / "output",
-            Path("output"),
-        ]
-
-        for possible_dir in possible_dirs:
-            if possible_dir.exists() and possible_dir.is_dir():
-                return possible_dir
-
-        # 默认使用当前目录下的output
-        default_output = current_dir / "output"
-        default_output.mkdir(parents=True, exist_ok=True)
-        return default_output
+        return Path(folder_paths.get_output_directory())
 
     def _sanitize_path(self, path: str) -> str:
         """

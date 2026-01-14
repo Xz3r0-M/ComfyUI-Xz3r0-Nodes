@@ -214,6 +214,7 @@ __marimo__/
 ComfyUI-Native-Nodes/
 docs-comfy/
 tests/
+补充.md
 创建.md
 CLAUDE.md
 pytest.ini
