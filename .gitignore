@@ -209,10 +209,12 @@ __marimo__/
 
 
 #
+.conda/
 .vscode/
 ComfyUI-Native-Nodes/
 docs-comfy/
 tests/
+创建.md
 CLAUDE.md
 pytest.ini
 tmpclaude-*-cwd
