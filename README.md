@@ -5,7 +5,6 @@
 **🎨 一个可扩展的多功能ComfyUI自定义节点集合**
 
 [![License](https://img.shields.io/badge/license-To%20be%20determined-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 </div>
@@ -20,13 +19,14 @@
 
 - 🔧 **自动发现机制** - 在 `xnode/` 目录创建节点文件即可自动注册
 - 📦 **标准化结构** - 遵循ComfyUI插件开发最佳实践
+- 🌍 **国际化支持** - 内置中英文界面，支持多语言扩展
 - 🚀 **开发友好** - 清晰的代码组织和完整文档
 
 ### ✨ 当前功能
 
 - 🛠️ **工具节点** - 数学运算、分辨率设置
 - 🖼️ **图像处理** - 图像保存（支持自定义文件名和子文件夹）
-- 🎬 **视频处理** - 视频保存（FFmpeg编码，无损质量）
+- 🎬 **视频处理** - 视频保存（H.265编码，自定义质量和速度预设，音频支持）
 - 🔮 **Latent处理** - Latent加载和保存（支持元数据）
 
 ---
@@ -59,7 +59,14 @@ pip install -r requirements.txt
 
 ---
 
-## 📚 节点列表
+<div align="center">
+
+<img src="preview/preview.png" alt="项目预览" width="400">
+
+</div>
+
+<details>
+<summary><strong>📚 节点列表</strong>（点击展开/折叠）</summary>
 
 ### 🛠️ 工具节点 (♾️ Xz3r0/Tools)
 
@@ -132,29 +139,37 @@ pip install -r requirements.txt
 视频保存节点，使用FFmpeg将图像序列保存为视频。
 
 **功能**:
-- 使用FFmpeg将图像序列保存为MKV格式视频
-- H.265/HEVC编码，yuv444p10le像素格式，CRF 0（无损）
-- 支持自定义FPS（每秒帧数）
+- 使用FFmpeg将视频对象保存为MKV格式视频
+- H.265/HEVC编码，yuv444p10le像素格式
+- FPS从视频对象自动获取（由官方的创建视频CreateVideo节点设置）
+- 音频支持（自动从视频对象获取）
+- 自定义CRF（质量参数 0-40，0为无损）
+- 编码预设选择（ultrafast到veryslow，平衡编码速度和压缩效率）
 - 支持自定义文件名和子文件夹
-- 日期时间标识符替换
-- 同名文件自动序列号处理
-- 路径安全防护
+- 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
+- 路径安全防护（防止路径遍历攻击）
+- 同名文件自动覆盖（建议使用日期时间标识符避免冲突）
+- 元数据保存（工作流提示词、种子值、模型信息等）
 
 **输入**:
-- `images` (IMAGE): 图像张量序列 (B, H, W, C)
-- `fps` (INT): 每秒帧数（默认24，范围1-240）
-- `filename_prefix` (STRING): 文件名前缀
-- `subfolder` (STRING): 子文件夹名称
+- `video` (VIDEO): 视频对象（包含图像序列、音频和帧率）
+- `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
+- `subfolder` (STRING): 子文件夹名称（默认：`Videos`）
+- `crf` (FLOAT): 质量参数（默认：0.0，范围0-40，0为无损，40为最差质量）
+- `preset` (STRING): 编码预设（默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow）
+
+**隐藏输入**:
+- `prompt` (PROMPT): 工作流提示词（自动注入）
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据（自动注入）
 
 **输出**:
-- `images` (IMAGE): 原始图像（透传）
-- `save_path` (STRING): 保存的相对路径
+- 视频预览（显示保存的视频）
 
 **FFmpeg参数**:
 - vcodec: libx265 (H.265/HEVC编码)
-- pix_fmt: yuv444p10le (10位YUV 4:4:4采样，无损)
-- crf: 0 (质量因子，0为无损)
-- preset: fast (编码速度预设)
+- pix_fmt: yuv444p10le (10位YUV 4:4:4采样)
+- crf: 可配置（0=无损，40=最差质量）
+- preset: 可配置（ultrafast到veryslow）
 - 容器格式: MKV
 
 ---
@@ -212,9 +227,48 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - `latent` (LATENT): 原始Latent（透传）
 - `save_path` (STRING): 保存的相对路径
 
+</details>
+
 ---
 
-## 📁 项目结构
+## 🌍 国际化支持
+
+ComfyUI-Xz3r0-Nodes 内置了中英文双语界面支持，通过 `locales/` 目录实现多语言切换。
+
+### 支持的语言
+
+- 🇬🇧 **English** - 英文界面
+- 🇨🇳 **中文** - 中文界面
+
+### 工作原理
+
+- ComfyUI 会根据您的系统语言自动选择对应的界面语言
+- 节点名称、参数描述和提示信息都会自动翻译
+- 如需添加新的语言支持，只需在 `locales/` 目录下创建对应语言的 `nodeDefs.json` 文件
+
+### 添加新语言
+
+如果您想为项目贡献新的语言支持，请参考 `locales/en/nodeDefs.json` 的格式创建新的语言文件，并提交 Pull Request。
+
+---
+
+## � 依赖说明
+
+### Python 依赖
+
+项目依赖在 `requirements.txt` 中定义，主要包括：
+
+- **torch** - 深度学习框架（ComfyUI 核心依赖）
+- **numpy** - 数值计算库
+- **Pillow** - 图像处理库
+- **safetensors** - 张量安全保存和加载
+- **ffmpeg-python** - FFmpeg Python 绑定（视频处理）
+
+**注意**：ComfyUI 环境通常已经包含了 `torch`、`numpy` 等核心依赖，`requirements.txt` 列出节点所引用的依赖。
+
+---
+
+## �📁 项目结构
 
 ```
 ComfyUI-Xz3r0-Nodes/
@@ -227,6 +281,11 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xvideosave.py    # 视频保存节点
 │   ├── xlatentload.py   # Latent加载节点
 │   └── xlatentsave.py   # Latent保存节点
+├── locales/             # 国际化支持（节点显示名称和提示）
+│   ├── en/              # 英文定义
+│   │   └── nodeDefs.json
+│   └── zh/              # 中文定义
+│       └── nodeDefs.json
 ├── requirements.txt     # Python依赖清单
 └── README.md            # 项目文档
 ```
