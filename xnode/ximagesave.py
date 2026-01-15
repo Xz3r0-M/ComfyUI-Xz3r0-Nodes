@@ -72,7 +72,7 @@ class XImageSave:
                     "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "subfolder": ("STRING", {
-                    "default": "",
+                    "default": "Images",
                     "tooltip": "子文件夹名称(不支持路径分隔符，仅支持单个文件夹)，如: 人物 或 images_%Y%-%m%-%d%"
                 }),
                 "compression_level": ("INT", {

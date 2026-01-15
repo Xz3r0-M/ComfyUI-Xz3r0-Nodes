@@ -93,7 +93,7 @@ class XVideoSave:
                     "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "subfolder": ("STRING", {
-                    "default": "",
+                    "default": "Videos",
                     "tooltip": "子文件夹名称(不支持路径分隔符，仅支持单个文件夹)，如: videos 或 videos_%Y%-%m%-%d%"
                 })
             }
@@ -104,7 +104,7 @@ class XVideoSave:
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Video"
 
-    def save(self, images: torch.Tensor, fps: int, filename_prefix: str, subfolder: str = "Videos") -> Tuple[torch.Tensor, str]:
+    def save(self, images: torch.Tensor, fps: int, filename_prefix: str, subfolder: str = "") -> Tuple[torch.Tensor, str]:
         """
         保存图像序列为视频
 
