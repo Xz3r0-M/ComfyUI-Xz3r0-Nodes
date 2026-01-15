@@ -11,9 +11,10 @@
 # 依赖和所引用的节点名称
 # ============================================================================
 torch           #   XImageSave, XLatentSave
-numpy           #   XImageSave
-Pillow          #   XImageSave
+numpy           #   XImageSave, XVideoSave
+Pillow          #   XImageSave, XVideoSave
 safetensors     #   XLatentLoad
+ffmpeg-python   #   XVideoSave
 
 # ============================================================================
 # 测试依赖(开发用)
