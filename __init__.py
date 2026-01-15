@@ -1,5 +1,5 @@
 """
-ComfyUI-Xz3r0-Nodes: Multi-functional Custom Node Collection
+ComfyUI-Xz3r0-Nodes
 """
 
 print(f"""
