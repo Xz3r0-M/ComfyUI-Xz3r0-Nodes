@@ -227,11 +227,7 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xvideosave.py    # 视频保存节点
 │   ├── xlatentload.py   # Latent加载节点
 │   └── xlatentsave.py   # Latent保存节点
-├── tests/               # 测试目录
-│   ├── __init__.py
-│   └── test_nodes.py
 ├── requirements.txt     # Python依赖清单
-├── CLAUDE.md            # AI 助手项目指南
 └── README.md            # 项目文档
 ```
 
