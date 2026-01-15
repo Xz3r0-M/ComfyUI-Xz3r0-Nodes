@@ -8,124 +8,108 @@
 import json
 import os
 import re
-import subprocess
+import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List, Optional
 
+import ffmpeg
 import numpy as np
 import torch
-from PIL import Image
+import PIL.Image
 
-# 尝试导入ComfyUI的folder_paths模块
-try:
-    import folder_paths
-    HAS_FOLDER_PATHS = True
-except ImportError:
-    HAS_FOLDER_PATHS = False
+import folder_paths
+
+from comfy_api.latest import io, ui, Input, Types
+from comfy.cli_args import args
 
 
-class XVideoSave:
+class XVideoSave(io.ComfyNode):
     """
     XVideoSave 视频保存节点
 
-    提供将图像序列保存为视频的功能，使用FFmpeg编码，支持无损视频保存。
+    提供视频保存功能，使用H.265/HEVC编码，支持自定义文件名、子文件夹、日期时间标识符和安全防护。
 
     功能:
-        - 使用FFmpeg将图像序列保存为MKV格式视频
-        - 优先使用系统环境变量中的FFmpeg，回退到ffmpeg-python包
-        - H.265/HEVC编码，yuv444p10le像素格式，CRF 0（无损）
-        - 支持自定义FPS（每秒帧数）
+        - 保存视频到ComfyUI默认输出目录
+        - 强制使用H.265/HEVC编码，yuv444p10le像素格式，mkv格式
+        - fps从video对象自动获取(由CreateVideo节点设置)
         - 支持自定义文件名和子文件夹
         - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
-        - 自动检测同名文件并添加序列号
+        - 允许覆盖同名文件(建议使用日期时间标识符避免冲突)
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击)
+        - 安全防护(防止路径遍历攻击，禁用路径分隔符)
+        - 元数据保存(工作流提示词、种子值、模型信息等)
         - 输出相对路径(不泄露绝对路径)
 
     输入:
-        images: 图像张量序列 (IMAGE)
-        fps: 每秒帧数 (INT)
+        video: 视频对象(fps已集成其中)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
-
-    输出:
-        images: 原始图像(透传)
-        save_path: 保存的相对路径 (STRING)
+        crf: 质量参数 0-63 (FLOAT)
+        prompt: 工作流提示词(隐藏参数，自动注入)
+        extra_pnginfo: 额外元数据(隐藏参数，自动注入)
 
     使用示例:
-        fps=30, filename_prefix="MyVideo_%Y%m%d", subfolder="videos"
-        输出: images(原图), save_path="output/videos/MyVideo_20260114.mkv"
+        filename_prefix="MyVideo_%Y%m%d", subfolder="Videos", crf=0
 
-    FFmpeg参数说明:
-        - vcodec: libx265 (H.265/HEVC编码)
-        - pix_fmt: yuv444p10le (10位YUV 4:4:4采样，无损)
-        - crf: 0 (质量因子，0为无损)
-        - preset: fast (编码速度预设)
-        - 容器格式: MKV
+    元数据说明:
+        - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
+        - prompt: 包含完整的工作流提示词JSON数据
+        - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
+        - 元数据嵌入视频文件
     """
 
-    FFMPEG_PARAMS = {
-        "vcodec": "libx265",
-        "pix_fmt": "yuv444p10le",
-        "crf": 0,
-        "preset": "fast"
-    }
+    @classmethod
+    def define_schema(cls):
+        """定义节点的输入类型和约束"""
+        return io.Schema(
+            node_id="XVideoSave",
+            display_name="XVideoSave",
+            category="♾️ Xz3r0/Video",
+            description="Saves the input video to your ComfyUI output directory with H.265/HEVC encoding.",
+            inputs=[
+                io.Video.Input("video", tooltip="The video to save."),
+                io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="The prefix for the file to save. Supports date/time placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
+                io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators, single folder only). Example: Videos or videos_%Y%-%m%-%d%"),
+                io.Float.Input("crf", default=0.0, min=0, max=40.0, step=1, tooltip="Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            is_output_node=True,
+        )
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
-        """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "images": ("IMAGE", {
-                    "tooltip": "输入图像张量序列 (B, H, W, C)"
-                }),
-                "fps": ("INT", {
-                    "default": 24,
-                    "min": 1,
-                    "max": 240,
-                    "step": 1,
-                    "tooltip": "视频每秒帧数(FPS)"
-                }),
-                "filename_prefix": ("STRING", {
-                    "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                    "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
-                }),
-                "subfolder": ("STRING", {
-                    "default": "Videos",
-                    "tooltip": "子文件夹名称(不支持路径分隔符，仅支持单个文件夹)，如: videos 或 videos_%Y%-%m%-%d%"
-                })
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "save_path")
-    FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/Video"
-
-    def save(self, images: torch.Tensor, fps: int, filename_prefix: str, subfolder: str = "") -> Tuple[torch.Tensor, str]:
+    def execute(cls, video: Input.Video, filename_prefix: str, subfolder: str, crf: float) -> io.NodeOutput:
         """
-        保存图像序列为视频
+        保存视频到ComfyUI输出目录
 
         Args:
-            images: 图像张量序列 (B, H, W, C)
-            fps: 每秒帧数
-            filename_prefix: 文件名前缀
-            subfolder: 子文件夹路径
+            video: 视频对象(fps已由CreateVideo节点集成)
+            filename_prefix: 文件名前缀(支持日期时间标识符)
+            subfolder: 子文件夹名称(单级)
+            crf: 质量参数(0=无损, 63=最差质量)
 
         Returns:
-            (images, save_path): 原始图像和保存的相对路径
+            io.NodeOutput: 包含保存路径和视频预览的输出
         """
+        # 获取视频组件
+        components = video.get_components()
+        images = components.images
+        audio = components.audio
+        fps = float(components.frame_rate)
+
+        # 获取视频尺寸
+        width, height = images.shape[-2], images.shape[-3]
+
         # 获取ComfyUI默认输出目录
-        output_dir = self._get_output_directory()
+        output_dir = Path(folder_paths.get_output_directory())
 
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(safe_filename_prefix)
+        safe_filename_prefix = cls._sanitize_path(filename_prefix)
+        safe_filename_prefix = cls._replace_datetime_placeholders(safe_filename_prefix)
 
-        safe_subfolder = self._sanitize_path(subfolder)
-        safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = cls._sanitize_path(subfolder)
+        safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
 
         # 创建完整保存路径
         save_dir = output_dir
@@ -135,36 +119,153 @@ class XVideoSave:
         # 创建目录(仅支持单级目录)
         save_dir.mkdir(exist_ok=True)
 
-        # 检测同名文件并添加序列号
-        final_filename = self._get_unique_filename(save_dir, safe_filename_prefix, ".mkv")
-
-        # 保存路径
+        # 生成文件名(允许覆盖同名文件)
+        final_filename = f"{safe_filename_prefix}.mkv"
         save_path = save_dir / final_filename
 
-        # 使用FFmpeg保存视频
-        self._save_video_with_ffmpeg(images, fps, save_path)
+        # 创建临时文件保存音频（如果存在）
+        temp_audio_path = None
+        if audio is not None:
+            waveform = audio["waveform"]
+            sample_rate = audio["sample_rate"]
+            
+            # 确保波形数据格式正确
+            if waveform.dim() == 3:
+                waveform = waveform.squeeze(0)
+            if waveform.dim() == 1:
+                waveform = waveform.unsqueeze(0)
+            
+            # 转换为float32 PCM格式（如果是其他格式）
+            if waveform.dtype.is_floating_point:
+                waveform = waveform.float()
+            elif waveform.dtype == torch.int16:
+                waveform = waveform.float() / (2 ** 15)
+            elif waveform.dtype == torch.int32:
+                waveform = waveform.float() / (2 ** 31)
+            
+            # 转换为int16格式用于pcm_s16le编码
+            waveform_int16 = (waveform * (2 ** 15 - 1)).clamp(-2 ** 15, 2 ** 15 - 1).short()
+            
+            # 转换为numpy数组（channels, samples）→ (samples, channels）
+            audio_data = waveform_int16.numpy().T
+            
+            # 创建临时音频文件
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+                temp_audio_path = temp_audio.name
+                
+            # 使用ffmpeg保存音频
+            audio_input = (
+                ffmpeg
+                .input('pipe:', format='s16le', ac=audio_data.shape[1], ar=sample_rate)
+                .output(temp_audio_path, acodec='pcm_s16le', **{'loglevel': 'quiet'})
+                .overwrite_output()
+                .run_async(pipe_stdin=True)
+            )
+            
+            # 写入音频数据
+            audio_input.stdin.write(audio_data.tobytes())
+            audio_input.stdin.close()
+            audio_input.wait()
 
-        # 输出相对路径
-        relative_path = str(save_path.relative_to(output_dir))
-
-        return (images, relative_path)
-
-    def _get_output_directory(self) -> Path:
-        """
-        获取ComfyUI默认输出目录
-
-        Returns:
-            输出目录路径
-        """
-        if HAS_FOLDER_PATHS:
-            return Path(folder_paths.get_output_directory())
+        # 使用ffmpeg-python保存视频
+        # 先保存临时视频文件
+        with tempfile.NamedTemporaryFile(suffix='.mkv', delete=False) as temp_video:
+            temp_video_path = temp_video.name
+        
+        # 构建ffmpeg命令
+        if temp_audio_path:
+            # 视频和音频
+            process = (
+                ffmpeg
+                .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{width}x{height}', r=fps)
+                .output(
+                    temp_video_path,
+                    vcodec='libx265',
+                    pix_fmt='yuv444p10le',
+                    crf=int(crf),
+                    preset='medium',
+                    acodec='aac',
+                    audio_bitrate='192k',
+                    movflags='faststart',
+                    **{'loglevel': 'quiet'}
+                )
+                .overwrite_output()
+                .run_async(pipe_stdin=True)
+            )
         else:
-            # 回退到当前目录的output文件夹
-            output_dir = Path.cwd() / "output"
-            output_dir.mkdir(exist_ok=True)
-            return output_dir
+            # 只有视频
+            process = (
+                ffmpeg
+                .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{width}x{height}', r=fps)
+                .output(
+                    temp_video_path,
+                    vcodec='libx265',
+                    pix_fmt='yuv444p10le',
+                    crf=int(crf),
+                    preset='medium',
+                    movflags='faststart',
+                    **{'loglevel': 'quiet'}
+                )
+                .overwrite_output()
+                .run_async(pipe_stdin=True)
+            )
+        
+        # 写入视频帧
+        for frame in images:
+            frame_data = torch.clamp(frame[..., :3] * 255, min=0, max=255).to(device=torch.device("cpu"), dtype=torch.uint8).numpy()
+            process.stdin.write(frame_data.tobytes())
+        process.stdin.close()
+        return_code = process.wait()
+        
+        # 检查是否成功
+        if return_code != 0:
+            raise RuntimeError(f"FFmpeg encoding failed with code {return_code}")
 
-    def _sanitize_path(self, path: str) -> str:
+        # 如果有音频，合并到最终文件
+        if temp_audio_path:
+            # 合并视频和音频
+            video_input = ffmpeg.input(temp_video_path)
+            audio_input = ffmpeg.input(temp_audio_path)
+            try:
+                (
+                    ffmpeg
+                    .output(
+                        video_input,
+                        audio_input,
+                        str(save_path),
+                        vcodec='libx265',
+                        pix_fmt='yuv444p10le',
+                        crf=int(crf),
+                        preset='medium',
+                        acodec='aac',
+                        audio_bitrate='192k',
+                        movflags='faststart',
+                        **{'loglevel': 'quiet'}
+                    )
+                    .overwrite_output()
+                    .run()
+                )
+            except ffmpeg.Error as e:
+                raise RuntimeError(f"FFmpeg 合并失败") from e
+            
+            # 删除临时音频文件
+            os.unlink(temp_audio_path)
+        else:
+            # 直接移动临时视频文件到最终位置
+            shutil.move(temp_video_path, save_path)
+
+        # 删除临时视频文件（如果没有被移动）
+        if os.path.exists(temp_video_path):
+            os.unlink(temp_video_path)
+
+        # 提取子文件夹路径(用于ComfyUI预览)
+        subfolder_path = safe_subfolder if safe_subfolder else ""
+
+        # 返回视频预览
+        return io.NodeOutput(ui=ui.PreviewVideo([ui.SavedResult(final_filename, subfolder_path, io.FolderType.output)]))
+
+    @classmethod
+    def _sanitize_path(cls, path: str) -> str:
         """
         清理路径，防止遍历攻击并禁用多级目录
 
@@ -213,9 +314,18 @@ class XVideoSave:
 
         return safe_path
 
-    def _replace_datetime_placeholders(self, text: str) -> str:
+    @classmethod
+    def _replace_datetime_placeholders(cls, text: str) -> str:
         """
         替换日期时间标识符
+
+        支持的标识符:
+        - %Y%: 年份(4位)
+        - %m%: 月份(01-12)
+        - %d%: 日期(01-31)
+        - %H%: 小时(00-23)
+        - %M%: 分钟(00-59)
+        - %S%: 秒(00-59)
 
         Args:
             text: 包含日期时间标识符的文本
@@ -228,8 +338,9 @@ class XVideoSave:
 
         now = datetime.now()
 
+        # 使用正则表达式替换，确保完整匹配 %Y%, %m% 等格式
         def replace_match(match):
-            placeholder = match.group(0)
+            placeholder = match.group()
             if placeholder == "%Y%":
                 return now.strftime("%Y")
             elif placeholder == "%m%":
@@ -242,500 +353,10 @@ class XVideoSave:
                 return now.strftime("%M")
             elif placeholder == "%S%":
                 return now.strftime("%S")
-            else:
-                return placeholder
+            return placeholder
 
-        result = re.sub(r'%[YmdHMSmd]%', replace_match, text)
+        # 匹配 %X% 格式(X为Y,m,d,H,M,S)
+        pattern = r'%(Y|m|d|H|M|S)%'
+        result = re.sub(pattern, replace_match, text)
 
         return result
-
-    def _get_unique_filename(self, directory: Path, filename: str, extension: str) -> str:
-        """
-        获取唯一的文件名，避免覆盖
-
-        Args:
-            directory: 目录路径
-            filename: 基础文件名
-            extension: 文件扩展名
-
-        Returns:
-            唯一的文件名
-        """
-        base_name = filename
-        counter = 0
-
-        while True:
-            if counter == 0:
-                candidate = f"{base_name}{extension}"
-            else:
-                candidate = f"{base_name}_{counter:05d}{extension}"
-
-            candidate_path = directory / candidate
-
-            if not candidate_path.exists():
-                return candidate
-
-            counter += 1
-
-    def _save_video_with_ffmpeg(self, images: torch.Tensor, fps: int, output_path: Path):
-        """
-        使用FFmpeg保存视频
-
-        优先使用系统FFmpeg，回退到ffmpeg-python包
-
-        Args:
-            images: 图像张量序列 (B, H, W, C)
-            fps: 每秒帧数
-            output_path: 输出视频路径
-        """
-        # 转换图像序列为PIL图像列表
-        pil_images = [self._tensor_to_pil(img) for img in images]
-
-        # 尝试使用系统FFmpeg
-        if self._try_system_ffmpeg(pil_images, fps, output_path):
-            return
-
-        # 回退到ffmpeg-python包
-        self._save_with_ffmpeg_python(pil_images, fps, output_path)
-
-    def _try_system_ffmpeg(self, pil_images: List[Image.Image], fps: int, output_path: Path) -> bool:
-        """
-        尝试使用系统FFmpeg保存视频
-
-        Args:
-            pil_images: PIL图像列表
-            fps: 每秒帧数
-            output_path: 输出视频路径
-
-        Returns:
-            是否成功
-        """
-        # 检测系统FFmpeg
-        ffmpeg_path = self._find_system_ffmpeg()
-        if not ffmpeg_path:
-            return False
-
-        try:
-            # 创建临时目录保存图像序列
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_dir_path = Path(temp_dir)
-
-                # 保存图像序列
-                for i, img in enumerate(pil_images):
-                    img_path = temp_dir_path / f"frame_{i:06d}.png"
-                    img.save(img_path, format="PNG")
-
-                # 构建FFmpeg命令
-                input_pattern = temp_dir_path / "frame_%06d.png"
-                cmd = [
-                    str(ffmpeg_path),
-                    "-y",  # 覆盖输出文件
-                    "-framerate", str(fps),
-                    "-i", str(input_pattern),
-                    "-c:v", self.FFMPEG_PARAMS["vcodec"],
-                    "-pix_fmt", self.FFMPEG_PARAMS["pix_fmt"],
-                    "-crf", str(self.FFMPEG_PARAMS["crf"]),
-                    "-preset", self.FFMPEG_PARAMS["preset"],
-                    str(output_path)
-                ]
-
-                # 执行FFmpeg命令
-                result = subprocess.run(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=True
-                )
-
-                return True
-
-        except subprocess.CalledProcessError as e:
-            print(f"[XVideoSave] FFmpeg执行失败: {e}")
-            print(f"[XVideoSave] stderr: {e.stderr}")
-            return False
-        except Exception as e:
-            print(f"[XVideoSave] 系统FFmpeg出错: {e}")
-            return False
-
-    def _find_system_ffmpeg(self) -> Optional[Path]:
-        """
-        查找系统FFmpeg
-
-        Returns:
-            FFmpeg路径或None
-        """
-        # 检查环境变量PATH中的ffmpeg
-        ffmpeg_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
-
-        try:
-            # 尝试which/where命令
-            if os.name == "nt":
-                result = subprocess.run(
-                    ["where", ffmpeg_name],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-            else:
-                result = subprocess.run(
-                    ["which", ffmpeg_name],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-
-            if result.returncode == 0 and result.stdout.strip():
-                # 取第一行结果
-                ffmpeg_path = result.stdout.strip().split('\n')[0]
-                return Path(ffmpeg_path)
-
-        except Exception as e:
-            print(f"[XVideoSave] 查找系统FFmpeg失败: {e}")
-
-        return None
-
-    def _save_with_ffmpeg_python(self, pil_images: List[Image.Image], fps: int, output_path: Path):
-        """
-        使用ffmpeg-python包保存视频
-
-        Args:
-            pil_images: PIL图像列表
-            fps: 每秒帧数
-            output_path: 输出视频路径
-        """
-        try:
-            import ffmpeg
-
-            # 创建临时目录保存图像序列
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_dir_path = Path(temp_dir)
-
-                # 保存图像序列
-                for i, img in enumerate(pil_images):
-                    img_path = temp_dir_path / f"frame_{i:06d}.png"
-                    img.save(img_path, format="PNG")
-
-                # 构建ffmpeg-python命令
-                input_pattern = str(temp_dir_path / "frame_%06d.png")
-                (
-                    ffmpeg
-                    .input(input_pattern, framerate=fps)
-                    .output(
-                        str(output_path),
-                        vcodec=self.FFMPEG_PARAMS["vcodec"],
-                        pix_fmt=self.FFMPEG_PARAMS["pix_fmt"],
-                        crf=self.FFMPEG_PARAMS["crf"],
-                        preset=self.FFMPEG_PARAMS["preset"]
-                    )
-                    .overwrite_output()
-                    .run(capture_stdout=True, capture_stderr=True)
-                )
-
-        except ImportError:
-            raise RuntimeError(
-                "未找到FFmpeg！请安装FFmpeg：\n"
-                "1. 安装系统FFmpeg: https://ffmpeg.org/download.html\n"
-                "2. 或安装ffmpeg-python包: pip install ffmpeg-python"
-            )
-        except ffmpeg.Error as e:
-            print(f"[XVideoSave] ffmpeg-python错误: {e.stderr.decode('utf-8')}")
-            raise
-        except Exception as e:
-            print(f"[XVideoSave] ffmpeg-python保存失败: {e}")
-            raise
-
-    def _tensor_to_pil(self, tensor: torch.Tensor) -> Image.Image:
-        """
-        将张量转换为PIL图像
-
-        Args:
-            tensor: 图像张量 (H, W, C) 或 (B, H, W, C)
-
-        Returns:
-            PIL图像对象
-        """
-        # 确保张量在CPU上
-        tensor = tensor.cpu()
-
-        # 处理批次维度：如果是4D张量，取第一个图像
-        if tensor.dim() == 4:
-            tensor = tensor[0]
-
-        # 转换为numpy数组并移除多余维度（使用squeeze）
-        if tensor.dim() == 3:
-            numpy_array = tensor.numpy()
-        else:
-            raise ValueError(f"不支持的张量维度: {tensor.dim()}，期望3维或4维")
-
-        # 转换值范围从[0, 1]到[0, 255]，并确保值在有效范围内
-        numpy_array = np.clip(255.0 * numpy_array, 0, 255).astype(np.uint8)
-
-        # 创建PIL图像
-        if numpy_array.shape[2] == 4:
-            # RGBA
-            mode = 'RGBA'
-        elif numpy_array.shape[2] == 3:
-            # RGB
-            mode = 'RGB'
-        elif numpy_array.shape[2] == 1:
-            # 灰度图
-            mode = 'L'
-            numpy_array = numpy_array.squeeze(2)
-        else:
-            raise ValueError(f"不支持的通道数: {numpy_array.shape[2]}")
-
-        pil_image = Image.fromarray(numpy_array, mode=mode)
-
-        return pil_image
-
-
-# 节点类映射（用于本地测试）
-if __name__ == "__main__":
-    try:
-        import folder_paths
-        print("XVideoSave 节点已加载")
-        print(f"节点分类: {XVideoSave.CATEGORY}")
-        print(f"输入类型: {XVideoSave.INPUT_TYPES()}")
-        print(f"输出类型: {XVideoSave.RETURN_TYPES}")
-        print(f"FFmpeg参数: {XVideoSave.FFMPEG_PARAMS}")
-
-        # 测试用例
-        print("\n=== 测试用例 ===")
-        node = XVideoSave()
-    except ImportError:
-        print("⚠️  警告: 未检测到ComfyUI环境(folder_paths模块)")
-        print("   以下测试仅测试辅助函数，不涉及folder_paths依赖\n")
-
-        # 创建模拟类用于测试辅助函数
-        class MockXVideoSave:
-            FFMPEG_PARAMS = {
-                "vcodec": "libx265",
-                "pix_fmt": "yuv444p10le",
-                "crf": 0,
-                "preset": "fast"
-            }
-
-            def _sanitize_path(self, path: str) -> str:
-                if not path:
-                    return ""
-
-                dangerous_chars = [
-                    '\\', '/', '..', '.', '|', ':', '*', '?', '"', '<', '>',
-                    '\n', '\r', '\t', '\x00', '\x0b', '\x0c'
-                ]
-
-                path_traversal_patterns = [
-                    r'\.\./+',
-                    r'\.\.\\+',
-                    r'~',
-                    r'^\.',
-                    r'\.$',
-                    r'^/',
-                    r'^\\',
-                ]
-
-                safe_path = path
-                for char in dangerous_chars:
-                    safe_path = safe_path.replace(char, '_')
-
-                for pattern in path_traversal_patterns:
-                    safe_path = re.sub(pattern, '_', safe_path)
-
-                safe_path = re.sub(r'_+', '_', safe_path)
-                safe_path = safe_path.strip('_')
-
-                return safe_path
-
-            def _replace_datetime_placeholders(self, text: str) -> str:
-                if not text:
-                    return ""
-
-                now = datetime.now()
-
-                replacements = {
-                    "%Y%": now.strftime("%Y"),
-                    "%m%": now.strftime("%m"),
-                    "%d%": now.strftime("%d"),
-                    "%H%": now.strftime("%H"),
-                    "%M%": now.strftime("%M"),
-                    "%S%": now.strftime("%S"),
-                }
-
-                result = text
-                for placeholder, value in replacements.items():
-                    result = result.replace(placeholder, value)
-
-                return result
-
-            def _get_unique_filename(self, directory: Path, filename: str, extension: str) -> str:
-                base_name = filename
-                counter = 0
-
-                while True:
-                    if counter == 0:
-                        candidate = f"{base_name}{extension}"
-                    else:
-                        candidate = f"{base_name}_{counter:05d}{extension}"
-
-                    candidate_path = directory / candidate
-
-                    if not candidate_path.exists():
-                        return candidate
-
-                    counter += 1
-
-            def _find_system_ffmpeg(self) -> Optional[Path]:
-                ffmpeg_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
-
-                try:
-                    if os.name == "nt":
-                        result = subprocess.run(
-                            ["where", ffmpeg_name],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True
-                        )
-                    else:
-                        result = subprocess.run(
-                            ["which", ffmpeg_name],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True
-                        )
-
-                    if result.returncode == 0 and result.stdout.strip():
-                        ffmpeg_path = result.stdout.strip().split('\n')[0]
-                        return Path(ffmpeg_path)
-
-                except Exception as e:
-                    print(f"[XVideoSave] 查找系统FFmpeg失败: {e}")
-
-                return None
-
-            def _tensor_to_pil(self, tensor: torch.Tensor) -> Image.Image:
-                tensor = tensor.cpu()
-
-                if tensor.dim() == 4:
-                    tensor = tensor[0]
-
-                if tensor.dim() == 3:
-                    numpy_array = tensor.numpy()
-                else:
-                    raise ValueError(f"不支持的张量维度: {tensor.dim()}，期望3维或4维")
-
-                numpy_array = np.clip(255.0 * numpy_array, 0, 255).astype(np.uint8)
-
-                if numpy_array.shape[2] == 4:
-                    mode = 'RGBA'
-                elif numpy_array.shape[2] == 3:
-                    mode = 'RGB'
-                elif numpy_array.shape[2] == 1:
-                    mode = 'L'
-                    numpy_array = numpy_array.squeeze(2)
-                else:
-                    raise ValueError(f"不支持的通道数: {numpy_array.shape[2]}")
-
-                pil_image = Image.fromarray(numpy_array, mode=mode)
-                return pil_image
-
-        node = MockXVideoSave()
-        ffmpeg_params = node.FFMPEG_PARAMS
-
-        # 测试1: 路径清理
-        print("\n测试1 - 路径清理")
-        test_paths = [
-            "normal",
-            "../etc/passwd",
-            "../../../system",
-            "~/home/user",
-            "test/../hidden",
-            "file.txt",
-            "path/to/file",
-            "test|file",
-            "file<test>",
-        ]
-        for path in test_paths:
-            safe_path = node._sanitize_path(path)
-            print(f"  原始: '{path}' -> 安全: '{safe_path}'")
-
-        # 测试2: 日期时间替换
-        print("\n测试2 - 日期时间替换")
-        test_names = [
-            "video_%Y%%m%%d%",
-            "clip_%Y%%m%%d%_%H%%M%%S%",
-            "test_%Y%/test_%m%",
-            "",
-            "no_placeholder",
-        ]
-        for name in test_names:
-            result = node._replace_datetime_placeholders(name)
-            print(f"  原始: '{name}' -> 替换: '{result}'")
-
-        # 测试3: 唯一文件名生成
-        print("\n测试3 - 唯一文件名生成")
-        test_dir = Path("test_output")
-        test_dir.mkdir(exist_ok=True)
-
-        # 创建测试文件
-        test_file = test_dir / "test_001.mkv"
-        test_file.touch()
-
-        for filename in ["test_001", "test_002", "test_001"]:
-            unique_name = node._get_unique_filename(test_dir, filename, ".mkv")
-            print(f"  '{filename}.mkv' -> '{unique_name}'")
-
-        print("\n说明: 序列号使用5位数字格式(00001)，确保文件排序正确")
-
-        # 清理测试文件
-        test_file.unlink()
-        test_dir.rmdir()
-
-        # 测试4: FFmpeg参数验证
-        print("\n测试4 - FFmpeg参数验证")
-        print(f"  编码器: {ffmpeg_params['vcodec']} (H.265/HEVC)")
-        print(f"  像素格式: {ffmpeg_params['pix_fmt']} (10位YUV 4:4:4)")
-        print(f"  质量因子: {ffmpeg_params['crf']} (0=无损)")
-        print(f"  预设: {ffmpeg_params['preset']} (fast)")
-        print(f"  容器格式: MKV")
-
-        # 测试5: 系统FFmpeg检测
-        print("\n测试5 - 系统FFmpeg检测")
-        ffmpeg_path = node._find_system_ffmpeg()
-        if ffmpeg_path:
-            print(f"  ✅ 找到系统FFmpeg: {ffmpeg_path}")
-        else:
-            print(f"  ⚠️  未找到系统FFmpeg，将使用ffmpeg-python包")
-
-        # 测试6: 组合测试
-        print("\n测试6 - 组合测试(路径清理+日期时间)")
-        test_cases = [
-            ("../backup/%Y%%m%%d%", "backup_"),
-            ("test|video_%H%%M%%S%", "test_video_"),
-            ("video_../secret/%d", "video_secret_"),
-            ("视频/测试", "视频_测试"),
-        ]
-        for input_path, expected_contains in test_cases:
-            safe_path = node._sanitize_path(input_path)
-            safe_path = node._replace_datetime_placeholders(safe_path)
-            print(f"  原始: '{input_path}'")
-            print(f"  结果: '{safe_path}'")
-
-        # 测试7: 张量转换测试
-        print("\n测试7 - 张量转换测试")
-        try:
-            # 创建测试张量
-            test_tensor = torch.rand(3, 512, 512, 3)
-            pil_img = node._tensor_to_pil(test_tensor)
-            print(f"  ✅ 张量转换成功: {test_tensor.shape} -> {pil_img.size} {pil_img.mode}")
-
-            # 测试批次张量
-            batch_tensor = torch.rand(10, 3, 512, 512, 3)
-            for i in range(min(3, len(batch_tensor))):
-                pil_img = node._tensor_to_pil(batch_tensor[i])
-                print(f"  ✅ 批次张量[{i}]转换成功: {pil_img.size} {pil_img.mode}")
-
-        except Exception as e:
-            print(f"  ❌ 张量转换失败: {e}")
-
-        print("\n✅ 所有测试完成！")

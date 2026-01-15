@@ -19,6 +19,8 @@ from PIL import Image, PngImagePlugin
 
 
 class XImageSave:
+
+    OUTPUT_NODE = True
     """
     XImageSave 图像保存节点
 

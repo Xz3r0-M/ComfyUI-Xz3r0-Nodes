@@ -2,11 +2,67 @@
 ComfyUI-Xz3r0-Nodes: 多功能自定义节点集合
 """
 
-print("[Xz3r0-Nodes] 正在加载插件...", flush=True)  # 调试标记
+print("[Xz3r0-Nodes] 正在加载...", flush=True)  # 调试标记
 
 import importlib
+import importlib.metadata
+import re
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Any
+from typing import Dict, List, Optional, Type, Any, Tuple
+
+
+# ============================================================================
+# 依赖包检查
+# ============================================================================
+
+def check_dependencies(plugin_dir: Optional[Path] = None) -> Tuple[List[str], List[str]]:
+    """
+    检查项目依赖包是否已安装
+
+    Args:
+        plugin_dir: 插件根目录，默认为当前文件所在目录
+
+    Returns:
+        (已安装包列表, 未安装包列表)
+    """
+    if plugin_dir is None:
+        plugin_dir = Path(__file__).parent
+
+    requirements_path = plugin_dir / "requirements.txt"
+
+    if not requirements_path.exists():
+        print(f"[Xz3r0-Nodes] ⚠ 未找到 requirements.txt 文件", flush=True)
+        return [], []
+
+    # 读取并解析 requirements.txt
+    installed_packages = []
+    missing_packages = []
+
+    with open(requirements_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+
+            # 跳过空行和注释
+            if not line or line.startswith('#'):
+                continue
+
+            # 解析包名（提取包名部分，忽略版本要求）
+            # 例如: torch>=2.0.0 -> torch
+            #       numpy==1.24.0 -> numpy
+            #       Pillow -> Pillow
+            match = re.match(r'^([a-zA-Z0-9_-]+)', line)
+            if match:
+                package_name = match.group(1)
+
+                # 使用 importlib.metadata 直接检查 pip 包是否已安装
+                # 这种方法直接使用 pip 包名，不需要知道模块名
+                try:
+                    importlib.metadata.distribution(package_name)
+                    installed_packages.append(package_name)
+                except importlib.metadata.PackageNotFoundError:
+                    missing_packages.append(package_name)
+
+    return installed_packages, missing_packages
 
 
 # ============================================================================
@@ -83,10 +139,32 @@ for node_class in _all_nodes:
 
 
 # ============================================================================
+# 依赖检查
+# ============================================================================
+
+print("[Xz3r0-Nodes] 📦 检查依赖包...", flush=True)
+installed_deps, missing_deps = check_dependencies()
+
+if missing_deps:
+    print(f"[Xz3r0-Nodes] ⚠ 缺失依赖包 ({len(missing_deps)}): {', '.join(missing_deps)}", flush=True)
+    print(f"[Xz3r0-Nodes] 💡 请运行: pip install -r requirements.txt", flush=True)
+else:
+    print(f"[Xz3r0-Nodes] ✅ 所有依赖包已安装", flush=True)
+
+print()  # 空行分隔
+print("[Xz3r0-Nodes] 🔍 扫描节点模块...", flush=True)
+
+# ============================================================================
 # 导出列表（ComfyUI要求）
 # ============================================================================
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
+
+# ============================================================================
+# Web目录注册（用于前端JavaScript扩展）
+# ============================================================================
+
+WEB_DIRECTORY = "./js"
 
 
 # ============================================================================

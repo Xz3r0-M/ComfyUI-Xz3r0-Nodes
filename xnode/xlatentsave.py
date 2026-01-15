@@ -25,6 +25,8 @@ except ImportError:
 
 
 class XLatentSave:
+
+    OUTPUT_NODE = True
     """
     XLatentSave Latent保存节点
 

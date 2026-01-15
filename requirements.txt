@@ -8,12 +8,21 @@
 # 注意: ComfyUI环境通常已经包含了核心依赖（torch、numpy等）
 #       以下列出的是最小兼容版本要求
 # ============================================================================
-# 依赖和所引用的节点名称
+# 核心依赖（实际使用的节点）
 # ============================================================================
-torch           #   XImageSave, XLatentSave
+# 深度学习和张量操作
+torch           #   XImageSave, XLatentLoad, XLatentSave, XVideoSave
+
+# 数值计算
 numpy           #   XImageSave, XVideoSave
+
+# 图像处理
 Pillow          #   XImageSave, XVideoSave
+
+# 张量安全保存和加载
 safetensors     #   XLatentLoad
+
+# 视频处理
 ffmpeg-python   #   XVideoSave
 
 # ============================================================================
