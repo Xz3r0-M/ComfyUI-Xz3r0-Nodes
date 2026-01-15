@@ -96,7 +96,7 @@
     },
     "outputs": {
       "0": {
-        "name": "images",
+        "name": "Images",
         "tooltip": "Input images (passed through)"
       },
       "1": {
@@ -110,7 +110,7 @@
     "description": "Latent loading node supporting both input port and file loading with automatic format detection.",
     "inputs": {
       "latent_input": {
-        "name": "Latent Input",
+        "name": "Latent",
         "tooltip": "Input latent from another node (higher priority than file loading)"
       },
       "latent_file": {
@@ -120,7 +120,7 @@
     },
     "outputs": {
       "0": {
-        "name": "latent",
+        "name": "Latent",
         "tooltip": "Loaded latent tensor"
       }
     }
@@ -144,7 +144,7 @@
     },
     "outputs": {
       "0": {
-        "name": "latent",
+        "name": "Latent",
         "tooltip": "Input latent (passed through)"
       },
       "1": {
@@ -172,12 +172,21 @@
       "crf": {
         "name": "Video CRF",
         "tooltip": "Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "save_path",
-        "tooltip": "Saved file path"
+      },
+      "preset": {
+        "name": "Encoding Preset",
+        "tooltip": "Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer.",
+        "options": {
+          "ultrafast": "ultrafast",
+          "superfast": "superfast",
+          "veryfast": "veryfast",
+          "faster": "faster",
+          "fast": "fast",
+          "medium": "medium",
+          "slow": "slow",
+          "slower": "slower",
+          "veryslow": "veryslow"
+        }
       }
     }
   }

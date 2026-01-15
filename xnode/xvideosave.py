@@ -41,17 +41,19 @@ class XVideoSave(io.ComfyNode):
         - 安全防护(防止路径遍历攻击，禁用路径分隔符)
         - 元数据保存(工作流提示词、种子值、模型信息等)
         - 输出相对路径(不泄露绝对路径)
+        - 编码预设选择(ultrafast到veryslow，平衡编码速度和压缩效率)
 
     输入:
         video: 视频对象(fps已集成其中)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         crf: 质量参数 0-63 (FLOAT)
+        preset: 编码预设 (STRING, 可选: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
         prompt: 工作流提示词(隐藏参数，自动注入)
         extra_pnginfo: 额外元数据(隐藏参数，自动注入)
 
     使用示例:
-        filename_prefix="MyVideo_%Y%m%d", subfolder="Videos", crf=0
+        filename_prefix="MyVideo_%Y%m%d", subfolder="Videos", crf=0, preset="medium"
 
     元数据说明:
         - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
@@ -73,13 +75,14 @@ class XVideoSave(io.ComfyNode):
                 io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="The prefix for the file to save. Supports date/time placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
                 io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators, single folder only). Example: Videos or videos_%Y%-%m%-%d%"),
                 io.Float.Input("crf", default=0.0, min=0, max=40.0, step=1, tooltip="Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."),
+                io.Combo.Input("preset", options=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], default="medium", tooltip="Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer."),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
         )
 
     @classmethod
-    def execute(cls, video: Input.Video, filename_prefix: str, subfolder: str, crf: float) -> io.NodeOutput:
+    def execute(cls, video: Input.Video, filename_prefix: str, subfolder: str, crf: float, preset: str) -> io.NodeOutput:
         """
         保存视频到ComfyUI输出目录
 
@@ -88,9 +91,10 @@ class XVideoSave(io.ComfyNode):
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
             crf: 质量参数(0=无损, 63=最差质量)
+            preset: 编码预设(ultrafast到veryslow，平衡编码速度和压缩效率)
 
         Returns:
-            io.NodeOutput: 包含保存路径和视频预览的输出
+            io.NodeOutput: 包含视频预览的输出
         """
         # 获取视频组件
         components = video.get_components()
@@ -183,7 +187,7 @@ class XVideoSave(io.ComfyNode):
                     vcodec='libx265',
                     pix_fmt='yuv444p10le',
                     crf=int(crf),
-                    preset='medium',
+                    preset=preset,
                     acodec='aac',
                     audio_bitrate='192k',
                     movflags='faststart',
@@ -202,7 +206,7 @@ class XVideoSave(io.ComfyNode):
                     vcodec='libx265',
                     pix_fmt='yuv444p10le',
                     crf=int(crf),
-                    preset='medium',
+                    preset=preset,
                     movflags='faststart',
                     **{'loglevel': 'quiet'}
                 )
@@ -236,7 +240,7 @@ class XVideoSave(io.ComfyNode):
                         vcodec='libx265',
                         pix_fmt='yuv444p10le',
                         crf=int(crf),
-                        preset='medium',
+                        preset=preset,
                         acodec='aac',
                         audio_bitrate='192k',
                         movflags='faststart',

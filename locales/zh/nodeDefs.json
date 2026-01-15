@@ -172,12 +172,21 @@
       "crf": {
         "name": "视频CRF",
         "tooltip": "质量参数 (0=无损，40=最差质量)，数值越高质量越低文件越小"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "保存路径",
-        "tooltip": "保存的文件路径"
+      },
+      "preset": {
+        "name": "编码预设",
+        "tooltip": "编码速度/压缩效率权衡。快速预设编码快但文件较大，慢速预设压缩更好但耗时更长。",
+        "options": {
+          "ultrafast": "极快",
+          "superfast": "超快",
+          "veryfast": "很快",
+          "faster": "较快",
+          "fast": "快",
+          "medium": "中等",
+          "slow": "慢",
+          "slower": "较慢",
+          "veryslow": "很慢"
+        }
       }
     }
   }

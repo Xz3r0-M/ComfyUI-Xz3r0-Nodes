@@ -78,7 +78,7 @@ class XLatentSave:
                     "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "subfolder": ("STRING", {
-                    "default": "",
+                    "default": "Latents",
                     "tooltip": "Subfolder name (no path separators allowed), e.g., Latents or latents_%Y%-%m%-%d%"
                 })
             },
