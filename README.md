@@ -2,7 +2,7 @@
 
 # ComfyUI-Xz3r0-Nodes
 
-**🎨 ComfyUI 自定义节点项目**
+**🎨 ComfyUI 自定义节点**
 
 [![License](https://img.shields.io/badge/license-To%20be%20determined-blue.svg)](LICENSE)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
@@ -13,7 +13,7 @@
 
 ## 📖 项目简介
 
-**ComfyUI-Xz3r0-Nodes** 是一个设计为**高度模块化**的ComfyUI自定义节点集合项目，采用**自动发现架构**。
+**ComfyUI-Xz3r0-Nodes** 是一个设计为**高度模块化**的ComfyUI自定义节点项目，采用**自动发现架构**。
 
 ### 🎯 设计特点
 
