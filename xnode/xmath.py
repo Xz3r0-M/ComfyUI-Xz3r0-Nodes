@@ -33,9 +33,9 @@ class XMath:
         int_result: 整数结果，截断小数部分（向零取整）
         float_result: 浮点数结果，保留精确值
 
-    使用示例:
-        a=10.5, b=3.2, operation="乘法 (×)"
-        输出: int_result=33, float_result=33.6
+    Usage example:
+        a=10.5, b=3.2, operation="Multiplication (×)"
+        Output: int_result=33, float_result=33.6
     """
 
     @classmethod
@@ -49,7 +49,7 @@ class XMath:
                     "max": 1e10,
                     "step": 0.1,
                     "display": "number",
-                    "tooltip": "第一个输入数值"
+                    "tooltip": "First input value"
                 }),
                 "b": ("FLOAT", {
                     "default": 0.0,
@@ -57,20 +57,20 @@ class XMath:
                     "max": 1e10,
                     "step": 0.1,
                     "display": "number",
-                    "tooltip": "第二个输入数值"
+                    "tooltip": "Second input value"
                 }),
                 "operation": ([
-                    "加法 (+)",
-                    "减法 (-)",
-                    "乘法 (×)",
-                    "除法 (÷)",
-                    "幂运算 (**)",
-                    "取模 (%)",
-                    "最大值",
-                    "最小值"
+                    "Addition (+)",
+                    "Subtraction (-)",
+                    "Multiplication (×)",
+                    "Division (÷)",
+                    "Power (**)",
+                    "Modulo (%)",
+                    "Maximum",
+                    "Minimum"
                 ], {
-                    "default": "加法 (+)",
-                    "tooltip": "选择计算方式"
+                    "default": "Addition (+)",
+                    "tooltip": "Select operation type"
                 })
             }
         }
@@ -94,27 +94,27 @@ class XMath:
         """
         # 运算映射表
         operations = {
-            "加法 (+)": lambda x, y: x + y,
-            "减法 (-)": lambda x, y: x - y,
-            "乘法 (×)": lambda x, y: x * y,
-            "除法 (÷)": self._safe_divide,
-            "幂运算 (**)": lambda x, y: x ** y,
-            "取模 (%)": self._safe_modulo,
-            "最大值": max,
-            "最小值": min,
+            "Addition (+)": lambda x, y: x + y,
+            "Subtraction (-)": lambda x, y: x - y,
+            "Multiplication (×)": lambda x, y: x * y,
+            "Division (÷)": self._safe_divide,
+            "Power (**)": lambda x, y: x ** y,
+            "Modulo (%)": self._safe_modulo,
+            "Maximum": max,
+            "Minimum": min,
         }
 
         # 获取计算函数
         calc_func = operations.get(operation)
 
         if calc_func is None:
-            raise ValueError(f"未知的运算方式: {operation}")
+            raise ValueError(f"Unknown operation: {operation}")
 
         # 执行计算
         try:
             result = calc_func(a, b)
         except Exception as e:
-            raise ValueError(f"计算错误 ({operation}): {str(e)}")
+            raise ValueError(f"Calculation error ({operation}): {str(e)}")
 
         # 返回双格式结果
         return (int(result), float(result))
@@ -154,47 +154,6 @@ class XMath:
             ValueError: 当模数为零时
         """
         if b == 0:
-            raise ValueError("取模运算中除数不能为零")
+            raise ValueError("Division by zero in modulo operation")
         return a % b
 
-
-# 节点类映射（用于本地测试）
-if __name__ == "__main__":
-    print("XMath 节点已加载")
-    print(f"节点分类: {XMath.CATEGORY}")
-    print(f"输入类型: {XMath.INPUT_TYPES()}")
-    print(f"输出类型: {XMath.RETURN_TYPES}")
-
-    # 测试用例
-    print("\n=== 测试用例 ===")
-    node = XMath()
-
-    # 测试1: 加法
-    int_result, float_result = node.calculate(10.5, 3.2, "加法 (+)")
-    print(f"测试1 - 加法: 10.5 + 3.2 = {float_result} (整数: {int_result})")
-
-    # 测试2: 乘法（验证截断）
-    int_result, float_result = node.calculate(10.5, 3.2, "乘法 (×)")
-    print(f"测试2 - 乘法: 10.5 × 3.2 = {float_result} (整数: {int_result}, 截断验证)")
-
-    # 测试3: 除法
-    int_result, float_result = node.calculate(10.0, 3.0, "除法 (÷)")
-    print(f"测试3 - 除法: 10.0 ÷ 3.0 = {float_result:.4f} (整数: {int_result})")
-
-    # 测试4: 幂运算
-    int_result, float_result = node.calculate(2.5, 3.0, "幂运算 (**)")
-    print(f"测试4 - 幂运算: 2.5 ^ 3.0 = {float_result} (整数: {int_result})")
-
-    # 测试5: 最大值
-    int_result, float_result = node.calculate(5.7, 8.3, "最大值")
-    print(f"测试5 - 最大值: max(5.7, 8.3) = {float_result} (整数: {int_result})")
-
-    # 测试6: 最小值
-    int_result, float_result = node.calculate(5.7, 8.3, "最小值")
-    print(f"测试6 - 最小值: min(5.7, 8.3) = {float_result} (整数: {int_result})")
-
-    # 测试7: 负数截断（验证向零取整）
-    int_result, float_result = node.calculate(-5.7, 2.0, "乘法 (×)")
-    print(f"测试7 - 负数截断: -5.7 × 2.0 = {float_result} (整数: {int_result}, 向零取整验证)")
-
-    print("\n✅ 所有测试完成！")

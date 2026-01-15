@@ -246,7 +246,7 @@ class XVideoSave(io.ComfyNode):
                     .run()
                 )
             except ffmpeg.Error as e:
-                raise RuntimeError(f"FFmpeg 合并失败") from e
+                raise RuntimeError(f"FFmpeg merge failed") from e
             
             # 删除临时音频文件
             os.unlink(temp_audio_path)

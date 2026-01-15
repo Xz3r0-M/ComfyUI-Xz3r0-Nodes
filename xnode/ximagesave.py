@@ -50,9 +50,9 @@ class XImageSave:
         images: 原始图像(透传)
         save_path: 保存的相对路径 (STRING)
 
-    使用示例:
-        filename_prefix="MyImage_%Y%m%d", subfolder="人物", compression_level=6
-        输出: images(原图), save_path="output/人物/MyImage_20260114.png"
+    Usage example:
+        filename_prefix="MyImage_%Y%m%d", subfolder="Characters", compression_level=6
+        Output: images(original), save_path="output/Characters/MyImage_20260114.png"
 
     元数据说明:
         - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
@@ -67,22 +67,22 @@ class XImageSave:
         return {
             "required": {
                 "images": ("IMAGE", {
-                    "tooltip": "输入图像张量 (B, H, W, C)"
+                    "tooltip": "Input image tensor (B, H, W, C)"
                 }),
                 "filename_prefix": ("STRING", {
                     "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                    "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+                    "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "subfolder": ("STRING", {
                     "default": "Images",
-                    "tooltip": "子文件夹名称(不支持路径分隔符，仅支持单个文件夹)，如: 人物 或 images_%Y%-%m%-%d%"
+                    "tooltip": "Subfolder name (no path separators allowed), e.g., Characters or images_%Y%-%m%-%d%"
                 }),
                 "compression_level": ("INT", {
                     "default": 5,
                     "min": 0,
                     "max": 9,
                     "step": 1,
-                    "tooltip": "PNG压缩级别(0=无压缩，9=最大压缩)"
+                    "tooltip": "PNG compression level (0=no compression, 9=max compression)"
                 })
             },
             "hidden": {
@@ -333,7 +333,7 @@ class XImageSave:
         if tensor.dim() == 3:
             numpy_array = tensor.numpy()
         else:
-            raise ValueError(f"不支持的张量维度: {tensor.dim()}，期望3维或4维")
+            raise ValueError(f"Unsupported tensor dimension: {tensor.dim()}, expected 3 or 4 dimensions")
 
         # 转换值范围从[0, 1]到[0, 255]，并确保值在有效范围内
         numpy_array = np.clip(255.0 * numpy_array, 0, 255).astype(np.uint8)
@@ -350,93 +350,9 @@ class XImageSave:
             mode = 'L'
             numpy_array = numpy_array.squeeze(2)
         else:
-            raise ValueError(f"不支持的通道数: {numpy_array.shape[2]}")
+            raise ValueError(f"Unsupported channel count: {numpy_array.shape[2]}")
 
         pil_image = Image.fromarray(numpy_array, mode=mode)
 
         return pil_image
 
-
-# 节点类映射（用于本地测试）
-if __name__ == "__main__":
-    print("XImageSave 节点已加载")
-    print(f"节点分类: {XImageSave.CATEGORY}")
-    print(f"输入类型: {XImageSave.INPUT_TYPES()}")
-    print(f"输出类型: {XImageSave.RETURN_TYPES}")
-
-    # 测试用例
-    print("\n=== 测试用例 ===")
-    node = XImageSave()
-
-    # 测试1: 路径清理
-    print("\n测试1 - 路径清理")
-    test_paths = [
-        "normal",
-        "../etc/passwd",
-        "../../../system",
-        "~/home/user",
-        "test/../hidden",
-        "file.txt",
-        "path/to/file",
-        "test|file",
-        "file<test>",
-    ]
-    for path in test_paths:
-        safe_path = node._sanitize_path(path)
-        print(f"  原始: '{path}' -> 安全: '{safe_path}'")
-
-    # 测试2: 日期时间替换
-    print("\n测试2 - 日期时间替换")
-    test_names = [
-        "image_%Y%m%d",
-        "photo_%Y%m%d_%H%M%S",
-        "test_%Y%/test_%m%",
-        "",
-        "no_placeholder",
-    ]
-    for name in test_names:
-        result = node._replace_datetime_placeholders(name)
-        print(f"  原始: '{name}' -> 替换: '{result}'")
-
-    # 测试3: 唯一文件名生成
-    print("\n测试3 - 唯一文件名生成")
-    test_dir = Path("test_output")
-    test_dir.mkdir(exist_ok=True)
-
-    # 创建测试文件
-    test_file = test_dir / "test_001.png"
-    test_file.touch()
-
-    for filename in ["test_001", "test_002", "test_001"]:
-        unique_name = node._get_unique_filename(test_dir, filename, ".png")
-        print(f"  '{filename}.png' -> '{unique_name}'")
-    
-    print("\n说明: 序列号使用5位数字格式(00001)，确保文件排序正确")
-
-    # 测试4: 压缩级别验证
-    print("\n测试4 - 压缩级别验证")
-    print("  compression_level=0: 无压缩(文件最大)")
-    print("  compression_level=3: 轻度压缩")
-    print("  compression_level=6: 中等压缩(推荐)")
-    print("  compression_level=9: 最大压缩(文件最小，保存最慢)")
-
-    # 清理测试文件
-    test_file.unlink()
-    test_dir.rmdir()
-
-    # 测试5: 组合测试
-    print("\n测试5 - 组合测试(路径清理+日期时间)")
-    test_cases = [
-        ("../backup/%Y%m%d", "backup_20260114"),
-        ("test|file_%H%M%S", "test_file_143025"),
-        ("photo_../secret/%d", "photo_secret_14"),
-        ("人物/女性", "人物_女性"),
-    ]
-    for input_path, expected_contains in test_cases:
-        safe_path = node._sanitize_path(input_path)
-        safe_path = node._replace_datetime_placeholders(safe_path)
-        print(f"  原始: '{input_path}'")
-        print(f"  结果: '{safe_path}'")
-        print(f"  期望包含: '{expected_contains}'")
-
-    print("\n✅ 所有测试完成！")

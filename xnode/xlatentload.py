@@ -67,10 +67,10 @@ class XLatentLoad:
         return {
             "optional": {
                 "latent_input": ("LATENT", {
-                    "tooltip": "从上游节点接收的Latent（优先级高于文件加载）"
+                    "tooltip": "Latent received from upstream node (priority over file loading)"
                 }),
                 "latent_file": ([""] + sorted(latent_files), {
-                    "tooltip": "从下拉菜单选择Latent文件（仅当输入端口为None时生效）"
+                    "tooltip": "Select latent file from dropdown (only active when input port is None)"
                 }),
             }
         }
@@ -110,7 +110,7 @@ class XLatentLoad:
 
             # 检查文件是否存在
             if not file_path.exists():
-                raise RuntimeError("接收端口和下拉菜单的Latent不存在")
+                raise RuntimeError("No latent provided via input port or file selection")
 
             # 加载Latent文件
             try:
@@ -125,10 +125,10 @@ class XLatentLoad:
                 return (samples,)
 
             except Exception as e:
-                raise RuntimeError(f"加载Latent文件失败: {str(e)}")
+                raise RuntimeError(f"Failed to load latent file: {str(e)}")
 
         # 优先级3: 两者都无效，弹出警告
-        raise RuntimeError("接收端口和下拉菜单的Latent不存在")
+        raise RuntimeError("No latent provided via input port or file selection")
 
     @classmethod
     def _get_latent_files(cls, directory: Path) -> List[str]:
@@ -156,112 +156,3 @@ class XLatentLoad:
 
         return latent_files
 
-
-# 节点类映射（用于本地测试）
-if __name__ == "__main__":
-    print("XLatentLoad 节点已加载")
-    print(f"节点分类: {XLatentLoad.CATEGORY}")
-    print(f"输入类型: {XLatentLoad.INPUT_TYPES()}")
-    print(f"输出类型: {XLatentLoad.RETURN_TYPES}")
-
-    # 测试用例
-    print("\n=== 测试用例 ===")
-    node = XLatentLoad()
-
-    # 测试1: Latent文件扫描
-    print("\n测试1 - Latent文件扫描")
-    try:
-        if HAS_COMFYUI:
-            output_dir = Path(folder_paths.get_output_directory())
-        else:
-            output_dir = Path.cwd()
-        print(f"  输出目录: {output_dir}")
-        
-        latent_files = XLatentLoad._get_latent_files(output_dir)
-        print(f"  找到 {len(latent_files)} 个.latent文件")
-        
-        if latent_files:
-            print("  前5个文件:")
-            for i, file in enumerate(latent_files[:5], 1):
-                print(f"    {i}. {file}")
-        else:
-            print("  未找到.latent文件")
-            print("  提示: 请先在ComfyUI中生成并保存一些Latent文件")
-    except Exception as e:
-        print(f"  错误: {e}")
-
-    # 测试2: 输入优先级测试
-    print("\n测试2 - 输入优先级测试")
-    
-    # 创建模拟的Latent输入
-    mock_latent_input = {
-        "samples": torch.randn(1, 4, 32, 32)
-    }
-    
-    # 测试2a: 有输入端口的情况
-    print("\n  测试2a - 有输入端口")
-    try:
-        result = node.load(latent_input=mock_latent_input, latent_file="")
-        print(f"    结果: 成功返回输入的Latent")
-        print(f"    Latent形状: {result[0]['samples'].shape}")
-    except Exception as e:
-        print(f"    错误: {e}")
-
-    # 测试2b: 无输入端口，无文件选择
-    print("\n  测试2b - 无输入端口，无文件选择")
-    try:
-        result = node.load(latent_input=None, latent_file="")
-        print(f"    结果: {result}")
-    except RuntimeError as e:
-        print(f"    预期错误: {e}")
-
-    # 测试2c: 无输入端口，文件不存在
-    print("\n  测试2c - 无输入端口，文件不存在")
-    try:
-        result = node.load(latent_input=None, latent_file="nonexistent.latent")
-        print(f"    结果: {result}")
-    except RuntimeError as e:
-        print(f"    预期错误: {e}")
-
-    # 测试3: 实际文件加载测试（如果存在文件）
-    print("\n测试3 - 实际文件加载测试")
-    try:
-        if HAS_COMFYUI:
-            output_dir = Path(folder_paths.get_output_directory())
-        else:
-            output_dir = Path.cwd()
-        latent_files = XLatentLoad._get_latent_files(output_dir)
-        
-        if latent_files:
-            test_file = latent_files[0]
-            print(f"  测试文件: {test_file}")
-            
-            try:
-                result = node.load(latent_input=None, latent_file=test_file)
-                print(f"  加载成功!")
-                print(f"  Latent形状: {result[0]['samples'].shape}")
-                print(f"  Latent设备: {result[0]['samples'].device}")
-                print(f"  Latent类型: {result[0]['samples'].dtype}")
-            except Exception as e:
-                print(f"  加载失败: {e}")
-        else:
-            print("  跳过: 未找到可用的.latent文件")
-    except Exception as e:
-        print(f"  错误: {e}")
-
-    # 测试4: INPUT_TYPES动态更新测试
-    print("\n测试4 - INPUT_TYPES动态更新测试")
-    print("  说明: INPUT_TYPES会在每次打开节点菜单时自动更新")
-    print("  当前可用文件数量:")
-    input_types = XLatentLoad.INPUT_TYPES()
-    file_options = input_types["optional"]["latent_file"][0]
-    print(f"  总计: {len(file_options)} 个选项")
-    print(f"  其中空选项: 1 个")
-    print(f"  文件选项: {len(file_options) - 1} 个")
-
-    print("\n✅ 所有测试完成！")
-    print("\n使用说明:")
-    print("1. 连接上游Latent节点到输入端口时，将直接使用该Latent")
-    print("2. 未连接输入端口时，从下拉菜单选择.latent文件加载")
-    print("3. 如果输入为空且文件不存在，将弹出错误提示")
-    print("4. 下拉菜单会自动扫描输出目录及其所有子文件夹中的.latent文件")

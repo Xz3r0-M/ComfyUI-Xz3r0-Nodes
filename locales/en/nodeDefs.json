@@ -1,0 +1,184 @@
+{
+  "XMath": {
+    "display_name": "XMath",
+    "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
+    "inputs": {
+      "operation": {
+        "name": "Operation",
+        "tooltip": "Mathematical operation type",
+        "options": {
+          "Addition (+)": "Addition (+)",
+          "Subtraction (-)": "Subtraction (-)",
+          "Multiplication (×)": "Multiplication (×)",
+          "Division (÷)": "Division (÷)",
+          "Power (**)": "Power (**)",
+          "Modulo (%)": "Modulo (%)",
+          "Maximum": "Maximum",
+          "Minimum": "Minimum"
+        }
+      },
+      "a": {
+        "name": "Value A",
+        "tooltip": "First input value"
+      },
+      "b": {
+        "name": "Value B",
+        "tooltip": "Second input value"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "result_int",
+        "tooltip": "Integer result (rounded)"
+      },
+      "1": {
+        "name": "result_float",
+        "tooltip": "Floating point result"
+      }
+    }
+  },
+  "XResolution": {
+    "display_name": "XResolution",
+    "description": "Resolution setting node with standard presets and custom scaling.",
+    "inputs": {
+      "preset": {
+        "name": "Preset",
+        "tooltip": "Standard resolution presets"
+      },
+      "width": {
+        "name": "Width",
+        "tooltip": "Resolution width"
+      },
+      "height": {
+        "name": "Height",
+        "tooltip": "Resolution height"
+      },
+      "scale": {
+        "name": "Scale",
+        "tooltip": "Scale multiplier"
+      },
+      "swap": {
+        "name": "Swap",
+        "tooltip": "Swap width and height"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "width",
+        "tooltip": "Output width"
+      },
+      "1": {
+        "name": "height",
+        "tooltip": "Output height"
+      }
+    }
+  },
+  "XImageSave": {
+    "display_name": "XImageSave",
+    "description": "Advanced image saving node with custom filename, subfolder support, and datetime placeholders.",
+    "inputs": {
+      "images": {
+        "name": "Images",
+        "tooltip": "Input image tensor (B, H, W, C)"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), e.g., Characters or images_%Y%-%m%-%d%"
+      },
+      "compression_level": {
+        "name": "Compression Level",
+        "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "images",
+        "tooltip": "Input images (passed through)"
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path"
+      }
+    }
+  },
+  "XLatentLoad": {
+    "display_name": "XLatentLoad",
+    "description": "Latent loading node supporting both input port and file loading with automatic format detection.",
+    "inputs": {
+      "latent_input": {
+        "name": "Latent Input",
+        "tooltip": "Input latent from another node (higher priority than file loading)"
+      },
+      "latent_file": {
+        "name": "Latent File",
+        "tooltip": "Latent file to load from ComfyUI output directory"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "latent",
+        "tooltip": "Loaded latent tensor"
+      }
+    }
+  },
+  "XLatentSave": {
+    "display_name": "XLatentSave",
+    "description": "Latent saving node with metadata support and custom filename.",
+    "inputs": {
+      "latent": {
+        "name": "Latent",
+        "tooltip": "Input latent tensor to save"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "latent",
+        "tooltip": "Input latent (passed through)"
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path"
+      }
+    }
+  },
+  "XVideoSave": {
+    "display_name": "XVideoSave",
+    "description": "Video saving node with H.265 encoding support and custom parameters.",
+    "inputs": {
+      "video": {
+        "name": "Video",
+        "tooltip": "The video to save."
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed)"
+      },
+      "crf": {
+        "name": "Video CRF",
+        "tooltip": "Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "save_path",
+        "tooltip": "Saved file path"
+      }
+    }
+  }
+}

@@ -71,15 +71,15 @@ class XLatentSave:
         return {
             "required": {
                 "latent": ("LATENT", {
-                    "tooltip": "输入Latent张量"
+                    "tooltip": "Input latent tensor"
                 }),
                 "filename_prefix": ("STRING", {
                     "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                    "tooltip": "文件名前缀,支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+                    "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "subfolder": ("STRING", {
                     "default": "",
-                    "tooltip": "子文件夹名称(不支持路径分隔符,仅支持单个文件夹),如: Latents 或 latents_%Y%-%m%-%d%"
+                    "tooltip": "Subfolder name (no path separators allowed), e.g., Latents or latents_%Y%-%m%-%d%"
                 })
             },
             "hidden": {
@@ -109,7 +109,7 @@ class XLatentSave:
         """
         # 检查ComfyUI环境是否可用
         if not COMFYUI_AVAILABLE:
-            raise RuntimeError("ComfyUI环境不可用,无法保存Latent文件")
+            raise RuntimeError("ComfyUI environment not available, cannot save latent files")
 
         # 获取ComfyUI默认输出目录
         output_dir = self._get_output_directory()
@@ -323,125 +323,3 @@ class XLatentSave:
 
             counter += 1
 
-
-# 节点类映射(用于本地测试)
-if __name__ == "__main__":
-    print("XLatentSave 节点已加载")
-    print(f"节点分类: {XLatentSave.CATEGORY}")
-    print(f"输入类型: {XLatentSave.INPUT_TYPES()}")
-    print(f"输出类型: {XLatentSave.RETURN_TYPES}")
-    
-    # 检查ComfyUI环境
-    if not COMFYUI_AVAILABLE:
-        print("\n⚠️  ComfyUI环境不可用,运行独立测试模式")
-
-    # 测试用例
-    print("\n=== 测试用例 ===")
-    node = XLatentSave()
-
-    # 测试1: 路径清理
-    print("\n测试1 - 路径清理")
-    test_paths = [
-        "normal",
-        "../etc/passwd",
-        "../../../system",
-        "~/home/user",
-        "test/../hidden",
-        "file.txt",
-        "path/to/file",
-        "test|file",
-        "file<test>",
-    ]
-    for path in test_paths:
-        safe_path = node._sanitize_path(path)
-        print(f"  原始: '{path}' -> 安全: '{safe_path}'")
-
-    # 测试2: 日期时间替换
-    print("\n测试2 - 日期时间替换")
-    test_names = [
-        "latent_%Y%%m%%d%",
-        "photo_%Y%%m%%d%_%H%%M%%S%",
-        "test_%Y%/test_%m%",
-        "",
-        "no_placeholder",
-    ]
-    for name in test_names:
-        result = node._replace_datetime_placeholders(name)
-        print(f"  原始: '{name}' -> 替换: '{result}'")
-
-    # 测试3: 唯一文件名生成
-    print("\n测试3 - 唯一文件名生成")
-    test_dir = Path("test_output")
-    test_dir.mkdir(exist_ok=True)
-
-    # 创建测试文件
-    test_file1 = test_dir / "test_001.latent"
-    test_file2 = test_dir / "test_001_00001.latent"
-    test_file1.touch()
-    test_file2.touch()
-
-    for filename in ["test_001", "test_002", "test_001"]:
-        unique_name = node._get_unique_filename(test_dir, filename, ".latent")
-        print(f"  '{filename}.latent' -> '{unique_name}'")
-
-    print("\n说明: 文件不存在时不添加序列号，存在时从00001开始添加")
-
-    # 清理测试文件
-    test_file1.unlink()
-    test_file2.unlink()
-    test_dir.rmdir()
-
-    # 测试4: 组合测试
-    print("\n测试4 - 组合测试(路径清理+日期时间)")
-    test_cases = [
-        ("../backup/%Y%%m%%d%", "backup_20260114"),
-        ("test|file_%H%%M%%S%", "test_file_143025"),
-        ("photo_../secret/%d%", "photo_secret_14"),
-        ("Latents/人物", "Latents_人物"),
-    ]
-    for input_path, expected_contains in test_cases:
-        safe_path = node._sanitize_path(input_path)
-        safe_path = node._replace_datetime_placeholders(safe_path)
-        print(f"  原始: '{input_path}'")
-        print(f"  结果: '{safe_path}'")
-        print(f"  期望包含: '{expected_contains}'")
-
-    # 测试5: Latent保存模拟测试
-    print("\n测试5 - Latent保存模拟测试")
-    print("  说明: 此测试模拟Latent保存流程(不实际保存文件)")
-
-    if COMFYUI_AVAILABLE:
-        # 模拟latent数据
-        mock_latent = {
-            "samples": torch.randn(1, 4, 32, 32)
-        }
-
-        # 测试文件名处理
-        test_filename = "test_latent"
-        test_subfolder = "Latents"
-
-        # 处理日期时间
-        safe_filename = node._replace_datetime_placeholders(node._sanitize_path(test_filename))
-        safe_subfolder = node._replace_datetime_placeholders(node._sanitize_path(test_subfolder))
-
-        print(f"  原始文件名: {test_filename}")
-        print(f"  安全文件名: {safe_filename}")
-        print(f"  原始子文件夹: {test_subfolder}")
-        print(f"  安全子文件夹: {safe_subfolder}")
-    else:
-        print("  跳过Latent保存测试(ComfyUI环境不可用)")
-
-    # 测试元数据生成
-    print("\n测试6 - 元数据生成测试")
-    test_prompt = {"text": "a beautiful landscape"}
-    test_extra = {"workflow": {"version": 1.0}}
-
-    metadata = node._generate_metadata(test_prompt, test_extra)
-    if metadata:
-        print("  元数据生成成功:")
-        for key, value in metadata.items():
-            print(f"    {key}: {value[:50]}...")
-    else:
-        print("  元数据为空")
-
-    print("\n✅ 所有测试完成！")

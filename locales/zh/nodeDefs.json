@@ -1,0 +1,184 @@
+{
+  "XMath": {
+    "display_name": "XMath",
+    "description": "数学运算节点，支持加、减、乘、除、幂运算和取模操作，提供双输出格式。",
+    "inputs": {
+      "operation": {
+        "name": "运算类型",
+        "tooltip": "数学运算类型",
+        "options": {
+          "Addition (+)": "加法 (+)",
+          "Subtraction (-)": "减法 (-)",
+          "Multiplication (×)": "乘法 (×)",
+          "Division (÷)": "除法 (÷)",
+          "Power (**)": "幂运算 (**)",
+          "Modulo (%)": "取模 (%)",
+          "Maximum": "最大值",
+          "Minimum": "最小值"
+        }
+      },
+      "a": {
+        "name": "数值 A",
+        "tooltip": "第一个输入值"
+      },
+      "b": {
+        "name": "数值 B",
+        "tooltip": "第二个输入值"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "整数结果",
+        "tooltip": "整数结果（四舍五入）"
+      },
+      "1": {
+        "name": "浮点结果",
+        "tooltip": "浮点数结果"
+      }
+    }
+  },
+  "XResolution": {
+    "display_name": "XResolution",
+    "description": "分辨率设置节点，提供标准预设和自定义缩放功能。",
+    "inputs": {
+      "preset": {
+        "name": "分辨率预设",
+        "tooltip": "标准分辨率预设"
+      },
+      "width": {
+        "name": "宽度",
+        "tooltip": "分辨率宽度"
+      },
+      "height": {
+        "name": "高度",
+        "tooltip": "分辨率高度"
+      },
+      "scale": {
+        "name": "缩放倍率",
+        "tooltip": "缩放倍率"
+      },
+      "swap": {
+        "name": "交换宽高",
+        "tooltip": "交换宽度和高度"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "宽度",
+        "tooltip": "输出宽度"
+      },
+      "1": {
+        "name": "高度",
+        "tooltip": "输出高度"
+      }
+    }
+  },
+  "XImageSave": {
+    "display_name": "XImageSave",
+    "description": "高级图像保存节点，支持自定义文件名、子文件夹和日期时间占位符。",
+    "inputs": {
+      "images": {
+        "name": "图像",
+        "tooltip": "输入图像张量 (B, H, W, C)"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符，仅支持单个文件夹)，如: 人物 或 images_%Y%-%m%-%d%"
+      },
+      "compression_level": {
+        "name": "压缩级别",
+        "tooltip": "PNG压缩级别(0=无压缩，9=最大压缩)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "输入图像（直接传递）"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "保存的文件路径"
+      }
+    }
+  },
+  "XLatentLoad": {
+    "display_name": "XLatentLoad",
+    "description": "Latent加载节点，支持从输入端口或文件加载，自动检测格式。",
+    "inputs": {
+      "latent_input": {
+        "name": "Latent",
+        "tooltip": "来自其他节点的Latent输入（优先级高于文件加载）"
+      },
+      "latent_file": {
+        "name": "Latent文件",
+        "tooltip": "从ComfyUI输出目录加载的Latent文件"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Latent",
+        "tooltip": "加载的Latent张量"
+      }
+    }
+  },
+  "XLatentSave": {
+    "display_name": "XLatentSave",
+    "description": "Latent保存节点，支持元数据保存和自定义文件名。",
+    "inputs": {
+      "latent": {
+        "name": "Latent",
+        "tooltip": "要保存的输入Latent张量"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Latent",
+        "tooltip": "输入Latent（直接传递）"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "保存的文件路径"
+      }
+    }
+  },
+  "XVideoSave": {
+    "display_name": "XVideoSave",
+    "description": "视频保存节点，支持H.265编码和自定义参数。",
+    "inputs": {
+      "video": {
+        "name": "视频",
+        "tooltip": "要保存的视频"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符)"
+      },
+      "crf": {
+        "name": "视频CRF",
+        "tooltip": "质量参数 (0=无损，40=最差质量)，数值越高质量越低文件越小"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "保存路径",
+        "tooltip": "保存的文件路径"
+      }
+    }
+  }
+}
