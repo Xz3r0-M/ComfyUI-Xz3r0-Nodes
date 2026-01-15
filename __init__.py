@@ -87,7 +87,7 @@ def discover_nodes(plugin_dir: Optional[Path] = None) -> List[Type[Any]]:
     xnode_dir = plugin_dir / "xnode"
 
     if not xnode_dir.exists():
-        print(f"[Xz3r0-Nodes] ⚠ Warning: xnode directory does not exist: {xnode_dir}")
+        print(f"[Xz3r0-Nodes] ⚠ Warning: xnode directory does not exist")
         return []
 
     nodes = []
