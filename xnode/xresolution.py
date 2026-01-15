@@ -136,7 +136,7 @@ class XResolution:
         Returns:
             (output_width, output_height): 处理后的宽度和高度
         """
-        if preset in self.PRESETS and preset != "Custom (自定义)":
+        if preset in self.PRESETS and preset != "Custom":
             preset_width, preset_height = self.PRESETS[preset]
             if preset_width > 0 and preset_height > 0:
                 width = preset_width

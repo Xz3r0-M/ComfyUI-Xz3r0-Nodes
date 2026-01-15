@@ -17,7 +17,7 @@ torch           #   XImageSave, XLatentLoad, XLatentSave, XVideoSave
 numpy           #   XImageSave, XVideoSave
 
 # 图像处理
-Pillow          #   XImageSave, XVideoSave
+Pillow          #   XImageSave
 
 # 张量安全保存和加载
 safetensors     #   XLatentLoad

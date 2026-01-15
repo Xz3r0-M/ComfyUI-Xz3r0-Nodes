@@ -158,7 +158,7 @@
     "description": "Video saving node with H.265 encoding support and custom parameters.",
     "inputs": {
       "video": {
-        "name": "Video",
+        "name": "VIDEO",
         "tooltip": "The video to save."
       },
       "filename_prefix": {
