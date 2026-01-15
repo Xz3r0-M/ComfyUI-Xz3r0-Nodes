@@ -119,12 +119,12 @@ pip install -r requirements.txt
 - 批量图像保存支持
 
 **输入**:
-- `image` (IMAGE): 输入图像张量
+- `images` (IMAGE)I: 输入图像张量
 - `filename_prefix` (STRING): 文件名前缀
 - `subfolder` (STRING): 子文件夹名称
 
 **输出**:
-- `image` (IMAGE): 原始图像（透传）
+- `images` (IMAGE): 原始图像（透传）
 - `save_path` (STRING): 保存的相对路径
 
 ---
