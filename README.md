@@ -1,8 +1,6 @@
 <div align="center">
 
-# ComfyUI-Xz3r0-Nodes
-
-**🎨 ComfyUI 自定义节点**
+# ♾️ ComfyUI-Xz3r0-Nodes ♾️
 
 [![License](https://img.shields.io/badge/license-To%20be%20determined-blue.svg)](LICENSE)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
