@@ -51,12 +51,14 @@ def check_dependencies(plugin_dir: Optional[Path] = None) -> Tuple[List[str], Li
             # e.g.: torch>=2.0.0 -> torch
             #       numpy==1.24.0 -> numpy
             #       Pillow -> Pillow
-            match = re.match(r'^([a-zA-Z0-9_-]+)', line)
+            #       ffmpeg-python -> ffmpeg-python
+            match = re.match(r'^([a-zA-Z0-9_.-]+)', line)
             if match:
                 package_name = match.group(1)
 
                 # Use importlib.metadata to directly check if pip package is installed
                 # This method uses pip package name directly, no need to know module name
+                # importlib.metadata.distribution() is case-insensitive
                 try:
                     importlib.metadata.distribution(package_name)
                     installed_packages.append(package_name)
