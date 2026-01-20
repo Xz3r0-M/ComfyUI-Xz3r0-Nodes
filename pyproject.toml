@@ -1,0 +1,37 @@
+[project]
+name = "xz3r0-nodes"
+description = "Some custom nodes: XMath, XResolution, XImageSave, XVideoSave, XLatentLoad, XLatentSave ...and more"
+version = "1.0.0"
+license = {file = "LICENSE"} 
+# classifiers = [
+#     # For OS-independent nodes (works on all operating systems)
+#     "Operating System :: OS Independent",
+#
+#     # OR for OS-specific nodes, specify the supported systems:
+#     "Operating System :: Microsoft :: Windows",  # Windows specific
+#     "Operating System :: POSIX :: Linux",  # Linux specific
+#     "Operating System :: MacOS",  # macOS specific
+#
+#     # GPU Accelerator support. Pick the ones that are supported by your extension.
+#     "Environment :: GPU :: NVIDIA CUDA",    # NVIDIA CUDA support
+#     "Environment :: GPU :: AMD ROCm",       # AMD ROCm support
+#     "Environment :: GPU :: Intel Arc",      # Intel Arc support
+#     "Environment :: NPU :: Huawei Ascend",  # Huawei Ascend support
+#     "Environment :: GPU :: Apple Metal",    # Apple Metal support
+# ]
+
+dependencies = ["# ComfyUI-Xz3r0-Nodes 依赖清单", "# ========================================", "# 这个文件列出了项目所需的所有Python依赖包", "#", "# 安装方法:", "#   pip install -r requirements.txt", "#", "# 注意: ComfyUI环境通常已经包含了核心依赖（torch、numpy等）", "#       以下列出的是最小兼容版本要求", "# ============================================================================", "# 核心依赖（实际使用的节点）", "# ============================================================================", "# 深度学习和张量操作", "torch           #   XImageSave, XLatentLoad, XLatentSave, XVideoSave", "# 数值计算", "numpy           #   XImageSave, XVideoSave", "# 图像处理", "Pillow          #   XImageSave", "# 张量安全保存和加载", "safetensors     #   XLatentLoad", "# 视频处理", "ffmpeg-python   #   XVideoSave", "# ============================================================================", "# 测试依赖(开发用)", "# ============================================================================", "# pytest>=7.4.0", "# pytest-cov>=4.1.0", "# ============================================================================", "# 代码质量工具（开发用）", "# ============================================================================", "# black>=23.0.0", "# ruff>=0.1.0", "# mypy>=1.0.0", "# pylint>=3.0.0"]
+
+[project.urls]
+Repository = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes"
+#  Used by Comfy Registry https://registry.comfy.org
+Documentation = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki"
+"Bug Tracker" = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/issues"
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI-Xz3r0-Nodes"
+Icon = ""
+includes = [] 
+# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
+
