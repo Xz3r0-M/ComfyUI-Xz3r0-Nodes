@@ -29,7 +29,7 @@ Documentation = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki"
 "Bug Tracker" = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/issues"
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "xz3r0"
 DisplayName = "ComfyUI-Xz3r0-Nodes"
 Icon = ""
 includes = [] 
