@@ -43,14 +43,17 @@
     "inputs": {
       "preset": {
         "name": "Preset",
-        "tooltip": "Standard resolution presets"
+        "tooltip": "Standard resolution presets",
+        "options": {
+          "Custom": "Custom"
+        }
       },
       "width": {
-        "name": "Width",
+        "name": "Custom Width",
         "tooltip": "Resolution width"
       },
       "height": {
-        "name": "Height",
+        "name": "Custom Height",
         "tooltip": "Resolution height"
       },
       "scale": {

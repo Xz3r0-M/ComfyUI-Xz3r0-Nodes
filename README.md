@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ### 方法 2: ComfyUI Manager（推荐）
 
 1. 打开ComfyUI Manager
-2. 搜索 "Xz3r0-Nodes"
+2. 搜索 "ComfyUI-Xz3r0-Nodes"
 3. 点击安装按钮
 
 ---
@@ -63,7 +63,7 @@ pip install -r requirements.txt
 </div>
 
 <details>
-<summary><strong>📚 节点列表</strong>（点击展开/折叠）</summary>
+<summary><strong>📚 节点列表</strong>（点击展开/折叠）👈</summary>
 
 ### 🛠️ 工具节点 (♾️ Xz3r0/Tools)
 
