@@ -59,14 +59,14 @@ pip install -r requirements.txt
 
 <div align="center">
 
-<img src="preview/preview.png" alt="项目预览" width="400">
+<img src="preview/preview.png" alt="项目预览" width="800">
 
 </div>
 
-<details>
-<summary><strong>📚 节点列表</strong>（点击展开/折叠）👈</summary>
+## 📚 节点列表和说明
 
-### 🛠️ 工具节点 (♾️ Xz3r0/Tools)
+<details>
+<summary><strong>🛠️ 工具节点 (♾️ Xz3r0/Tools)👈</strong></summary>
 
 #### XMath
 
@@ -104,9 +104,12 @@ pip install -r requirements.txt
 - `width` (INT): 最终宽度
 - `height` (INT): 最终高度
 
----
+</details>
 
-### 🖼️ 图像节点 (♾️ Xz3r0/Image)
+
+
+<details>
+<summary><strong>🖼️ 图像节点 (♾️ Xz3r0/Image)👈</strong></summary>
 
 #### XImageSave
 
@@ -128,9 +131,12 @@ pip install -r requirements.txt
 - `images` (IMAGE): 原始图像（透传）
 - `save_path` (STRING): 保存的相对路径
 
----
+</details>
 
-### 🎬 视频节点 (♾️ Xz3r0/Video)
+
+
+<details>
+<summary><strong>🎬 视频节点 (♾️ Xz3r0/Video)👈</strong></summary>
 
 #### XVideoSave
 
@@ -170,9 +176,12 @@ pip install -r requirements.txt
 - preset: 可配置（ultrafast到veryslow）
 - 容器格式: MKV
 
----
+</details>
 
-### 🔮 Latent节点 (♾️ Xz3r0/Latent)
+
+
+<details>
+<summary><strong>🔮 Latent节点 (♾️ Xz3r0/Latent)👈</strong></summary>
 
 #### XLatentLoad
 
@@ -225,9 +234,12 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - `latent` (LATENT): 原始Latent（透传）
 - `save_path` (STRING): 保存的相对路径
 
----
+</details>
 
-### 📝 类型节点 (♾️ Xz3r0/Types)
+
+
+<details>
+<summary><strong>📝 数据类节点 (♾️ Xz3r0/Types)👈</strong></summary>
 
 #### XStringGroup
 
