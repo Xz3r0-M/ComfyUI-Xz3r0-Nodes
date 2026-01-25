@@ -31,7 +31,14 @@
 
 ## 🚀 快速开始
 
-### 方法 1: 手动安装
+### 方法 1: ComfyUI-Manager（推荐）
+
+1. 使用 [ComfyUI-Manager](https://github.com/Comfy-Org/ComfyUI-Manager)
+2. 搜索 `ComfyUI-Xz3r0-Nodes`
+3. 点击安装按钮
+
+
+### 方法 2: 手动安装
 
 1. **克隆仓库到ComfyUI的 `custom_nodes` 目录**
 
@@ -49,12 +56,6 @@ pip install -r requirements.txt
 
 3. **重启ComfyUI**
 
-### 方法 2: ComfyUI Manager（推荐）
-
-1. 打开ComfyUI Manager
-2. 搜索 "ComfyUI-Xz3r0-Nodes"
-3. 点击安装按钮
-
 ---
 
 <div align="center">
@@ -68,7 +69,7 @@ pip install -r requirements.txt
 <details>
 <summary><strong>🛠️ 工具节点 (♾️ Xz3r0/Tools)👈</strong></summary>
 
-#### XMath
+### 🔢 XMath
 
 基础数学运算节点，支持双输出格式（整数+浮点数）。
 
@@ -83,7 +84,8 @@ pip install -r requirements.txt
 - `int_result` (INT): 整数结果（截断小数）
 - `float_result` (FLOAT): 浮点数结果（精确值）
 
-#### XResolution
+
+### 📐 XResolution
 
 分辨率设置节点，提供标准分辨率预设和自定义功能。
 
@@ -111,7 +113,7 @@ pip install -r requirements.txt
 <details>
 <summary><strong>🖼️ 图像节点 (♾️ Xz3r0/Image)👈</strong></summary>
 
-#### XImageSave
+### 💾 XImageSave
 
 图像保存节点，支持自定义文件名和子文件夹管理。
 
@@ -138,7 +140,7 @@ pip install -r requirements.txt
 <details>
 <summary><strong>🎬 视频节点 (♾️ Xz3r0/Video)👈</strong></summary>
 
-#### XVideoSave
+### 🎬 XVideoSave
 
 视频保存节点，使用FFmpeg将图像序列保存为视频。
 
@@ -183,7 +185,7 @@ pip install -r requirements.txt
 <details>
 <summary><strong>🔮 Latent节点 (♾️ Xz3r0/Latent)👈</strong></summary>
 
-#### XLatentLoad
+### 📥 XLatentLoad
 
 Latent加载节点，支持从输入端口或文件加载Latent。
 
@@ -207,7 +209,8 @@ Latent加载节点，支持从输入端口或文件加载Latent。
 2. 如果输入端口为None，则从下拉菜单选择的文件加载Latent
 3. 如果输入端口为None且文件不存在，弹出错误提示
 
-#### XLatentSave
+
+### 📤 XLatentSave
 
 Latent保存节点，支持自定义文件名和元数据保存。
 
@@ -241,7 +244,7 @@ Latent保存节点，支持自定义文件名和元数据保存。
 <details>
 <summary><strong>📝 数据类节点 (♾️ Xz3r0/Types)👈</strong></summary>
 
-#### XStringGroup
+### 🔗 XStringGroup
 
 字符串组合节点，支持多行输入和自定义分隔符。
 
