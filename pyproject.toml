@@ -1,6 +1,6 @@
 [project]
 name = "xz3r0-nodes"
-description = "Some custom nodes: XMath, XResolution, XImageSave, XVideoSave, XLatentLoad, XLatentSave ...and more"
+description = "Some custom nodes: XMath, XResolution, XImageSave, XVideoSave, XLatentLoad, XLatentSave, XStringGroup ...and more"
 version = "1.0.2"
 license = {file = "LICENSE"} 
 # classifiers = [
