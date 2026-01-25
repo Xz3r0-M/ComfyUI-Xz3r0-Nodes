@@ -43,14 +43,14 @@
     "inputs": {
       "preset": {
         "name": "Preset",
-        "tooltip": "Standard resolution presets"
+        "tooltip": "Custom or standard resolution presets"
       },
       "width": {
-        "name": "Width",
+        "name": "Custom Width",
         "tooltip": "Resolution width"
       },
       "height": {
-        "name": "Height",
+        "name": "Custom Height",
         "tooltip": "Resolution height"
       },
       "scale": {
@@ -187,6 +187,113 @@
           "slower": "slower",
           "veryslow": "veryslow"
         }
+      }
+    }
+  },
+  "XStringGroup": {
+    "display_name": "XStringGroup",
+    "description": "Groups 5 multiline string inputs with customizable separation methods between them.",
+    "inputs": {
+      "select_string": {
+        "name": "Select String",
+        "tooltip": "Select which string to output (1-5)",
+        "options": {
+          "1": "1",
+          "2": "2",
+          "3": "3",
+          "4": "4",
+          "5": "5"
+        }
+      },
+      "string_1": {
+        "name": "String 1",
+        "tooltip": "First multiline string input"
+      },
+      "separation_method_1_2": {
+        "name": "Separation method 1-2",
+        "tooltip": "Separation method between String 1 and String 2",
+        "options": {
+          "newline": "Newline",
+          "space": "Space",
+          "comma": "Comma",
+          "period": "Period"
+        }
+      },
+      "string_2": {
+        "name": "String 2",
+        "tooltip": "Second multiline string input"
+      },
+      "separation_method_2_3": {
+        "name": "Separation method 2-3",
+        "tooltip": "Separation method between String 2 and String 3",
+        "options": {
+          "newline": "Newline",
+          "space": "Space",
+          "comma": "Comma",
+          "period": "Period"
+        }
+      },
+      "string_3": {
+        "name": "String 3",
+        "tooltip": "Third multiline string input"
+      },
+      "separation_method_3_4": {
+        "name": "Separation method 3-4",
+        "tooltip": "Separation method between String 3 and String 4",
+        "options": {
+          "newline": "Newline",
+          "space": "Space",
+          "comma": "Comma",
+          "period": "Period"
+        }
+      },
+      "string_4": {
+        "name": "String 4",
+        "tooltip": "Fourth multiline string input"
+      },
+      "separation_method_4_5": {
+        "name": "Separation method 4-5",
+        "tooltip": "Separation method between String 4 and String 5",
+        "options": {
+          "newline": "Newline",
+          "space": "Space",
+          "comma": "Comma",
+          "period": "Period"
+        }
+      },
+      "string_5": {
+        "name": "String 5",
+        "tooltip": "Fifth multiline string input"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "All Strings",
+        "tooltip": "Output of all grouped strings (with separation methods)"
+      },
+      "1": {
+        "name": "Selected String",
+        "tooltip": "Selected string output based on select_string"
+      },
+      "2": {
+        "name": "String 1",
+        "tooltip": "Original output of String 1"
+      },
+      "3": {
+        "name": "String 2",
+        "tooltip": "Original output of String 2"
+      },
+      "4": {
+        "name": "String 3",
+        "tooltip": "Original output of String 3"
+      },
+      "5": {
+        "name": "String 4",
+        "tooltip": "Original output of String 4"
+      },
+      "6": {
+        "name": "String 5",
+        "tooltip": "Original output of String 5"
       }
     }
   }

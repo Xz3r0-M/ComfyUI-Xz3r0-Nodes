@@ -43,14 +43,14 @@
     "inputs": {
       "preset": {
         "name": "分辨率预设",
-        "tooltip": "标准分辨率预设"
+        "tooltip": "自定义或标准分辨率预设"
       },
       "width": {
-        "name": "宽度",
+        "name": "自定义宽度",
         "tooltip": "分辨率宽度"
       },
       "height": {
-        "name": "高度",
+        "name": "自定义高度",
         "tooltip": "分辨率高度"
       },
       "scale": {
@@ -187,6 +187,113 @@
           "slower": "较慢",
           "veryslow": "很慢"
         }
+      }
+    }
+  },
+  "XStringGroup": {
+    "display_name": "XStringGroup",
+    "description": "组合5个多行字符串输入，可在它们之间选择不同的分隔方式。",
+    "inputs": {
+      "select_string": {
+        "name": "选择字符串",
+        "tooltip": "选择要输出的字符串 (1-5)",
+        "options": {
+          "1": "1",
+          "2": "2",
+          "3": "3",
+          "4": "4",
+          "5": "5"
+        }
+      },
+      "string_1": {
+        "name": "字符串 1",
+        "tooltip": "第一个多行字符串输入"
+      },
+      "separation_method_1_2": {
+        "name": "分隔方式 1-2",
+        "tooltip": "字符串 1 和字符串 2 之间的分隔方式",
+        "options": {
+          "newline": "换行",
+          "space": "空格",
+          "comma": "逗号",
+          "period": "句号"
+        }
+      },
+      "string_2": {
+        "name": "字符串 2",
+        "tooltip": "第二个多行字符串输入"
+      },
+      "separation_method_2_3": {
+        "name": "分隔方式 2-3",
+        "tooltip": "字符串 2 和字符串 3 之间的分隔方式",
+        "options": {
+          "newline": "换行",
+          "space": "空格",
+          "comma": "逗号",
+          "period": "句号"
+        }
+      },
+      "string_3": {
+        "name": "字符串 3",
+        "tooltip": "第三个多行字符串输入"
+      },
+      "separation_method_3_4": {
+        "name": "分隔方式 3-4",
+        "tooltip": "字符串 3 和字符串 4 之间的分隔方式",
+        "options": {
+          "newline": "换行",
+          "space": "空格",
+          "comma": "逗号",
+          "period": "句号"
+        }
+      },
+      "string_4": {
+        "name": "字符串 4",
+        "tooltip": "第四个多行字符串输入"
+      },
+      "separation_method_4_5": {
+        "name": "分隔方式 4-5",
+        "tooltip": "字符串 4 和字符串 5 之间的分隔方式",
+        "options": {
+          "newline": "换行",
+          "space": "空格",
+          "comma": "逗号",
+          "period": "句号"
+        }
+      },
+      "string_5": {
+        "name": "字符串 5",
+        "tooltip": "第五个多行字符串输入"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "所有字符串",
+        "tooltip": "组合所有字符串(带有分隔方式)的输出"
+      },
+      "1": {
+        "name": "选择的字符串",
+        "tooltip": "由选择字符串栏所选择的输出"
+      },
+      "2": {
+        "name": "字符串 1",
+        "tooltip": "字符串 1 的原始输出"
+      },
+      "3": {
+        "name": "字符串 2",
+        "tooltip": "字符串 2 的原始输出"
+      },
+      "4": {
+        "name": "字符串 3",
+        "tooltip": "字符串 3 的原始输出"
+      },
+      "5": {
+        "name": "字符串 4",
+        "tooltip": "字符串 4 的原始输出"
+      },
+      "6": {
+        "name": "字符串 5",
+        "tooltip": "字符串 5 的原始输出"
       }
     }
   }

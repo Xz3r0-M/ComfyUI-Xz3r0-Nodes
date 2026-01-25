@@ -25,12 +25,20 @@
 - 🖼️ **图像处理** - 图像保存（支持自定义文件名和子文件夹）
 - 🎬 **视频处理** - 视频保存（H.265编码，自定义质量和速度预设，音频支持）
 - 🔮 **Latent处理** - Latent加载和保存（支持元数据）
+- 📝 **数据类节点** - 字符串组合（支持多行输入和分隔方式）
 
 ---
 
 ## 🚀 快速开始
 
-### 方法 1: 手动安装
+### 方法 1: ComfyUI-Manager（推荐）
+
+1. 使用 [ComfyUI-Manager](https://github.com/Comfy-Org/ComfyUI-Manager)
+2. 搜索 `ComfyUI-Xz3r0-Nodes`
+3. 点击安装按钮
+
+
+### 方法 2: 手动安装
 
 1. **克隆仓库到ComfyUI的 `custom_nodes` 目录**
 
@@ -48,26 +56,20 @@ pip install -r requirements.txt
 
 3. **重启ComfyUI**
 
-### 方法 2: ComfyUI Manager（推荐）
-
-1. 打开ComfyUI Manager
-2. 搜索 "Xz3r0-Nodes"
-3. 点击安装按钮
-
 ---
 
 <div align="center">
 
-<img src="preview/preview.png" alt="项目预览" width="400">
+<img src="preview/preview.png" alt="项目预览" width="800">
 
 </div>
 
+## 📚 节点列表和说明
+
 <details>
-<summary><strong>📚 节点列表</strong>（点击展开/折叠）</summary>
+<summary><strong>🛠️ 工具节点 (♾️ Xz3r0/Tools)👈</strong></summary>
 
-### 🛠️ 工具节点 (♾️ Xz3r0/Tools)
-
-#### XMath
+### 🔢 XMath
 
 基础数学运算节点，支持双输出格式（整数+浮点数）。
 
@@ -82,7 +84,8 @@ pip install -r requirements.txt
 - `int_result` (INT): 整数结果（截断小数）
 - `float_result` (FLOAT): 浮点数结果（精确值）
 
-#### XResolution
+
+### 📐 XResolution
 
 分辨率设置节点，提供标准分辨率预设和自定义功能。
 
@@ -103,11 +106,14 @@ pip install -r requirements.txt
 - `width` (INT): 最终宽度
 - `height` (INT): 最终高度
 
----
+</details>
 
-### 🖼️ 图像节点 (♾️ Xz3r0/Image)
 
-#### XImageSave
+
+<details>
+<summary><strong>🖼️ 图像节点 (♾️ Xz3r0/Image)👈</strong></summary>
+
+### 💾 XImageSave
 
 图像保存节点，支持自定义文件名和子文件夹管理。
 
@@ -119,7 +125,7 @@ pip install -r requirements.txt
 - 批量图像保存支持
 
 **输入**:
-- `images` (IMAGE)I: 输入图像张量
+- `images` (IMAGE): 输入图像张量
 - `filename_prefix` (STRING): 文件名前缀
 - `subfolder` (STRING): 子文件夹名称
 
@@ -127,11 +133,14 @@ pip install -r requirements.txt
 - `images` (IMAGE): 原始图像（透传）
 - `save_path` (STRING): 保存的相对路径
 
----
+</details>
 
-### 🎬 视频节点 (♾️ Xz3r0/Video)
 
-#### XVideoSave
+
+<details>
+<summary><strong>🎬 视频节点 (♾️ Xz3r0/Video)👈</strong></summary>
+
+### 🎬 XVideoSave
 
 视频保存节点，使用FFmpeg将图像序列保存为视频。
 
@@ -169,11 +178,14 @@ pip install -r requirements.txt
 - preset: 可配置（ultrafast到veryslow）
 - 容器格式: MKV
 
----
+</details>
 
-### 🔮 Latent节点 (♾️ Xz3r0/Latent)
 
-#### XLatentLoad
+
+<details>
+<summary><strong>🔮 Latent节点 (♾️ Xz3r0/Latent)👈</strong></summary>
+
+### 📥 XLatentLoad
 
 Latent加载节点，支持从输入端口或文件加载Latent。
 
@@ -197,7 +209,8 @@ Latent加载节点，支持从输入端口或文件加载Latent。
 2. 如果输入端口为None，则从下拉菜单选择的文件加载Latent
 3. 如果输入端口为None且文件不存在，弹出错误提示
 
-#### XLatentSave
+
+### 📤 XLatentSave
 
 Latent保存节点，支持自定义文件名和元数据保存。
 
@@ -226,6 +239,57 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 </details>
 
+
+
+<details>
+<summary><strong>📝 数据类节点 (♾️ Xz3r0/Types)👈</strong></summary>
+
+### 🔗 XStringGroup
+
+字符串组合节点，支持多行输入和自定义分隔符。
+
+**功能**:
+- 支持最多5个多行字符串输入
+- 每个字符串之间可选择不同的分隔方式（换行、空格、逗号、句号）
+- 输出组合后的完整字符串
+- 支持选择单个字符串输出（1-5）
+- 支持每个字符串的原始输出
+
+**输入**:
+- `select_string` (下拉选择): 选择要输出的字符串编号（1-5）
+- `string_1` (STRING, 多行): 第一个字符串
+- `separation_method_1_2` (下拉选择): 字符串1和2之间的分隔方式
+- `string_2` (STRING, 多行): 第二个字符串
+- `separation_method_2_3` (下拉选择): 字符串2和3之间的分隔方式
+- `string_3` (STRING, 多行): 第三个字符串
+- `separation_method_3_4` (下拉选择): 字符串3和4之间的分隔方式
+- `string_4` (STRING, 多行): 第四个字符串
+- `separation_method_4_5` (下拉选择): 字符串4和5之间的分隔方式
+- `string_5` (STRING, 多行): 第五个字符串
+
+**分隔方式选项**:
+- `newline`: 换行符（`\n`）
+- `space`: 空格（` `）
+- `comma`: 逗号（`,`）
+- `period`: 句号（`.`）
+
+**输出**:
+- `total_string` (STRING): 组合后的完整字符串（带有分隔方式）
+- `selected_string` (STRING): 由选择字符串栏所选择的输出
+- `string_1` (STRING): 字符串1的原始输出
+- `string_2` (STRING): 字符串2的原始输出
+- `string_3` (STRING): 字符串3的原始输出
+- `string_4` (STRING): 字符串4的原始输出
+- `string_5` (STRING): 字符串5的原始输出
+
+**使用场景**:
+- 构建复杂提示词组合
+- 生成多行文本描述
+- 创建带格式化的文本输出
+- 工作流中的文本处理和组合
+
+</details>
+
 ---
 
 ## 🌍 国际化支持
@@ -249,7 +313,7 @@ ComfyUI-Xz3r0-Nodes 内置了中英文双语界面支持，通过 `locales/` 目
 
 ---
 
-## � 依赖说明
+## 📦 依赖说明
 
 ### Python 依赖
 
@@ -265,7 +329,7 @@ ComfyUI-Xz3r0-Nodes 内置了中英文双语界面支持，通过 `locales/` 目
 
 ---
 
-## �📁 项目结构
+## 📁 项目结构
 
 ```
 ComfyUI-Xz3r0-Nodes/
@@ -277,7 +341,8 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── ximagesave.py    # 图像保存节点
 │   ├── xvideosave.py    # 视频保存节点
 │   ├── xlatentload.py   # Latent加载节点
-│   └── xlatentsave.py   # Latent保存节点
+│   ├── xlatentsave.py   # Latent保存节点
+│   └── xstringgroup.py  # 字符串组合节点
 ├── locales/             # 国际化支持（节点显示名称和提示）
 │   ├── en/              # 英文定义
 │   │   └── nodeDefs.json
