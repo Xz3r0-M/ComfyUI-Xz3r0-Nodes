@@ -43,10 +43,7 @@
     "inputs": {
       "preset": {
         "name": "分辨率预设",
-        "tooltip": "标准分辨率预设",
-        "options": {
-          "Custom": "自定义"
-        }
+        "tooltip": "自定义或标准分辨率预设"
       },
       "width": {
         "name": "自定义宽度",
