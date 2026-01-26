@@ -190,6 +190,56 @@
       }
     }
   },
+  "XAudioSave": {
+    "display_name": "XAudioSave",
+    "description": "音频保存节点，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、音量标准化和峰值限制。",
+    "inputs": {
+      "audio": {
+        "name": "音频",
+        "tooltip": "输入音频张量"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符)，如: Audio 或 audio_%Y%-%m%-%d%"
+      },
+      "sample_rate": {
+        "name": "采样率",
+        "tooltip": "输出音频的目标采样率",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "target_lufs": {
+        "name": "目标LUFS",
+        "tooltip": "音量标准化目标LUFS值。数值越低音频越安静。默认 -14，设置为-70可禁用。"
+      },
+      "peak_mode": {
+        "name": "峰值模式",
+        "tooltip": "峰值限制模式: Disabled(禁用)，Simple Peak(快速，采样点检测)，True Peak(慢速,高品质广播标准，8x过采样)"
+      },
+      "peak_limit": {
+        "name": "峰值限制",
+        "tooltip": "峰值限制值(dB)。仅在peak_mode不为'Disabled'时使用。默认 -1，值低于0dB可防止削波。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "处理后的音频",
+        "tooltip": "经过重采样、音量标准化和峰值限制处理后的音频"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "保存的文件路径"
+      }
+    }
+  },
   "XStringGroup": {
     "display_name": "XStringGroup",
     "description": "组合5个多行字符串输入，可在它们之间选择不同的分隔方式。",

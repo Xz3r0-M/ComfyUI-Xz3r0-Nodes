@@ -190,6 +190,56 @@
       }
     }
   },
+  "XAudioSave": {
+    "display_name": "XAudioSave",
+    "description": "Audio saving node with WAV lossless format, supporting custom filename, subfolder, datetime placeholders, loudness normalization, and peak limiting.",
+    "inputs": {
+      "audio": {
+        "name": "Audio",
+        "tooltip": "Input audio tensor"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), e.g., Audio or audio_%Y%-%m%-%d%"
+      },
+      "sample_rate": {
+        "name": "Sample Rate",
+        "tooltip": "Target sample rate for the output audio file",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "target_lufs": {
+        "name": "Target LUFS",
+        "tooltip": "Target LUFS value for loudness normalization. Lower values make audio quieter. Default -14, Set to -70 to disable."
+      },
+      "peak_mode": {
+        "name": "Peak Mode",
+        "tooltip": "Peak limiting mode: Disabled (no limiting), Simple Peak (fast, sample-point detection), True Peak (Slow, high quality broadcast standard, 8x oversampling)"
+      },
+      "peak_limit": {
+        "name": "Peak Limit",
+        "tooltip": "Peak limiting value in dB. Only used when peak_mode is not 'Disabled'. Default -1, Values below 0 dB prevent clipping."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Processed Audio",
+        "tooltip": "Audio after resampling, loudness normalization, and peak limiting"
+      },
+      "1": {
+        "name": "Save Path",
+        "tooltip": "Saved file path"
+      }
+    }
+  },
   "XStringGroup": {
     "display_name": "XStringGroup",
     "description": "Groups 5 multiline string inputs with customizable separation methods between them.",
