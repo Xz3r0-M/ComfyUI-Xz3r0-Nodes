@@ -162,7 +162,7 @@ pip install -r requirements.txt
 - `video` (VIDEO): 视频对象（包含图像序列、音频和帧率）
 - `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
 - `subfolder` (STRING): 子文件夹名称（默认：`Videos`）
-- `crf` (FLOAT): 质量参数（默认：0.0，范围0-40，0为无损，40为最差质量）
+- `crf` (FLOAT): 质量参数（默认：`0.0`，范围0-40，0为无损，40为最差质量）
 - `preset` (STRING): 编码预设（默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow）
 
 **隐藏输入**:
@@ -211,9 +211,9 @@ pip install -r requirements.txt
 - `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
 - `subfolder` (STRING): 子文件夹名称（默认：`Audio`）
 - `sample_rate` (STRING): 采样率（默认：`48000`，可选：44100, 48000, 96000, 192000）
-- `target_lufs` (FLOAT): 目标LUFS值（默认：-14.0，范围-70.0到0.0，-70禁用）
+- `target_lufs` (FLOAT): 目标LUFS值（默认：`-14.0`，范围-70.0到0.0，-70禁用）
 - `peak_mode` (STRING): 峰值限制模式（默认：`Simple Peak`，可选：Disabled, Simple Peak, True Peak）
-- `peak_limit` (FLOAT): 峰值限制值（默认：-1.0，范围-6.0到0.0）
+- `peak_limit` (FLOAT): 峰值限制值（默认：`-1.0`，范围-6.0到0.0）
 
 **输出**:
 - `processed_audio` (AUDIO): 处理后的音频（重采样、LUFS标准化、峰值限制）
