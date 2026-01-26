@@ -29,11 +29,11 @@
     "outputs": {
       "0": {
         "name": "result_int",
-        "tooltip": "Integer result (rounded)"
+        "tooltip": "Integer result (truncated decimal part towards zero)"
       },
       "1": {
         "name": "result_float",
-        "tooltip": "Floating point result"
+        "tooltip": "Float result (exact value with decimal)"
       }
     }
   },
@@ -47,11 +47,11 @@
       },
       "width": {
         "name": "Custom Width",
-        "tooltip": "Resolution width"
+        "tooltip": "Custom resolution width"
       },
       "height": {
         "name": "Custom Height",
-        "tooltip": "Resolution height"
+        "tooltip": "Custom resolution height"
       },
       "scale": {
         "name": "Scale",
@@ -65,11 +65,11 @@
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output width"
+        "tooltip": "Output resolution width (after preset, scaling, and swap)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output height"
+        "tooltip": "Output resolution height (after preset, scaling, and swap)"
       }
     }
   },
@@ -87,7 +87,7 @@
       },
       "subfolder": {
         "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), e.g., Characters or images_%Y%-%m%-%d%"
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "compression_level": {
         "name": "Compression Level",
@@ -97,11 +97,11 @@
     "outputs": {
       "0": {
         "name": "Images",
-        "tooltip": "Input images (passed through)"
+        "tooltip": "Original input images (passed through)"
       },
       "1": {
         "name": "save_path",
-        "tooltip": "Saved file path"
+        "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
   },
@@ -121,7 +121,7 @@
     "outputs": {
       "0": {
         "name": "Latent",
-        "tooltip": "Loaded latent tensor"
+        "tooltip": "Loaded latent tensor (from input port or file)"
       }
     }
   },
@@ -139,7 +139,7 @@
       },
       "subfolder": {
         "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed)"
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
       }
     },
     "outputs": {
@@ -149,7 +149,7 @@
       },
       "1": {
         "name": "save_path",
-        "tooltip": "Saved file path"
+        "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
   },
@@ -163,11 +163,11 @@
       },
       "filename_prefix": {
         "name": "Filename Prefix",
-        "tooltip": "Filename prefix, supports datetime placeholders"
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed)"
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "crf": {
         "name": "Video CRF",
@@ -195,7 +195,7 @@
     "description": "Audio saving node with WAV lossless format, supporting custom filename, subfolder, datetime placeholders, loudness normalization, and peak limiting.",
     "inputs": {
       "audio": {
-        "name": "Audio",
+        "name": "AUDIO",
         "tooltip": "Input audio tensor"
       },
       "filename_prefix": {
@@ -231,11 +231,11 @@
     },
     "outputs": {
       "0": {
-        "name": "Processed Audio",
+        "name": "Processed_AUDIO",
         "tooltip": "Audio after resampling, loudness normalization, and peak limiting"
       },
       "1": {
-        "name": "Save Path",
+        "name": "save_path",
         "tooltip": "Saved file path"
       }
     }

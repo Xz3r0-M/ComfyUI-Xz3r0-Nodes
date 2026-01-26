@@ -71,36 +71,45 @@ class XAudioSave:
         """定义节点的输入类型和约束"""
         return {
             "required": {
-                "audio": ("AUDIO", {}),
+                "audio": ("AUDIO", {
+                    "tooltip": "Input audio tensor"
+                }),
                 "filename_prefix": ("STRING", {
-                    "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%"
+                    "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                    "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "subfolder": ("STRING", {
-                    "default": "Audio"
+                    "default": "Audio",
+                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "sample_rate": (list(cls.SAMPLE_RATES.keys()), {
-                    "default": "48000"
+                    "default": "48000",
+                    "tooltip": "Target sample rate for the output audio file"
                 }),
                 "target_lufs": ("FLOAT", {
                     "default": -14.0,
                     "min": -70.0,
                     "max": 0.0,
-                    "step": 0.1
+                    "step": 0.1,
+                    "tooltip": "Target LUFS value for loudness normalization. Lower values make audio quieter. Default -14, Set to -70 to disable."
                 }),
                 "peak_mode": (["Disabled", "Simple Peak", "True Peak"], {
-                    "default": "Simple Peak"
+                    "default": "Simple Peak",
+                    "tooltip": "Peak limiting mode: Disabled (no limiting), Simple Peak (fast, sample-point detection), True Peak (Slow, high quality broadcast standard, 8x oversampling)"
                 }),
                 "peak_limit": ("FLOAT", {
                     "default": -1.0,
                     "min": -6.0,
                     "max": 0.0,
-                    "step": 0.1
+                    "step": 0.1,
+                    "tooltip": "Peak limiting value in dB. Only used when peak_mode is not 'Disabled'. Default -1, Values below 0 dB prevent clipping."
                 })
             }
         }
 
     RETURN_TYPES = ("AUDIO", "STRING")
     RETURN_NAMES = ("processed_audio", "save_path")
+    OUTPUT_TOOLTIPS = ("Audio after resampling, loudness normalization, and peak limiting", "Saved file path relative to ComfyUI output directory")
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Audio"
 

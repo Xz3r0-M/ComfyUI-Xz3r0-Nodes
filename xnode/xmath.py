@@ -70,13 +70,14 @@ class XMath:
                     "Minimum"
                 ], {
                     "default": "Addition (+)",
-                    "tooltip": "Select operation type"
+                    "tooltip": "Mathematical operation type"
                 })
             }
         }
 
     RETURN_TYPES = ("INT", "FLOAT")
     RETURN_NAMES = ("int_result", "float_result")
+    OUTPUT_TOOLTIPS = ("Integer result (truncated decimal part towards zero)", "Float result (exact value with decimal)")
     FUNCTION = "calculate"
     CATEGORY = "♾️ Xz3r0/Tools"
 

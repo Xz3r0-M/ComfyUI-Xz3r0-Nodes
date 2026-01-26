@@ -70,7 +70,7 @@ class XLatentSave:
         return {
             "required": {
                 "latent": ("LATENT", {
-                    "tooltip": "Input latent tensor"
+                    "tooltip": "Input latent tensor to save"
                 }),
                 "filename_prefix": ("STRING", {
                     "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
@@ -78,7 +78,7 @@ class XLatentSave:
                 }),
                 "subfolder": ("STRING", {
                     "default": "Latents",
-                    "tooltip": "Subfolder name (no path separators allowed), e.g., Latents or latents_%Y%-%m%-%d%"
+                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 })
             },
             "hidden": {
@@ -89,6 +89,7 @@ class XLatentSave:
 
     RETURN_TYPES = ("LATENT", "STRING")
     RETURN_NAMES = ("latent", "save_path")
+    OUTPUT_TOOLTIPS = ("Original input latent (passed through)", "Saved file path relative to ComfyUI output directory")
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Latent"
 

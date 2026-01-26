@@ -70,8 +70,8 @@ class XVideoSave(io.ComfyNode):
             description="Saves the input video to your ComfyUI output directory with H.265/HEVC encoding. Audio streams are copied without re-encoding to preserve original quality.",
             inputs=[
                 io.Video.Input("video", tooltip="The video to save."),
-                io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="The prefix for the file to save. Supports date/time placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
-                io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators, single folder only). Example: Videos or videos_%Y%-%m%-%d%"),
+                io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
+                io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
                 io.Float.Input("crf", default=0.0, min=0, max=40.0, step=1, tooltip="Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."),
                 io.Combo.Input("preset", options=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], default="medium", tooltip="Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer."),
             ],

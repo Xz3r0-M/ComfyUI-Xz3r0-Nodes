@@ -75,14 +75,14 @@ class XImageSave:
                 }),
                 "subfolder": ("STRING", {
                     "default": "Images",
-                    "tooltip": "Subfolder name (no path separators allowed), e.g., Characters or images_%Y%-%m%-%d%"
+                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "compression_level": ("INT", {
                     "default": 5,
                     "min": 0,
                     "max": 9,
                     "step": 1,
-                    "tooltip": "PNG compression level (0=no compression, 9=max compression)"
+                    "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
                 })
             },
             "hidden": {
@@ -93,6 +93,7 @@ class XImageSave:
 
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("images", "save_path")
+    OUTPUT_TOOLTIPS = ("Original input images (passed through)", "Saved file path relative to ComfyUI output directory")
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Image"
 

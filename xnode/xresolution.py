@@ -84,7 +84,7 @@ class XResolution:
             "required": {
                 "preset": (list(cls.PRESETS.keys()), {
                     "default": "Custom",
-                    "tooltip": "Select standard resolution preset"
+                    "tooltip": "Custom or standard resolution presets"
                 }),
                 "width": ("INT", {
                     "default": 1280,
@@ -92,7 +92,7 @@ class XResolution:
                     "max": 16384,
                     "step": 1,
                     "display": "number",
-                    "tooltip": "Resolution width"
+                    "tooltip": "Custom resolution width"
                 }),
                 "height": ("INT", {
                     "default": 720,
@@ -100,7 +100,7 @@ class XResolution:
                     "max": 16384,
                     "step": 1,
                     "display": "number",
-                    "tooltip": "Resolution height"
+                    "tooltip": "Custom resolution height"
                 }),
                 "scale": ("FLOAT", {
                     "default": 1.0,
@@ -119,6 +119,7 @@ class XResolution:
 
     RETURN_TYPES = ("INT", "INT")
     RETURN_NAMES = ("width", "height")
+    OUTPUT_TOOLTIPS = ("Output resolution width (after preset, scaling, and swap)", "Output resolution height (after preset, scaling, and swap)")
     FUNCTION = "process"
     CATEGORY = "♾️ Xz3r0/Tools"
 
