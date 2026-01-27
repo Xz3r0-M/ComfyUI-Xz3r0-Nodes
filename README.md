@@ -75,11 +75,24 @@ pip install -r requirements.txt
 基础数学运算节点，支持双输出格式（整数+浮点数）。
 
 **功能**: 加法、减法、乘法、除法、幂运算、取模、最大值、最小值
+- 支持输入端口和基础值两种输入方式
+- 可独立切换 A 和 B 的输入来源
+- 支持 A 和 B 值交换功能
+- 自动处理除零和溢出等边界情况
 
 **输入**:
-- `a` (FLOAT): 第一个数值
-- `b` (FLOAT): 第二个数值
+- `input_a` (INT/FLOAT): 输入数值 A（接收上游节点，可选）
+- `input_b` (INT/FLOAT): 输入数值 B（接收上游节点，可选）
+- `basic_a` (FLOAT): 基础数值 A（默认值）
+- `basic_b` (FLOAT): 基础数值 B（默认值）
 - `operation`: 运算方式（下拉选择）
+- `use_input_a` (BOOLEAN): 是否使用输入端口数值 A
+- `use_input_b` (BOOLEAN): 是否使用输入端口数值 B
+- `swap_ab` (BOOLEAN): 是否交换 A 和 B 的值
+
+**优先级逻辑**:
+- 如果 `use_input_a` 为 True，使用 `input_a`（如果未连接到其他节点则回退到 `basic_a`
+- 如果 `use_input_b` 为 True，使用 `input_b`（如果未连接到其他节点则回退到 `basic_b`
 
 **输出**:
 - `int_result` (INT): 整数结果（截断小数）
@@ -124,11 +137,18 @@ pip install -r requirements.txt
 - 路径安全防护（防止路径遍历攻击）
 - 自动添加序列号防止覆盖(从00001开始)
 - 批量图像保存支持
+- PNG 压缩级别可调节（0-9）
+- 元数据保存（工作流提示词、种子值、模型信息等）
 
 **输入**:
 - `images` (IMAGE): 输入图像张量
 - `filename_prefix` (STRING): 文件名前缀
 - `subfolder` (STRING): 子文件夹名称
+- `compression_level` (INT): PNG 压缩级别（0-9，0=无压缩，9=最大压缩）
+
+**隐藏输入**:
+- `prompt` (PROMPT): 工作流提示词（自动注入）
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据（自动注入）
 
 **输出**:
 - `images` (IMAGE): 原始图像（透传）
@@ -290,7 +310,7 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 **功能**:
 - 支持最多5个多行字符串输入
-- 每个字符串之间可选择不同的分隔方式（换行、空格、逗号、句号）
+- 每个字符串之间可选择不同的分隔方式（无、换行、空格、逗号、逗号+空格、句号、句号+空格）
 - 输出组合后的完整字符串
 - 支持选择单个字符串输出（1-5）
 - 支持每个字符串的原始输出
@@ -308,10 +328,13 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - `string_5` (STRING, 多行): 第五个字符串
 
 **分隔方式选项**:
+- `none`: 无分隔
 - `newline`: 换行符（`\n`）
 - `space`: 空格（` `）
 - `comma`: 逗号（`,`）
+- `comma_space`: 逗号+空格（`, `）
 - `period`: 句号（`.`）
+- `period_space`: 句号+空格（`. `）
 
 **输出**:
 - `total_string` (STRING): 组合后的完整字符串（带有分隔方式）
@@ -409,6 +432,7 @@ ComfyUI-Xz3r0-Nodes/
 - **项目主页**: [https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes)
 - **问题反馈**: [GitHub Issues](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/issues)
 - **Comfy Registry主页**: [Comfy Registry](https://registry.comfy.org/zh/publishers/xz3r0/nodes/xz3r0-nodes)
+
 ---
 
 <div align="center">

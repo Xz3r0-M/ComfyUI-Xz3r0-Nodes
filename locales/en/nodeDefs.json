@@ -35,11 +35,11 @@
       },
       "use_input_a": {
         "name": "Use Input A",
-        "tooltip": "use input value A (input_a takes precedence when enabled)"
+        "tooltip": "use input value A (input_a takes precedence when enabled, fallbacks to basic_a if not connected to other node)"
       },
       "use_input_b": {
         "name": "Use Input B",
-        "tooltip": "use input value B (input_b takes precedence when enabled)"
+        "tooltip": "use input value B (input_b takes precedence when enabled, fallbacks to basic_b if not connected to other node)"
       },
       "swap_ab": {
         "name": "Swap A and B",

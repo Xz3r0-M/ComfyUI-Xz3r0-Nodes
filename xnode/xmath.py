@@ -98,11 +98,11 @@ class XMath:
                 }),
                 "use_input_a": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "use input value A (input_a takes precedence when enabled)"
+                    "tooltip": "use input value A (input_a takes precedence when enabled, fallbacks to basic_a if not connected to other node)"
                 }),
                 "use_input_b": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "use input value B (input_b takes precedence when enabled)"
+                    "tooltip": "use input value B (input_b takes precedence when enabled, fallbacks to basic_b if not connected to other node)"
                 }),
                 "swap_ab": ("BOOLEAN", {
                     "default": False,
@@ -153,13 +153,13 @@ class XMath:
             raise ValueError(f"Unknown operation: {operation}")
 
         # 优先级逻辑：根据各自的开关决定是否使用 input
-        # 注意：在 ComfyUI 中，未连接的输入端口会使用 INPUT_TYPES 中定义的默认值（0.0）
-        if use_input_a:
+        # 如果启用使用 input 但端口未连接（值为 None），则回退到 basic 值
+        if use_input_a and input_a is not None:
             a = input_a if isinstance(input_a, float) else float(input_a)
         else:
             a = basic_a
-            
-        if use_input_b:
+
+        if use_input_b and input_b is not None:
             b = input_b if isinstance(input_b, float) else float(input_b)
         else:
             b = basic_b
