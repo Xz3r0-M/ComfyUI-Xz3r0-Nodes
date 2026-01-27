@@ -70,7 +70,7 @@ class XLatentSave:
         return {
             "required": {
                 "latent": ("LATENT", {
-                    "tooltip": "Input latent tensor"
+                    "tooltip": "Input latent tensor to save"
                 }),
                 "filename_prefix": ("STRING", {
                     "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
@@ -78,7 +78,7 @@ class XLatentSave:
                 }),
                 "subfolder": ("STRING", {
                     "default": "Latents",
-                    "tooltip": "Subfolder name (no path separators allowed), e.g., Latents or latents_%Y%-%m%-%d%"
+                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 })
             },
             "hidden": {
@@ -89,6 +89,7 @@ class XLatentSave:
 
     RETURN_TYPES = ("LATENT", "STRING")
     RETURN_NAMES = ("latent", "save_path")
+    OUTPUT_TOOLTIPS = ("Original input latent (passed through)", "Saved file path relative to ComfyUI output directory")
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Latent"
 
@@ -292,7 +293,7 @@ class XLatentSave:
 
         return result
 
-    def _get_unique_filename(self, directory: Path, filename: str, extension: str) -> str:
+    def _get_unique_filename(self, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
         """
         获取唯一的文件名，避免覆盖
 
@@ -302,14 +303,17 @@ class XLatentSave:
             directory: 目录路径
             filename: 基础文件名
             extension: 文件扩展名
+            max_attempts: 最大尝试次数，防止无限循环
 
         Returns:
             唯一的文件名
+
+        Raises:
+            FileExistsError: 无法生成唯一文件名时抛出
         """
         base_name = filename
-        counter = 0
 
-        while True:
+        for counter in range(max_attempts):
             if counter == 0:
                 candidate = f"{base_name}{extension}"
             else:
@@ -320,5 +324,5 @@ class XLatentSave:
             if not candidate_path.exists():
                 return candidate
 
-            counter += 1
+        raise FileExistsError("Unable to generate unique filename")
 

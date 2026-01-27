@@ -75,14 +75,14 @@ class XImageSave:
                 }),
                 "subfolder": ("STRING", {
                     "default": "Images",
-                    "tooltip": "Subfolder name (no path separators allowed), e.g., Characters or images_%Y%-%m%-%d%"
+                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
                 }),
                 "compression_level": ("INT", {
                     "default": 5,
                     "min": 0,
                     "max": 9,
                     "step": 1,
-                    "tooltip": "PNG compression level (0=no compression, 9=max compression)"
+                    "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
                 })
             },
             "hidden": {
@@ -93,6 +93,7 @@ class XImageSave:
 
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("images", "save_path")
+    OUTPUT_TOOLTIPS = ("Original input images (passed through)", "Saved file path relative to ComfyUI output directory")
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Image"
 
@@ -284,22 +285,27 @@ class XImageSave:
 
         return result
 
-    def _get_unique_filename(self, directory: Path, filename: str, extension: str) -> str:
+    def _get_unique_filename(self, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
         """
         获取唯一的文件名，避免覆盖
+
+        如果文件名不存在则直接使用，存在则添加序列号
 
         Args:
             directory: 目录路径
             filename: 基础文件名
             extension: 文件扩展名
+            max_attempts: 最大尝试次数，防止无限循环
 
         Returns:
             唯一的文件名
+
+        Raises:
+            FileExistsError: 无法生成唯一文件名时抛出
         """
         base_name = filename
-        counter = 0
 
-        while True:
+        for counter in range(max_attempts):
             if counter == 0:
                 candidate = f"{base_name}{extension}"
             else:
@@ -310,7 +316,7 @@ class XImageSave:
             if not candidate_path.exists():
                 return candidate
 
-            counter += 1
+        raise FileExistsError("Unable to generate unique filename")
 
     def _tensor_to_pil(self, tensor: torch.Tensor) -> Image.Image:
         """
@@ -333,7 +339,7 @@ class XImageSave:
         if tensor.dim() == 3:
             numpy_array = tensor.numpy()
         else:
-            raise ValueError(f"Unsupported tensor dimension: {tensor.dim()}, expected 3 or 4 dimensions")
+            raise ValueError("Unsupported tensor dimension, expected 3 or 4 dimensions")
 
         # 转换值范围从[0, 1]到[0, 255]，并确保值在有效范围内
         numpy_array = np.clip(255.0 * numpy_array, 0, 255).astype(np.uint8)
@@ -350,7 +356,7 @@ class XImageSave:
             mode = 'L'
             numpy_array = numpy_array.squeeze(2)
         else:
-            raise ValueError(f"Unsupported channel count: {numpy_array.shape[2]}")
+            raise ValueError("Unsupported channel count")
 
         pil_image = Image.fromarray(numpy_array, mode=mode)
 

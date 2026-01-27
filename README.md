@@ -24,6 +24,7 @@
 - 🛠️ **工具节点** - 数学运算、分辨率设置
 - 🖼️ **图像处理** - 图像保存（支持自定义文件名和子文件夹）
 - 🎬 **视频处理** - 视频保存（H.265编码，自定义质量和速度预设，音频支持）
+- 🎵 **音频处理** - 音频保存（WAV无损格式，LUFS标准化，峰值限制）
 - 🔮 **Latent处理** - Latent加载和保存（支持元数据）
 - 📝 **数据类节点** - 字符串组合（支持多行输入和分隔方式）
 
@@ -74,11 +75,24 @@ pip install -r requirements.txt
 基础数学运算节点，支持双输出格式（整数+浮点数）。
 
 **功能**: 加法、减法、乘法、除法、幂运算、取模、最大值、最小值
+- 支持输入端口和基础值两种输入方式
+- 可独立切换 A 和 B 的输入来源
+- 支持 A 和 B 值交换功能
+- 自动处理除零和溢出等边界情况
 
 **输入**:
-- `a` (FLOAT): 第一个数值
-- `b` (FLOAT): 第二个数值
+- `input_a` (INT/FLOAT): 输入数值 A（接收上游节点，可选）
+- `input_b` (INT/FLOAT): 输入数值 B（接收上游节点，可选）
+- `basic_a` (FLOAT): 基础数值 A（默认值）
+- `basic_b` (FLOAT): 基础数值 B（默认值）
 - `operation`: 运算方式（下拉选择）
+- `use_input_a` (BOOLEAN): 是否使用输入端口数值 A
+- `use_input_b` (BOOLEAN): 是否使用输入端口数值 B
+- `swap_ab` (BOOLEAN): 是否交换 A 和 B 的值
+
+**优先级逻辑**:
+- 如果 `use_input_a` 为 True，使用 `input_a`（如果未连接到其他节点则回退到 `basic_a`
+- 如果 `use_input_b` 为 True，使用 `input_b`（如果未连接到其他节点则回退到 `basic_b`
 
 **输出**:
 - `int_result` (INT): 整数结果（截断小数）
@@ -121,13 +135,20 @@ pip install -r requirements.txt
 - 支持自定义文件名和子文件夹
 - 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
 - 路径安全防护（防止路径遍历攻击）
-- 同名文件自动序列号处理
+- 自动添加序列号防止覆盖(从00001开始)
 - 批量图像保存支持
+- PNG 压缩级别可调节（0-9）
+- 元数据保存（工作流提示词、种子值、模型信息等）
 
 **输入**:
 - `images` (IMAGE): 输入图像张量
 - `filename_prefix` (STRING): 文件名前缀
 - `subfolder` (STRING): 子文件夹名称
+- `compression_level` (INT): PNG 压缩级别（0-9，0=无压缩，9=最大压缩）
+
+**隐藏输入**:
+- `prompt` (PROMPT): 工作流提示词（自动注入）
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据（自动注入）
 
 **输出**:
 - `images` (IMAGE): 原始图像（透传）
@@ -154,14 +175,14 @@ pip install -r requirements.txt
 - 支持自定义文件名和子文件夹
 - 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
 - 路径安全防护（防止路径遍历攻击）
-- 同名文件自动覆盖（建议使用日期时间标识符避免冲突）
+- 自动添加序列号防止覆盖(从00001开始)
 - 元数据保存（工作流提示词、种子值、模型信息等）
 
 **输入**:
 - `video` (VIDEO): 视频对象（包含图像序列、音频和帧率）
 - `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
 - `subfolder` (STRING): 子文件夹名称（默认：`Videos`）
-- `crf` (FLOAT): 质量参数（默认：0.0，范围0-40，0为无损，40为最差质量）
+- `crf` (FLOAT): 质量参数（默认：`0.0`，范围0-40，0为无损，40为最差质量）
 - `preset` (STRING): 编码预设（默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow）
 
 **隐藏输入**:
@@ -178,6 +199,45 @@ pip install -r requirements.txt
 - preset: 可配置（ultrafast到veryslow）
 - 容器格式: MKV
 
+</details>
+
+
+
+<details>
+<summary><strong>🎵 音频节点 (♾️ Xz3r0/Audio)👈</strong></summary>
+
+### 🎵 XAudioSave
+
+音频保存节点，使用WAV无损格式保存音频。
+
+**功能**:
+- 保存音频到ComfyUI默认输出目录
+- WAV无损格式（PCM 16-bit）
+- 支持多种采样率（44.1kHz, 48kHz, 96kHz, 192kHz）
+- LUFS音量标准化（默认-14.0 LUFS，可设置为-70禁用）
+- 峰值限制（三种模式：Disabled, Simple Peak, True Peak）
+- 支持自定义文件名和子文件夹
+- 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
+- 路径安全防护（防止路径遍历攻击）
+- 自动添加序列号防止覆盖(从00001开始)
+
+**峰值限制模式说明**:
+- `Disabled`: 禁用峰值限制
+- `Simple Peak`: 简单峰值限制（快速，直接检测采样点峰值）
+- `True Peak`: 广播标准True Peak限制（慢速，8x过采样，精度高）
+
+**输入**:
+- `audio` (AUDIO): 音频对象（包含波形和采样率）
+- `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
+- `subfolder` (STRING): 子文件夹名称（默认：`Audio`）
+- `sample_rate` (STRING): 采样率（默认：`48000`，可选：44100, 48000, 96000, 192000）
+- `target_lufs` (FLOAT): 目标LUFS值（默认：`-14.0`，范围-70.0到0.0，-70禁用）
+- `peak_mode` (STRING): 峰值限制模式（默认：`Simple Peak`，可选：Disabled, Simple Peak, True Peak）
+- `peak_limit` (FLOAT): 峰值限制值（默认：`-1.0`，范围-6.0到0.0）
+
+**输出**:
+- `processed_audio` (AUDIO): 处理后的音频（重采样、LUFS标准化、峰值限制）
+- `save_path` (STRING): 保存的相对路径
 </details>
 
 
@@ -250,7 +310,7 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 **功能**:
 - 支持最多5个多行字符串输入
-- 每个字符串之间可选择不同的分隔方式（换行、空格、逗号、句号）
+- 每个字符串之间可选择不同的分隔方式（无、换行、空格、逗号、逗号+空格、句号、句号+空格）
 - 输出组合后的完整字符串
 - 支持选择单个字符串输出（1-5）
 - 支持每个字符串的原始输出
@@ -268,10 +328,13 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - `string_5` (STRING, 多行): 第五个字符串
 
 **分隔方式选项**:
+- `none`: 无分隔
 - `newline`: 换行符（`\n`）
 - `space`: 空格（` `）
 - `comma`: 逗号（`,`）
+- `comma_space`: 逗号+空格（`, `）
 - `period`: 句号（`.`）
+- `period_space`: 句号+空格（`. `）
 
 **输出**:
 - `total_string` (STRING): 组合后的完整字符串（带有分隔方式）
@@ -319,13 +382,10 @@ ComfyUI-Xz3r0-Nodes 内置了中英文双语界面支持，通过 `locales/` 目
 
 项目依赖在 `requirements.txt` 中定义，主要包括：
 
-- **torch** - 深度学习框架（ComfyUI 核心依赖）
-- **numpy** - 数值计算库
-- **Pillow** - 图像处理库
-- **safetensors** - 张量安全保存和加载
-- **ffmpeg-python** - FFmpeg Python 绑定（视频处理）
+**本项目的额外依赖**:
 
-**注意**：ComfyUI 环境通常已经包含了 `torch`、`numpy` 等核心依赖，`requirements.txt` 列出节点所引用的依赖。
+- **ffmpeg-python** - FFmpeg Python 绑定（视频处理，XVideoSave 节点使用）
+- **pyloudnorm** - LUFS 音量标准化库（音频处理，XAudioSave 节点使用）
 
 ---
 
@@ -340,6 +400,7 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xresolution.py   # 分辨率设置节点
 │   ├── ximagesave.py    # 图像保存节点
 │   ├── xvideosave.py    # 视频保存节点
+│   ├── xaudiosave.py    # 音频保存节点
 │   ├── xlatentload.py   # Latent加载节点
 │   ├── xlatentsave.py   # Latent保存节点
 │   └── xstringgroup.py  # 字符串组合节点
@@ -370,6 +431,7 @@ ComfyUI-Xz3r0-Nodes/
 
 - **项目主页**: [https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes)
 - **问题反馈**: [GitHub Issues](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/issues)
+- **Comfy Registry主页**: [Comfy Registry](https://registry.comfy.org/zh/publishers/xz3r0/nodes/xz3r0-nodes)
 
 ---
 

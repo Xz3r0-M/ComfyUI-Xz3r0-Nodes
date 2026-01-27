@@ -31,9 +31,10 @@ class XVideoSave(io.ComfyNode):
         - 保存视频到ComfyUI默认输出目录
         - 强制使用H.265/HEVC编码，yuv444p10le像素格式，mkv格式
         - fps从video对象自动获取(由CreateVideo节点设置)
+        - 音频流直接拷贝，保留原始质量（支持PCM/FLAC/AAC等）
         - 支持自定义文件名和子文件夹
         - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
-        - 允许覆盖同名文件(建议使用日期时间标识符避免冲突)
+        - 自动添加序列号防止覆盖(从00001开始)
         - 仅支持单级子文件夹创建
         - 安全防护(防止路径遍历攻击，禁用路径分隔符)
         - 元数据保存(工作流提示词、种子值、模型信息等)
@@ -66,11 +67,11 @@ class XVideoSave(io.ComfyNode):
             node_id="XVideoSave",
             display_name="XVideoSave",
             category="♾️ Xz3r0/Video",
-            description="Saves the input video to your ComfyUI output directory with H.265/HEVC encoding.",
+            description="Saves the input video to your ComfyUI output directory with H.265/HEVC encoding. Audio streams are copied without re-encoding to preserve original quality.",
             inputs=[
                 io.Video.Input("video", tooltip="The video to save."),
-                io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="The prefix for the file to save. Supports date/time placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
-                io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators, single folder only). Example: Videos or videos_%Y%-%m%-%d%"),
+                io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
+                io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
                 io.Float.Input("crf", default=0.0, min=0, max=40.0, step=1, tooltip="Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."),
                 io.Combo.Input("preset", options=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], default="medium", tooltip="Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer."),
             ],
@@ -120,8 +121,9 @@ class XVideoSave(io.ComfyNode):
         # 创建目录(仅支持单级目录)
         save_dir.mkdir(exist_ok=True)
 
-        # 生成文件名(允许覆盖同名文件)
-        final_filename = f"{safe_filename_prefix}.mkv"
+        # 生成文件名(检测同名文件并添加序列号)
+        base_filename = safe_filename_prefix
+        final_filename = cls._get_unique_filename(save_dir, base_filename, ".mkv")
         save_path = save_dir / final_filename
 
         # 创建临时文件保存音频（如果存在）
@@ -175,7 +177,7 @@ class XVideoSave(io.ComfyNode):
         
         # 构建ffmpeg命令
         if temp_audio_path:
-            # 视频和音频
+            # 视频和音频（使用音频流拷贝，保留原始质量）
             process = (
                 ffmpeg
                 .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{width}x{height}', r=fps)
@@ -185,8 +187,7 @@ class XVideoSave(io.ComfyNode):
                     pix_fmt='yuv444p10le',
                     crf=int(crf),
                     preset=preset,
-                    acodec='aac',
-                    audio_bitrate='192k',
+                    acodec='copy',
                     movflags='faststart',
                     **{'loglevel': 'quiet'}
                 )
@@ -220,11 +221,11 @@ class XVideoSave(io.ComfyNode):
         
         # 检查是否成功
         if return_code != 0:
-            raise RuntimeError(f"FFmpeg encoding failed with code {return_code}")
+            raise RuntimeError("FFmpeg encoding failed with code")
 
         # 如果有音频，合并到最终文件
         if temp_audio_path:
-            # 合并视频和音频
+            # 合并视频和音频（使用音频流拷贝，保留原始质量）
             video_input = ffmpeg.input(temp_video_path)
             audio_input = ffmpeg.input(temp_audio_path)
             try:
@@ -238,8 +239,7 @@ class XVideoSave(io.ComfyNode):
                         pix_fmt='yuv444p10le',
                         crf=int(crf),
                         preset=preset,
-                        acodec='aac',
-                        audio_bitrate='192k',
+                        acodec='copy',
                         movflags='faststart',
                         **{'loglevel': 'quiet'}
                     )
@@ -247,7 +247,7 @@ class XVideoSave(io.ComfyNode):
                     .run()
                 )
             except ffmpeg.Error as e:
-                raise RuntimeError(f"FFmpeg merge failed") from e
+                raise RuntimeError("FFmpeg merge failed")
             
             # 删除临时音频文件
             os.unlink(temp_audio_path)
@@ -361,3 +361,37 @@ class XVideoSave(io.ComfyNode):
         result = re.sub(pattern, replace_match, text)
 
         return result
+
+    @classmethod
+    def _get_unique_filename(cls, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
+        """
+        获取唯一的文件名，避免覆盖
+
+        如果文件名不存在则直接使用，存在则添加序列号
+
+        Args:
+            directory: 目录路径
+            filename: 基础文件名
+            extension: 文件扩展名
+            max_attempts: 最大尝试次数，防止无限循环
+
+        Returns:
+            唯一的文件名
+
+        Raises:
+            FileExistsError: 无法生成唯一文件名时抛出
+        """
+        base_name = filename
+
+        for counter in range(max_attempts):
+            if counter == 0:
+                candidate = f"{base_name}{extension}"
+            else:
+                candidate = f"{base_name}_{counter:05d}{extension}"
+
+            candidate_path = directory / candidate
+
+            if not candidate_path.exists():
+                return candidate
+
+        raise FileExistsError("Unable to generate unique filename")

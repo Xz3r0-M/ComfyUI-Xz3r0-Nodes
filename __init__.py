@@ -118,7 +118,7 @@ def discover_nodes(plugin_dir: Optional[Path] = None) -> List[Type[Any]]:
                     # print(f"[Xz3r0-Nodes] ✓ Found node: {attr.__name__} ({attr.CATEGORY})", flush=True)
 
         except Exception as e:
-            print(f"[Xz3r0-Nodes] ⚠ Failed to import module {module_name}: {e}", flush=True)
+            print(f"[Xz3r0-Nodes] ⚠ Failed to import module: {module_name}", flush=True)
 
     return nodes
 

@@ -17,23 +17,43 @@
           "Minimum": "最小值"
         }
       },
-      "a": {
-        "name": "数值 A",
-        "tooltip": "第一个输入值"
+      "input_a": {
+        "name": "输入 A",
+        "tooltip": "输入值 A（接受整数和浮点数，启用 使用输入 A 时优先使用）"
       },
-      "b": {
-        "name": "数值 B",
-        "tooltip": "第二个输入值"
+      "input_b": {
+        "name": "输入 B",
+        "tooltip": "输入值 B（接受整数和浮点数，启用 使用输入 B 时优先使用）"
+      },
+      "basic_a": {
+        "name": "基础 A",
+        "tooltip": "基础值 A（浮点数）"
+      },
+      "basic_b": {
+        "name": "基础 B",
+        "tooltip": "基础值 B（浮点数）"
+      },
+      "use_input_a": {
+        "name": "使用输入 A",
+        "tooltip": "使用输入值 A（启用时 输入 A 优先，如果未连接到其他节点则回退到 基础 A）"
+      },
+      "use_input_b": {
+        "name": "使用输入 B",
+        "tooltip": "使用输入值 B（启用时 输入 B 优先，如果未连接到其他节点则回退到 基础 B）"
+      },
+      "swap_ab": {
+        "name": "交换 A 和 B",
+        "tooltip": "交换 a 和 b 的值"
       }
     },
     "outputs": {
       "0": {
         "name": "整数结果",
-        "tooltip": "整数结果（四舍五入）"
+        "tooltip": "整数结果(截断小数部分，向零取整)"
       },
       "1": {
         "name": "浮点结果",
-        "tooltip": "浮点数结果"
+        "tooltip": "浮点数结果(精确值，包含小数)"
       }
     }
   },
@@ -47,11 +67,11 @@
       },
       "width": {
         "name": "自定义宽度",
-        "tooltip": "分辨率宽度"
+        "tooltip": "自定义分辨率宽度"
       },
       "height": {
         "name": "自定义高度",
-        "tooltip": "分辨率高度"
+        "tooltip": "自定义分辨率高度"
       },
       "scale": {
         "name": "缩放倍率",
@@ -65,11 +85,11 @@
     "outputs": {
       "0": {
         "name": "宽度",
-        "tooltip": "输出宽度"
+        "tooltip": "输出分辨率宽度（在预设、缩放和交换后）"
       },
       "1": {
         "name": "高度",
-        "tooltip": "输出高度"
+        "tooltip": "输出分辨率高度（在预设、缩放和交换后）"
       }
     }
   },
@@ -87,7 +107,7 @@
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符，仅支持单个文件夹)，如: 人物 或 images_%Y%-%m%-%d%"
+        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "compression_level": {
         "name": "压缩级别",
@@ -97,11 +117,11 @@
     "outputs": {
       "0": {
         "name": "图像",
-        "tooltip": "输入图像（直接传递）"
+        "tooltip": "原始输入图像（直接传递）"
       },
       "1": {
         "name": "保存路径",
-        "tooltip": "保存的文件路径"
+        "tooltip": "保存的文件路径（相对于ComfyUI输出目录）"
       }
     }
   },
@@ -121,7 +141,7 @@
     "outputs": {
       "0": {
         "name": "Latent",
-        "tooltip": "加载的Latent张量"
+        "tooltip": "加载的Latent张量（从输入端口或文件）"
       }
     }
   },
@@ -139,17 +159,17 @@
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)"
+        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
       }
     },
     "outputs": {
       "0": {
         "name": "Latent",
-        "tooltip": "输入Latent（直接传递）"
+        "tooltip": "原始输入Latent(透传)"
       },
       "1": {
         "name": "保存路径",
-        "tooltip": "保存的文件路径"
+        "tooltip": "保存的文件路径（相对于ComfyUI输出目录）"
       }
     }
   },
@@ -163,11 +183,11 @@
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符"
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)"
+        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "crf": {
         "name": "视频CRF",
@@ -187,6 +207,56 @@
           "slower": "较慢",
           "veryslow": "很慢"
         }
+      }
+    }
+  },
+  "XAudioSave": {
+    "display_name": "XAudioSave",
+    "description": "音频保存节点，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、音量标准化和峰值限制。",
+    "inputs": {
+      "audio": {
+        "name": "音频",
+        "tooltip": "输入音频张量"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符)，如: Audio 或 audio_%Y%-%m%-%d%"
+      },
+      "sample_rate": {
+        "name": "采样率",
+        "tooltip": "输出音频的目标采样率",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "target_lufs": {
+        "name": "目标LUFS",
+        "tooltip": "音量标准化目标LUFS值。数值越低音频越安静。默认 -14，设置为-70可禁用。"
+      },
+      "peak_mode": {
+        "name": "峰值模式",
+        "tooltip": "峰值限制模式: Disabled(禁用)，Simple Peak(快速，采样点检测)，True Peak(慢速,高品质广播标准，8x过采样)"
+      },
+      "peak_limit": {
+        "name": "峰值限制",
+        "tooltip": "峰值限制值(dB)。仅在peak_mode不为'Disabled'时使用。默认 -1，值低于0dB可防止削波。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "处理后的音频",
+        "tooltip": "经过重采样、音量标准化和峰值限制处理后的音频"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "保存的文件路径（相对于ComfyUI输出目录）"
       }
     }
   },
@@ -213,10 +283,13 @@
         "name": "分隔方式 1-2",
         "tooltip": "字符串 1 和字符串 2 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_2": {
@@ -227,10 +300,13 @@
         "name": "分隔方式 2-3",
         "tooltip": "字符串 2 和字符串 3 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_3": {
@@ -241,10 +317,13 @@
         "name": "分隔方式 3-4",
         "tooltip": "字符串 3 和字符串 4 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_4": {
@@ -255,10 +334,13 @@
         "name": "分隔方式 4-5",
         "tooltip": "字符串 4 和字符串 5 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_5": {

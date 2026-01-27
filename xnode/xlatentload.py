@@ -67,16 +67,17 @@ class XLatentLoad:
         return {
             "optional": {
                 "latent_input": ("LATENT", {
-                    "tooltip": "Latent received from upstream node (priority over file loading)"
+                    "tooltip": "Input latent from another node (higher priority than file loading)"
                 }),
                 "latent_file": ([""] + sorted(latent_files), {
-                    "tooltip": "Select latent file from dropdown (only active when input port is None)"
+                    "tooltip": "Latent file to load from ComfyUI output directory"
                 }),
             }
         }
 
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("latent",)
+    OUTPUT_TOOLTIPS = ("Loaded latent tensor (from input port or file)",)
     FUNCTION = "load"
     CATEGORY = "♾️ Xz3r0/Latent"
 
@@ -125,7 +126,7 @@ class XLatentLoad:
                 return (samples,)
 
             except Exception as e:
-                raise RuntimeError(f"Failed to load latent file: {str(e)}")
+                raise RuntimeError("Failed to load latent file")
 
         # 优先级3: 两者都无效，弹出警告
         raise RuntimeError("No latent provided via input port or file selection")

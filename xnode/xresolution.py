@@ -84,7 +84,7 @@ class XResolution:
             "required": {
                 "preset": (list(cls.PRESETS.keys()), {
                     "default": "Custom",
-                    "tooltip": "Select standard resolution preset"
+                    "tooltip": "Custom or standard resolution presets"
                 }),
                 "width": ("INT", {
                     "default": 1280,
@@ -92,7 +92,7 @@ class XResolution:
                     "max": 16384,
                     "step": 1,
                     "display": "number",
-                    "tooltip": "Resolution width"
+                    "tooltip": "Custom resolution width"
                 }),
                 "height": ("INT", {
                     "default": 720,
@@ -100,7 +100,7 @@ class XResolution:
                     "max": 16384,
                     "step": 1,
                     "display": "number",
-                    "tooltip": "Resolution height"
+                    "tooltip": "Custom resolution height"
                 }),
                 "scale": ("FLOAT", {
                     "default": 1.0,
@@ -119,6 +119,7 @@ class XResolution:
 
     RETURN_TYPES = ("INT", "INT")
     RETURN_NAMES = ("width", "height")
+    OUTPUT_TOOLTIPS = ("Output resolution width (after preset, scaling, and swap)", "Output resolution height (after preset, scaling, and swap)")
     FUNCTION = "process"
     CATEGORY = "♾️ Xz3r0/Tools"
 
@@ -143,10 +144,10 @@ class XResolution:
                 height = preset_height
 
         if width < 1 or height < 1:
-            raise ValueError("宽度和高度必须大于等于1")
+            raise ValueError("Width and height must be greater than or equal to 1")
 
         if scale <= 0:
-            raise ValueError("缩放倍率必须大于0")
+            raise ValueError("Scale multiplier must be greater than 0")
 
         output_width = int(width * scale)
         output_height = int(height * scale)
