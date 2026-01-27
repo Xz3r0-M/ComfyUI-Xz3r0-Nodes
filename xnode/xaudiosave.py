@@ -18,6 +18,7 @@ from scipy.io import wavfile
 
 
 class XAudioSave:
+    OUTPUT_NODE = True
     """
     XAudioSave 音频保存节点
 
