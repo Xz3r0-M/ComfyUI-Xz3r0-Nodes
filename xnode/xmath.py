@@ -109,13 +109,13 @@ class XMath:
         calc_func = operations.get(operation)
 
         if calc_func is None:
-            raise ValueError(f"Unknown operation: {operation}")
+            raise ValueError("Unknown operation")
 
         # 执行计算
         try:
             result = calc_func(a, b)
         except Exception as e:
-            raise ValueError(f"Calculation error ({operation}): {str(e)}")
+            raise ValueError("Calculation error")
 
         # 返回双格式结果
         return (int(result), float(result))

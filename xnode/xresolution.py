@@ -144,10 +144,10 @@ class XResolution:
                 height = preset_height
 
         if width < 1 or height < 1:
-            raise ValueError("宽度和高度必须大于等于1")
+            raise ValueError("Width and height must be greater than or equal to 1")
 
         if scale <= 0:
-            raise ValueError("缩放倍率必须大于0")
+            raise ValueError("Scale multiplier must be greater than 0")
 
         output_width = int(width * scale)
         output_height = int(height * scale)

@@ -126,7 +126,7 @@ class XLatentLoad:
                 return (samples,)
 
             except Exception as e:
-                raise RuntimeError(f"Failed to load latent file: {str(e)}")
+                raise RuntimeError("Failed to load latent file")
 
         # 优先级3: 两者都无效，弹出警告
         raise RuntimeError("No latent provided via input port or file selection")

@@ -561,4 +561,4 @@ class XAudioSave:
             if not candidate_path.exists():
                 return candidate
 
-        raise FileExistsError(f"无法生成唯一文件名")
+        raise FileExistsError("Unable to generate unique filename")

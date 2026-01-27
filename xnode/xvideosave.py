@@ -221,7 +221,7 @@ class XVideoSave(io.ComfyNode):
         
         # 检查是否成功
         if return_code != 0:
-            raise RuntimeError(f"FFmpeg encoding failed with code {return_code}")
+            raise RuntimeError("FFmpeg encoding failed with code")
 
         # 如果有音频，合并到最终文件
         if temp_audio_path:
@@ -247,7 +247,7 @@ class XVideoSave(io.ComfyNode):
                     .run()
                 )
             except ffmpeg.Error as e:
-                raise RuntimeError(f"FFmpeg merge failed") from e
+                raise RuntimeError("FFmpeg merge failed")
             
             # 删除临时音频文件
             os.unlink(temp_audio_path)
@@ -363,7 +363,7 @@ class XVideoSave(io.ComfyNode):
         return result
 
     @classmethod
-    def _get_unique_filename(cls, directory: Path, filename: str, extension: str) -> str:
+    def _get_unique_filename(cls, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
         """
         获取唯一的文件名，避免覆盖
 
@@ -373,14 +373,17 @@ class XVideoSave(io.ComfyNode):
             directory: 目录路径
             filename: 基础文件名
             extension: 文件扩展名
+            max_attempts: 最大尝试次数，防止无限循环
 
         Returns:
             唯一的文件名
+
+        Raises:
+            FileExistsError: 无法生成唯一文件名时抛出
         """
         base_name = filename
-        counter = 0
 
-        while True:
+        for counter in range(max_attempts):
             if counter == 0:
                 candidate = f"{base_name}{extension}"
             else:
@@ -391,4 +394,4 @@ class XVideoSave(io.ComfyNode):
             if not candidate_path.exists():
                 return candidate
 
-            counter += 1
+        raise FileExistsError("Unable to generate unique filename")
