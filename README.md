@@ -5,6 +5,8 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
+[📜 点击查看更新日志 | Click to view the changelog 📜](Changelog.md)
+
 </div>
 
 ---
