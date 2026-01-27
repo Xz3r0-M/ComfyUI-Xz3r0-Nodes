@@ -263,10 +263,13 @@
         "name": "分隔方式 1-2",
         "tooltip": "字符串 1 和字符串 2 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_2": {
@@ -277,10 +280,13 @@
         "name": "分隔方式 2-3",
         "tooltip": "字符串 2 和字符串 3 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_3": {
@@ -291,10 +297,13 @@
         "name": "分隔方式 3-4",
         "tooltip": "字符串 3 和字符串 4 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_4": {
@@ -305,10 +314,13 @@
         "name": "分隔方式 4-5",
         "tooltip": "字符串 4 和字符串 5 之间的分隔方式",
         "options": {
+          "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "period": "句号"
+          "comma_space": "逗号+空格",
+          "period": "句号",
+          "period_space": "句号+空格"
         }
       },
       "string_5": {

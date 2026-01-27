@@ -263,10 +263,13 @@
         "name": "Separation method 1-2",
         "tooltip": "Separation method between String 1 and String 2",
         "options": {
+          "none": "None",
           "newline": "Newline",
           "space": "Space",
           "comma": "Comma",
-          "period": "Period"
+          "comma_space": "Comma + Space",
+          "period": "Period",
+          "period_space": "Period + Space"
         }
       },
       "string_2": {
@@ -277,10 +280,13 @@
         "name": "Separation method 2-3",
         "tooltip": "Separation method between String 2 and String 3",
         "options": {
+          "none": "None",
           "newline": "Newline",
           "space": "Space",
           "comma": "Comma",
-          "period": "Period"
+          "comma_space": "Comma + Space",
+          "period": "Period",
+          "period_space": "Period + Space"
         }
       },
       "string_3": {
@@ -291,10 +297,13 @@
         "name": "Separation method 3-4",
         "tooltip": "Separation method between String 3 and String 4",
         "options": {
+          "none": "None",
           "newline": "Newline",
           "space": "Space",
           "comma": "Comma",
-          "period": "Period"
+          "comma_space": "Comma + Space",
+          "period": "Period",
+          "period_space": "Period + Space"
         }
       },
       "string_4": {
@@ -305,10 +314,13 @@
         "name": "Separation method 4-5",
         "tooltip": "Separation method between String 4 and String 5",
         "options": {
+          "none": "None",
           "newline": "Newline",
           "space": "Space",
           "comma": "Comma",
-          "period": "Period"
+          "comma_space": "Comma + Space",
+          "period": "Period",
+          "period_space": "Period + Space"
         }
       },
       "string_5": {
