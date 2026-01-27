@@ -1,11 +1,12 @@
 """
-数学运算节点模块
+Mathematical operation node module
 ================
 
-这个模块包含数学计算相关的节点。
+This module contains mathematical calculation related nodes.
 """
 
-from typing import Tuple
+import math
+from typing import Tuple, Optional
 
 
 class XMath:
@@ -25,39 +26,62 @@ class XMath:
         - 最小值: min(a, b)
 
     输入:
-        a: 第一个数值 (FLOAT)
-        b: 第二个数值 (FLOAT)
         operation: 计算方式 (下拉菜单选择)
+        basic_a: 基础第一个数值 (FLOAT)
+        basic_b: 基础第二个数值 (FLOAT)
+        input_a: 接收的第一个数值 (INT/FLOAT, 可选，连接时优先使用)
+        input_b: 接收的第二个数值 (INT/FLOAT, 可选，连接时优先使用)
 
     输出:
         int_result: 整数结果，截断小数部分（向零取整）
         float_result: 浮点数结果，保留精确值
 
+    优先级逻辑:
+        如果 use_input_a 为 True，则使用 input_a（如果未连接则为默认值 0.0）
+        否则使用 basic_a
+        同样的逻辑适用于 use_input_b、input_b 和 basic_b
+
     Usage example:
-        a=10.5, b=3.2, operation="Multiplication (×)"
-        Output: int_result=33, float_result=33.6
+        input_a=10, input_b=3.2, use_input_a=True, use_input_b=True, operation="Multiplication (×)"
+        Output: int_result=32, float_result=32.0
     """
 
     @classmethod
     def INPUT_TYPES(cls) -> dict:
         """定义节点的输入类型和约束"""
         return {
-            "required": {
-                "a": ("FLOAT", {
+            "optional": {
+                "input_a": ("INT,FLOAT", {
                     "default": 0.0,
                     "min": -1e10,
                     "max": 1e10,
-                    "step": 0.1,
                     "display": "number",
-                    "tooltip": "First input value"
+                    "tooltip": "input value A (accepts both INT and FLOAT, takes priority when use_input_a is enabled)"
                 }),
-                "b": ("FLOAT", {
+                "input_b": ("INT,FLOAT", {
+                    "default": 0.0,
+                    "min": -1e10,
+                    "max": 1e10,
+                    "display": "number",
+                    "tooltip": "input value B (accepts both INT and FLOAT, takes priority when use_input_b is enabled)"
+                }),
+            },
+            "required": {
+                "basic_a": ("FLOAT", {
                     "default": 0.0,
                     "min": -1e10,
                     "max": 1e10,
                     "step": 0.1,
                     "display": "number",
-                    "tooltip": "Second input value"
+                    "tooltip": "basic value A (FLOAT)"
+                }),
+                "basic_b": ("FLOAT", {
+                    "default": 0.0,
+                    "min": -1e10,
+                    "max": 1e10,
+                    "step": 0.1,
+                    "display": "number",
+                    "tooltip": "basic value B (FLOAT)"
                 }),
                 "operation": ([
                     "Addition (+)",
@@ -71,6 +95,18 @@ class XMath:
                 ], {
                     "default": "Addition (+)",
                     "tooltip": "Mathematical operation type"
+                }),
+                "use_input_a": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "use input value A (input_a takes precedence when enabled)"
+                }),
+                "use_input_b": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "use input value B (input_b takes precedence when enabled)"
+                }),
+                "swap_ab": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "swap a and b values"
                 })
             }
         }
@@ -81,14 +117,19 @@ class XMath:
     FUNCTION = "calculate"
     CATEGORY = "♾️ Xz3r0/Tools"
 
-    def calculate(self, a: float, b: float, operation: str) -> Tuple[int, float]:
+    def calculate(self, operation: str, basic_a: float = 0.0, basic_b: float = 0.0, input_a: Optional[float] = None, input_b: Optional[float] = None, use_input_a: bool = True, use_input_b: bool = True, swap_ab: bool = False) -> Tuple[int, float]:
         """
         执行数学计算
 
         Args:
-            a: 第一个数值
-            b: 第二个数值
-            operation: 计算方式
+            operation: 计算方式 (下拉菜单选择)
+            basic_a: 基础第一个数值 (FLOAT)
+            basic_b: 基础第二个数值 (FLOAT)
+            input_a: 接收的第一个数值 (INT/FLOAT, 可选)
+            input_b: 接收的第二个数值 (INT/FLOAT, 可选)
+            use_input_a: 是否优先使用 input_a (BOOLEAN, 默认True)
+            use_input_b: 是否优先使用 input_b (BOOLEAN, 默认True)
+            swap_ab: 是否交换 a 和 b 的值 (BOOLEAN, 默认False)
 
         Returns:
             (int_result, float_result): 整数结果(截断)和浮点数结果(精确)
@@ -99,7 +140,7 @@ class XMath:
             "Subtraction (-)": lambda x, y: x - y,
             "Multiplication (×)": lambda x, y: x * y,
             "Division (÷)": self._safe_divide,
-            "Power (**)": lambda x, y: x ** y,
+            "Power (**)": self._safe_power,
             "Modulo (%)": self._safe_modulo,
             "Maximum": max,
             "Minimum": min,
@@ -109,13 +150,54 @@ class XMath:
         calc_func = operations.get(operation)
 
         if calc_func is None:
-            raise ValueError("Unknown operation")
+            raise ValueError(f"Unknown operation: {operation}")
+
+        # 优先级逻辑：根据各自的开关决定是否使用 input
+        # 注意：在 ComfyUI 中，未连接的输入端口会使用 INPUT_TYPES 中定义的默认值（0.0）
+        if use_input_a:
+            a = input_a if isinstance(input_a, float) else float(input_a)
+        else:
+            a = basic_a
+            
+        if use_input_b:
+            b = input_b if isinstance(input_b, float) else float(input_b)
+        else:
+            b = basic_b
+
+        # 交换 a 和 b 的值
+        if swap_ab:
+            a, b = b, a
 
         # 执行计算
         try:
             result = calc_func(a, b)
-        except Exception as e:
-            raise ValueError("Calculation error")
+        except ZeroDivisionError:
+            raise ValueError("Division by zero")
+        except OverflowError:
+            # 根据运算类型和操作数符号确定溢出结果
+            if operation in ["Multiplication (×)", "Power (**)"]:
+                # 乘法：同号为正，异号为负
+                # 幂运算：偶指数为正，奇指数同底数符号
+                sign_positive = False
+                if operation == "Multiplication (×)":
+                    sign_positive = (a > 0 and b > 0) or (a < 0 and b < 0)
+                else:  # Power
+                    if a > 0:
+                        sign_positive = True
+                    elif b > 0 and int(b) % 2 == 0:
+                        sign_positive = True
+                return (0, float('inf') if sign_positive else float('-inf'))
+            else:
+                # 其他运算，简单判断
+                return (0, float('inf') if (a > 0 or b > 0) else float('-inf'))
+        except ValueError as e:
+            raise ValueError(f"Calculation error: {str(e)}")
+
+        # 验证结果有效性
+        if math.isnan(result):
+            raise ValueError("Calculation resulted in NaN")
+        if not math.isfinite(result):
+            raise ValueError("Cannot convert infinite result to integer")
 
         # 返回双格式结果
         return (int(result), float(result))
@@ -157,4 +239,30 @@ class XMath:
         if b == 0:
             raise ValueError("Division by zero in modulo operation")
         return a % b
+
+    def _safe_power(self, a: float, b: float) -> float:
+        """
+        安全幂运算，处理边界情况
+
+        Args:
+            a: 底数
+            b: 指数
+
+        Returns:
+            幂运算结果
+
+        Raises:
+            ValueError: 当运算无效时（如 0 的负数次方）
+        """
+        if a == 0 and b < 0:
+            raise ValueError("0 raised to negative power is undefined")
+        # 检查负底数的指数是否为整数（考虑浮点数精度）
+        if a < 0:
+            # 使用 math.isclose 检查是否接近整数，避免浮点数精度问题
+            if not (math.isclose(b, round(b), rel_tol=1e-9, abs_tol=1e-9)):
+                raise ValueError("Negative base with non-integer exponent produces complex result")
+        try:
+            return a ** b
+        except OverflowError:
+            return float('inf') if a > 0 else float('-inf')
 
