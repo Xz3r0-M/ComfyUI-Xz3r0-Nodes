@@ -1,3 +1,23 @@
+## v1.1.0 主要更新
+
+- **本次更新节点功能没有变化**
+1. 📝将版本号改为`1.1.0`
+    - 未来版本号的前两位数字表示主要功能更新 (新增节点 或 增强节点功能), 最后一位数字表示次要更新 (一般为修复BUG)
+
+2. 🪛更改节点注册方式
+    - 放弃项目之前使用的节点自动注册方式改为更偏标准的节点注册方式 (尝试提高兼容性)
+
+## v1.1.0 Major Updates
+
+- **No changes to node functionality in this update**
+1. 📝Changed version number to `1.1.0`
+    - In the future, the first two digits of the version number will indicate major feature updates (new nodes or enhanced node functionality), and the last digit will indicate minor updates (generally bug fixes)
+
+2. 🪛Changed node registration method
+    - Abandoned the previous automatic node registration method in favor of a more standard node registration approach (attempting to improve compatibility)
+
+---
+
 ## v1.0.3 主要更新
 
 1. ⭐新增 `XAudioSave` (音频保存节点)
