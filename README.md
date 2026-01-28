@@ -377,8 +377,11 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 ```
 ComfyUI-Xz3r0-Nodes/
-├── __init__.py          # 主入口 + 自动发现机制
-├── xnode/               # 节点目录（自动发现）
+├── .github/             # GitHub Actions
+│   └── workflows/
+│       └── publish.yml
+├── __init__.py          # 主入口
+├── xnode/               # 节点目录
 │   ├── __init__.py
 │   ├── xmath.py         # 数学运算节点
 │   ├── xresolution.py   # 分辨率设置节点
@@ -393,7 +396,13 @@ ComfyUI-Xz3r0-Nodes/
 │   │   └── nodeDefs.json
 │   └── zh/              # 中文定义
 │       └── nodeDefs.json
-├── requirements.txt     # Python依赖清单
+├── preview/             # 预览图片
+│   └── perview.png
+├── .gitignore           # Git 忽略文件
+├── Changelog.md         # 更新日志
+├── LICENSE              # MIT 许可证
+├── pyproject.toml       # Comfy Registry配置文件
+├── requirements.txt     # Python 依赖清单
 └── README.md            # 项目文档
 ```
 
