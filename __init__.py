@@ -2,19 +2,55 @@
 ComfyUI-Xz3r0-Nodes
 """
 
-print(f"""
-[Xz3r0-Nodes] =============♾️ComfyUI-Xz3r0-Nodes♾️=============""", flush=True)
-# print("[Xz3r0-Nodes] Loading...", flush=True)  # Debug marker
-import importlib
 import importlib.metadata
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Any, Tuple
+from typing import Dict, List, Optional, Tuple
+
+# ================================
+# 导入节点模块
+# ================================
+
+from .xnode.xaudiosave import NODE_CLASS_MAPPINGS as xaudiosave_CM, NODE_DISPLAY_NAME_MAPPINGS as xaudiosave_DNM
+from .xnode.ximagesave import NODE_CLASS_MAPPINGS as ximagesave_CM, NODE_DISPLAY_NAME_MAPPINGS as ximagesave_DNM
+from .xnode.xlatentload import NODE_CLASS_MAPPINGS as xlatentload_CM, NODE_DISPLAY_NAME_MAPPINGS as xlatentload_DNM
+from .xnode.xlatentsave import NODE_CLASS_MAPPINGS as xlatentsave_CM, NODE_DISPLAY_NAME_MAPPINGS as xlatentsave_DNM
+from .xnode.xmath import NODE_CLASS_MAPPINGS as xmath_CM, NODE_DISPLAY_NAME_MAPPINGS as xmath_DNM
+from .xnode.xresolution import NODE_CLASS_MAPPINGS as xresolution_CM, NODE_DISPLAY_NAME_MAPPINGS as xresolution_DNM
+from .xnode.xstringgroup import NODE_CLASS_MAPPINGS as xstringgroup_CM, NODE_DISPLAY_NAME_MAPPINGS as xstringgroup_DNM
+from .xnode.xvideosave import NODE_CLASS_MAPPINGS as xvideosave_CM, NODE_DISPLAY_NAME_MAPPINGS as xvideosave_DNM
+
+# ================================
+# 自动合并所有节点映射
+# ================================
+
+def merge_node_mappings() -> Tuple[Dict, Dict]:
+    """
+    自动收集并合并所有节点映射
+
+    Returns:
+        (NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS)
+    """
+    node_class_mappings = {}
+    node_display_name_mappings = {}
+
+    for name, value in list(globals().items()):
+        if name.endswith("_CM"):
+            node_class_mappings.update(value)
+        elif name.endswith("_DNM"):
+            node_display_name_mappings.update(value)
+
+    return node_class_mappings, node_display_name_mappings
 
 
-# ============================================================================
-# 依赖包检查
-# ============================================================================
+NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = merge_node_mappings()
+
+# ================================
+# 检测依赖
+# ================================
+
+print(f"""
+[Xz3r0-Nodes] =============♾️ComfyUI-Xz3r0-Nodes♾️=============""", flush=True)
 
 def check_dependencies(plugin_dir: Optional[Path] = None) -> Tuple[List[str], List[str]]:
     """
@@ -35,7 +71,6 @@ def check_dependencies(plugin_dir: Optional[Path] = None) -> Tuple[List[str], Li
         print(f"[Xz3r0-Nodes] ⚠ requirements.txt file not found", flush=True)
         return [], []
 
-    # Read and parse requirements.txt
     installed_packages = []
     missing_packages = []
 
@@ -43,22 +78,13 @@ def check_dependencies(plugin_dir: Optional[Path] = None) -> Tuple[List[str], Li
         for line in f:
             line = line.strip()
 
-            # Skip empty lines and comments
             if not line or line.startswith('#'):
                 continue
 
-            # Parse package name (extract package name, ignore version requirements)
-            # e.g.: torch>=2.0.0 -> torch
-            #       numpy==1.24.0 -> numpy
-            #       Pillow -> Pillow
-            #       ffmpeg-python -> ffmpeg-python
             match = re.match(r'^([a-zA-Z0-9_.-]+)', line)
             if match:
                 package_name = match.group(1)
 
-                # Use importlib.metadata to directly check if pip package is installed
-                # This method uses pip package name directly, no need to know module name
-                # importlib.metadata.distribution() is case-insensitive
                 try:
                     importlib.metadata.distribution(package_name)
                     installed_packages.append(package_name)
@@ -67,85 +93,14 @@ def check_dependencies(plugin_dir: Optional[Path] = None) -> Tuple[List[str], Li
 
     return installed_packages, missing_packages
 
+# ================================
+# 映射给ComfyUI
+# ================================
 
-# ============================================================================
-# 自动节点发现和导入
-# ============================================================================
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 
-def discover_nodes(plugin_dir: Optional[Path] = None) -> List[Type[Any]]:
-    """
-    Automatically discover and import all nodes from xnode directory
+# ================================
 
-    Args:
-        plugin_dir: Plugin root directory, defaults to current file's directory
-
-    Returns:
-        List of discovered node classes
-    """
-    if plugin_dir is None:
-        plugin_dir = Path(__file__).parent
-
-    # Specify scan xnode directory
-    xnode_dir = plugin_dir / "xnode"
-
-    if not xnode_dir.exists():
-        print(f"[Xz3r0-Nodes] ⚠ Warning: xnode directory does not exist")
-        return []
-
-    nodes = []
-
-    # Scan all .py files in xnode directory
-    for file_path in xnode_dir.glob("*.py"):
-        # Skip special files
-        if file_path.name.startswith("_"):
-            continue
-
-        # Calculate module path
-        module_name = f"xnode.{file_path.stem}"
-
-        try:
-            module = importlib.import_module(f".{module_name}", package=__name__)
-
-            # Find node classes in module
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-
-                # Check if it's a node class
-                if (isinstance(attr, type) and
-                    hasattr(attr, 'INPUT_TYPES') and
-                    hasattr(attr, 'RETURN_TYPES')):
-                    nodes.append(attr)
-                    # print(f"[Xz3r0-Nodes] ✓ Found node: {attr.__name__} ({attr.CATEGORY})", flush=True)
-
-        except Exception as e:
-            print(f"[Xz3r0-Nodes] ⚠ Failed to import module: {module_name}", flush=True)
-
-    return nodes
-
-
-# Automatically discover all nodes
-_all_nodes = discover_nodes()
-
-# Build node mappings
-NODE_CLASS_MAPPINGS: Dict[str, Type[Any]] = {}
-NODE_DISPLAY_NAME_MAPPINGS: Dict[str, str] = {}
-
-for node_class in _all_nodes:
-    class_name = node_class.__name__
-
-    # Add to class mapping
-    NODE_CLASS_MAPPINGS[class_name] = node_class
-
-    # Add display name (if available)
-    display_name = getattr(node_class, 'DISPLAY_NAME', class_name)
-    NODE_DISPLAY_NAME_MAPPINGS[class_name] = display_name
-
-
-# ============================================================================
-# Dependency Check
-# ============================================================================
-
-# print("[Xz3r0-Nodes] 📦 Checking dependencies...", flush=True)
 installed_deps, missing_deps = check_dependencies()
 
 if missing_deps:
@@ -153,20 +108,6 @@ if missing_deps:
     print(f"[Xz3r0-Nodes] 💡 Please run: pip install -r requirements.txt", flush=True)
 else:
     print(f"[Xz3r0-Nodes] ✅ All dependencies installed", flush=True)
-
-
-# print("[Xz3r0-Nodes] 🔍 Scanning node modules...", flush=True)
-
-# ============================================================================
-# Export List (Required by ComfyUI)
-# ============================================================================
-
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
-
-
-# ============================================================================
-# Plugin Loading Log Output
-# ============================================================================
 
 print(f"""[Xz3r0-Nodes] 🎨 Loaded nodes: {len(NODE_CLASS_MAPPINGS)}
 [Xz3r0-Nodes] ==================================================

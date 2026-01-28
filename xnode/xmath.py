@@ -266,3 +266,9 @@ class XMath:
         except OverflowError:
             return float('inf') if a > 0 else float('-inf')
 
+NODE_CLASS_MAPPINGS = {
+    "XMath": XMath,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XMath": "XMath",
+}

@@ -562,3 +562,11 @@ class XAudioSave:
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
+
+
+NODE_CLASS_MAPPINGS = {
+    "XAudioSave": XAudioSave,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XAudioSave": "XAudioSave",
+}

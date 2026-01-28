@@ -157,3 +157,9 @@ class XLatentLoad:
 
         return latent_files
 
+NODE_CLASS_MAPPINGS = {
+    "XLatentLoad": XLatentLoad,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XLatentLoad": "XLatentLoad",
+}

@@ -395,3 +395,10 @@ class XVideoSave(io.ComfyNode):
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
+
+NODE_CLASS_MAPPINGS = {
+    "XVideoSave": XVideoSave,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XVideoSave": "XVideoSave",
+}

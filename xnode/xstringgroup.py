@@ -48,3 +48,10 @@ class XStringGroup:
         selected_string = strings[int(select_string) - 1]
 
         return (grouped_string, selected_string, string_1, string_2, string_3, string_4, string_5)
+
+NODE_CLASS_MAPPINGS = {
+    "XStringGroup": XStringGroup,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XStringGroup": "XStringGroup",
+}

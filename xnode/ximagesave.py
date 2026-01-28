@@ -362,3 +362,9 @@ class XImageSave:
 
         return pil_image
 
+NODE_CLASS_MAPPINGS = {
+    "XImageSave": XImageSave,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XImageSave": "XImageSave",
+}

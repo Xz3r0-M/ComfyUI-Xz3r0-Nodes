@@ -157,3 +157,9 @@ class XResolution:
 
         return (output_width, output_height)
 
+NODE_CLASS_MAPPINGS = {
+    "XResolution": XResolution,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XResolution": "XResolution",
+}
