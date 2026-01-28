@@ -63,7 +63,7 @@ pip install -r requirements.txt
 
 <div align="center">
 
-<img src="preview/preview_v103.png" alt="项目预览" width="800">
+<img src="preview/perview.png" alt="Node perview" width="800">
 
 </div>
 
