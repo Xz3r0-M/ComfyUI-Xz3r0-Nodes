@@ -1,7 +1,7 @@
 [project]
 name = "xz3r0-nodes"
 description = "Custom ComfyUI nodes: XMath, XResolution, XImageSave, XLatentLoad, XLatentSave, XVideoSave, XAudioSave, XStringGroup"
-version = "1.0.3"
+version = "1.1.0"
 license = {file = "LICENSE"}
 
 dependencies = ["ffmpeg-python", "pyloudnorm"]

@@ -326,3 +326,9 @@ class XLatentSave:
 
         raise FileExistsError("Unable to generate unique filename")
 
+NODE_CLASS_MAPPINGS = {
+    "XLatentSave": XLatentSave,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XLatentSave": "XLatentSave",
+}
