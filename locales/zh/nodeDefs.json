@@ -224,7 +224,7 @@
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，如: Audio 或 audio_%Y%-%m%-%d%"
+        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "sample_rate": {
         "name": "采样率",
@@ -242,7 +242,7 @@
       },
       "peak_mode": {
         "name": "峰值模式",
-        "tooltip": "峰值限制模式: Disabled(禁用)，Simple Peak(快速，采样点检测)，True Peak(慢速,高品质广播标准，8x过采样)"
+        "tooltip": "峰值限制模式: Disabled(禁用)，Simple Peak(快速，采样点检测)，True Peak(慢速，高品质广播标准，8x过采样)"
       },
       "peak_limit": {
         "name": "峰值限制",

@@ -224,7 +224,7 @@
       },
       "subfolder": {
         "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), e.g., Audio or audio_%Y%-%m%-%d%"
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "sample_rate": {
         "name": "Sample Rate",
