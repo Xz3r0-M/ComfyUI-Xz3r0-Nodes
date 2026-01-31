@@ -13,12 +13,9 @@ from datetime import datetime
 from pathlib import Path
 
 import ffmpeg
-import numpy as np
-import torch
-
 import folder_paths
-
-from comfy_api.latest import io, ui, Input
+import torch
+from comfy_api.latest import Input, io, ui
 
 
 class XVideoSave(io.ComfyNode):
@@ -46,12 +43,15 @@ class XVideoSave(io.ComfyNode):
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         crf: 质量参数 0-63 (FLOAT)
-        preset: 编码预设 (STRING, 可选: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
+        preset: 编码预设 (STRING, 可选: ultrafast,
+            superfast, veryfast, faster, fast, medium, slow,
+            slower, veryslow)
         prompt: 工作流提示词(隐藏参数，自动注入)
         extra_pnginfo: 额外元数据(隐藏参数，自动注入)
 
     使用示例:
-        filename_prefix="MyVideo_%Y%m%d", subfolder="Videos", crf=0, preset="medium"
+        filename_prefix="MyVideo_%Y%m%d",
+        subfolder="Videos", crf=0, preset="medium"
 
     元数据说明:
         - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
@@ -67,20 +67,78 @@ class XVideoSave(io.ComfyNode):
             node_id="XVideoSave",
             display_name="XVideoSave",
             category="♾️ Xz3r0/Video",
-            description="Saves the input video to your ComfyUI output directory with H.265/HEVC encoding. Audio streams are copied without re-encoding to preserve original quality.",
+            description=(
+                "Saves the input video to your ComfyUI output directory "
+                "with H.265/HEVC encoding. Audio streams are copied "
+                "without re-encoding to preserve original quality."
+            ),
             inputs=[
                 io.Video.Input("video", tooltip="The video to save."),
-                io.String.Input("filename_prefix", default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%", tooltip="Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
-                io.String.Input("subfolder", default="Videos", tooltip="Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
-                io.Float.Input("crf", default=0.0, min=0, max=40.0, step=1, tooltip="Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."),
-                io.Combo.Input("preset", options=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], default="medium", tooltip="Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer."),
+                io.String.Input(
+                    "filename_prefix",
+                    default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                    tooltip=(
+                        "Filename prefix, supports datetime "
+                        "placeholders: %Y%, %m%, %d%, %H%, "
+                        "%M%, %S%"
+                    ),
+                ),
+                io.String.Input(
+                    "subfolder",
+                    default="Videos",
+                    tooltip=(
+                        "Subfolder name (no path separators allowed), "
+                        "supports datetime placeholders: %Y%, %m%, %d%, "
+                        "%H%, %M%, %S%"
+                    ),
+                ),
+                io.Float.Input(
+                    "crf",
+                    default=0.0,
+                    min=0,
+                    max=40.0,
+                    step=1,
+                    tooltip=(
+                        "Quality parameter (0=lossless, 40=worst "
+                        "quality). Higher CRF means lower quality "
+                        "with smaller file size."
+                    ),
+                ),
+                io.Combo.Input(
+                    "preset",
+                    options=[
+                        "ultrafast",
+                        "superfast",
+                        "veryfast",
+                        "faster",
+                        "fast",
+                        "medium",
+                        "slow",
+                        "slower",
+                        "veryslow",
+                    ],
+                    default="medium",
+                    tooltip=(
+                        "Encoding speed/compression tradeoff. Faster "
+                        "presets encode quickly but with larger files. "
+                        "Slower presets provide better compression but "
+                        "take longer."
+                    ),
+                ),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
         )
 
     @classmethod
-    def execute(cls, video: Input.Video, filename_prefix: str, subfolder: str, crf: float, preset: str) -> io.NodeOutput:
+    def execute(
+        cls,
+        video: Input.Video,
+        filename_prefix: str,
+        subfolder: str,
+        crf: float,
+        preset: str,
+    ) -> io.NodeOutput:
         """
         保存视频到ComfyUI输出目录
 
@@ -108,7 +166,9 @@ class XVideoSave(io.ComfyNode):
 
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = cls._sanitize_path(filename_prefix)
-        safe_filename_prefix = cls._replace_datetime_placeholders(safe_filename_prefix)
+        safe_filename_prefix = cls._replace_datetime_placeholders(
+            safe_filename_prefix
+        )
 
         safe_subfolder = cls._sanitize_path(subfolder)
         safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
@@ -123,7 +183,9 @@ class XVideoSave(io.ComfyNode):
 
         # 生成文件名(检测同名文件并添加序列号)
         base_filename = safe_filename_prefix
-        final_filename = cls._get_unique_filename(save_dir, base_filename, ".mkv")
+        final_filename = cls._get_unique_filename(
+            save_dir, base_filename, ".mkv"
+        )
         save_path = save_dir / final_filename
 
         # 创建临时文件保存音频（如果存在）
@@ -131,40 +193,52 @@ class XVideoSave(io.ComfyNode):
         if audio is not None:
             waveform = audio["waveform"]
             sample_rate = audio["sample_rate"]
-            
+
             # 确保波形数据格式正确
             if waveform.dim() == 3:
                 waveform = waveform.squeeze(0)
             if waveform.dim() == 1:
                 waveform = waveform.unsqueeze(0)
-            
+
             # 转换为float32 PCM格式（如果是其他格式）
             if waveform.dtype.is_floating_point:
                 waveform = waveform.float()
             elif waveform.dtype == torch.int16:
-                waveform = waveform.float() / (2 ** 15)
+                waveform = waveform.float() / (2**15)
             elif waveform.dtype == torch.int32:
-                waveform = waveform.float() / (2 ** 31)
-            
+                waveform = waveform.float() / (2**31)
+
             # 转换为int16格式用于pcm_s16le编码
-            waveform_int16 = (waveform * (2 ** 15 - 1)).clamp(-2 ** 15, 2 ** 15 - 1).short()
-            
+            waveform_int16 = (
+                (waveform * (2**15 - 1)).clamp(-(2**15), 2**15 - 1).short()
+            )
+
             # 转换为numpy数组（channels, samples）→ (samples, channels）
             audio_data = waveform_int16.numpy().T
-            
+
             # 创建临时音频文件
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", delete=False
+            ) as temp_audio:
                 temp_audio_path = temp_audio.name
-                
+
             # 使用ffmpeg保存音频
             audio_input = (
-                ffmpeg
-                .input('pipe:', format='s16le', ac=audio_data.shape[1], ar=sample_rate)
-                .output(temp_audio_path, acodec='pcm_s16le', **{'loglevel': 'quiet'})
+                ffmpeg.input(
+                    "pipe:",
+                    format="s16le",
+                    ac=audio_data.shape[1],
+                    ar=sample_rate,
+                )
+                .output(
+                    temp_audio_path,
+                    acodec="pcm_s16le",
+                    **{"loglevel": "quiet"},
+                )
                 .overwrite_output()
                 .run_async(pipe_stdin=True)
             )
-            
+
             # 写入音频数据
             audio_input.stdin.write(audio_data.tobytes())
             audio_input.stdin.close()
@@ -172,24 +246,31 @@ class XVideoSave(io.ComfyNode):
 
         # 使用ffmpeg-python保存视频
         # 先保存临时视频文件
-        with tempfile.NamedTemporaryFile(suffix='.mkv', delete=False) as temp_video:
+        with tempfile.NamedTemporaryFile(
+            suffix=".mkv", delete=False
+        ) as temp_video:
             temp_video_path = temp_video.name
-        
+
         # 构建ffmpeg命令
         if temp_audio_path:
             # 视频和音频（使用音频流拷贝，保留原始质量）
             process = (
-                ffmpeg
-                .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{width}x{height}', r=fps)
+                ffmpeg.input(
+                    "pipe:",
+                    format="rawvideo",
+                    pix_fmt="rgb24",
+                    s=f"{width}x{height}",
+                    r=fps,
+                )
                 .output(
                     temp_video_path,
-                    vcodec='libx265',
-                    pix_fmt='yuv444p10le',
+                    vcodec="libx265",
+                    pix_fmt="yuv444p10le",
                     crf=int(crf),
                     preset=preset,
-                    acodec='copy',
-                    movflags='faststart',
-                    **{'loglevel': 'quiet'}
+                    acodec="copy",
+                    movflags="faststart",
+                    **{"loglevel": "quiet"},
                 )
                 .overwrite_output()
                 .run_async(pipe_stdin=True)
@@ -197,28 +278,37 @@ class XVideoSave(io.ComfyNode):
         else:
             # 只有视频
             process = (
-                ffmpeg
-                .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{width}x{height}', r=fps)
+                ffmpeg.input(
+                    "pipe:",
+                    format="rawvideo",
+                    pix_fmt="rgb24",
+                    s=f"{width}x{height}",
+                    r=fps,
+                )
                 .output(
                     temp_video_path,
-                    vcodec='libx265',
-                    pix_fmt='yuv444p10le',
+                    vcodec="libx265",
+                    pix_fmt="yuv444p10le",
                     crf=int(crf),
                     preset=preset,
-                    movflags='faststart',
-                    **{'loglevel': 'quiet'}
+                    movflags="faststart",
+                    **{"loglevel": "quiet"},
                 )
                 .overwrite_output()
                 .run_async(pipe_stdin=True)
             )
-        
+
         # 写入视频帧
         for frame in images:
-            frame_data = torch.clamp(frame[..., :3] * 255, min=0, max=255).to(device=torch.device("cpu"), dtype=torch.uint8).numpy()
+            frame_data = (
+                torch.clamp(frame[..., :3] * 255, min=0, max=255)
+                .to(device=torch.device("cpu"), dtype=torch.uint8)
+                .numpy()
+            )
             process.stdin.write(frame_data.tobytes())
         process.stdin.close()
         return_code = process.wait()
-        
+
         # 检查是否成功
         if return_code != 0:
             raise RuntimeError("FFmpeg encoding failed with code")
@@ -230,25 +320,24 @@ class XVideoSave(io.ComfyNode):
             audio_input = ffmpeg.input(temp_audio_path)
             try:
                 (
-                    ffmpeg
-                    .output(
+                    ffmpeg.output(
                         video_input,
                         audio_input,
                         str(save_path),
-                        vcodec='libx265',
-                        pix_fmt='yuv444p10le',
+                        vcodec="libx265",
+                        pix_fmt="yuv444p10le",
                         crf=int(crf),
                         preset=preset,
-                        acodec='copy',
-                        movflags='faststart',
-                        **{'loglevel': 'quiet'}
+                        acodec="copy",
+                        movflags="faststart",
+                        **{"loglevel": "quiet"},
                     )
                     .overwrite_output()
                     .run()
                 )
-            except ffmpeg.Error as e:
-                raise RuntimeError("FFmpeg merge failed")
-            
+            except ffmpeg.Error:
+                raise RuntimeError("FFmpeg merge failed") from None
+
             # 删除临时音频文件
             os.unlink(temp_audio_path)
         else:
@@ -263,7 +352,15 @@ class XVideoSave(io.ComfyNode):
         subfolder_path = safe_subfolder if safe_subfolder else ""
 
         # 返回视频预览
-        return io.NodeOutput(ui=ui.PreviewVideo([ui.SavedResult(final_filename, subfolder_path, io.FolderType.output)]))
+        return io.NodeOutput(
+            ui=ui.PreviewVideo(
+                [
+                    ui.SavedResult(
+                        final_filename, subfolder_path, io.FolderType.output
+                    )
+                ]
+            )
+        )
 
     @classmethod
     def _sanitize_path(cls, path: str) -> str:
@@ -283,35 +380,50 @@ class XVideoSave(io.ComfyNode):
 
         # 危险字符列表
         dangerous_chars = [
-            '\\', '/', '..', '.', '|', ':', '*', '?', '"', '<', '>',
-            '\n', '\r', '\t', '\x00', '\x0b', '\x0c'
+            "\\",
+            "/",
+            "..",
+            ".",
+            "|",
+            ":",
+            "*",
+            "?",
+            '"',
+            "<",
+            ">",
+            "\n",
+            "\r",
+            "\t",
+            "\x00",
+            "\x0b",
+            "\x0c",
         ]
 
         # 路径遍历模式
         path_traversal_patterns = [
-            r'\.\./+',
-            r'\.\.\\+',
-            r'~',
-            r'^\.',
-            r'\.$',
-            r'^/',
-            r'^\\',
+            r"\.\./+",
+            r"\.\.\\+",
+            r"~",
+            r"^\.",
+            r"\.$",
+            r"^/",
+            r"^\\",
         ]
 
         # 替换危险字符
         safe_path = path
         for char in dangerous_chars:
-            safe_path = safe_path.replace(char, '_')
+            safe_path = safe_path.replace(char, "_")
 
         # 替换路径遍历模式
         for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, '_', safe_path)
+            safe_path = re.sub(pattern, "_", safe_path)
 
         # 清理连续的下划线
-        safe_path = re.sub(r'_+', '_', safe_path)
+        safe_path = re.sub(r"_+", "_", safe_path)
 
         # 移除首尾下划线
-        safe_path = safe_path.strip('_')
+        safe_path = safe_path.strip("_")
 
         return safe_path
 
@@ -357,13 +469,19 @@ class XVideoSave(io.ComfyNode):
             return placeholder
 
         # 匹配 %X% 格式(X为Y,m,d,H,M,S)
-        pattern = r'%(Y|m|d|H|M|S)%'
+        pattern = r"%(Y|m|d|H|M|S)%"
         result = re.sub(pattern, replace_match, text)
 
         return result
 
     @classmethod
-    def _get_unique_filename(cls, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
+    def _get_unique_filename(
+        cls,
+        directory: Path,
+        filename: str,
+        extension: str,
+        max_attempts: int = 100000,
+    ) -> str:
         """
         获取唯一的文件名，避免覆盖
 
@@ -395,6 +513,7 @@ class XVideoSave(io.ComfyNode):
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
+
 
 NODE_CLASS_MAPPINGS = {
     "XVideoSave": XVideoSave,

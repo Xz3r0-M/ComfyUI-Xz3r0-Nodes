@@ -6,20 +6,17 @@
 """
 
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List
 
+import folder_paths
 import numpy as np
 import torch
-import folder_paths
 from PIL import Image, PngImagePlugin
 
 
 class XImageSave:
-
     OUTPUT_NODE = True
     """
     XImageSave 图像保存节点
@@ -66,38 +63,61 @@ class XImageSave:
         """定义节点的输入类型和约束"""
         return {
             "required": {
-                "images": ("IMAGE", {
-                    "tooltip": "Input image tensor (B, H, W, C)"
-                }),
-                "filename_prefix": ("STRING", {
-                    "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                    "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-                }),
-                "subfolder": ("STRING", {
-                    "default": "Images",
-                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-                }),
-                "compression_level": ("INT", {
-                    "default": 5,
-                    "min": 0,
-                    "max": 9,
-                    "step": 1,
-                    "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
-                })
+                "images": (
+                    "IMAGE",
+                    {"tooltip": "Input image tensor (B, H, W, C)"},
+                ),
+                "filename_prefix": (
+                    "STRING",
+                    {
+                        "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
+                    },
+                ),
+                "subfolder": (
+                    "STRING",
+                    {
+                        "default": "Images",
+                        "tooltip": (
+                            "Subfolder name (no path separators "
+                            "allowed), supports datetime "
+                            "placeholders: %Y%, %m%, %d%, %H%, "
+                            "%M%, %S%"
+                        ),
+                    },
+                ),
+                "compression_level": (
+                    "INT",
+                    {
+                        "default": 5,
+                        "min": 0,
+                        "max": 9,
+                        "step": 1,
+                        "tooltip": ("PNG compression level (0=no compression, 9=maximum compression)"),
+                    },
+                ),
             },
-            "hidden": {
-                "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO"
-            }
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("images", "save_path")
-    OUTPUT_TOOLTIPS = ("Original input images (passed through)", "Saved file path relative to ComfyUI output directory")
+    OUTPUT_TOOLTIPS = (
+        "Original input images (passed through)",
+        "Saved file path relative to ComfyUI output directory",
+    )
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Image"
 
-    def save(self, images: torch.Tensor, filename_prefix: str, subfolder: str = "", compression_level: int = 0, prompt=None, extra_pnginfo=None) -> Tuple[torch.Tensor, str]:
+    def save(
+        self,
+        images: torch.Tensor,
+        filename_prefix: str,
+        subfolder: str = "",
+        compression_level: int = 0,
+        prompt=None,
+        extra_pnginfo=None,
+    ) -> tuple[torch.Tensor, str]:
         """
         保存图像到ComfyUI输出目录
 
@@ -154,7 +174,12 @@ class XImageSave:
                 pnginfo_obj = PngImagePlugin.PngInfo()
                 for key, value in pnginfo.items():
                     pnginfo_obj.add_text(key, value)
-                img_pil.save(save_path, format="PNG", compress_level=compression_level, pnginfo=pnginfo_obj)
+                img_pil.save(
+                    save_path,
+                    format="PNG",
+                    compress_level=compression_level,
+                    pnginfo=pnginfo_obj,
+                )
             else:
                 # 无元数据时正常保存
                 img_pil.save(save_path, format="PNG", compress_level=compression_level)
@@ -223,35 +248,50 @@ class XImageSave:
 
         # 危险字符列表
         dangerous_chars = [
-            '\\', '/', '..', '.', '|', ':', '*', '?', '"', '<', '>',
-            '\n', '\r', '\t', '\x00', '\x0b', '\x0c'
+            "\\",
+            "/",
+            "..",
+            ".",
+            "|",
+            ":",
+            "*",
+            "?",
+            '"',
+            "<",
+            ">",
+            "\n",
+            "\r",
+            "\t",
+            "\x00",
+            "\x0b",
+            "\x0c",
         ]
 
         # 路径遍历模式
         path_traversal_patterns = [
-            r'\.\./+',
-            r'\.\.\\+',
-            r'~',
-            r'^\.',
-            r'\.$',
-            r'^/',
-            r'^\\',
+            r"\.\./+",
+            r"\.\.\\+",
+            r"~",
+            r"^\.",
+            r"\.$",
+            r"^/",
+            r"^\\",
         ]
 
         # 替换危险字符
         safe_path = path
         for char in dangerous_chars:
-            safe_path = safe_path.replace(char, '_')
+            safe_path = safe_path.replace(char, "_")
 
         # 替换路径遍历模式
         for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, '_', safe_path)
+            safe_path = re.sub(pattern, "_", safe_path)
 
         # 清理连续的下划线
-        safe_path = re.sub(r'_+', '_', safe_path)
+        safe_path = re.sub(r"_+", "_", safe_path)
 
         # 移除首尾下划线
-        safe_path = safe_path.strip('_')
+        safe_path = safe_path.strip("_")
 
         return safe_path
 
@@ -285,7 +325,13 @@ class XImageSave:
 
         return result
 
-    def _get_unique_filename(self, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
+    def _get_unique_filename(
+        self,
+        directory: Path,
+        filename: str,
+        extension: str,
+        max_attempts: int = 100000,
+    ) -> str:
         """
         获取唯一的文件名，避免覆盖
 
@@ -334,7 +380,7 @@ class XImageSave:
         # 处理批次维度：如果是4D张量，取第一个图像
         if tensor.dim() == 4:
             tensor = tensor[0]
-        
+
         # 转换为numpy数组并移除多余维度（使用squeeze）
         if tensor.dim() == 3:
             numpy_array = tensor.numpy()
@@ -347,13 +393,13 @@ class XImageSave:
         # 创建PIL图像
         if numpy_array.shape[2] == 4:
             # RGBA
-            mode = 'RGBA'
+            mode = "RGBA"
         elif numpy_array.shape[2] == 3:
             # RGB
-            mode = 'RGB'
+            mode = "RGB"
         elif numpy_array.shape[2] == 1:
             # 灰度图
-            mode = 'L'
+            mode = "L"
             numpy_array = numpy_array.squeeze(2)
         else:
             raise ValueError("Unsupported channel count")
@@ -361,6 +407,7 @@ class XImageSave:
         pil_image = Image.fromarray(numpy_array, mode=mode)
 
         return pil_image
+
 
 NODE_CLASS_MAPPINGS = {
     "XImageSave": XImageSave,

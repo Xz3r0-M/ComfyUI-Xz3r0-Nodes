@@ -7,13 +7,12 @@ Latent加载节点模块
 
 import os
 from pathlib import Path
-from typing import Tuple, List, Optional
 
-import torch
 import safetensors.torch
 
 try:
     import folder_paths
+
     HAS_COMFYUI = True
 except ImportError:
     HAS_COMFYUI = False
@@ -66,12 +65,16 @@ class XLatentLoad:
 
         return {
             "optional": {
-                "latent_input": ("LATENT", {
-                    "tooltip": "Input latent from another node (higher priority than file loading)"
-                }),
-                "latent_file": ([""] + sorted(latent_files), {
-                    "tooltip": "Latent file to load from ComfyUI output directory"
-                }),
+                "latent_input": (
+                    "LATENT",
+                    {"tooltip": ("Input latent from another node (higher priority than file loading)")},
+                ),
+                "latent_file": (
+                    [""] + sorted(latent_files),
+                    {
+                        "tooltip": ("Latent file to load from ComfyUI output directory"),
+                    },
+                ),
             }
         }
 
@@ -81,7 +84,7 @@ class XLatentLoad:
     FUNCTION = "load"
     CATEGORY = "♾️ Xz3r0/Latent"
 
-    def load(self, latent_input: Optional[dict] = None, latent_file: str = "") -> Tuple[dict]:
+    def load(self, latent_input: dict | None = None, latent_file: str = "") -> tuple[dict]:
         """
         加载Latent
 
@@ -116,7 +119,7 @@ class XLatentLoad:
             # 加载Latent文件
             try:
                 latent_data = safetensors.torch.load_file(str(file_path), device="cpu")
-                
+
                 # 检查Latent格式版本并应用乘数
                 multiplier = 1.0
                 if "latent_format_version_0" not in latent_data:
@@ -125,14 +128,14 @@ class XLatentLoad:
                 samples = {"samples": latent_data["latent_tensor"].float() * multiplier}
                 return (samples,)
 
-            except Exception as e:
-                raise RuntimeError("Failed to load latent file")
+            except Exception:
+                raise RuntimeError("Failed to load latent file") from None
 
         # 优先级3: 两者都无效，弹出警告
         raise RuntimeError("No latent provided via input port or file selection")
 
     @classmethod
-    def _get_latent_files(cls, directory: Path) -> List[str]:
+    def _get_latent_files(cls, directory: Path) -> list[str]:
         """
         递归扫描目录，获取所有.latent文件
 
@@ -151,11 +154,12 @@ class XLatentLoad:
         for latent_file in directory.rglob("*.latent"):
             # 获取相对于输出目录的路径
             relative_path = latent_file.relative_to(directory)
-            
+
             # 使用正斜杠作为路径分隔符（跨平台兼容）
             latent_files.append(str(relative_path).replace(os.sep, "/"))
 
         return latent_files
+
 
 NODE_CLASS_MAPPINGS = {
     "XLatentLoad": XLatentLoad,

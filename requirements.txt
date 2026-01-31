@@ -33,5 +33,4 @@
 
 # ================
 # Additional dependencies for this extension:
-ffmpeg-python   #   XVideoSave
-pyloudnorm      #   XAudioSave (LUFS normalization)
+ffmpeg-python   #   XVideoSave, XAudioSave (LUFS normalization via FFmpeg)
