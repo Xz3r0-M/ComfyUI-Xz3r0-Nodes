@@ -9,9 +9,25 @@
     - LUFS目标值改为`-14.1`, 峰值限制目标值改为`-1.1`（因为有些情况下loudnorm 滤镜处理后的音频会有偏差）
 
     无关紧要的抱怨:
-        不再使用`pyloudnorm`是因为我测试发现对多声道音频会报错, 尝试修复无果所以换成了FFmpeg, 但FFmpeg并不是没有问题, 实际上loudnorm 滤镜本身对一些参数有 (莫名其妙的) 硬绑定, 导致无法完全符合我的 (传统音频插件处理流程) 想法, 来来回回好几天尝试不同方案和解决奇怪的BUG, 我在这个节点上花了1亿Tokens, 是的, 就是1亿, 谢谢你 FFmpeg🫠.
+        不再使用`pyloudnorm`是因为我测试发现对多声道音频会报错, 尝试修复无果所以换成了FFmpeg, 但FFmpeg并不是没有问题, 实际上loudnorm 滤镜本身对一些参数有 (莫名其妙的) 硬绑定, 导致无法完全符合我的 (传统音频插件处理流程) 想法, 来来回回好几天尝试不同方案和解决奇怪的BUG, 我在这个节点上花了1亿Tokens, 是的, 就是1亿, 谢谢你 FFmpeg🫠
 
 2. 🧬 规范化所有节点的代码 (呃, 真的规范了吗...)
+
+
+## v1.2.0 Major Updates
+1. 🛠️ Enhanced `XAudioSave`
+    - Changed the node's audio volume normalization and peak limiting processing to use FFmpeg (loudnorm filter) to improve compatibility with multi-channel audio (e.g., 5.1 and 7.1). The previously used dependency `pyloudnorm` is no longer needed. Now the project only requires installing `ffmpeg-python` as a dependency and having FFmpeg installed locally (Awesome 😌)
+    - FFmpeg processing takes longer than the previous method (requires two-pass processing), but achieves more accurate target values
+    - Audio files upgraded from 16-bit WAV (PCM 16-bit) to higher quality 32-bit float WAV (PCM 32-bit float), but files are correspondingly larger (Salute to your hard drive 🫡)
+    - Removed the previous Simple Peak mode, now changed to a toggle for `Peak Limiting` (True Peak peak limiting), default: `true` (enabled)
+    - Added compressor (acompressor filter) and toggle button. Compressor offers three compression presets: Fast/Balanced/Slow. Compressor toggle default: `false` (disabled)
+    - Added custom compressor ratio and toggle button. When enabled, custom ratio values override the compression preset's ratio
+    - LUFS target value changed to `-14.1`, peak limiting target value changed to `-1.1` (because in some cases audio processed by loudnorm filter has deviations)
+
+    Irrelevant complaint:
+        Stopped using `pyloudnorm` because I found it errors with multi-channel audio during testing. Tried to fix it but failed, so switched to FFmpeg. However, FFmpeg is not without issues - actually the loudnorm filter has some (inexplicable) hard bindings on certain parameters, making it impossible to fully match my (traditional audio plugin processing workflow) ideas. Went back and forth for several days trying different solutions and solving weird bugs. I spent 100 million Tokens on this node. Yes, 100 million. Thank you FFmpeg 🫠
+
+2. 🧬 Standardized code for all nodes (Uh, did I really standardize it...)
 
 
 ## v1.1.0 主要更新
