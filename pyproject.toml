@@ -1,10 +1,10 @@
 [project]
 name = "xz3r0-nodes"
 description = "Custom ComfyUI nodes: XMath, XResolution, XImageSave, XLatentLoad, XLatentSave, XVideoSave, XAudioSave, XStringGroup"
-version = "1.1.0"
-license = {file = "LICENSE"}
+version = "1.2.0"
+license = { file = "LICENSE" }
 
-dependencies = ["ffmpeg-python", "pyloudnorm"]
+dependencies = ["ffmpeg-python"]
 
 [project.urls]
 Repository = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes"
@@ -16,6 +16,4 @@ Documentation = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki"
 PublisherId = "xz3r0"
 DisplayName = "ComfyUI-Xz3r0-Nodes"
 Icon = "https://avatars.githubusercontent.com/u/67074212"
-includes = [] 
-# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
-
+includes = []

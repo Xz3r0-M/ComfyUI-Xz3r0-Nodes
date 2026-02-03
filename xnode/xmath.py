@@ -6,7 +6,6 @@ This module contains mathematical calculation related nodes.
 """
 
 import math
-from typing import Tuple, Optional
 
 
 class XMath:
@@ -42,7 +41,8 @@ class XMath:
         同样的逻辑适用于 use_input_b、input_b 和 basic_b
 
     Usage example:
-        input_a=10, input_b=3.2, use_input_a=True, use_input_b=True, operation="Multiplication (×)"
+        input_a=10, input_b=3.2, use_input_a=True, "
+        use_input_b=True, operation="Multiplication (×)"
         Output: int_result=32, float_result=32.0
     """
 
@@ -51,73 +51,123 @@ class XMath:
         """定义节点的输入类型和约束"""
         return {
             "optional": {
-                "input_a": ("INT,FLOAT", {
-                    "default": 0.0,
-                    "min": -1e10,
-                    "max": 1e10,
-                    "display": "number",
-                    "tooltip": "input value A (accepts both INT and FLOAT, takes priority when use_input_a is enabled)"
-                }),
-                "input_b": ("INT,FLOAT", {
-                    "default": 0.0,
-                    "min": -1e10,
-                    "max": 1e10,
-                    "display": "number",
-                    "tooltip": "input value B (accepts both INT and FLOAT, takes priority when use_input_b is enabled)"
-                }),
+                "input_a": (
+                    "INT,FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": -1e10,
+                        "max": 1e10,
+                        "display": "number",
+                        "tooltip": (
+                            "input value A (accepts both INT and FLOAT, "
+                            "takes priority when use_input_a is enabled)"
+                        ),
+                    },
+                ),
+                "input_b": (
+                    "INT,FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": -1e10,
+                        "max": 1e10,
+                        "display": "number",
+                        "tooltip": (
+                            "input value B (accepts both INT and FLOAT, "
+                            "takes priority when use_input_b is enabled)"
+                        ),
+                    },
+                ),
             },
             "required": {
-                "basic_a": ("FLOAT", {
-                    "default": 0.0,
-                    "min": -1e10,
-                    "max": 1e10,
-                    "step": 0.1,
-                    "display": "number",
-                    "tooltip": "basic value A (FLOAT)"
-                }),
-                "basic_b": ("FLOAT", {
-                    "default": 0.0,
-                    "min": -1e10,
-                    "max": 1e10,
-                    "step": 0.1,
-                    "display": "number",
-                    "tooltip": "basic value B (FLOAT)"
-                }),
-                "operation": ([
-                    "Addition (+)",
-                    "Subtraction (-)",
-                    "Multiplication (×)",
-                    "Division (÷)",
-                    "Power (**)",
-                    "Modulo (%)",
-                    "Maximum",
-                    "Minimum"
-                ], {
-                    "default": "Addition (+)",
-                    "tooltip": "Mathematical operation type"
-                }),
-                "use_input_a": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "use input value A (input_a takes precedence when enabled, fallbacks to basic_a if not connected to other node)"
-                }),
-                "use_input_b": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "use input value B (input_b takes precedence when enabled, fallbacks to basic_b if not connected to other node)"
-                }),
-                "swap_ab": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "swap a and b values"
-                })
-            }
+                "basic_a": (
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": -1e10,
+                        "max": 1e10,
+                        "step": 0.1,
+                        "display": "number",
+                        "tooltip": ("basic value A (FLOAT)"),
+                    },
+                ),
+                "basic_b": (
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": -1e10,
+                        "max": 1e10,
+                        "step": 0.1,
+                        "display": "number",
+                        "tooltip": ("basic value B (FLOAT)"),
+                    },
+                ),
+                "operation": (
+                    [
+                        "Addition (+)",
+                        "Subtraction (-)",
+                        "Multiplication (×)",
+                        "Division (÷)",
+                        "Power (**)",
+                        "Modulo (%)",
+                        "Maximum",
+                        "Minimum",
+                    ],
+                    {
+                        "default": "Addition (+)",
+                        "tooltip": "Mathematical operation type",
+                    },
+                ),
+                "use_input_a": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": (
+                            "use input value A (input_a takes "
+                            "precedence when enabled, fallbacks "
+                            "to basic_a if not connected to "
+                            "other node)"
+                        ),
+                    },
+                ),
+                "use_input_b": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": (
+                            "use input value B (input_b takes "
+                            "precedence when enabled, fallbacks "
+                            "to basic_b if not connected to "
+                            "other node)"
+                        ),
+                    },
+                ),
+                "swap_ab": (
+                    "BOOLEAN",
+                    {"default": False, "tooltip": "swap a and b values"},
+                ),
+            },
         }
 
     RETURN_TYPES = ("INT", "FLOAT")
     RETURN_NAMES = ("int_result", "float_result")
-    OUTPUT_TOOLTIPS = ("Integer result (truncated decimal part towards zero)", "Float result (exact value with decimal)")
+    OUTPUT_TOOLTIPS = (
+        "Integer result (truncated decimal part towards zero)",
+        "Float result (exact value with decimal)",
+    )
     FUNCTION = "calculate"
     CATEGORY = "♾️ Xz3r0/Tools"
 
-    def calculate(self, operation: str, basic_a: float = 0.0, basic_b: float = 0.0, input_a: Optional[float] = None, input_b: Optional[float] = None, use_input_a: bool = True, use_input_b: bool = True, swap_ab: bool = False) -> Tuple[int, float]:
+    def calculate(
+        self,
+        operation: str,
+        basic_a: float = 0.0,
+        basic_b: float = 0.0,
+        input_a: float | None = None,
+        input_b: float | None = None,
+        use_input_a: bool = True,
+        use_input_b: bool = True,
+        swap_ab: bool = False,
+    ) -> tuple[int, float]:
         """
         执行数学计算
 
@@ -172,7 +222,7 @@ class XMath:
         try:
             result = calc_func(a, b)
         except ZeroDivisionError:
-            raise ValueError("Division by zero")
+            raise ValueError("Division by zero") from None
         except OverflowError:
             # 根据运算类型和操作数符号确定溢出结果
             if operation in ["Multiplication (×)", "Power (**)"]:
@@ -186,12 +236,12 @@ class XMath:
                         sign_positive = True
                     elif b > 0 and int(b) % 2 == 0:
                         sign_positive = True
-                return (0, float('inf') if sign_positive else float('-inf'))
+                return (0, float("inf") if sign_positive else float("-inf"))
             else:
                 # 其他运算，简单判断
-                return (0, float('inf') if (a > 0 or b > 0) else float('-inf'))
+                return (0, float("inf") if (a > 0 or b > 0) else float("-inf"))
         except ValueError as e:
-            raise ValueError(f"Calculation error: {str(e)}")
+            raise ValueError(f"Calculation error: {str(e)}") from e
 
         # 验证结果有效性
         if math.isnan(result):
@@ -217,9 +267,9 @@ class XMath:
             if a == 0:
                 return 0.0  # 0/0 情况，返回0
             elif a > 0:
-                return float('inf')  # 正数/0
+                return float("inf")  # 正数/0
             else:
-                return float('-inf')  # 负数/0
+                return float("-inf")  # 负数/0
         return a / b
 
     def _safe_modulo(self, a: float, b: float) -> float:
@@ -260,11 +310,15 @@ class XMath:
         if a < 0:
             # 使用 math.isclose 检查是否接近整数，避免浮点数精度问题
             if not (math.isclose(b, round(b), rel_tol=1e-9, abs_tol=1e-9)):
-                raise ValueError("Negative base with non-integer exponent produces complex result")
+                raise ValueError(
+                    "Negative base with non-integer exponent "
+                    "produces complex result"
+                )
         try:
-            return a ** b
+            return a**b
         except OverflowError:
-            return float('inf') if a > 0 else float('-inf')
+            return float("inf") if a > 0 else float("-inf")
+
 
 NODE_CLASS_MAPPINGS = {
     "XMath": XMath,
