@@ -1,4 +1,5 @@
 ## v1.2.0 主要更新
+
 1. 🛠️ 增强 `XAudioSave`
     - 将节点原先的音频音量标准化和峰值限制处理方式转为使用 FFmpeg (loudnorm 滤镜), 以提高对多声道(比如5.1和7.1)音频的兼容性, 原先所使用的依赖 `pyloudnorm` 也不再需要了, 目前项目只需要安装 `ffmpeg-python` 这一个依赖以及在本机安装 FFmpeg (太棒了😌)
     - FFmpeg 的处理所需时间会比之前的方式慢 (需要2次处理 Two-pass), 但是对目标值会更精准
@@ -14,6 +15,7 @@
 2. 🧬 规范化所有节点的代码 (呃, 真的规范了吗...)
 
 ## v1.2.0 Major Updates
+
 1. 🛠️ Enhanced `XAudioSave`
     - Changed the node's audio volume normalization and peak limiting processing to use FFmpeg (loudnorm filter) to improve compatibility with multi-channel audio (e.g., 5.1 and 7.1). The previously used dependency `pyloudnorm` is no longer needed. Now the project only requires installing `ffmpeg-python` as a dependency and having FFmpeg installed locally (Awesome 😌)
     - FFmpeg processing takes longer than the previous method (requires two-pass processing), but achieves more accurate target values
