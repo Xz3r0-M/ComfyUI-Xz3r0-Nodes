@@ -9,14 +9,14 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
 
 import torch
 
 # 尝试导入ComfyUI依赖模块(用于实际运行环境)
 try:
-    import folder_paths
     import comfy.utils
+    import folder_paths
+
     COMFYUI_AVAILABLE = True
 except ImportError:
     # 测试环境下这些模块可能不可用
@@ -24,7 +24,6 @@ except ImportError:
 
 
 class XLatentSave:
-
     OUTPUT_NODE = True
     """
     XLatentSave Latent保存节点
@@ -69,31 +68,52 @@ class XLatentSave:
         """定义节点的输入类型和约束"""
         return {
             "required": {
-                "latent": ("LATENT", {
-                    "tooltip": "Input latent tensor to save"
-                }),
-                "filename_prefix": ("STRING", {
-                    "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                    "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-                }),
-                "subfolder": ("STRING", {
-                    "default": "Latents",
-                    "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-                })
+                "latent": (
+                    "LATENT",
+                    {"tooltip": "Input latent tensor to save"},
+                ),
+                "filename_prefix": (
+                    "STRING",
+                    {
+                        "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                        "tooltip": (
+                            "Filename prefix, supports datetime "
+                            "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+                        ),
+                    },
+                ),
+                "subfolder": (
+                    "STRING",
+                    {
+                        "default": "Latents",
+                        "tooltip": (
+                            "Subfolder name (no path separators allowed), "
+                            "supports datetime placeholders: %Y%, %m%, "
+                            "%d%, %H%, %M%, %S%"
+                        ),
+                    },
+                ),
             },
-            "hidden": {
-                "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO"
-            }
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ("LATENT", "STRING")
     RETURN_NAMES = ("latent", "save_path")
-    OUTPUT_TOOLTIPS = ("Original input latent (passed through)", "Saved file path relative to ComfyUI output directory")
+    OUTPUT_TOOLTIPS = (
+        "Original input latent (passed through)",
+        "Saved file path relative to ComfyUI output directory",
+    )
     FUNCTION = "save"
     CATEGORY = "♾️ Xz3r0/Latent"
 
-    def save(self, latent: dict, filename_prefix: str, subfolder: str = "Latents", prompt=None, extra_pnginfo=None) -> Tuple[dict, str]:
+    def save(
+        self,
+        latent: dict,
+        filename_prefix: str,
+        subfolder: str = "Latents",
+        prompt=None,
+        extra_pnginfo=None,
+    ) -> tuple[dict, str]:
         """
         保存Latent到ComfyUI输出目录
 
@@ -109,14 +129,18 @@ class XLatentSave:
         """
         # 检查ComfyUI环境是否可用
         if not COMFYUI_AVAILABLE:
-            raise RuntimeError("ComfyUI environment not available, cannot save latent files")
+            raise RuntimeError(
+                "ComfyUI environment not available, cannot save latent files"
+            )
 
         # 获取ComfyUI默认输出目录
         output_dir = self._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(safe_filename_prefix)
+        safe_filename_prefix = self._replace_datetime_placeholders(
+            safe_filename_prefix
+        )
 
         safe_subfolder = self._sanitize_path(subfolder)
         safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
@@ -133,7 +157,9 @@ class XLatentSave:
         base_filename = safe_filename_prefix
 
         # 检测同名文件并添加序列号(从00001开始)
-        final_filename = self._get_unique_filename(save_dir, base_filename, ".latent")
+        final_filename = self._get_unique_filename(
+            save_dir, base_filename, ".latent"
+        )
 
         # 生成元数据
         metadata = self._generate_metadata(prompt, extra_pnginfo)
@@ -145,7 +171,7 @@ class XLatentSave:
         latent_tensor = latent["samples"].contiguous()
         output = {
             "latent_tensor": latent_tensor,
-            "latent_format_version_0": torch.tensor([])
+            "latent_format_version_0": torch.tensor([]),
         }
 
         # 使用comfy.utils保存latent(支持元数据)
@@ -215,35 +241,50 @@ class XLatentSave:
 
         # 危险字符列表
         dangerous_chars = [
-            '\\', '/', '..', '.', '|', ':', '*', '?', '"', '<', '>',
-            '\n', '\r', '\t', '\x00', '\x0b', '\x0c'
+            "\\",
+            "/",
+            "..",
+            ".",
+            "|",
+            ":",
+            "*",
+            "?",
+            '"',
+            "<",
+            ">",
+            "\n",
+            "\r",
+            "\t",
+            "\x00",
+            "\x0b",
+            "\x0c",
         ]
 
         # 路径遍历模式
         path_traversal_patterns = [
-            r'\.\./+',
-            r'\.\.\\+',
-            r'~',
-            r'^\.',
-            r'\.$',
-            r'^/',
-            r'^\\',
+            r"\.\./+",
+            r"\.\.\\+",
+            r"~",
+            r"^\.",
+            r"\.$",
+            r"^/",
+            r"^\\",
         ]
 
         # 替换危险字符
         safe_path = path
         for char in dangerous_chars:
-            safe_path = safe_path.replace(char, '_')
+            safe_path = safe_path.replace(char, "_")
 
         # 替换路径遍历模式
         for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, '_', safe_path)
+            safe_path = re.sub(pattern, "_", safe_path)
 
         # 清理连续的下划线
-        safe_path = re.sub(r'_+', '_', safe_path)
+        safe_path = re.sub(r"_+", "_", safe_path)
 
         # 移除首尾下划线
-        safe_path = safe_path.strip('_')
+        safe_path = safe_path.strip("_")
 
         return safe_path
 
@@ -288,12 +329,18 @@ class XLatentSave:
             return placeholder
 
         # 匹配 %X% 格式(X为Y,m,d,H,M,S)
-        pattern = r'%(Y|m|d|H|M|S)%'
+        pattern = r"%(Y|m|d|H|M|S)%"
         result = re.sub(pattern, replace_match, text)
 
         return result
 
-    def _get_unique_filename(self, directory: Path, filename: str, extension: str, max_attempts: int = 100000) -> str:
+    def _get_unique_filename(
+        self,
+        directory: Path,
+        filename: str,
+        extension: str,
+        max_attempts: int = 100000,
+    ) -> str:
         """
         获取唯一的文件名，避免覆盖
 
@@ -325,6 +372,7 @@ class XLatentSave:
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
+
 
 NODE_CLASS_MAPPINGS = {
     "XLatentSave": XLatentSave,

@@ -5,8 +5,6 @@
 这个模块包含分辨率宽高设置相关的节点。
 """
 
-from typing import Tuple
-
 
 class XResolution:
     """
@@ -82,48 +80,65 @@ class XResolution:
         """定义节点的输入类型和约束"""
         return {
             "required": {
-                "preset": (list(cls.PRESETS.keys()), {
-                    "default": "Custom",
-                    "tooltip": "Custom or standard resolution presets"
-                }),
-                "width": ("INT", {
-                    "default": 1280,
-                    "min": 1,
-                    "max": 16384,
-                    "step": 1,
-                    "display": "number",
-                    "tooltip": "Custom resolution width"
-                }),
-                "height": ("INT", {
-                    "default": 720,
-                    "min": 1,
-                    "max": 16384,
-                    "step": 1,
-                    "display": "number",
-                    "tooltip": "Custom resolution height"
-                }),
-                "scale": ("FLOAT", {
-                    "default": 1.0,
-                    "min": 0.01,
-                    "max": 100.0,
-                    "step": 0.1,
-                    "display": "number",
-                    "tooltip": "Scale multiplier"
-                }),
-                "swap": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "Swap width and height"
-                })
+                "preset": (
+                    list(cls.PRESETS.keys()),
+                    {
+                        "default": "Custom",
+                        "tooltip": "Custom or standard resolution presets",
+                    },
+                ),
+                "width": (
+                    "INT",
+                    {
+                        "default": 1280,
+                        "min": 1,
+                        "max": 16384,
+                        "step": 1,
+                        "display": "number",
+                        "tooltip": "Custom resolution width",
+                    },
+                ),
+                "height": (
+                    "INT",
+                    {
+                        "default": 720,
+                        "min": 1,
+                        "max": 16384,
+                        "step": 1,
+                        "display": "number",
+                        "tooltip": "Custom resolution height",
+                    },
+                ),
+                "scale": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.01,
+                        "max": 100.0,
+                        "step": 0.1,
+                        "display": "number",
+                        "tooltip": "Scale multiplier",
+                    },
+                ),
+                "swap": (
+                    "BOOLEAN",
+                    {"default": False, "tooltip": "Swap width and height"},
+                ),
             }
         }
 
     RETURN_TYPES = ("INT", "INT")
     RETURN_NAMES = ("width", "height")
-    OUTPUT_TOOLTIPS = ("Output resolution width (after preset, scaling, and swap)", "Output resolution height (after preset, scaling, and swap)")
+    OUTPUT_TOOLTIPS = (
+        "Output resolution width (after preset, scaling, and swap)",
+        "Output resolution height (after preset, scaling, and swap)",
+    )
     FUNCTION = "process"
     CATEGORY = "♾️ Xz3r0/Tools"
 
-    def process(self, width: int, height: int, preset: str, scale: float, swap: bool) -> Tuple[int, int]:
+    def process(
+        self, width: int, height: int, preset: str, scale: float, swap: bool
+    ) -> tuple[int, int]:
         """
         处理分辨率设置
 
@@ -144,7 +159,9 @@ class XResolution:
                 height = preset_height
 
         if width < 1 or height < 1:
-            raise ValueError("Width and height must be greater than or equal to 1")
+            raise ValueError(
+                "Width and height must be greater than or equal to 1"
+            )
 
         if scale <= 0:
             raise ValueError("Scale multiplier must be greater than 0")
@@ -156,6 +173,7 @@ class XResolution:
             output_width, output_height = output_height, output_width
 
         return (output_width, output_height)
+
 
 NODE_CLASS_MAPPINGS = {
     "XResolution": XResolution,

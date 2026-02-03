@@ -18,7 +18,7 @@
 ### 🎯 设计特点
 
 - 🌍 **多语言界面** - 节点目前支持 🇨🇳 `中文` 🇬🇧 `English` 界面
-    - ComfyUI 会根据您的UI页面设置所选择的语言来调用节点的语言文件, 节点名称、参数描述和提示信息都会按照语言文件自动翻译
+    - ComfyUI 会根据您的UI页面设置所选择的语言来调用节点的语言文件，节点名称、参数描述和提示信息都会按照语言文件自动翻译
     - 如果节点没有支持您使用的UI界面语言会默认显示节点代码的文字而不是语言文件(* 这可能是ComfyUI的BUG)
     - 🤝 如果您想为项目贡献新的语言支持，请参考项目中 `locales/en/nodeDefs.json` 的格式创建新的语言文件，并提交 Pull Request。
 - 🚫 **安全处理** - 节点中可输入的文件名和路径已做防遍历攻击处理，请使用文字，不要使用日期时间标识符以外的特殊符号！
@@ -26,17 +26,17 @@
 ### ✨ 当前功能
 
 - 🛠️ **工具节点** - 数学运算、分辨率设置
-- 🖼️ **图像处理** - 图像保存（支持自定义文件名和子文件夹）
-- 🎬 **视频处理** - 视频保存（H.265编码，自定义质量和速度预设，音频支持）
-- 🎵 **音频处理** - 音频保存（WAV无损格式，LUFS标准化，峰值限制）
-- 🔮 **Latent处理** - Latent加载和保存（支持元数据）
-- 📝 **数据类节点** - 字符串组合（支持多行输入和分隔方式）
+- 🖼️ **图像处理** - 图像保存 (支持自定义文件名和子文件夹)
+- 🎬 **视频处理** - 视频保存 (H.265编码，自定义质量和速度预设，音频支持)
+- 🎵 **音频处理** - 音频保存 (WAV无损格式，LUFS标准化，峰值限制)
+- 🔮 **Latent处理** - Latent加载和保存 (支持元数据)
+- 📝 **数据类节点** - 字符串组合 (支持多行输入和分隔方式)
 
 ---
 
 ## 🚀 快速开始
 
-### 方法 1: ComfyUI-Manager（推荐）
+### 方法 1: ComfyUI-Manager (推荐)
 
 1. 使用 [ComfyUI-Manager](https://github.com/Comfy-Org/ComfyUI-Manager)
 2. 搜索 `ComfyUI-Xz3r0-Nodes`
@@ -63,6 +63,17 @@ pip install -r requirements.txt
 
 ---
 
+## 📦 依赖说明
+
+**本项目当前使用的 Python 依赖包**
+
+- **ffmpeg-python** - 这个依赖包提供接口让节点能够调用本机安装的 FFmpeg (XVideoSave 视频处理节点使用；XAudioSave 音频处理节点使用)
+
+**‼️⚠️本项目当前需要额外安装的依赖程序⚠️‼️**
+- **[FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境**，如果不安装FFmpeg，那么 XVideoSave 和 XAudioSave 节点将无法正常使用
+
+---
+
 <div align="center">
 
 <img src="preview/perview.png" alt="Node perview" width="800">
@@ -76,7 +87,7 @@ pip install -r requirements.txt
 
 ### 🔢 XMath
 
-基础数学运算节点，支持双输出格式（整数+浮点数）。
+基础数学运算节点，支持双输出格式 (整数+浮点数) 。
 
 **功能**: 加法、减法、乘法、除法、幂运算、取模、最大值、最小值
 - 支持输入端口和基础值两种输入方式
@@ -85,22 +96,22 @@ pip install -r requirements.txt
 - 自动处理除零和溢出等边界情况
 
 **输入**:
-- `input_a` (INT/FLOAT): 输入数值 A（接收上游节点，可选）
-- `input_b` (INT/FLOAT): 输入数值 B（接收上游节点，可选）
-- `basic_a` (FLOAT): 基础数值 A（默认值）
-- `basic_b` (FLOAT): 基础数值 B（默认值）
-- `operation`: 运算方式（下拉选择）
+- `input_a` (INT/FLOAT): 输入数值 A (接收上游节点，可选)
+- `input_b` (INT/FLOAT): 输入数值 B (接收上游节点，可选)
+- `basic_a` (FLOAT): 基础数值 A (默认值)
+- `basic_b` (FLOAT): 基础数值 B (默认值)
+- `operation`: 运算方式 (下拉选择)
 - `use_input_a` (BOOLEAN): 是否使用输入端口数值 A
 - `use_input_b` (BOOLEAN): 是否使用输入端口数值 B
 - `swap_ab` (BOOLEAN): 是否交换 A 和 B 的值
 
 **优先级逻辑**:
-- 如果 `use_input_a` 为 True，使用 `input_a`（如果未连接到其他节点则回退到 `basic_a`
-- 如果 `use_input_b` 为 True，使用 `input_b`（如果未连接到其他节点则回退到 `basic_b`
+- 如果 `use_input_a` 为 True，使用 `input_a` (如果未连接到其他节点则回退到 `basic_a`
+- 如果 `use_input_b` 为 True，使用 `input_b` (如果未连接到其他节点则回退到 `basic_b`
 
 **输出**:
-- `int_result` (INT): 整数结果（截断小数）
-- `float_result` (FLOAT): 浮点数结果（精确值）
+- `int_result` (INT): 整数结果 (截断小数)
+- `float_result` (FLOAT): 浮点数结果 (精确值)
 
 
 ### 📐 XResolution
@@ -108,10 +119,10 @@ pip install -r requirements.txt
 分辨率设置节点，提供标准分辨率预设和自定义功能。
 
 **功能**:
-- 标准分辨率预设（16:9, 4:3, 1:1, 16:10, 21:9等）
+- 标准分辨率预设 (16:9, 4:3, 1:1, 16:10, 21:9等)
 - 倍率缩放功能
 - 宽高互换功能
-- 参数验证（最小1×1）
+- 参数验证 (最小1×1)
 
 **输入**:
 - `preset` (下拉选择): 预设分辨率
@@ -137,25 +148,25 @@ pip install -r requirements.txt
 
 **功能**:
 - 支持自定义文件名和子文件夹
-- 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
-- 路径安全防护（防止路径遍历攻击）
+- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 路径安全防护 (防止路径遍历攻击)
 - 自动添加序列号防止覆盖(从00001开始)
 - 批量图像保存支持
-- PNG 压缩级别可调节（0-9）
-- 元数据保存（工作流提示词、种子值、模型信息等）
+- PNG 压缩级别可调节 (0-9)
+- 元数据保存 (工作流提示词、种子值、模型信息等)
 
 **输入**:
 - `images` (IMAGE): 输入图像张量
 - `filename_prefix` (STRING): 文件名前缀
 - `subfolder` (STRING): 子文件夹名称
-- `compression_level` (INT): PNG 压缩级别（0-9，0=无压缩，9=最大压缩）
+- `compression_level` (INT): PNG 压缩级别 (0-9，0=无压缩，9=最大压缩)
 
 **隐藏输入**:
-- `prompt` (PROMPT): 工作流提示词（自动注入）
-- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据（自动注入）
+- `prompt` (PROMPT): 工作流提示词 (自动注入)
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
 **输出**:
-- `images` (IMAGE): 原始图像（透传）
+- `images` (IMAGE): 原始图像 (透传)
 - `save_path` (STRING): 保存的相对路径
 
 </details>
@@ -172,35 +183,35 @@ pip install -r requirements.txt
 **功能**:
 - 使用FFmpeg将视频对象保存为MKV格式视频
 - H.265/HEVC编码，yuv444p10le像素格式
-- FPS从视频对象自动获取（由官方的创建视频CreateVideo节点设置）
-- 音频支持（自动从视频对象获取）
-- 自定义CRF（质量参数 0-40，0为无损）
-- 编码预设选择（ultrafast到veryslow，平衡编码速度和压缩效率）
+- FPS从视频对象自动获取 (由官方的创建视频CreateVideo节点设置)
+- 音频支持 (自动从视频对象获取)
+- 自定义CRF (质量参数 0-40，0为无损)
+- 编码预设选择 (ultrafast到veryslow，平衡编码速度和压缩效率)
 - 支持自定义文件名和子文件夹
-- 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
-- 路径安全防护（防止路径遍历攻击）
+- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 路径安全防护 (防止路径遍历攻击)
 - 自动添加序列号防止覆盖(从00001开始)
-- 元数据保存（工作流提示词、种子值、模型信息等）
+- 元数据保存 (工作流提示词、种子值、模型信息等)
 
 **输入**:
-- `video` (VIDEO): 视频对象（包含图像序列、音频和帧率）
-- `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
-- `subfolder` (STRING): 子文件夹名称（默认：`Videos`）
-- `crf` (FLOAT): 质量参数（默认：`0.0`，范围0-40，0为无损，40为最差质量）
-- `preset` (STRING): 编码预设（默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow）
+- `video` (VIDEO): 视频对象 (包含图像序列、音频和帧率)
+- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `subfolder` (STRING): 子文件夹名称 (默认：`Videos`)
+- `crf` (FLOAT): 质量参数 (默认：`0.0`，范围0-40，0为无损，40为最差质量)
+- `preset` (STRING): 编码预设 (默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
 
 **隐藏输入**:
-- `prompt` (PROMPT): 工作流提示词（自动注入）
-- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据（自动注入）
+- `prompt` (PROMPT): 工作流提示词 (自动注入)
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
 **输出**:
-- 视频预览（显示保存的视频）
+- 视频预览 (显示保存的视频)
 
 **FFmpeg参数**:
 - vcodec: libx265 (H.265/HEVC编码)
 - pix_fmt: yuv444p10le (10位YUV 4:4:4采样)
-- crf: 可配置（0=无损，40=最差质量）
-- preset: 可配置（ultrafast到veryslow）
+- crf: 可配置 (0=无损，40=最差质量)
+- preset: 可配置 (ultrafast到veryslow)
 - 容器格式: MKV
 
 </details>
@@ -212,35 +223,54 @@ pip install -r requirements.txt
 
 ### 🎵 XAudioSave
 
-音频保存节点，使用WAV无损格式保存音频。
+音频保存节点，使用WAV无损格式保存音频，支持压缩和LUFS标准化以及峰值限制。
 
 **功能**:
 - 保存音频到ComfyUI默认输出目录
-- WAV无损格式（PCM 16-bit）
-- 支持多种采样率（44.1kHz, 48kHz, 96kHz, 192kHz）
-- LUFS音量标准化（默认-14.0 LUFS，可设置为-70禁用）
-- 峰值限制（三种模式：Disabled, Simple Peak, True Peak）
+- WAV无损格式 (PCM 32-bit float)
+- 支持多种采样率 (44.1kHz, 48kHz, 96kHz, 192kHz)
+- 可以使用压缩器 (acompressor滤镜，三种预设：快速/平衡/缓慢)
+- 支持自定义压缩比 (1.0-20.0)
+- LUFS音量标准化 (默认-14.1 LUFS，可设置为-70禁用)
+- 可以使用峰值限制 (True Peak)
 - 支持自定义文件名和子文件夹
-- 日期时间标识符替换（%Y%, %m%, %d%, %H%, %M%, %S%）
-- 路径安全防护（防止路径遍历攻击）
+- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 路径安全防护 (防止路径遍历攻击)
 - 自动添加序列号防止覆盖(从00001开始)
 
-**峰值限制模式说明**:
-- `Disabled`: 禁用峰值限制
-- `Simple Peak`: 简单峰值限制（快速，直接检测采样点峰值）
-- `True Peak`: 广播标准True Peak限制（慢速，8x过采样，精度高）
+**处理流程**:
+1. 使用FFmpeg的压缩器 acompressor 滤镜 (如果启用) :
+   - 选择预设模式 (快速/平衡/缓慢)
+   - 可选使用自定义压缩比覆盖预设值
+   - 对音频进行动态范围压缩
+2. 使用 loudnorm 滤镜 双阶段处理进行 LUFS 标准化和限制峰值 (如果启用)
+3. 最终测量音频信息验证结果
+
+**压缩预设参数说明**:
+- 阈值自适应计算: `threshold = actual_lufs + (actual_lufs - target_lufs) * 0.3 + base_offset`
+- **快速**: 适合语音/播客，base_offset=6dB, ratio=3:1, attack=10ms, release=50ms
+- **平衡**: 通用/音乐，base_offset=4dB, ratio=2:1, attack=20ms, release=250ms
+- **缓慢**: 适合母带/广播，base_offset=2dB, ratio=1.5:1, attack=50ms, release=500ms
+- 如果您不了解音频处理，简单来说，压缩器会让符合条件即超过音量阈值 (`threshold`) 的声音降低. 选择快速预设时压缩器遇到符合的声音会反应迅速但工作时间短，适合处理音频中极短出现的声音 (比如:鼓的敲击声和双手的拍打声) 可以让其听起来不再那么尖锐. 相反的，选择缓慢预设时压缩器遇到符合条件的声音反应会较慢但工作时间更长所以更适合处理持续时间更长的声音 (比如悠长的人声) 可以让其听起来更加紧凑. 为了简化节点，对于阈值使用公式根据音频的响度(LUFS)以及压缩预设的偏移量 (`base_offset`) 来自动设置阈值
+- 压缩比 (`ratio`) 是压缩器降低声音的幅度 (比例)，压缩比越高声音被降低得越多，预设带有压缩比，可以自定义
+**峰值限制说明**:
+- 使用 True Peak 方式 (广播标准，8x过采样，精度高) 限制音量峰值来尽可能避免削波失真
 
 **输入**:
-- `audio` (AUDIO): 音频对象（包含波形和采样率）
-- `filename_prefix` (STRING): 文件名前缀（默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`）
-- `subfolder` (STRING): 子文件夹名称（默认：`Audio`）
-- `sample_rate` (STRING): 采样率（默认：`48000`，可选：44100, 48000, 96000, 192000）
-- `target_lufs` (FLOAT): 目标LUFS值（默认：`-14.0`，范围-70.0到0.0，-70禁用）
-- `peak_mode` (STRING): 峰值限制模式（默认：`Simple Peak`，可选：Disabled, Simple Peak, True Peak）
-- `peak_limit` (FLOAT): 峰值限制值（默认：`-1.0`，范围-6.0到0.0）
+- `audio` (AUDIO): 音频对象 (包含波形和采样率)
+- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `subfolder` (STRING): 子文件夹名称 (默认：`Audio`)
+- `sample_rate` (STRING): 采样率 (默认：`48000`，可选：44100, 48000, 96000, 192000)
+- `target_lufs` (FLOAT): 目标LUFS值 (默认：`-14.1`，范围-70.0到0.0，-70禁用)
+- `enable_peak_limiter` (BOOLEAN): 是否启用峰值限制 (默认：True)
+- `peak_limit` (FLOAT): 峰值限制值 (默认：`-1.1`，范围-6.0到0.0)
+- `enable_compression` (BOOLEAN): 是否启用压缩 (默认：False)
+- `compression_mode` (STRING): 压缩预设模式 (默认：`Balanced`，可选：Fast, Balanced, Slow)
+- `use_custom_ratio` (BOOLEAN): 是否使用自定义压缩比 (默认：False)
+- `custom_ratio` (FLOAT): 自定义压缩比 (默认：`2.0`，范围1.0到20.0)
 
 **输出**:
-- `processed_audio` (AUDIO): 处理后的音频（重采样、LUFS标准化、峰值限制）
+- `processed_audio` (AUDIO): 处理后的音频 (重采样、压缩、LUFS标准化、峰值限制)
 - `save_path` (STRING): 保存的相对路径
 </details>
 
@@ -254,7 +284,7 @@ pip install -r requirements.txt
 Latent加载节点，支持从输入端口或文件加载Latent。
 
 **功能**:
-- 支持从上游节点输入Latent（优先级最高）
+- 支持从上游节点输入Latent (优先级最高)
 - 支持从下拉菜单选择Latent文件
 - 自动扫描ComfyUI默认输出目录及其子文件夹中的.latent文件
 - 文件存在性检查和错误提示
@@ -282,11 +312,11 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - 保存Latent到ComfyUI默认输出目录
 - 输出Latent端口可以传递到其他节点
 - 支持自定义文件名和子文件夹
-- 支持日期时间标识符（%Y%, %m%, %d%, %H%, %M%, %S%）
-- 自动检测同名文件并添加序列号（从00001开始）
+- 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 自动检测同名文件并添加序列号 (从00001开始)
 - 仅支持单级子文件夹创建
-- 安全防护（防止路径遍历攻击）
-- 支持元数据保存（工作流提示词、种子值、模型信息等）
+- 安全防护 (防止路径遍历攻击)
+- 支持元数据保存 (工作流提示词、种子值、模型信息等)
 
 **输入**:
 - `latent` (LATENT): 输入Latent张量
@@ -294,11 +324,11 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - `subfolder` (STRING): 子文件夹名称
 
 **隐藏输入**:
-- `prompt` (PROMPT): 工作流提示词（自动注入）
-- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据（自动注入）
+- `prompt` (PROMPT): 工作流提示词 (自动注入)
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
 **输出**:
-- `latent` (LATENT): 原始Latent（透传）
+- `latent` (LATENT): 原始Latent (透传)
 - `save_path` (STRING): 保存的相对路径
 
 </details>
@@ -314,13 +344,13 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 **功能**:
 - 支持最多5个多行字符串输入
-- 每个字符串之间可选择不同的分隔方式（无、换行、空格、逗号、逗号+空格、句号、句号+空格）
+- 每个字符串之间可选择不同的分隔方式 (无、换行、空格、逗号、逗号+空格、句号、句号+空格)
 - 输出组合后的完整字符串
-- 支持选择单个字符串输出（1-5）
+- 支持选择单个字符串输出 (1-5)
 - 支持每个字符串的原始输出
 
 **输入**:
-- `select_string` (下拉选择): 选择要输出的字符串编号（1-5）
+- `select_string` (下拉选择): 选择要输出的字符串编号 (1-5)
 - `string_1` (STRING, 多行): 第一个字符串
 - `separation_method_1_2` (下拉选择): 字符串1和2之间的分隔方式
 - `string_2` (STRING, 多行): 第二个字符串
@@ -333,15 +363,15 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 **分隔方式选项**:
 - `none`: 无分隔
-- `newline`: 换行符（`\n`）
-- `space`: 空格（` `）
-- `comma`: 逗号（`,`）
-- `comma_space`: 逗号+空格（`, `）
-- `period`: 句号（`.`）
-- `period_space`: 句号+空格（`. `）
+- `newline`: 换行符 (`\n`)
+- `space`: 空格 (` `)
+- `comma`: 逗号 (`,`)
+- `comma_space`: 逗号+空格 (`, `)
+- `period`: 句号 (`.`)
+- `period_space`: 句号+空格 (`. `)
 
 **输出**:
-- `total_string` (STRING): 组合后的完整字符串（带有分隔方式）
+- `total_string` (STRING): 组合后的完整字符串 (带有分隔方式)
 - `selected_string` (STRING): 由选择字符串栏所选择的输出
 - `string_1` (STRING): 字符串1的原始输出
 - `string_2` (STRING): 字符串2的原始输出
@@ -356,20 +386,6 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - 工作流中的文本处理和组合
 
 </details>
-
----
-
-
-## 📦 依赖说明
-
-### Python 依赖
-
-项目依赖在 `requirements.txt` 中定义
-
-**本项目当前需要安装的额外依赖**:
-
-- **ffmpeg-python** - FFmpeg Python 绑定（视频处理，XVideoSave 节点使用）
-- **pyloudnorm** - LUFS 音量标准化库（音频处理，XAudioSave 节点使用）
 
 ---
 
@@ -391,7 +407,7 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xlatentload.py   # Latent加载节点
 │   ├── xlatentsave.py   # Latent保存节点
 │   └── xstringgroup.py  # 字符串组合节点
-├── locales/             # 国际化支持（节点显示名称和提示）
+├── locales/             # 国际化支持 (节点显示名称和提示)
 │   ├── en/              # 英文定义
 │   │   └── nodeDefs.json
 │   └── zh/              # 中文定义
@@ -433,3 +449,6 @@ ComfyUI-Xz3r0-Nodes/
 **⭐ 如果这个项目对你有帮助，请给个星标支持一下！**
 
 </div>
+
+
+[def]: https://www.ffmpeg.org/download.html

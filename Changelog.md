@@ -1,3 +1,37 @@
+## v1.2.0 主要更新
+
+1. 🛠️ 增强 `XAudioSave`
+    - 将节点原先的音频音量标准化和峰值限制处理方式转为使用 FFmpeg (loudnorm 滤镜), 以提高对多声道(比如5.1和7.1)音频的兼容性, 原先所使用的依赖 `pyloudnorm` 也不再需要了, 目前项目只需要安装 `ffmpeg-python` 这一个依赖以及在本机安装 FFmpeg (太棒了😌)
+    - FFmpeg 的处理所需时间会比之前的方式慢 (需要2次处理 Two-pass), 但是对目标值会更精准
+    - 音频文件从原先的 16位WAV(PCM 16-bit) 提升为更高质量的 32位浮点WAV(PCM 32-bit float), 但是文件也相应的更大了 (向您的硬盘致敬🫡)
+    - 移除了原先的简单限制 (Simple Peak) 模式, 现在改为选择是否开启 `峰值限制`(True Peak), 默认为: `true`(开启)
+    - 新增压缩器 (acompressor 滤镜)和开关按钮, 压缩器可以选择三种压缩预设：快速/平衡/缓慢, 压缩器开关默认为: `false`(关闭)
+    - 新增自定义压缩器的压缩比和开关按钮, 当开启时自定义的压缩比值会替代压缩预设所使用的压缩比值
+    - LUFS目标值改为: `-14.1`, 峰值限制目标值改为: `-1.1` （增加0.1是因为有些情况下loudnorm 滤镜处理后的音频会有偏差）
+
+    无关紧要的抱怨:
+        不再使用 `pyloudnorm` 是因为我测试发现对多声道音频会报错, 尝试修复无果所以换成了 FFmpeg, 但 FFmpeg 并不是没有问题的, 实际上 loudnorm 滤镜 本身对一些参数有 (莫名其妙的) 硬绑定, 导致无法完全符合我的 (传统音频插件处理流程) 想法, 来来回回好几天尝试不同方案和解决奇怪的BUG, 我在这个节点上花了1亿Tokens, 是的, 就是1亿, 谢谢你 FFmpeg🫠
+
+2. 🧬 规范化所有节点的代码 (呃, 真的规范了吗...)
+
+## v1.2.0 Major Updates
+
+1. 🛠️ Enhanced `XAudioSave`
+    - Changed the node's audio volume normalization and peak limiting processing to use FFmpeg (loudnorm filter) to improve compatibility with multi-channel audio (e.g., 5.1 and 7.1). The previously used dependency `pyloudnorm` is no longer needed. Now the project only requires installing `ffmpeg-python` as a dependency and having FFmpeg installed locally (Awesome 😌)
+    - FFmpeg processing takes longer than the previous method (requires two-pass processing), but achieves more accurate target values
+    - Audio files upgraded from 16-bit WAV (PCM 16-bit) to higher quality 32-bit float WAV (PCM 32-bit float), but files are correspondingly larger (Salute to your hard drive 🫡)
+    - Removed the previous Simple Peak mode, now changed to a toggle for `Peak Limiting` (True Peak), default: `true` (enabled)
+    - Added compressor (acompressor filter) and toggle button. Compressor offers three compression presets: Fast/Balanced/Slow. Compressor toggle default: `false` (disabled)
+    - Added custom compressor ratio and toggle button. When enabled, custom ratio values override the compression preset's ratio
+    - LUFS target value changed to `-14.1`, peak limiting target value changed to `-1.1` (because in some cases audio processed by loudnorm filter has deviations)
+
+    Irrelevant complaint:
+        Stopped using `pyloudnorm` because I found it errors with multi-channel audio during testing. Tried to fix it but failed, so switched to FFmpeg. However, FFmpeg is not without issues - actually the loudnorm filter has some (inexplicable) hard bindings on certain parameters, making it impossible to fully match my (traditional audio plugin processing workflow) ideas. Went back and forth for several days trying different solutions and solving weird bugs. I spent 100 million Tokens on this node. Yes, 100 million. Thank you FFmpeg 🫠
+
+2. 🧬 Standardized code for all nodes (Uh, did I really standardize it...)
+
+---
+
 ## v1.1.0 主要更新
 
 - **本次更新节点功能没有变化**
