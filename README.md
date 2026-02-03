@@ -63,6 +63,17 @@ pip install -r requirements.txt
 
 ---
 
+## 📦 依赖说明
+
+**本项目当前使用的 Python 依赖包**
+
+- **ffmpeg-python** - 这个依赖包提供接口让节点能够调用本机安装的 FFmpeg (XVideoSave 视频处理节点使用；XAudioSave 音频处理节点使用)
+
+**‼️本项目当前需要额外安装的依赖程序‼️**
+- **[FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境**，如果不安装FFmpeg，那么 XVideoSave 和 XAudioSave 节点将无法正常使用
+
+---
+
 <div align="center">
 
 <img src="preview/perview.png" alt="Node perview" width="800">
@@ -378,19 +389,6 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 ---
 
-
-## 📦 依赖说明
-
-### Python 依赖
-
-项目依赖在 `requirements.txt` 中定义
-
-**本项目当前需要安装的额外依赖**:
-
-- **ffmpeg-python** - FFmpeg Python 绑定 (视频处理，XVideoSave 节点使用；音频处理，XAudioSave 节点使用)
-
----
-
 ## 📁 项目结构
 
 ```
@@ -451,3 +449,6 @@ ComfyUI-Xz3r0-Nodes/
 **⭐ 如果这个项目对你有帮助，请给个星标支持一下！**
 
 </div>
+
+
+[def]: https://www.ffmpeg.org/download.html
