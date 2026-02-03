@@ -69,7 +69,7 @@ pip install -r requirements.txt
 
 - **ffmpeg-python** - 这个依赖包提供接口让节点能够调用本机安装的 FFmpeg (XVideoSave 视频处理节点使用；XAudioSave 音频处理节点使用)
 
-**‼️本项目当前需要额外安装的依赖程序‼️**
+**‼️⚠️本项目当前需要额外安装的依赖程序⚠️‼️**
 - **[FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境**，如果不安装FFmpeg，那么 XVideoSave 和 XAudioSave 节点将无法正常使用
 
 ---
