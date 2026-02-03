@@ -21,7 +21,8 @@ class XImageSave:
     """
     XImageSave 图像保存节点
 
-    提供图像保存功能，支持自定义文件名、子文件夹、日期时间标识符、元数据保存和安全防护。
+    提供图像保存功能，支持自定义文件名、子文件夹、
+    日期时间标识符、元数据保存和安全防护。
 
     功能:
         - 保存图像到ComfyUI默认输出目录
@@ -48,13 +49,16 @@ class XImageSave:
         save_path: 保存的相对路径 (STRING)
 
     Usage example:
-        filename_prefix="MyImage_%Y%m%d", subfolder="Characters", compression_level=6
-        Output: images(original), save_path="output/Characters/MyImage_20260114.png"
+        filename_prefix="MyImage_%Y%m%d",
+        subfolder="Characters",
+        compression_level=6
+        Output: images(original),
+        save_path="output/Characters/MyImage_20260114.png"
 
     元数据说明:
         - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
         - prompt: 包含完整的工作流提示词JSON数据
-        - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
+        - extra_pnginfo: 包含工作流结构、种子值、模型信息等
         - 元数据以PNG文本块形式嵌入图像，可通过图像查看器查看
     """
 
@@ -71,7 +75,10 @@ class XImageSave:
                     "STRING",
                     {
                         "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
+                        "tooltip": (
+                            "Filename prefix, supports datetime "
+                            "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+                        ),
                     },
                 ),
                 "subfolder": (
@@ -93,7 +100,10 @@ class XImageSave:
                         "min": 0,
                         "max": 9,
                         "step": 1,
-                        "tooltip": ("PNG compression level (0=no compression, 9=maximum compression)"),
+                        "tooltip": (
+                            "PNG compression level (0=no compression, "
+                            "9=maximum compression)"
+                        ),
                     },
                 ),
             },
@@ -137,7 +147,9 @@ class XImageSave:
 
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(safe_filename_prefix)
+        safe_filename_prefix = self._replace_datetime_placeholders(
+            safe_filename_prefix
+        )
 
         safe_subfolder = self._sanitize_path(subfolder)
         safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
@@ -162,7 +174,9 @@ class XImageSave:
                 filename = f"{filename}_{i:04d}"
 
             # 检测同名文件并添加序列号
-            final_filename = self._get_unique_filename(save_dir, filename, ".png")
+            final_filename = self._get_unique_filename(
+                save_dir, filename, ".png"
+            )
 
             # 生成PNG元数据
             pnginfo = self._generate_pnginfo(prompt, extra_pnginfo)
@@ -182,7 +196,9 @@ class XImageSave:
                 )
             else:
                 # 无元数据时正常保存
-                img_pil.save(save_path, format="PNG", compress_level=compression_level)
+                img_pil.save(
+                    save_path, format="PNG", compress_level=compression_level
+                )
 
             # 记录相对路径
             relative_path = str(save_path.relative_to(output_dir))
@@ -195,14 +211,14 @@ class XImageSave:
 
     def _generate_pnginfo(self, prompt, extra_pnginfo):
         """
-        生成PNG元数据
+        生成PNG元数据。
 
         Args:
-            prompt: 工作流提示词
-            extra_pnginfo: 额外的PNG元数据
+            prompt: 工作流提示词。
+            extra_pnginfo: 额外的PNG元数据。
 
         Returns:
-            字典格式的PNG元数据或None
+            字典格式的PNG元数据或None。
         """
         # 检查是否有元数据
         if prompt is None and extra_pnginfo is None:
@@ -385,7 +401,9 @@ class XImageSave:
         if tensor.dim() == 3:
             numpy_array = tensor.numpy()
         else:
-            raise ValueError("Unsupported tensor dimension, expected 3 or 4 dimensions")
+            raise ValueError(
+                "Unsupported tensor dimension, expected 3 or 4 dimensions"
+            )
 
         # 转换值范围从[0, 1]到[0, 255]，并确保值在有效范围内
         numpy_array = np.clip(255.0 * numpy_array, 0, 255).astype(np.uint8)

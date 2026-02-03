@@ -212,7 +212,7 @@
   },
   "XAudioSave": {
     "display_name": "XAudioSave",
-    "description": "音频保存节点，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、音量标准化和峰值限制。",
+    "description": "音频保存节点，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",
     "inputs": {
       "audio": {
         "name": "音频",
@@ -238,21 +238,42 @@
       },
       "target_lufs": {
         "name": "目标LUFS",
-        "tooltip": "音量标准化目标LUFS值。数值越低音频越安静。默认 -14，设置为-70可禁用。"
+        "tooltip": "音量标准化目标LUFS值。数值越低音频越安静。默认 -14.1，设置为-70可禁用。"
       },
-      "peak_mode": {
-        "name": "峰值模式",
-        "tooltip": "峰值限制模式: Disabled(禁用)，Simple Peak(快速，采样点检测)，True Peak(慢速，高品质广播标准，8x过采样)"
+      "enable_peak_limiter": {
+        "name": "启用峰值限制",
+        "tooltip": "启用 True Peak 限制（广播标准，8x过采样）。禁用时跳过峰值限制。"
       },
       "peak_limit": {
         "name": "峰值限制",
-        "tooltip": "峰值限制值(dB)。仅在peak_mode不为'Disabled'时使用。默认 -1，值低于0dB可防止削波。"
+        "tooltip": "峰值限制值(dB)。仅在启用峰值限制时使用。默认 -1.1，值低于0dB可防止削波。"
+      },
+      "enable_compression": {
+        "name": "启用压缩",
+        "tooltip": "启用使用acompressor滤镜的动态范围压缩。禁用时，跳过压缩并直接进行LUFS标准化。"
+      },
+      "compression_mode": {
+        "name": "压缩模式",
+        "tooltip": "压缩预设模式。阈值根据音频LUFS和目标LUFS自动计算。快速：适合语音/播客，压缩比3:1。平衡：通用/音乐，压缩比2:1。缓慢：适合母带/广播，压缩比1.5:1。",
+        "options": {
+          "Fast": "快速",
+          "Balanced": "平衡",
+          "Slow": "缓慢"
+        }
+      },
+      "use_custom_ratio": {
+        "name": "使用自定义压缩比",
+        "tooltip": "启用自定义压缩比以覆盖预设值。禁用时，使用预设的默认压缩比。"
+      },
+      "custom_ratio": {
+        "name": "自定义压缩比",
+        "tooltip": "自定义压缩比（1.0到20.0）。仅在启用使用自定义压缩比时使用。数值越小压缩越轻，数值越大压缩越强。将压缩比设置为1.0可禁用压缩（直通模式）。"
       }
     },
     "outputs": {
       "0": {
         "name": "处理后的音频",
-        "tooltip": "经过重采样、音量标准化和峰值限制处理后的音频"
+        "tooltip": "经过重采样、压缩、音量标准化和峰值限制处理后的音频"
       },
       "1": {
         "name": "保存路径",

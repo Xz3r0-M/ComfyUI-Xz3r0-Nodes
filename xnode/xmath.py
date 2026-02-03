@@ -41,7 +41,8 @@ class XMath:
         同样的逻辑适用于 use_input_b、input_b 和 basic_b
 
     Usage example:
-        input_a=10, input_b=3.2, use_input_a=True, use_input_b=True, operation="Multiplication (×)"
+        input_a=10, input_b=3.2, use_input_a=True, "
+        use_input_b=True, operation="Multiplication (×)"
         Output: int_result=32, float_result=32.0
     """
 
@@ -58,7 +59,8 @@ class XMath:
                         "max": 1e10,
                         "display": "number",
                         "tooltip": (
-                            "input value A (accepts both INT and FLOAT, takes priority when use_input_a is enabled)"
+                            "input value A (accepts both INT and FLOAT, "
+                            "takes priority when use_input_a is enabled)"
                         ),
                     },
                 ),
@@ -70,7 +72,8 @@ class XMath:
                         "max": 1e10,
                         "display": "number",
                         "tooltip": (
-                            "input value B (accepts both INT and FLOAT, takes priority when use_input_b is enabled)"
+                            "input value B (accepts both INT and FLOAT, "
+                            "takes priority when use_input_b is enabled)"
                         ),
                     },
                 ),
@@ -109,7 +112,10 @@ class XMath:
                         "Maximum",
                         "Minimum",
                     ],
-                    {"default": "Addition (+)", "tooltip": "Mathematical operation type"},
+                    {
+                        "default": "Addition (+)",
+                        "tooltip": "Mathematical operation type",
+                    },
                 ),
                 "use_input_a": (
                     "BOOLEAN",
@@ -304,7 +310,10 @@ class XMath:
         if a < 0:
             # 使用 math.isclose 检查是否接近整数，避免浮点数精度问题
             if not (math.isclose(b, round(b), rel_tol=1e-9, abs_tol=1e-9)):
-                raise ValueError("Negative base with non-integer exponent produces complex result")
+                raise ValueError(
+                    "Negative base with non-integer exponent "
+                    "produces complex result"
+                )
         try:
             return a**b
         except OverflowError:

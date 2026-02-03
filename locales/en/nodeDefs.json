@@ -212,7 +212,7 @@
   },
   "XAudioSave": {
     "display_name": "XAudioSave",
-    "description": "Audio saving node with WAV lossless format, supporting custom filename, subfolder, datetime placeholders, loudness normalization, and peak limiting.",
+    "description": "Audio saving node with WAV lossless format, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
     "inputs": {
       "audio": {
         "name": "AUDIO",
@@ -238,25 +238,46 @@
       },
       "target_lufs": {
         "name": "Target LUFS",
-        "tooltip": "Target LUFS value for loudness normalization. Lower values make audio quieter. Default -14, Set to -70 to disable."
+        "tooltip": "Target LUFS value for loudness normalization. Lower values make audio quieter. Default -14.1, Set to -70 to disable."
       },
-      "peak_mode": {
-        "name": "Peak Mode",
-        "tooltip": "Peak limiting mode: Disabled (no limiting), Simple Peak (fast, sample-point detection), True Peak (Slow, high quality broadcast standard, 8x oversampling)"
+      "enable_peak_limiter": {
+        "name": "Enable Peak Limiter",
+        "tooltip": "Enable True Peak limiting (broadcast standard, 8x oversampling). When disabled, skips peak limiting."
       },
       "peak_limit": {
         "name": "Peak Limit",
-        "tooltip": "Peak limiting value in dB. Only used when peak_mode is not 'Disabled'. Default -1, Values below 0 dB prevent clipping."
+        "tooltip": "Peak limiting value in dB. Only used when enable_peak_limiter is enabled. Default -1.1, Values below 0 dB prevent clipping."
+      },
+      "enable_compression": {
+        "name": "Enable Compression",
+        "tooltip": "Enable dynamic range compression using acompressor filter. When disabled, skips compression and proceeds directly to LUFS normalization."
+      },
+      "compression_mode": {
+        "name": "Compression Mode",
+        "tooltip": "Compression preset mode. Threshold is automatically calculated based on audio LUFS and target LUFS. Fast: Fast response for voice/podcasts, ratio=3:1. Balanced: Balanced for general use, ratio=2:1. Slow: Smooth for mastering/broadcast, ratio=1.5:1.",
+        "options": {
+          "Fast": "Fast",
+          "Balanced": "Balanced",
+          "Slow": "Slow"
+        }
+      },
+      "use_custom_ratio": {
+        "name": "Use Custom Ratio",
+        "tooltip": "Enable custom compression ratio to override preset value. When disabled, uses the preset's default ratio."
+      },
+      "custom_ratio": {
+        "name": "Custom Ratio",
+        "tooltip": "Custom compression ratio (1.0 to 20.0). Only used when use_custom_ratio is enabled. Lower values = lighter compression, higher values = stronger compression. Set ratio to 1.0 to disable compression (pass-through mode)."
       }
     },
     "outputs": {
       "0": {
         "name": "Processed_AUDIO",
-        "tooltip": "Audio after resampling, loudness normalization, and peak limiting"
+        "tooltip": "Audio after resampling, compression, loudness normalization, and peak limiting"
       },
       "1": {
         "name": "save_path",
-        "tooltip": "Saved file path"
+        "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
   },

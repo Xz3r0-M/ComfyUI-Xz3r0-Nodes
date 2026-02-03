@@ -120,7 +120,8 @@ installed_deps, missing_deps = check_dependencies()
 
 if missing_deps:
     print(
-        f"[Xz3r0-Nodes] ⚠ Missing dependencies ({len(missing_deps)}): {', '.join(missing_deps)}",
+        f"[Xz3r0-Nodes] ⚠ Missing dependencies "
+        f"({len(missing_deps)}): {', '.join(missing_deps)}",
         flush=True,
     )
     print(

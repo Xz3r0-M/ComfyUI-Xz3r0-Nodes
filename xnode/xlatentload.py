@@ -54,6 +54,14 @@ class XLatentLoad:
     @classmethod
     def INPUT_TYPES(cls) -> dict:
         """定义节点的输入类型和约束"""
+
+        # 定义tooltip文本（避免行过长）
+        tooltip_input = (
+            "Input latent from another node "
+            "(higher priority than file loading)"
+        )
+        tooltip_file = "Latent file to load from ComfyUI output directory"
+
         # 获取输出目录中的所有.latent文件（包括子文件夹）
         if HAS_COMFYUI:
             output_dir = Path(folder_paths.get_output_directory())
@@ -67,13 +75,11 @@ class XLatentLoad:
             "optional": {
                 "latent_input": (
                     "LATENT",
-                    {"tooltip": ("Input latent from another node (higher priority than file loading)")},
+                    {"tooltip": tooltip_input},
                 ),
                 "latent_file": (
                     [""] + sorted(latent_files),
-                    {
-                        "tooltip": ("Latent file to load from ComfyUI output directory"),
-                    },
+                    {"tooltip": tooltip_file},
                 ),
             }
         }
@@ -84,7 +90,9 @@ class XLatentLoad:
     FUNCTION = "load"
     CATEGORY = "♾️ Xz3r0/Latent"
 
-    def load(self, latent_input: dict | None = None, latent_file: str = "") -> tuple[dict]:
+    def load(
+        self, latent_input: dict | None = None, latent_file: str = ""
+    ) -> tuple[dict]:
         """
         加载Latent
 
@@ -114,25 +122,34 @@ class XLatentLoad:
 
             # 检查文件是否存在
             if not file_path.exists():
-                raise RuntimeError("No latent provided via input port or file selection")
+                raise RuntimeError(
+                    "No latent provided via input port or file selection"
+                )
 
             # 加载Latent文件
             try:
-                latent_data = safetensors.torch.load_file(str(file_path), device="cpu")
+                latent_data = safetensors.torch.load_file(
+                    str(file_path), device="cpu"
+                )
 
                 # 检查Latent格式版本并应用乘数
                 multiplier = 1.0
                 if "latent_format_version_0" not in latent_data:
                     multiplier = 1.0 / 0.18215
 
-                samples = {"samples": latent_data["latent_tensor"].float() * multiplier}
+                samples = {
+                    "samples": latent_data["latent_tensor"].float()
+                    * multiplier
+                }
                 return (samples,)
 
             except Exception:
                 raise RuntimeError("Failed to load latent file") from None
 
         # 优先级3: 两者都无效，弹出警告
-        raise RuntimeError("No latent provided via input port or file selection")
+        raise RuntimeError(
+            "No latent provided via input port or file selection"
+        )
 
     @classmethod
     def _get_latent_files(cls, directory: Path) -> list[str]:

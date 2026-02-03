@@ -76,7 +76,10 @@ class XLatentSave:
                     "STRING",
                     {
                         "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": ("Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"),
+                        "tooltip": (
+                            "Filename prefix, supports datetime "
+                            "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+                        ),
                     },
                 ),
                 "subfolder": (
@@ -126,14 +129,18 @@ class XLatentSave:
         """
         # 检查ComfyUI环境是否可用
         if not COMFYUI_AVAILABLE:
-            raise RuntimeError("ComfyUI environment not available, cannot save latent files")
+            raise RuntimeError(
+                "ComfyUI environment not available, cannot save latent files"
+            )
 
         # 获取ComfyUI默认输出目录
         output_dir = self._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(safe_filename_prefix)
+        safe_filename_prefix = self._replace_datetime_placeholders(
+            safe_filename_prefix
+        )
 
         safe_subfolder = self._sanitize_path(subfolder)
         safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
@@ -150,7 +157,9 @@ class XLatentSave:
         base_filename = safe_filename_prefix
 
         # 检测同名文件并添加序列号(从00001开始)
-        final_filename = self._get_unique_filename(save_dir, base_filename, ".latent")
+        final_filename = self._get_unique_filename(
+            save_dir, base_filename, ".latent"
+        )
 
         # 生成元数据
         metadata = self._generate_metadata(prompt, extra_pnginfo)
