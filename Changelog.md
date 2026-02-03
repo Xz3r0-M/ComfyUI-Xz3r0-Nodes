@@ -13,7 +13,6 @@
 
 2. 🧬 规范化所有节点的代码 (呃, 真的规范了吗...)
 
-
 ## v1.2.0 Major Updates
 1. 🛠️ Enhanced `XAudioSave`
     - Changed the node's audio volume normalization and peak limiting processing to use FFmpeg (loudnorm filter) to improve compatibility with multi-channel audio (e.g., 5.1 and 7.1). The previously used dependency `pyloudnorm` is no longer needed. Now the project only requires installing `ffmpeg-python` as a dependency and having FFmpeg installed locally (Awesome 😌)
@@ -29,6 +28,7 @@
 
 2. 🧬 Standardized code for all nodes (Uh, did I really standardize it...)
 
+---
 
 ## v1.1.0 主要更新
 
