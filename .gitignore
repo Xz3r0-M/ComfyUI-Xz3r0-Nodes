@@ -211,9 +211,7 @@ __marimo__/
 # Xz3r0
 .trae/
 .vscode/
-ComfyUI-Native-Nodes/
 tests/
 补充.md
 创建.md
-CLAUDE.md
 ruff.toml
