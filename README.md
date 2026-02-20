@@ -80,6 +80,7 @@ pip install -r requirements.txt
 <div align="center">
 
 <img src="preview/perview.png" alt="Node perview" width="800">
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XMetadataWorkflow.png" alt="Node perview" width="800">
 
 </div>
 
@@ -450,7 +451,7 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式数据会导致某些节点不会显示在窗口视图中(比如：Markdown Note)
 
 **两种使用方式**:
-1. **在ComfyUI中使用**: 点击菜单栏的 ♾️ 按钮打开浮动窗口
+1. **在ComfyUI中使用**: 点击顶部菜单栏的 ♾️ 按钮打开浮动窗口
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bm.png" alt="Open" width="700">
 
 2. **浏览器直接打开**: 直接打开 `web/xmetadataworkflow.html` 文件
