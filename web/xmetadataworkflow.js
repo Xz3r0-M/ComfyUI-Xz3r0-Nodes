@@ -88,8 +88,8 @@ app.registerExtension({
             try {
                 const { ComfyButton } = await import("../../scripts/ui/components/button.js");
                 const menuButton = new ComfyButton({
-                    action: () => XMetadataWorkflowWindow.toggle(),
-                    tooltip: "XMetadataWorkflow",
+                    action: () => Xz3r0Window.toggle(),
+                    tooltip: "Xz3r0 Window",
                     content: "♾️Xz3r0♾️",
                 });
                 app.menu.settingsGroup.append(menuButton);
@@ -104,8 +104,8 @@ app.registerExtension({
             showButton.className = "comfy-settings-btn";
             showButton.textContent = "♾️";
             showButton.style.cssText = "position: absolute; right: 72px; cursor: pointer;";
-            showButton.title = "XMetadataWorkflow";
-            showButton.onclick = () => XMetadataWorkflowWindow.toggle();
+            showButton.title = "Xz3r0 Window";
+            showButton.onclick = () => Xz3r0Window.toggle();
 
             const settingsBtn = document.querySelector(".comfy-settings-btn");
             if (settingsBtn) {
@@ -119,7 +119,7 @@ app.registerExtension({
 
 const STORAGE_KEY = "xz3r0-metadataworkflow-state";
 
-const XMetadataWorkflowWindow = {
+const Xz3r0Window = {
     instance: null,
 
     loadState() {
@@ -171,14 +171,14 @@ const XMetadataWorkflowWindow = {
 
         const title = document.createElement("span");
         title.className = "xz3r0-floating-window-title";
-        title.textContent = "♾️ XMetadataWorkflow";
+        title.textContent = "♾️ Xz3r0 Windows";
 
         const controls = document.createElement("div");
         controls.className = "xz3r0-floating-window-controls";
 
         const closeBtn = document.createElement("button");
         closeBtn.className = "xz3r0-floating-window-btn";
-        closeBtn.innerHTML = "×";
+        closeBtn.innerHTML = "❌";
         closeBtn.title = "Close";
 
         controls.appendChild(closeBtn);
@@ -230,7 +230,7 @@ const XMetadataWorkflowWindow = {
 
         const handleMouseUp = () => {
             if (isDragging || isResizing) {
-                XMetadataWorkflowWindow.saveState({
+                Xz3r0Window.saveState({
                     left: windowEl.style.left,
                     top: windowEl.style.top,
                     width: windowEl.style.width,
@@ -282,7 +282,7 @@ const XMetadataWorkflowWindow = {
                 document.removeEventListener("mousemove", handleMouseMove);
                 document.removeEventListener("mouseup", handleMouseUp);
                 windowEl.remove();
-                XMetadataWorkflowWindow.instance = null;
+                Xz3r0Window.instance = null;
             }
         };
 
