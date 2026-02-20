@@ -34,7 +34,6 @@ class XVideoSave(io.ComfyNode):
         - 自动添加序列号防止覆盖(从00001开始)
         - 仅支持单级子文件夹创建
         - 安全防护(防止路径遍历攻击，禁用路径分隔符)
-        - 元数据保存(工作流提示词、种子值、模型信息等)
         - 输出相对路径(不泄露绝对路径)
         - 编码预设选择(ultrafast到veryslow，平衡编码速度和压缩效率)
 
@@ -46,18 +45,11 @@ class XVideoSave(io.ComfyNode):
         preset: 编码预设 (STRING, 可选: ultrafast,
             superfast, veryfast, faster, fast, medium, slow,
             slower, veryslow)
-        prompt: 工作流提示词(隐藏参数，自动注入)
-        extra_pnginfo: 额外元数据(隐藏参数，自动注入)
 
     使用示例:
         filename_prefix="MyVideo_%Y%m%d",
         subfolder="Videos", crf=0, preset="medium"
 
-    元数据说明:
-        - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
-        - prompt: 包含完整的工作流提示词JSON数据
-        - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
-        - 元数据嵌入视频文件
     """
 
     @classmethod
@@ -126,7 +118,7 @@ class XVideoSave(io.ComfyNode):
                     ),
                 ),
             ],
-            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            # hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
         )
 

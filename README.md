@@ -191,7 +191,6 @@ pip install -r requirements.txt
 - 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
 - 路径安全防护 (防止路径遍历攻击)
 - 自动添加序列号防止覆盖(从00001开始)
-- 元数据保存 (工作流提示词、种子值、模型信息等)
 
 **输入**:
 - `video` (VIDEO): 视频对象 (包含图像序列、音频和帧率)
@@ -199,10 +198,6 @@ pip install -r requirements.txt
 - `subfolder` (STRING): 子文件夹名称 (默认：`Videos`)
 - `crf` (FLOAT): 质量参数 (默认：`0.0`，范围0-40，0为无损，40为最差质量)
 - `preset` (STRING): 编码预设 (默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
-
-**隐藏输入**:
-- `prompt` (PROMPT): 工作流提示词 (自动注入)
-- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
 **输出**:
 - 视频预览 (显示保存的视频)
