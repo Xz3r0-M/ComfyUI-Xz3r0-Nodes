@@ -17,7 +17,6 @@
  *
  * 2. 集成方式:
  *    - 在 ComfyUI 菜单栏添加按钮（新 UI）
- *    - 在设置按钮旁添加备用按钮（旧 UI 兼容）
  *
  * 3. 内容加载:
  *    - 通过 iframe 加载 xmetadataworkflow.html
