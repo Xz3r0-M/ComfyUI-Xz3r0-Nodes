@@ -1,3 +1,43 @@
+<!--
+    XMetadataWorkflow - ComfyUI 工作流元数据查看器
+    ================================================
+
+    功能概述:
+    ---------
+    这是一个用于查看 ComfyUI 工作流元数据的网页工具。支持从以下文件类型中提取和可视化工作流:
+    - PNG 图片 (包含工作流元数据的生成图片)
+    - Latent 潜空间文件 (.latent)
+    - JSON 工作流文件 (XVideoSave/XAudioSave/XWorkflowSave 生成的)
+
+    核心功能:
+    ---------
+    1. 文件解析:
+       - PNG: 从 tEXt/iTXt chunk 读取 prompt/workflow 元数据
+       - Latent: 从文件头部 JSON 读取 __metadata__
+       - JSON: 直接解析 prompt 字段 (仅支持包含 prompt 的格式)
+
+    2. 工作流可视化:
+       - 自动层级布局算法排列节点
+       - 显示节点类型、参数和连接关系
+       - 子图自动识别和颜色标记 (ID格式: "子图ID:节点ID")
+       - 支持缩放、平移、自适应视图
+
+    3. 交互功能:
+       - 点击节点查看详情
+       - 折叠/展开节点参数
+       - 选中节点高亮相关连接
+       - 拖拽调整节点宽度
+
+    数据格式说明:
+    -------------
+    - 只使用 prompt 格式 (ComfyUI API 格式)
+    - 不使用 workflow 格式 (ComfyUI 前端格式)
+    - 节点位置使用自动排列算法，不依赖保存的位置信息
+    - 子图通过节点 ID 中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
+
+    作者: Xz3r0
+    项目: ComfyUI-Xz3r0-Nodes
+-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -713,7 +753,8 @@
                 input: '输入',
                 output: '输出',
                 darkMode: '暗黑模式',
-                lightMode: '亮色模式'
+                lightMode: '亮色模式',
+                noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件缺少 prompt 字段，无法加载工作流。\n\n支持的格式：\n• XVideoSave / XAudioSave / XWorkflowSave 生成的 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件\n\n不支持：\n• ComfyUI 网页直接导出的 workflow JSON'
             },
             en: {
                 title: 'XMetadataWorkflow',
@@ -741,17 +782,29 @@
                 input: 'Input',
                 output: 'Output',
                 darkMode: 'Dark Mode',
-                lightMode: 'Light Mode'
+                lightMode: 'Light Mode',
+                noPromptError: 'Unsupported JSON Format\n\nThis JSON file is missing the prompt field and cannot load the workflow.\n\nSupported formats:\n• JSON from XVideoSave / XAudioSave / XWorkflowSave\n• PNG images with prompt metadata\n• Latent files\n\nNot supported:\n• ComfyUI web-exported workflow JSON'
             }
         };
 
         const browserLang = navigator.language || navigator.userLanguage || 'en';
         let currentLang = browserLang.startsWith('zh') ? 'zh' : 'en';
 
+        /**
+         * 国际化翻译函数
+         * @param {string} key - 翻译键名
+         * @returns {string} 翻译后的文本，如果没有找到则返回键名
+         */
         function t(key) {
             return i18n[currentLang][key] || key;
         }
 
+        /**
+         * 根据子图ID生成颜色
+         * 使用哈希算法确保同一子图始终获得相同颜色
+         * @param {string} subgraphId - 子图ID
+         * @returns {string} HSL颜色字符串
+         */
         function getSubgraphColor(subgraphId) {
             if (!subgraphId) return null;
             let hash = 0;
@@ -790,6 +843,10 @@
 
         let currentTheme = localStorage.getItem('theme') || 'dark';
 
+        /**
+         * 设置页面主题（亮色/暗色）
+         * @param {string} theme - 主题名称 'dark' 或 'light'
+         */
         function setTheme(theme) {
             currentTheme = theme;
             document.documentElement.setAttribute('data-theme', theme);
@@ -859,6 +916,10 @@
             setZoom(newScale, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
         });
 
+        /**
+         * 自适应视图 - 缩放和平移以显示所有节点
+         * 计算所有节点的边界框，然后调整缩放和平移使所有节点可见
+         */
         function fitToView() {
             if (!workflowData || !workflowData.nodes) return;
 
@@ -867,6 +928,7 @@
 
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
+            // 计算所有节点的边界框
             nodes.forEach(node => {
                 const x = parseFloat(node.style.left);
                 const y = parseFloat(node.style.top);
@@ -881,10 +943,12 @@
             const contentWidth = maxX - minX + 100;
             const contentHeight = maxY - minY + 100;
 
+            // 计算合适的缩放比例
             const scaleX = canvasContainer.clientWidth / contentWidth;
             const scaleY = canvasContainer.clientHeight / contentHeight;
             const newScale = Math.min(scaleX, scaleY, 2);
 
+            // 计算平移量使内容居中
             const contentCenterX = (minX + maxX) / 2 * newScale;
             const contentCenterY = (minY + maxY) / 2 * newScale;
             const containerCenterX = canvasContainer.clientWidth / 2;
@@ -945,6 +1009,12 @@
             canvasContainer.style.cursor = 'default';
         });
 
+        /**
+         * 设置画布缩放级别
+         * @param {number} newScale - 新的缩放比例
+         * @param {number} centerX - 缩放中心点 X 坐标
+         * @param {number} centerY - 缩放中心点 Y 坐标
+         */
         function setZoom(newScale, centerX, centerY) {
             newScale = Math.max(0.1, Math.min(5, newScale));
 
@@ -952,6 +1022,7 @@
             const mouseX = centerX - rect.left;
             const mouseY = centerY - rect.top;
 
+            // 以鼠标位置为中心进行缩放
             const scaleChange = newScale / scale;
             panX = mouseX - (mouseX - panX) * scaleChange;
             panY = mouseY - (mouseY - panY) * scaleChange;
@@ -960,12 +1031,21 @@
             updateTransform();
         }
 
+        /**
+         * 更新画布的变换（平移和缩放）
+         * 同时更新缩放级别显示和连接线位置
+         */
         function updateTransform() {
             canvasWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
             zoomLevel.value = Math.round(scale * 100);
             updateConnectionPaths();
         }
 
+        /**
+         * 处理用户选择的文件
+         * 流程：读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
+         * @param {File} file - 用户选择的文件对象
+         */
         async function handleFile(file) {
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
@@ -978,12 +1058,16 @@
 
                 updateFileInfo(file, uint8Array);
 
+                // 解析工作流数据
                 workflowData = parseWorkflow(metadata);
+
+                // 重置视图状态
                 scale = 1;
                 panX = 50;
                 panY = 50;
                 nodeStates = {};
 
+                // 渲染并自适应视图
                 renderWorkflow();
                 fitToView();
 
@@ -993,6 +1077,11 @@
             }
         }
 
+        /**
+         * 更新文件信息显示
+         * @param {File} file - 文件对象
+         * @param {Uint8Array} uint8Array - 文件内容的二进制数据
+         */
         function updateFileInfo(file, uint8Array) {
             const filename = file.name;
             const ext = filename.split('.').pop().toLowerCase();
@@ -1010,6 +1099,7 @@
             };
             document.getElementById('infoType').textContent = typeMap[ext] || ext;
 
+            // 根据文件类型显示不同的预览和信息
             if (ext === 'png') {
                 const dims = getPngDimensions(uint8Array);
                 if (dims) {
@@ -1027,6 +1117,11 @@
             }
         }
 
+        /**
+         * 格式化文件大小为易读格式
+         * @param {number} bytes - 字节数
+         * @returns {string} 格式化后的文件大小 (如 "1.5 MB")
+         */
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
@@ -1035,14 +1130,23 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
+        /**
+         * 从 PNG 二进制数据中提取图片尺寸
+         * 解析 IHDR chunk 获取宽度和高度
+         * @param {Uint8Array} data - PNG 文件的二进制数据
+         * @returns {Object|null} 包含 width 和 height 的对象，解析失败返回 null
+         */
         function getPngDimensions(data) {
             try {
                 if (data.length < 24) return null;
+
+                // 验证 PNG 文件签名
                 const pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
                 for (let i = 0; i < 8; i++) {
                     if (data[i] !== pngSignature[i]) return null;
                 }
 
+                // 遍历 chunks 查找 IHDR
                 let offset = 8;
                 while (offset < data.length - 12) {
                     const length = (data[offset] << 24) | (data[offset + 1] << 16) |
@@ -1070,6 +1174,10 @@
             return null;
         }
 
+        /**
+         * 显示 PNG 图片预览
+         * @param {Uint8Array} uint8Array - PNG 文件的二进制数据
+         */
         function displayImagePreview(uint8Array) {
             const blob = new Blob([uint8Array], { type: 'image/png' });
             const url = URL.createObjectURL(blob);
@@ -1101,6 +1209,13 @@
             `;
         }
 
+        /**
+         * 根据文件扩展名选择对应的元数据读取函数
+         * 处理流程：
+         * 1. .latent 文件 -> readLatentMetadata (读取 latent 文件的头部元数据)
+         * 2. .json 文件 -> readJsonMetadata (解析 JSON 中的 prompt 字段)
+         * 3. 其他文件 (如 .png) -> readPngMetadata (从 PNG 的 tEXt/iTXt chunk 读取)
+         */
         async function readMetadataFromFile(data, filename) {
             if (filename.toLowerCase().endsWith('.latent')) {
                 return readLatentMetadata(data);
@@ -1111,18 +1226,38 @@
             }
         }
 
+        /**
+         * 读取 JSON 文件的元数据
+         * 处理逻辑：
+         * - 只支持包含 prompt 字段的 JSON (如 XVideoSave/XAudioSave/XWorkflowSave 生成的)
+         * - 不处理纯 workflow 格式的 JSON (如 ComfyUI 网页导出的)
+         * - 返回格式: { prompt: {...} }
+         */
         async function readJsonMetadata(data) {
             try {
                 const textDecoder = new TextDecoder('utf-8');
                 const text = textDecoder.decode(data);
                 const json = JSON.parse(text);
-                return json;
+
+                // 只接受包含 prompt 的 JSON (XVideoSave/XAudioSave/XWorkflowSave 格式)
+                if (json.prompt) {
+                    return { prompt: json.prompt };
+                }
+
+                // 不包含 prompt 的 JSON (如 ComfyUI 网页导出的 workflow) 显示错误提示
+                alert(t('noPromptError'));
+                return null;
             } catch (e) {
                 console.error('JSON metadata read error:', e);
                 return null;
             }
         }
 
+        /**
+         * 从 PNG 文件中读取元数据
+         * PNG 格式: 元数据存储在 tEXt 或 iTXt chunk 中
+         * 返回格式: { prompt: "...", workflow: "..." } (字符串格式，需要 parseWorkflow 进一步解析)
+         */
         async function readPngMetadata(data) {
             try {
                 const textDecoder = new TextDecoder('utf-8');
@@ -1151,6 +1286,12 @@
             return null;
         }
 
+        /**
+         * 从 Latent 文件中读取元数据
+         * Latent 格式: 前8字节是头部大小，后面是 JSON 格式的头部数据
+         * 头部中包含 __metadata__ 字段，其中有 prompt 和 workflow
+         * 返回格式: { prompt: {...} } 或 { workflow: {...} }
+         */
         async function readLatentMetadata(data) {
             try {
                 if (data.length < 8) return null;
@@ -1173,6 +1314,7 @@
                 if (header.__metadata__) {
                     const metadata = header.__metadata__;
 
+                    // 优先返回 prompt (与 parseWorkflow 的设计一致)
                     if (metadata.prompt) {
                         try {
                             return { prompt: JSON.parse(metadata.prompt) };
@@ -1181,6 +1323,7 @@
                         }
                     }
 
+                    // 如果没有 prompt，返回 workflow (虽然 parseWorkflow 不会使用它)
                     if (metadata.workflow) {
                         try {
                             return { workflow: JSON.parse(metadata.workflow) };
@@ -1199,6 +1342,11 @@
             return null;
         }
 
+        /**
+         * 解析 PNG tEXt chunk 的文本数据
+         * 格式: key\0value\0key\0value...
+         * 返回: { key: value, ... }
+         */
         function parsePngText(text) {
             const result = {};
             const parts = text.split('\0');
@@ -1212,6 +1360,24 @@
             return result;
         }
 
+        /**
+         * 解析工作流元数据，将 prompt 格式转换为内部使用的数据结构
+         *
+         * 设计原则：
+         * - 只使用 prompt 格式 (ComfyUI API 格式)，不使用 workflow 格式 (前端格式)
+         * - 节点位置使用自动排列算法，不使用 workflow 中的位置信息
+         * - 子图通过节点 ID 格式 "子图ID:节点ID" 识别
+         *
+         * 输入格式 (metadata):
+         * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...} }
+         * - JSON: { prompt: {...} } (仅支持 XVideoSave/XAudioSave/XWorkflowSave 生成的)
+         *
+         * 输出格式 (result):
+         * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName? } }
+         * - connections: [ { from, fromSlot, to, toSlot } ]
+         * - notes: [ { id, text, mode } ]
+         * - subgraphs: [ { id, name, nodes: [...] } ]
+         */
         function parseWorkflow(metadata) {
             const result = {
                 nodes: {},
@@ -1221,79 +1387,28 @@
             };
 
             try {
-                let workflowJson = metadata.workflow || metadata.prompt;
-                if (!workflowJson) {
-                    console.error('No workflow data found in metadata');
+                // 提取 prompt 数据
+                let promptData = null;
+
+                if (metadata.prompt) {
+                    promptData = typeof metadata.prompt === 'string' ?
+                        JSON.parse(metadata.prompt) : metadata.prompt;
+                }
+
+                if (!promptData) {
+                    console.error('No prompt data found in metadata');
                     return result;
                 }
 
-                const workflow = typeof workflowJson === 'string' ?
-                    JSON.parse(workflowJson) : workflowJson;
+                // prompt 格式直接是节点映射表: { 节点ID: 节点数据, ... }
+                result.nodes = promptData;
 
-                result.nodes = workflow;
-
-                const subgraphs = workflow.definitions?.subgraphs || [];
-                result.subgraphs = subgraphs;
-
-                const subgraphIdMap = new Map();
-                if (Array.isArray(workflow.nodes)) {
-                    for (const node of workflow.nodes) {
-                        if (node.type && typeof node.type === 'string' &&
-                            node.type.match(/^[a-f0-9-]{36}$/)) {
-                            subgraphIdMap.set(String(node.id), node.type);
-                        }
-                    }
-                }
-
-                for (const subgraph of subgraphs) {
-                    for (const node of subgraph.nodes) {
-                        const subgraphNodeId = `${subgraph.id}:${node.id}`;
-                        result.nodes[subgraphNodeId] = {
-                            ...node,
-                            class_type: node.type,
-                            inputs: node.inputs || {},
-                            pos: node.pos,
-                            size: node.size,
-                            mode: node.mode,
-                            widgets_values: node.widgets_values || [],
-                            isSubgraphNode: true,
-                            subgraphId: subgraph.id,
-                            subgraphName: subgraph.name,
-                            originalNodeId: node.id
-                        };
-                    }
-
-                    for (const input of subgraph.inputs) {
-                        if (input.linkIds && input.linkIds.length > 0) {
-                            for (const linkId of input.linkIds) {
-                                result.connections.push({
-                                    from: linkId,
-                                    fromSlot: 0,
-                                    to: `${subgraph.id}:${input.id}`,
-                                    toSlot: input.name
-                                });
-                            }
-                        }
-                    }
-
-                    for (const output of subgraph.outputs) {
-                        if (output.linkIds && output.linkIds.length > 0) {
-                            for (const linkId of output.linkIds) {
-                                result.connections.push({
-                                    from: `${subgraph.id}:${output.id}`,
-                                    fromSlot: 0,
-                                    to: linkId,
-                                    toSlot: 0
-                                });
-                            }
-                        }
-                    }
-                }
-
-                for (const [nodeId, nodeData] of Object.entries(workflow)) {
+                // 处理每个节点
+                for (const [nodeId, nodeData] of Object.entries(promptData)) {
                     const inputs = nodeData.inputs || {};
                     const classType = nodeData.class_type;
 
+                    // 提取 Note 节点
                     if (classType === 'Note') {
                         result.notes.push({
                             id: nodeId,
@@ -1302,6 +1417,8 @@
                         });
                     }
 
+                    // 提取连接关系
+                    // prompt 中的输入格式: inputs: { 参数名: [来源节点ID, 来源槽位], ... }
                     for (const [inputName, inputValue] of Object.entries(inputs)) {
                         if (Array.isArray(inputValue) && inputValue.length >= 2) {
                             const [fromNode, fromSlot] = inputValue;
@@ -1315,36 +1432,36 @@
                     }
                 }
 
+                // 处理子图
+                // 子图节点 ID 格式: "子图ID:节点ID" (如 "18:8" 表示子图18中的节点8)
                 const subgraphMap = new Map();
-                for (const [nodeId, nodeData] of Object.entries(workflow)) {
+                for (const [nodeId, nodeData] of Object.entries(promptData)) {
                     if (nodeId.includes(':')) {
                         const [subgraphId, nodeIdPart] = nodeId.split(':');
+
+                        // 创建子图记录
                         if (!subgraphMap.has(subgraphId)) {
-                            const existingSubgraph = result.subgraphs.find(s => s.id === subgraphId);
-                            if (existingSubgraph) {
-                                subgraphMap.set(subgraphId, existingSubgraph);
-                            } else {
-                                subgraphMap.set(subgraphId, {
-                                    id: subgraphId,
-                                    name: `Subgraph ${subgraphId}`,
-                                    nodes: []
-                                });
-                            }
+                            subgraphMap.set(subgraphId, {
+                                id: subgraphId,
+                                name: `Subgraph ${subgraphId}`,
+                                nodes: []
+                            });
                         }
+
+                        // 添加节点到子图
                         subgraphMap.get(subgraphId).nodes.push({
                             id: nodeIdPart,
                             ...nodeData
                         });
 
+                        // 标记节点为子图节点，用于后续颜色分配
                         nodeData.isSubgraphNode = true;
                         nodeData.subgraphId = subgraphId;
-                        if (!nodeData.subgraphName) {
-                            const existingSubgraph = result.subgraphs.find(s => s.id === subgraphId);
-                            nodeData.subgraphName = existingSubgraph ? existingSubgraph.name : `Subgraph ${subgraphId}`;
-                        }
+                        nodeData.subgraphName = `Subgraph ${subgraphId}`;
                     }
                 }
 
+                // 将子图映射转换为数组
                 if (subgraphMap.size > 0) {
                     result.subgraphs = Array.from(subgraphMap.values());
                 }
@@ -1355,6 +1472,10 @@
             return result;
         }
 
+        /**
+         * 渲染整个工作流
+         * 流程：清空画布 -> 计算节点位置 -> 渲染节点 -> 渲染连接线
+         */
         function renderWorkflow() {
             canvas.innerHTML = '';
             connectionsSvg.innerHTML = '';
@@ -1371,12 +1492,26 @@
             updateConnectionPaths();
         }
 
+        /**
+         * 计算节点位置（自动排列算法）
+         * 使用层级布局算法：
+         * 1. 根据连接关系计算每个节点的层级（深度）
+         * 2. 同一层级的节点水平排列
+         * 3. 子图节点与主图节点分开处理层级
+         * @returns {Object} 节点ID到位置的映射 { 节点ID: {x, y} }
+         */
         function calculateNodePositions() {
             const positions = {};
             const levels = {};
             const nodeLevel = {};
             const visited = new Set();
 
+            /**
+             * 递归计算节点的层级（深度）
+             * 子图节点的层级计算独立于主图节点
+             * @param {string} nodeId - 节点ID
+             * @returns {number} 节点的层级
+             */
             function getLevel(nodeId) {
                 if (nodeLevel[nodeId] !== undefined) return nodeLevel[nodeId];
 
@@ -1406,19 +1541,22 @@
                 return nodeLevel[nodeId];
             }
 
+            // 计算所有节点的层级
             Object.keys(workflowData.nodes).forEach(id => getLevel(id));
 
+            // 按层级分组节点
             const levelNodes = {};
             for (const [id, level] of Object.entries(nodeLevel)) {
                 if (!levelNodes[level]) levelNodes[level] = [];
                 levelNodes[level].push(id);
             }
 
+            // 为每个节点计算具体位置
             for (const [level, nodeIds] of Object.entries(levelNodes)) {
                 const levelNum = parseInt(level);
                 nodeIds.forEach((nodeId, index) => {
-                    const x = 50 + levelNum * 260;
-                    const y = 50 + index * 180 + (levelNodes[level].length > 1 ? 0 : 50);
+                    const x = 50 + levelNum * 260;  // 每层水平间距 260px
+                    const y = 50 + index * 180 + (levelNodes[level].length > 1 ? 0 : 50);  // 垂直间距 180px
                     positions[nodeId] = { x, y };
                 });
             }
@@ -1426,23 +1564,32 @@
             return positions;
         }
 
+        /**
+         * 渲染所有节点
+         * 为每个节点创建 DOM 元素，设置样式、位置、内容和事件处理
+         * @param {Object} positions - 节点ID到位置的映射
+         */
         function renderNodes(positions) {
             for (const [nodeId, nodeData] of Object.entries(workflowData.nodes)) {
+                // 确定节点位置（子图节点优先使用保存的位置）
                 const pos = nodeData.isSubgraphNode ?
                     (nodeData.pos ? { x: nodeData.pos[0], y: nodeData.pos[1] } : positions[nodeId] || { x: 100, y: 100 }) :
                     positions[nodeId] || { x: 100, y: 100 };
                 const classType = nodeData.class_type;
 
+                // 构建节点 CSS 类名
                 let className = 'node';
                 if (classType === 'Note') className += ' note-node';
                 if (nodeStates[nodeId]?.collapsed) className += ' collapsed';
 
+                // 创建节点元素
                 const nodeEl = document.createElement('div');
                 nodeEl.className = className;
                 nodeEl.style.left = pos.x + 'px';
                 nodeEl.style.top = pos.y + 'px';
                 nodeEl.dataset.nodeId = nodeId;
 
+                // 设置子图边框颜色
                 const subgraphColor = getSubgraphColor(nodeData.subgraphId);
                 if (subgraphColor) {
                     nodeEl.style.borderColor = subgraphColor;
@@ -1588,6 +1735,11 @@
             }
         }
 
+        /**
+         * 截断过长的参数值用于显示
+         * @param {*} value - 参数值
+         * @returns {string} 截断后的字符串
+         */
         function truncateValue(value) {
             if (Array.isArray(value)) {
                 if (value.length === 2 && typeof value[0] === 'string') {
@@ -1598,6 +1750,10 @@
             return String(value);
         }
 
+        /**
+         * 更新连接线的 SVG 路径
+         * 根据节点位置计算贝塞尔曲线路径
+         */
         function updateConnectionPaths() {
             let svgContent = '';
 
@@ -1607,6 +1763,7 @@
 
                 if (!fromNodeEl || !toNodeEl) continue;
 
+                // 获取节点位置和尺寸
                 const fromRect = {
                     x: parseFloat(fromNodeEl.style.left),
                     y: parseFloat(fromNodeEl.style.top),
@@ -1621,6 +1778,7 @@
                     height: toNodeEl.offsetHeight
                 };
 
+                // 计算连接点坐标（从右侧中点出发，到左侧中点）
                 const x1 = fromRect.x + fromRect.width;
                 const y1 = fromRect.y + fromRect.height / 2;
                 const x2 = toRect.x;
@@ -1641,13 +1799,24 @@
             updateConnectionHighlight();
         }
 
+        /**
+         * 转义 HTML 特殊字符，防止 XSS 攻击
+         * @param {string} text - 原始文本
+         * @returns {string} 转义后的 HTML 安全文本
+         */
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
+        /**
+         * 选中指定节点
+         * 添加选中样式和发光效果，并高亮相关连接线
+         * @param {string} nodeId - 节点ID
+         */
         function selectNode(nodeId) {
+            // 清除所有节点的选中状态
             document.querySelectorAll('.node').forEach(node => {
                 node.classList.remove('selected');
                 node.style.boxShadow = '';
@@ -1658,17 +1827,24 @@
                 nodeEl.classList.add('selected');
                 selectedNodeId = nodeId;
 
+                // 根据子图ID获取发光颜色
                 const nodeData = workflowData ? Object.entries(workflowData.nodes || {}).find(([id]) => id === nodeId)?.[1] : null;
                 const subgraphId = nodeData?.subgraphId;
                 const glowColor = subgraphId ? getSubgraphColor(subgraphId) : '#cccccc';
                 const rgb = hexToRgb(glowColor);
 
+                // 设置多层发光效果
                 nodeEl.style.boxShadow = `0 0 20px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6), 0 0 40px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4), 0 0 0 2px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3) !important`;
 
                 updateConnectionHighlight();
             }
         }
 
+        /**
+         * 将十六进制颜色转换为 RGB 对象
+         * @param {string} hex - 十六进制颜色值（如 #ff69b4）
+         * @returns {Object} 包含 r, g, b 属性的对象
+         */
         function hexToRgb(hex) {
             const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
             return result ? {
@@ -1678,6 +1854,10 @@
             } : { r: 200, g: 200, b: 200 };
         }
 
+        /**
+         * 取消所有节点的选中状态
+         * 清除选中样式、发光效果和连接线高亮
+         */
         function deselectAll() {
             document.querySelectorAll('.node').forEach(node => {
                 node.classList.remove('selected');
@@ -1692,6 +1872,10 @@
             selectedNodeId = null;
         }
 
+        /**
+         * 更新连接线的高亮状态
+         * 当节点被选中时，高亮与该节点相关的连接线
+         */
         function updateConnectionHighlight() {
             if (!selectedNodeId) {
                 document.querySelectorAll('.connection-line-flow').forEach(line => {
@@ -1707,6 +1891,7 @@
                 const fromNodeId = line.dataset.from;
                 const toNodeId = line.dataset.to;
 
+                // 如果连接线与选中节点相关，添加流动效果
                 if (fromNodeId === selectedNodeId || toNodeId === selectedNodeId) {
                     if (!line.dataset.hasFlow) {
                         const d = line.getAttribute('d');

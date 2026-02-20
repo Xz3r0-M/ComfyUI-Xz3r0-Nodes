@@ -125,7 +125,7 @@ class XStringGroup:
     )
     FUNCTION = "group_strings"
 
-    CATEGORY = "♾️ Xz3r0/Types"
+    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
 
     def group_strings(
         self,

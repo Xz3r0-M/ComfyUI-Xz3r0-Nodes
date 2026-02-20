@@ -104,7 +104,7 @@ class XLatentSave:
         "Saved file path relative to ComfyUI output directory",
     )
     FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/Latent"
+    CATEGORY = "♾️ Xz3r0/File-Processing"
 
     def save(
         self,

@@ -399,5 +399,23 @@
         "tooltip": "字符串 5 的原始输出"
       }
     }
+  },
+  "XWorkflowSave": {
+    "display_name": "XWorkflowSave",
+    "description": "工作流保存节点，将ComfyUI工作流保存为JSON文件，支持自定义文件名、子文件夹和日期时间标识符。",
+    "inputs": {
+      "anything": {
+        "name": "任意输入",
+        "tooltip": "任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中。"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      }
+    }
   }
 }

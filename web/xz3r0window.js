@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 
 app.registerExtension({
-    name: "ComfyUI.Xz3r0.xmetadataworkflow",
+    name: "ComfyUI.Xz3r0.xz3r0window",
 
     async setup() {
         const style = document.createElement("style");
@@ -90,7 +90,7 @@ app.registerExtension({
                 const menuButton = new ComfyButton({
                     action: () => Xz3r0Window.toggle(),
                     tooltip: "Xz3r0 Window",
-                    content: "♾️Xz3r0♾️",
+                    content: "♾️",
                 });
                 app.menu.settingsGroup.append(menuButton);
                 menuButtonCreated = true;

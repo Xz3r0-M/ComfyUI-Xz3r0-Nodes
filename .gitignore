@@ -212,6 +212,7 @@ __marimo__/
 .trae/
 .vscode/
 tests/
+web/test
 补充.md
 创建.md
 ruff.toml

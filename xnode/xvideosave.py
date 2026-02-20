@@ -58,7 +58,7 @@ class XVideoSave(io.ComfyNode):
         return io.Schema(
             node_id="XVideoSave",
             display_name="XVideoSave",
-            category="♾️ Xz3r0/Video",
+            category="♾️ Xz3r0/File-Processing",
             description=(
                 "Saves the input video to your ComfyUI output directory "
                 "with H.265/HEVC encoding. Audio streams are copied "
