@@ -304,6 +304,8 @@
 
         .file-area .file-placeholder span {
             font-size: 12px;
+            white-space: pre-line;
+            text-align: center;
         }
 
         .file-area .file-placeholder .hint {
@@ -661,8 +663,8 @@
                 <div class="file-preview" id="filePreview">
                     <div class="file-placeholder" id="filePlaceholder">
                         <span class="icon">📁</span>
-                        <span data-i18n="dropFile">拖放文件到此处</span>
-                        <span class="hint" data-i18n="clickSelect">或点击选择文件</span>
+                        <span data-i18n="DroporSelect">拖放文件到此处或点击选择文件</span>
+                        <span class="hint" data-i18n="filetip"></span>
                     </div>
                 </div>
                 <div class="file-info" id="fileInfo">
@@ -729,8 +731,8 @@
         const i18n = {
             zh: {
                 title: 'XMetadataWorkflow',
-                dropFile: '拖放 PNG图片 或 Latent文件 到此处',
-                clickSelect: '或点击选择文件',
+                DroporSelect: '拖放文件到此处 或 点击选择文件',
+                filetip: '支持 .png 和 .latent\n以及 .json (由XWorkflowSave保存)',
                 filename: '文件名',
                 filetype: '类型',
                 filesize: '大小',
@@ -758,8 +760,8 @@
             },
             en: {
                 title: 'XMetadataWorkflow',
-                dropFile: 'Drop PNG image or Latent file here',
-                clickSelect: 'or click to select',
+                DroporSelect: 'Drop file here\nor click to select',
+                filetip: 'Supports .png, .latent\nand .json (from XWorkflowSave)',
                 filename: 'Filename',
                 filetype: 'Type',
                 filesize: 'Size',

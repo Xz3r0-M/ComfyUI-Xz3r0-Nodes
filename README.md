@@ -5,8 +5,10 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
-[📜 点击查看更新日志 | Click to view the changelog 📜](Changelog.md)
 
+**如果这个项目对你有帮助，请给个星标⭐支持一下！**
+
+[📜 点击查看更新日志 | Click to view the changelog 📜](Changelog.md)
 </div>
 
 ---
@@ -31,6 +33,7 @@
 - 🎵 **音频处理** - 音频保存 (WAV无损格式，LUFS标准化，峰值限制)
 - 🔮 **Latent处理** - Latent加载和保存 (支持元数据)
 - 📝 **数据类节点** - 字符串组合 (支持多行输入和分隔方式)
+- 🖥️ **工作流工具** - 工作流保存节点、工作流元数据查看器
 
 ---
 
@@ -83,9 +86,10 @@ pip install -r requirements.txt
 ## 📚 节点列表和说明
 
 <details>
-<summary><strong>🛠️ 工具节点 (♾️ Xz3r0/Tools)👈</strong></summary>
+<summary><strong>🛠️ 工具节点 👈</strong></summary>
 
 ### 🔢 XMath
+(♾️ Xz3r0/Workflow-Processing)
 
 基础数学运算节点，支持双输出格式 (整数+浮点数) 。
 
@@ -140,9 +144,65 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🖼️ 图像节点 (♾️ Xz3r0/Image)👈</strong></summary>
+<summary><strong>📝 数据类节点 👈</strong></summary>
+
+### 🔗 XStringGroup
+(♾️ Xz3r0/Workflow-Processing)
+
+字符串组合节点，支持多行输入和自定义分隔符。
+
+**功能**:
+- 支持最多5个多行字符串输入
+- 每个字符串之间可选择不同的分隔方式 (无、换行、空格、逗号、逗号+空格、句号、句号+空格)
+- 输出组合后的完整字符串
+- 支持选择单个字符串输出 (1-5)
+- 支持每个字符串的原始输出
+
+**输入**:
+- `select_string` (下拉选择): 选择要输出的字符串编号 (1-5)
+- `string_1` (STRING, 多行): 第一个字符串
+- `separation_method_1_2` (下拉选择): 字符串1和2之间的分隔方式
+- `string_2` (STRING, 多行): 第二个字符串
+- `separation_method_2_3` (下拉选择): 字符串2和3之间的分隔方式
+- `string_3` (STRING, 多行): 第三个字符串
+- `separation_method_3_4` (下拉选择): 字符串3和4之间的分隔方式
+- `string_4` (STRING, 多行): 第四个字符串
+- `separation_method_4_5` (下拉选择): 字符串4和5之间的分隔方式
+- `string_5` (STRING, 多行): 第五个字符串
+
+**分隔方式选项**:
+- `none`: 无分隔
+- `newline`: 换行符 (`\n`)
+- `space`: 空格 (` `)
+- `comma`: 逗号 (`,`)
+- `comma_space`: 逗号+空格 (`, `)
+- `period`: 句号 (`.`)
+- `period_space`: 句号+空格 (`. `)
+
+**输出**:
+- `total_string` (STRING): 组合后的完整字符串 (带有分隔方式)
+- `selected_string` (STRING): 由选择字符串栏所选择的输出
+- `string_1` (STRING): 字符串1的原始输出
+- `string_2` (STRING): 字符串2的原始输出
+- `string_3` (STRING): 字符串3的原始输出
+- `string_4` (STRING): 字符串4的原始输出
+- `string_5` (STRING): 字符串5的原始输出
+
+**使用场景**:
+- 构建复杂提示词组合
+- 生成多行文本描述
+- 创建带格式化的文本输出
+- 工作流中的文本处理和组合
+
+</details>
+
+
+
+<details>
+<summary><strong>🖼️ 图像节点 👈</strong></summary>
 
 ### 💾 XImageSave
+(♾️ Xz3r0/File-Processing)
 
 图像保存节点，支持自定义文件名和子文件夹管理。
 
@@ -174,9 +234,10 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🎬 视频节点 (♾️ Xz3r0/Video)👈</strong></summary>
+<summary><strong>🎬 视频节点 👈</strong></summary>
 
 ### 🎬 XVideoSave
+(♾️ Xz3r0/File-Processing)
 
 视频保存节点，使用FFmpeg将图像序列保存为视频。
 
@@ -214,9 +275,10 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🎵 音频节点 (♾️ Xz3r0/Audio)👈</strong></summary>
+<summary><strong>🎵 音频节点 👈</strong></summary>
 
 ### 🎵 XAudioSave
+(♾️ Xz3r0/File-Processing)
 
 音频保存节点，使用WAV无损格式保存音频，支持压缩和LUFS标准化以及峰值限制。
 
@@ -272,9 +334,10 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🔮 Latent节点 (♾️ Xz3r0/Latent)👈</strong></summary>
+<summary><strong>🔮 Latent节点 👈</strong></summary>
 
 ### 📥 XLatentLoad
+(♾️ Xz3r0/File-Processing)
 
 Latent加载节点，支持从输入端口或文件加载Latent。
 
@@ -300,6 +363,7 @@ Latent加载节点，支持从输入端口或文件加载Latent。
 
 
 ### 📤 XLatentSave
+(♾️ Xz3r0/File-Processing)
 
 Latent保存节点，支持自定义文件名和元数据保存。
 
@@ -331,55 +395,69 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 
 <details>
-<summary><strong>📝 数据类节点 (♾️ Xz3r0/Types)👈</strong></summary>
+<summary><strong>🖥️ 工作流工具 👈</strong></summary>
 
-### 🔗 XStringGroup
+### 📄 XWorkflowSave
+(♾️ Xz3r0/File-Processing)
 
-字符串组合节点，支持多行输入和自定义分隔符。
+工作流保存节点，将ComfyUI工作流保存为JSON文件（适配`XMetadataWorkflow`），支持自定义文件名和子文件夹。
 
 **功能**:
-- 支持最多5个多行字符串输入
-- 每个字符串之间可选择不同的分隔方式 (无、换行、空格、逗号、逗号+空格、句号、句号+空格)
-- 输出组合后的完整字符串
-- 支持选择单个字符串输出 (1-5)
-- 支持每个字符串的原始输出
+- 保存工作流到ComfyUI默认输出目录
+- 支持自定义文件名和子文件夹
+- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 路径安全防护 (防止路径遍历攻击)
+- 自动添加序列号防止覆盖(从00001开始)
+- 仅支持单级子文件夹创建
+- 保存工作流元数据 (prompt 和 workflow)
 
 **输入**:
-- `select_string` (下拉选择): 选择要输出的字符串编号 (1-5)
-- `string_1` (STRING, 多行): 第一个字符串
-- `separation_method_1_2` (下拉选择): 字符串1和2之间的分隔方式
-- `string_2` (STRING, 多行): 第二个字符串
-- `separation_method_2_3` (下拉选择): 字符串2和3之间的分隔方式
-- `string_3` (STRING, 多行): 第三个字符串
-- `separation_method_3_4` (下拉选择): 字符串3和4之间的分隔方式
-- `string_4` (STRING, 多行): 第四个字符串
-- `separation_method_4_5` (下拉选择): 字符串4和5之间的分隔方式
-- `string_5` (STRING, 多行): 第五个字符串
+- `anything` (ANY): 任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中
+- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `subfolder` (STRING): 子文件夹名称 (默认：`Workflows`)
 
-**分隔方式选项**:
-- `none`: 无分隔
-- `newline`: 换行符 (`\n`)
-- `space`: 空格 (` `)
-- `comma`: 逗号 (`,`)
-- `comma_space`: 逗号+空格 (`, `)
-- `period`: 句号 (`.`)
-- `period_space`: 句号+空格 (`. `)
+**隐藏输入**:
+- `prompt` (PROMPT): 工作流提示词 (自动注入)
+- `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
-**输出**:
-- `total_string` (STRING): 组合后的完整字符串 (带有分隔方式)
-- `selected_string` (STRING): 由选择字符串栏所选择的输出
-- `string_1` (STRING): 字符串1的原始输出
-- `string_2` (STRING): 字符串2的原始输出
-- `string_3` (STRING): 字符串3的原始输出
-- `string_4` (STRING): 字符串4的原始输出
-- `string_5` (STRING): 字符串5的原始输出
+</details>
 
-**使用场景**:
-- 构建复杂提示词组合
-- 生成多行文本描述
-- 创建带格式化的文本输出
-- 工作流中的文本处理和组合
+<details>
+<summary><strong>🧩 网页扩展 👈</strong></summary>
 
+### 📊 XMetadataWorkflow
+
+工作流元数据查看器，一个简易的独立的网页工具，用于可视化查看ComfyUI工作流。
+
+**功能**:
+- 支持多种文件格式：PNG图片、Latent文件、JSON工作流文件
+- 简单的自动层级布局算法排列节点
+- 显示节点类型、参数和连接关系
+- 子图(Subgraph)自动颜色标记
+- 支持缩放、平移、自适应视图
+- 点击节点查看详情，折叠/展开节点参数
+- 选中节点高亮相关连接
+
+**支持的文件**:
+- PNG图片 (包含工作流元数据的生成图片)
+- Latent潜空间文件 (.latent)
+- JSON工作流文件 (适配`XWorkflowSave`生成的JSON文件，==不支持==ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
+
+**技术说明**:
+- 只使用 prompt 字段格式数据 (ComfyUI API)
+- 子图通过节点ID中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
+- 节点位置使用简单的自动排列算法
+- 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式数据会导致某些节点不会显示在窗口视图中(比如：Markdown Note)
+
+**两种使用方式**:
+1. **在ComfyUI中使用**: 点击菜单栏的 ♾️ 按钮打开浮动窗口
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bm.png" alt="Open" width="700">
+
+2. **浏览器直接打开**: 直接打开 `web/xmetadataworkflow.html` 文件
+
+**禁用按钮**:
+- ComfyUI 页面 ➡️ 设置 ➡️ 扩展栏 ➡️ 关闭 `ComfyUI.Xz3r0.xz3r0window`
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bmclose.png" alt="Disabled" width="700">
 </details>
 
 ---
@@ -401,7 +479,11 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xaudiosave.py    # 音频保存节点
 │   ├── xlatentload.py   # Latent加载节点
 │   ├── xlatentsave.py   # Latent保存节点
-│   └── xstringgroup.py  # 字符串组合节点
+│   ├── xstringgroup.py  # 字符串组合节点
+│   └── xworkflowsave.py # 工作流保存节点
+├── web/                 # 网页扩展目录
+│   ├── xz3r0window.js   # ComfyUI浮动窗口扩展
+│   └── xmetadataworkflow.html  # 工作流元数据查看器
 ├── locales/             # 国际化支持 (节点显示名称和提示)
 │   ├── en/              # 英文定义
 │   │   └── nodeDefs.json
@@ -438,9 +520,3 @@ ComfyUI-Xz3r0-Nodes/
 - **Comfy Registry主页**: [Comfy Registry](https://registry.comfy.org/zh/publishers/xz3r0/nodes/xz3r0-nodes)
 
 ---
-
-<div align="center">
-
-**⭐ 如果这个项目对你有帮助，请给个星标支持一下！**
-
-</div>
