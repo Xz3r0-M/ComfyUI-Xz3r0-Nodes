@@ -30,14 +30,14 @@ class XWorkflowSave(io.ComfyNode):
         - 输出相对路径(不泄露绝对路径)
 
     输入:
-        anything: 任意输入(用于工作流连接，不处理数据) (ANY)
+        anything: 任意输入(用于工作流连接，不处理数据，可选) (ANY)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
     使用示例:
-        anything=image,
         filename_prefix="Workflow_%Y%m%d",
         subfolder="Workflows"
+        (anything输入为可选，可以不连接任何数据)
 
     """
 
@@ -56,10 +56,12 @@ class XWorkflowSave(io.ComfyNode):
             inputs=[
                 io.AnyType.Input(
                     "anything",
+                    optional=True,
                     tooltip=(
                         "Any input type for workflow connection. "
                         "This input is not processed, only used to "
-                        "link the node into your workflow."
+                        "link the node into your workflow. "
+                        "Optional - node works without any input."
                     ),
                 ),
                 io.String.Input(
@@ -88,15 +90,15 @@ class XWorkflowSave(io.ComfyNode):
     @classmethod
     def execute(
         cls,
-        anything,
-        filename_prefix: str,
-        subfolder: str,
+        anything=None,
+        filename_prefix: str = "",
+        subfolder: str = "",
     ) -> io.NodeOutput:
         """
         保存工作流到ComfyUI输出目录
 
         Args:
-            anything: 任意输入(用于工作流连接，不处理数据)
+            anything: 任意输入(用于工作流连接，不处理数据，可选)
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
 

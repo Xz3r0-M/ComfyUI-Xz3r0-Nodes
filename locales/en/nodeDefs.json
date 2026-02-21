@@ -406,7 +406,7 @@
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow."
+        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. (Optional - works without any input)"
       },
       "filename_prefix": {
         "name": "Filename Prefix",
