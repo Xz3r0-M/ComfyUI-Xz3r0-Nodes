@@ -14,7 +14,10 @@
     - 暗黑和明亮界面
     - 这是一个简易且粗糙的网页工具, 使用时可能会遇到==很多==BUG😜
 
-3. 🪛 **修改所有节点的分类**
+3. 🛠️ **为 `XImageSave` 和 `XAudioSave` 以及 `XVideoSave` 节点添加进度条
+    - 这3个节点处理文件时可能花费时间较长，为它们添加进度条后，不再是原来那样运行时看起来卡住了
+
+4. 🪛 **修改所有节点的分类**
     - 提升工作流体验的节点现在归类在 `Workflow-Processing`
     - 处理文件的节点现在归类在 `File-Processing`
 
@@ -34,7 +37,10 @@
     - Dark and light themes
     - This is a simple and rough web tool, you may encounter ==many== BUGs when using it 😜
 
-3. 🪛 **Changed categorization for all nodes**
+3. 🛠️ **Added progress bars to `XImageSave`, `XAudioSave`, and `XVideoSave` nodes**
+    - These three nodes may take longer to process files. With progress bars added, they no longer appear to be stuck when running
+
+4. 🪛 **Changed categorization for all nodes**
     - Nodes that enhance workflow experience are now categorized under `Workflow-Processing`
     - File processing nodes are now categorized under `File-Processing`
 
