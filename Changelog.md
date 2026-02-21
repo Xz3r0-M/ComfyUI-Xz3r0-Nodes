@@ -14,10 +14,14 @@
     - 暗黑和明亮界面
     - 这是一个简易且粗糙的网页工具, 使用时可能会遇到**很多**BUG😜
 
-3. 🛠️ **为 `XImageSave` 和 `XAudioSave` 以及 `XVideoSave` 节点添加进度条**
+3. ⭐ **新增 `XDateTimeString` 日期时间标识符字符串节点**
+    - 使用日期时间标识符获取时间然后输出为字符串
+    - 可以提供给本身不支持日期时间字符串的节点用作文件名称或其他需要获取时间的文字内容
+
+4. 🛠️ **为 `XImageSave` 和 `XAudioSave` 以及 `XVideoSave` 节点添加进度条**
     - 这3个节点处理文件时可能花费时间较长，为它们添加进度条后，不再是原来那样运行时看起来卡住了
 
-4. 🪛 **修改所有节点的分类**
+5. 🪛 **修改所有节点的分类**
     - 提升工作流体验的节点现在归类在 `Workflow-Processing`
     - 处理文件的节点现在归类在 `File-Processing`
 
@@ -37,10 +41,14 @@
     - Dark and light themes
     - This is a simple and rough web tool, you may encounter **many** BUGs when using it 😜
 
-3. 🛠️ **Added progress bars to `XImageSave`, `XAudioSave`, and `XVideoSave` nodes**
+3. ⭐ **Added `XDateTimeString` (DateTime Identifier String Node)**
+    - Uses datetime identifiers to get time and output as string
+    - Can be provided to nodes that don't natively support datetime strings for use as filenames or other text content requiring time information
+
+4. 🛠️ **Added progress bars to `XImageSave`, `XAudioSave`, and `XVideoSave` nodes**
     - These three nodes may take longer to process files. With progress bars added, they no longer appear to be stuck when running
 
-4. 🪛 **Changed categorization for all nodes**
+5. 🪛 **Changed categorization for all nodes**
     - Nodes that enhance workflow experience are now categorized under `Workflow-Processing`
     - File processing nodes are now categorized under `File-Processing`
 

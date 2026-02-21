@@ -139,6 +139,44 @@ pip install -r requirements.txt
 - `width` (INT): 最终宽度
 - `height` (INT): 最终高度
 
+---
+
+### 📅 XDateTimeString
+`♾️ Xz3r0/Workflow-Processing`
+
+日期时间字符串节点，生成包含日期时间标识符的格式化字符串
+
+**功能**:
+- 支持自定义格式模板
+- 支持多种日期时间占位符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 支持添加前缀和后缀
+- 实时生成当前日期时间字符串
+- 用于链接给本身不支持日期标识符的节点作为文件名
+
+**支持的占位符**:
+- `%Y%` - 四位年份 (如: 2026)
+- `%m%` - 两位月份 (01-12)
+- `%d%` - 两位日期 (01-31)
+- `%H%` - 两位小时 (00-23)
+- `%M%` - 两位分钟 (00-59)
+- `%S%` - 两位秒数 (00-59)
+
+**输入**:
+- `prefix` (STRING): 前缀字符串，添加到日期时间之前
+- `format_template` (STRING): 格式模板 (默认: `%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `suffix` (STRING): 后缀字符串，添加到日期时间之后
+
+**输出**:
+- `datetime_string` (STRING): 格式化后的日期时间字符串
+
+**使用示例**:
+```
+prefix="Image_",
+format_template="%Y%-%m%-%d%_%H%-%M%-%S%",
+suffix="_v1"
+输出: "Image_2026-02-21_14-30-52_v1"
+```
+
 </details>
 
 
@@ -494,6 +532,7 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── __init__.py
 │   ├── xmath.py         # 数学运算节点
 │   ├── xresolution.py   # 分辨率设置节点
+│   ├── xdatetimestring.py     # 日期时间字符串节点
 │   ├── ximagesave.py    # 图像保存节点
 │   ├── xvideosave.py    # 视频保存节点
 │   ├── xaudiosave.py    # 音频保存节点

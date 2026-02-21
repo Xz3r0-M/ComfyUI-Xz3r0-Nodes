@@ -11,6 +11,10 @@ from pathlib import Path
 # ================================
 from .xnode.xaudiosave import NODE_CLASS_MAPPINGS as XAUDIOSAVE_CM
 from .xnode.xaudiosave import NODE_DISPLAY_NAME_MAPPINGS as XAUDIOSAVE_DNM
+from .xnode.xdatetimestring import NODE_CLASS_MAPPINGS as XDATETIMESTRING_CM
+from .xnode.xdatetimestring import (
+    NODE_DISPLAY_NAME_MAPPINGS as XDATETIMESTRING_DNM,
+)
 from .xnode.ximagesave import NODE_CLASS_MAPPINGS as XIMAGESAVE_CM
 from .xnode.ximagesave import NODE_DISPLAY_NAME_MAPPINGS as XIMAGESAVE_DNM
 from .xnode.xlatentload import NODE_CLASS_MAPPINGS as XLATENTLOAD_CM
@@ -26,7 +30,9 @@ from .xnode.xstringgroup import NODE_DISPLAY_NAME_MAPPINGS as XSTRINGGROUP_DNM
 from .xnode.xvideosave import NODE_CLASS_MAPPINGS as XVIDEOSAVE_CM
 from .xnode.xvideosave import NODE_DISPLAY_NAME_MAPPINGS as XVIDEOSAVE_DNM
 from .xnode.xworkflowsave import NODE_CLASS_MAPPINGS as XWORKFLOWSAVE_CM
-from .xnode.xworkflowsave import NODE_DISPLAY_NAME_MAPPINGS as XWORKFLOWSAVE_DNM
+from .xnode.xworkflowsave import (
+    NODE_DISPLAY_NAME_MAPPINGS as XWORKFLOWSAVE_DNM,
+)
 
 # ================================
 # 自动合并所有节点映射

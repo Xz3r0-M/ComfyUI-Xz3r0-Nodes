@@ -423,5 +423,29 @@
         "tooltip": "透传输入的数据，可直接传递给下游节点"
       }
     }
+  },
+  "XDateTimeString": {
+    "display_name": "XDateTimeString",
+    "description": "日期时间字符串节点，生成包含日期时间标识符的格式化字符串，用于链接给本身不支持日期标识符的节点。",
+    "inputs": {
+      "prefix": {
+        "name": "前缀",
+        "tooltip": "前缀字符串，将添加到日期时间字符串之前"
+      },
+      "format_template": {
+        "name": "格式模板",
+        "tooltip": "日期时间格式模板，支持占位符: %Y%(年), %m%(月), %d%(日), %H%(时), %M%(分), %S%(秒)"
+      },
+      "suffix": {
+        "name": "后缀",
+        "tooltip": "后缀字符串，将添加到日期时间字符串之后"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "日期时间字符串",
+        "tooltip": "格式化后的日期时间字符串"
+      }
+    }
   }
 }

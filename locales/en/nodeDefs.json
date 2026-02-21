@@ -423,5 +423,29 @@
         "tooltip": "Pass through the input data to downstream nodes"
       }
     }
+  },
+  "XDateTimeString": {
+    "display_name": "XDateTimeString",
+    "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
+    "inputs": {
+      "prefix": {
+        "name": "Prefix",
+        "tooltip": "Prefix string, added before datetime"
+      },
+      "format_template": {
+        "name": "Format Template",
+        "tooltip": "Datetime format template, supports placeholders: %Y%(year), %m%(month), %d%(day), %H%(hour), %M%(minute), %S%(second)"
+      },
+      "suffix": {
+        "name": "Suffix",
+        "tooltip": "Suffix string, added after datetime"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Datetime String",
+        "tooltip": "Formatted datetime string"
+      }
+    }
   }
 }
