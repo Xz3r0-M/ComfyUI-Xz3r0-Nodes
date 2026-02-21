@@ -15,25 +15,26 @@
 
 ## 📖 项目简介
 
-**ComfyUI-Xz3r0-Nodes** 是一个ComfyUI自定义节点项目，当前主要目标为创建**增强的基础功能节点**。
+ComfyUI-Xz3r0-Nodes 是一个ComfyUI自定义节点项目，当前主要目标为创建增强的基础功能节点
 
 ### 🎯 设计特点
 
-- 🌍 **多语言界面** - 节点目前支持 🇨🇳 `中文` 🇬🇧 `English` 界面
+- 🌍 多语言界面 - 节点目前支持 🇨🇳 `中文` 🇬🇧 `English` 界面
     - ComfyUI 会根据您的UI页面设置所选择的语言来调用节点的语言文件，节点名称、参数描述和提示信息都会按照语言文件自动翻译
     - 如果节点没有支持您使用的UI界面语言会默认显示节点代码的文字而不是语言文件(* 这可能是ComfyUI的BUG)
-    - 🤝 如果您想为项目贡献新的语言支持，请参考项目中 `locales/en/nodeDefs.json` 的格式创建新的语言文件，并提交 Pull Request。
-- 🚫 **安全处理** - 节点中可输入的文件名和路径已做防遍历攻击处理，请使用文字，不要使用日期时间标识符以外的特殊符号！
+    - 如果您想为项目贡献新的语言支持，请参考项目中 `locales/en/nodeDefs.json` 的格式创建新的语言文件，并提交 Pull Request🤝
+- 🚫 安全处理 - 节点中可输入的文件名和路径已做防遍历攻击处理，请使用文字，不要使用日期时间标识符以外的特殊符号！
 
 ### ✨ 当前功能
 
-- 🛠️ **工具节点** - 数学运算、分辨率设置
-- 🖼️ **图像处理** - 图像保存 (支持自定义文件名和子文件夹)
-- 🎬 **视频处理** - 视频保存 (H.265编码，自定义质量和速度预设，音频支持)
-- 🎵 **音频处理** - 音频保存 (WAV无损格式，LUFS标准化，峰值限制)
-- 🔮 **Latent处理** - Latent加载和保存 (支持元数据)
-- 📝 **数据类节点** - 字符串组合 (支持多行输入和分隔方式)
-- 🖥️ **工作流工具** - 工作流保存节点、工作流元数据查看器
+- 🛠️ 工具节点 - 数学运算、分辨率设置
+- 🖼️ 图像处理 - 图像保存 (支持自定义文件名和子文件夹)
+- 🎬 视频处理 - 视频保存 (H.265编码，自定义质量和速度预设，音频支持)
+- 🎵 音频处理 - 音频保存 (WAV无损格式，LUFS标准化，峰值限制)
+- 🔮 Latent处理 - Latent加载和保存 (支持元数据)
+- 📝 数据类节点 - 字符串组合 (支持多行输入和分隔方式)
+- ⌨️ 工作流工具 - 工作流保存节点、工作流元数据查看器
+- 🧩 网页扩展 - ComfyUI页面功能扩展
 
 ---
 
@@ -48,32 +49,28 @@
 
 ### 方法 2: 手动安装
 
-1. **克隆仓库到ComfyUI的 `custom_nodes` 目录**
+1. 克隆本仓库到ComfyUI的 `custom_nodes` 目录
 
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes.git
 ```
 
-2. **安装依赖**
+2. 安装依赖
 
 ```bash
 cd ComfyUI-Xz3r0-Nodes
 pip install -r requirements.txt
 ```
 
-3. **重启ComfyUI**
+3. 重启ComfyUI
 
 ---
 
-## 📦 依赖说明
+## 📦 依赖说明（重要必看）
 
-**本项目当前使用的 Python 依赖包**
-
-- **ffmpeg-python** - 这个依赖包提供接口让节点能够调用本机安装的 FFmpeg (XVideoSave 视频处理节点使用；XAudioSave 音频处理节点使用)
-
-**‼️⚠️本项目当前需要额外安装的依赖程序⚠️‼️**
-- **[FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装FFmpeg，那么 XVideoSave 和 XAudioSave 节点将无法正常使用
+本项目当前需要==手动安装==的依赖程序：
+- **⚠️ [FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装FFmpeg，那么 `XVideoSave` 和 `XAudioSave` 节点将无法正常使用‼️
 
 ---
 
@@ -84,15 +81,15 @@ pip install -r requirements.txt
 
 </div>
 
-## 📚 节点列表和说明
+## 📚 节点详细说明（推荐查看）
 
 <details>
-<summary><strong>🛠️ 工具节点 👈</strong></summary>
+<summary>🛠️ 工具节点 👈</summary>
 
 ### 🔢 XMath
-(♾️ Xz3r0/Workflow-Processing)
+`♾️ Xz3r0/Workflow-Processing`
 
-基础数学运算节点，支持双输出格式 (整数+浮点数) 。
+基础数学运算节点，支持双输出格式 (整数+浮点数)
 
 **功能**: 加法、减法、乘法、除法、幂运算、取模、最大值、最小值
 - 支持输入端口和基础值两种输入方式
@@ -118,10 +115,11 @@ pip install -r requirements.txt
 - `int_result` (INT): 整数结果 (截断小数)
 - `float_result` (FLOAT): 浮点数结果 (精确值)
 
+---
 
 ### 📐 XResolution
 
-分辨率设置节点，提供标准分辨率预设和自定义功能。
+分辨率设置节点，提供标准分辨率预设和自定义功能
 
 **功能**:
 - 标准分辨率预设 (16:9, 4:3, 1:1, 16:10, 21:9等)
@@ -145,12 +143,12 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>📝 数据类节点 👈</strong></summary>
+<summary>📝 数据类节点 👈</summary>
 
 ### 🔗 XStringGroup
-(♾️ Xz3r0/Workflow-Processing)
+`♾️ Xz3r0/Workflow-Processing`
 
-字符串组合节点，支持多行输入和自定义分隔符。
+字符串组合节点，支持多行输入和自定义分隔符
 
 **功能**:
 - 支持最多5个多行字符串输入
@@ -200,12 +198,12 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🖼️ 图像节点 👈</strong></summary>
+<summary>🖼️ 图像节点 👈</summary>
 
 ### 💾 XImageSave
-(♾️ Xz3r0/File-Processing)
+`♾️ Xz3r0/File-Processing`
 
-图像保存节点，支持自定义文件名和子文件夹管理。
+图像保存节点，支持自定义文件名和子文件夹管理
 
 **功能**:
 - 支持自定义文件名和子文件夹
@@ -235,12 +233,12 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🎬 视频节点 👈</strong></summary>
+<summary>🎬 视频节点 👈</summary>
 
 ### 🎬 XVideoSave
-(♾️ Xz3r0/File-Processing)
+`♾️ Xz3r0/File-Processing`
 
-视频保存节点，使用FFmpeg将图像序列保存为视频。
+视频保存节点，使用FFmpeg将图像序列保存为视频
 
 **功能**:
 - 使用FFmpeg将视频对象保存为MKV格式视频
@@ -276,12 +274,12 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🎵 音频节点 👈</strong></summary>
+<summary>🎵 音频节点 👈</summary>
 
 ### 🎵 XAudioSave
-(♾️ Xz3r0/File-Processing)
+`♾️ Xz3r0/File-Processing`
 
-音频保存节点，使用WAV无损格式保存音频，支持压缩和LUFS标准化以及峰值限制。
+音频保存节点，使用WAV无损格式保存音频，支持压缩和LUFS标准化以及峰值限制
 
 **功能**:
 - 保存音频到ComfyUI默认输出目录
@@ -335,12 +333,12 @@ pip install -r requirements.txt
 
 
 <details>
-<summary><strong>🔮 Latent节点 👈</strong></summary>
+<summary>🔮 Latent节点 👈</summary>
 
 ### 📥 XLatentLoad
-(♾️ Xz3r0/File-Processing)
+`♾️ Xz3r0/File-Processing`
 
-Latent加载节点，支持从输入端口或文件加载Latent。
+Latent加载节点，支持从输入端口或文件加载Latent
 
 **功能**:
 - 支持从上游节点输入Latent (优先级最高)
@@ -362,11 +360,12 @@ Latent加载节点，支持从输入端口或文件加载Latent。
 2. 如果输入端口为None，则从下拉菜单选择的文件加载Latent
 3. 如果输入端口为None且文件不存在，弹出错误提示
 
+---
 
 ### 📤 XLatentSave
-(♾️ Xz3r0/File-Processing)
+`♾️ Xz3r0/File-Processing`
 
-Latent保存节点，支持自定义文件名和元数据保存。
+Latent保存节点，支持自定义文件名和元数据保存
 
 **功能**:
 - 保存Latent到ComfyUI默认输出目录
@@ -396,12 +395,12 @@ Latent保存节点，支持自定义文件名和元数据保存。
 
 
 <details>
-<summary><strong>🖥️ 工作流工具 👈</strong></summary>
+<summary>⌨️ 工作流工具 👈</summary>
 
 ### 📄 XWorkflowSave
-(♾️ Xz3r0/File-Processing)
+`♾️ Xz3r0/File-Processing`
 
-工作流保存节点，将ComfyUI工作流保存为JSON文件（适配`XMetadataWorkflow`），支持自定义文件名和子文件夹。
+工作流保存节点，将ComfyUI工作流保存为JSON文件（适配 `XMetadataWorkflow`），支持自定义文件名和子文件夹
 
 **功能**:
 - 保存工作流到ComfyUI默认输出目录
@@ -421,14 +420,12 @@ Latent保存节点，支持自定义文件名和元数据保存。
 - `prompt` (PROMPT): 工作流提示词 (自动注入)
 - `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
-</details>
-
-<details>
-<summary><strong>🧩 网页扩展 👈</strong></summary>
+---
 
 ### 📊 XMetadataWorkflow
+`🖥️ 浮动窗口（按钮）`
 
-工作流元数据查看器，一个简易的独立的网页工具，用于可视化查看ComfyUI工作流。
+工作流元数据查看器，一个简易的网页工具，用于可视化查看ComfyUI工作流
 
 **功能**:
 - 支持多种文件格式：PNG图片、Latent文件、JSON工作流文件
@@ -442,28 +439,48 @@ Latent保存节点，支持自定义文件名和元数据保存。
 **支持的文件**:
 - PNG图片 (包含工作流元数据的生成图片)
 - Latent潜空间文件 (.latent)
-- JSON工作流文件 (适配`XWorkflowSave`生成的JSON文件，==不支持==ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
+- JSON工作流文件 (适配 `XWorkflowSave` 生成的JSON文件，==不支持==ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
 
 **技术说明**:
 - 只使用 prompt 字段格式数据 (ComfyUI API)
 - 子图通过节点ID中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
 - 节点位置使用简单的自动排列算法
-- 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式数据会导致某些节点不会显示在窗口视图中(比如：Markdown Note)
+- 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式元数据会导致某些节点或参数不会显示在窗口视图中(比如： `Markdown Note`)
 
 **两种使用方式**:
-1. **在ComfyUI中使用**: 点击顶部菜单栏的 ♾️ 按钮打开浮动窗口
+1. **在ComfyUI中使用（集成）**: 点击顶部菜单栏的 ♾️ 按钮打开浮动窗口，已将此网页工具嵌入到该窗口中
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bm.png" alt="Open" width="700">
 
-2. **浏览器直接打开**: 直接打开 `web/xmetadataworkflow.html` 文件
+2. **浏览器直接打开（独立）**: 直接打开 `web/xmetadataworkflow.html` 文件
+
+</details>
+
+
+
+<details>
+<summary>🧩 网页扩展 👈</summary>
+
+### 🖥️ 浮动窗口（按钮）
+
+为ComfyUI页面增加可打开的浮动窗口
+
+**窗口功能**
+- `XMetadataWorkflow`（工作流元数据查看器）
+
+**使用按钮**:
+- 在ComfyUI页面顶部菜单栏中的 ♾️ 按钮，点击可 打开或关闭 浮动窗口
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Button" width="700">
 
 **禁用按钮**:
-- ComfyUI 页面 ➡️ 设置 ➡️ 扩展栏 ➡️ 关闭 `ComfyUI.Xz3r0.xz3r0window`
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bmclose.png" alt="Disabled" width="700">
+- ComfyUI 页面 ➡️ 设置 ➡️ 扩展栏 ➡️ 点击扩展列表中此扩展 `ComfyUI.Xz3r0.xz3r0window` 右侧的开关按钮为关闭 ➡️ 刷新网页后顶部菜单栏的按钮就会消失
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bmclose.png" alt="Disabled button" width="700">
+
 </details>
 
 ---
 
 ## 📁 项目结构
+<details>
 
 ```
 ComfyUI-Xz3r0-Nodes/
@@ -499,6 +516,8 @@ ComfyUI-Xz3r0-Nodes/
 ├── requirements.txt     # Python 依赖清单
 └── README.md            # 项目文档
 ```
+
+</details>
 
 ---
 
