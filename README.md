@@ -76,8 +76,8 @@ pip install -r requirements.txt
 
 <div align="center">
 
-<img src="preview/perview.png" alt="Node perview" width="800">
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XMetadataWorkflow.png" alt="Node perview" width="800">
+<img src="preview/preview.png" alt="Node preview" width="800">
+<img src="preview\XMetadataWorkflow_preview.png" alt="XMetadataWorkflow preview" width="800">
 
 </div>
 
@@ -118,6 +118,7 @@ pip install -r requirements.txt
 ---
 
 ### 📐 XResolution
+`♾️ Xz3r0/Workflow-Processing`
 
 分辨率设置节点，提供标准分辨率预设和自定义功能
 
@@ -461,6 +462,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 <summary>🧩 网页扩展 👈</summary>
 
 ### 🖥️ 浮动窗口（按钮）
+`ComfyUI网页扩展 - 顶部菜单栏`
 
 为ComfyUI页面增加可打开的浮动窗口
 
@@ -508,7 +510,7 @@ ComfyUI-Xz3r0-Nodes/
 │   └── zh/              # 中文定义
 │       └── nodeDefs.json
 ├── preview/             # 预览图片
-│   └── perview.png
+│   └── preview.png
 ├── .gitignore           # Git 忽略文件
 ├── Changelog.md         # 更新日志
 ├── LICENSE              # MIT 许可证
