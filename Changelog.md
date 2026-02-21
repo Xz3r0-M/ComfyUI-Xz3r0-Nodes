@@ -12,7 +12,7 @@
     - 在ComfyUI页面中点击顶部菜单栏的 ♾️ 按钮打开浮动窗口, 或使用浏览器打开`web\xmetadataworkflow.html`独立使用
     - 中英双语
     - 暗黑和明亮界面
-    - 这是一个简易且粗糙的网页工具, 使用时可能会遇到==很多==BUG😜
+    - 这是一个简易且粗糙的网页工具, 使用时可能会遇到**很多**BUG😜
 
 3. 🛠️ **为 `XImageSave` 和 `XAudioSave` 以及 `XVideoSave` 节点添加进度条
     - 这3个节点处理文件时可能花费时间较长，为它们添加进度条后，不再是原来那样运行时看起来卡住了
@@ -35,7 +35,7 @@
     - Click the ♾️ button in the top menu bar on the ComfyUI page to open the floating window, or use a browser to open `web\xmetadataworkflow.html` for standalone use
     - Chinese and English support
     - Dark and light themes
-    - This is a simple and rough web tool, you may encounter ==many== BUGs when using it 😜
+    - This is a simple and rough web tool, you may encounter **many** BUGs when using it 😜
 
 3. 🛠️ **Added progress bars to `XImageSave`, `XAudioSave`, and `XVideoSave` nodes**
     - These three nodes may take longer to process files. With progress bars added, they no longer appear to be stuck when running
