@@ -119,7 +119,6 @@ class XVideoSave(io.ComfyNode):
                     ),
                 ),
             ],
-            # hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
         )
 
