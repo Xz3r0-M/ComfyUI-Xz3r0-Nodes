@@ -39,26 +39,30 @@ from .xnode.xworkflowsave import (
 # ================================
 
 
-def merge_node_mappings() -> tuple[dict, dict]:
+def merge_node_mappings() -> tuple[dict, dict, int]:
     """
     自动收集并合并所有节点映射
 
     Returns:
-        (NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS)
+        (NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, TOTAL_NODE_COUNT)
     """
     node_class_mappings = {}
     node_display_name_mappings = {}
+    total_node_count = 0
 
     for name, value in list(globals().items()):
         if name.endswith("_CM"):
+            total_node_count += len(value)
             node_class_mappings.update(value)
         elif name.endswith("_DNM"):
             node_display_name_mappings.update(value)
 
-    return node_class_mappings, node_display_name_mappings
+    return node_class_mappings, node_display_name_mappings, total_node_count
 
 
-NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = merge_node_mappings()
+NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, TOTAL_NODE_COUNT = (
+    merge_node_mappings()
+)
 
 # ================================
 # 检测依赖
@@ -145,8 +149,9 @@ if missing_deps:
 else:
     print("[Xz3r0-Nodes] ✅ All dependencies installed", flush=True)
 
+loaded_count = len(NODE_CLASS_MAPPINGS)
 print(
-    f"""[Xz3r0-Nodes] 🎨 Loaded nodes: {len(NODE_CLASS_MAPPINGS)}
+    f"""[Xz3r0-Nodes] 🎨 Loaded nodes: {loaded_count}/{TOTAL_NODE_COUNT}
 [Xz3r0-Nodes] ==================================================
 """,
     flush=True,
