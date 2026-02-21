@@ -34,10 +34,14 @@ class XWorkflowSave(io.ComfyNode):
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
+    输出:
+        anything: 透传输入的数据，可直接传递给下游节点 (ANY)
+
     使用示例:
         filename_prefix="Workflow_%Y%m%d",
         subfolder="Workflows"
         (anything输入为可选，可以不连接任何数据)
+        可以将图像或其他数据输入到anything，保存工作流后透传给下游节点
 
     """
 
@@ -81,6 +85,12 @@ class XWorkflowSave(io.ComfyNode):
                         "supports datetime placeholders: %Y%, %m%, %d%, "
                         "%H%, %M%, %S%"
                     ),
+                ),
+            ],
+            outputs=[
+                io.AnyType.Output(
+                    "anything",
+                    tooltip="Pass through the input data to downstream nodes",
                 ),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
@@ -145,9 +155,10 @@ class XWorkflowSave(io.ComfyNode):
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(workflow_data, f, indent=2, ensure_ascii=False)
 
-        # 返回保存结果
+        # 返回保存结果和透传数据
         return io.NodeOutput(
-            ui=ui.PreviewText(f"Workflow saved: {final_filename}")
+            anything,
+            ui=ui.PreviewText(f"Workflow saved: {final_filename}"),
         )
 
     @classmethod

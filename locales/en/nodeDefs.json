@@ -416,6 +416,12 @@
         "name": "Subfolder",
         "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
       }
+    },
+    "outputs": {
+      "0": {
+        "name": "Any Output",
+        "tooltip": "Pass through the input data to downstream nodes"
+      }
     }
   }
 }
