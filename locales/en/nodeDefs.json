@@ -302,7 +302,7 @@
       },
       "separation_method_1_2": {
         "name": "Separation method 1-2",
-        "tooltip": "Separation method between String 1 and String 2",
+        "tooltip": "Separation method between String 1 and String 2 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -319,7 +319,7 @@
       },
       "separation_method_2_3": {
         "name": "Separation method 2-3",
-        "tooltip": "Separation method between String 2 and String 3",
+        "tooltip": "Separation method between String 2 and String 3 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -336,7 +336,7 @@
       },
       "separation_method_3_4": {
         "name": "Separation method 3-4",
-        "tooltip": "Separation method between String 3 and String 4",
+        "tooltip": "Separation method between String 3 and String 4 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -353,7 +353,7 @@
       },
       "separation_method_4_5": {
         "name": "Separation method 4-5",
-        "tooltip": "Separation method between String 4 and String 5",
+        "tooltip": "Separation method between String 4 and String 5 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
