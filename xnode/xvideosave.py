@@ -12,6 +12,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import comfy.utils
 import ffmpeg
 import folder_paths
 import torch
@@ -291,13 +292,16 @@ class XVideoSave(io.ComfyNode):
             )
 
         # 写入视频帧
-        for frame in images:
+        num_frames = len(images)
+        progress_bar = comfy.utils.ProgressBar(num_frames)
+        for i, frame in enumerate(images):
             frame_data = (
                 torch.clamp(frame[..., :3] * 255, min=0, max=255)
                 .to(device=torch.device("cpu"), dtype=torch.uint8)
                 .numpy()
             )
             process.stdin.write(frame_data.tobytes())
+            progress_bar.update_absolute(i + 1)
         process.stdin.close()
         return_code = process.wait()
 

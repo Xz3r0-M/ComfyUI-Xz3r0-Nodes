@@ -15,6 +15,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+import comfy.utils
 import ffmpeg
 import folder_paths
 import numpy as np
@@ -320,15 +321,22 @@ class XAudioSave:
         # 获取目标采样率
         target_sr = self.SAMPLE_RATES[sample_rate]
 
+        # 定义处理步骤数
+        # 步骤1: 重采样, 步骤2: 文件名生成, 步骤3-10: 音频处理各阶段
+        total_steps = 10
+        progress_bar = comfy.utils.ProgressBar(total_steps)
+
         # 重采样音频(如果需要)
         if original_sr != target_sr:
             waveform = self._resample_audio(waveform, original_sr, target_sr)
+        progress_bar.update_absolute(1)
 
         # 生成文件名(添加序列号)
         base_filename = safe_filename_prefix
         final_filename = self._get_unique_filename(
             save_dir, base_filename, ".wav"
         )
+        progress_bar.update_absolute(2)
 
         # 保存路径
         save_path = save_dir / final_filename
@@ -347,10 +355,13 @@ class XAudioSave:
                 use_custom_ratio,
                 custom_ratio,
                 save_path,
+                progress_bar,
+                current_step=2,
             )
         else:
             # 没有LUFS标准化时，保存为32-bit float WAV格式
             self._save_wav_32bit_float(waveform, save_path, target_sr)
+            progress_bar.update_absolute(total_steps)
 
         # 记录相对路径
         relative_path = str(save_path.relative_to(output_dir))
@@ -392,6 +403,8 @@ class XAudioSave:
         use_custom_ratio: bool,
         custom_ratio: float,
         final_save_path: Path,
+        progress_bar=None,
+        current_step: int = 0,
     ) -> torch.Tensor:
         """
         标准化音频（压缩 + LUFS线性标准化 + 峰值限制）
@@ -407,6 +420,8 @@ class XAudioSave:
             use_custom_ratio: 是否使用自定义压缩比
             custom_ratio: 自定义压缩比
             final_save_path: 最终保存路径
+            progress_bar: 进度条对象(可选)
+            current_step: 当前进度步数
 
         Returns:
             标准化后的音频波形
@@ -459,6 +474,10 @@ class XAudioSave:
                     except OSError:
                         pass
 
+            # 步骤3: 准备完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 1)
+
             current_input_path = input_path
 
             peak_limit_db = peak_limit if peak_limit < 0 else -1.0
@@ -494,6 +513,10 @@ class XAudioSave:
             if stats_json is None:
                 print("[XAudioSave] Warning: Could not parse loudnorm stats")
                 return waveform
+
+            # 步骤4: 初始测量完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 2)
 
             acompressor_filter = None
 
@@ -593,6 +616,10 @@ class XAudioSave:
             else:
                 print("[XAudioSave] Compression disabled")
 
+            # 步骤5: 压缩处理完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 3)
+
             # print(
             #     "[XAudioSave] ===== Applying LUFS normalization "
             #     "(Two-pass mode) ====="
@@ -653,6 +680,10 @@ class XAudioSave:
                     "loudnorm stats after rough normalization"
                 )
                 stats_rough = stats_json
+
+            # 步骤6: 粗略标准化完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 4)
 
             rough_i = str(stats_rough["input_i"])
             rough_lra = str(stats_rough["input_lra"])
@@ -721,6 +752,10 @@ class XAudioSave:
                     f"Thresh: {after_thresh}"
                 )
 
+            # 步骤7: 精确标准化完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 5)
+
             # print("[XAudioSave] ===== Final audio verification =====")
 
             _, verify_stderr = (
@@ -739,6 +774,10 @@ class XAudioSave:
             for line in reversed(verify_output.split("\n")):
                 if "I:" in line or "TP:" in line or "LRA:" in line:
                     print(f"[XAudioSave] Final: {line.strip()}")
+
+            # 步骤8: 最终验证完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 6)
 
             shutil.copy2(lufs_path, final_save_path)
             # final_size = os.path.getsize(final_save_path)
@@ -769,6 +808,10 @@ class XAudioSave:
                     f"to device {waveform.device}. Using CPU."
                 )
                 waveform_processed = waveform_processed.to("cpu")
+
+            # 步骤9: 文件保存完成
+            if progress_bar:
+                progress_bar.update_absolute(current_step + 7)
 
             print("[XAudioSave] ===== ♾️Audio processing completed♾️ =====")
             return waveform_processed

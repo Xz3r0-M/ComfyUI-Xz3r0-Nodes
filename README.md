@@ -38,7 +38,7 @@ ComfyUI-Xz3r0-Nodes 是一个ComfyUI自定义节点项目，当前主要目标�
 
 ---
 
-## 🚀 快速开始
+## 💖 安装
 
 ### 方法 1: ComfyUI-Manager (推荐)
 
@@ -69,7 +69,7 @@ pip install -r requirements.txt
 
 ## 📦 依赖说明（重要必看）
 
-本项目当前需要==手动安装==的依赖程序：
+本项目当前需要在您的电脑中安装有以下依赖程序：
 - **⚠️ [FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装FFmpeg，那么 `XVideoSave` 和 `XAudioSave` 节点将无法正常使用‼️
 
 ---
@@ -440,7 +440,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 **支持的文件**:
 - PNG图片 (包含工作流元数据的生成图片)
 - Latent潜空间文件 (.latent)
-- JSON工作流文件 (适配 `XWorkflowSave` 生成的JSON文件，==不支持==ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
+- JSON工作流文件 (适配 `XWorkflowSave` 生成的JSON文件，**不支持**ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
 
 **技术说明**:
 - 只使用 prompt 字段格式数据 (ComfyUI API)
@@ -449,10 +449,10 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式元数据会导致某些节点或参数不会显示在窗口视图中(比如： `Markdown Note`)
 
 **两种使用方式**:
-1. **在ComfyUI中使用（集成）**: 点击顶部菜单栏的 ♾️ 按钮打开浮动窗口，已将此网页工具嵌入到该窗口中
+1. **在ComfyUI中使用（集成）**: 点击ComfyUI页面顶部菜单栏的 ♾️ 按钮，可打开或关闭浮动窗口，已将此网页工具嵌入到该浮动窗口中
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bm.png" alt="Open" width="700">
 
-2. **浏览器直接打开（独立）**: 直接打开 `web/xmetadataworkflow.html` 文件
+2. **浏览器直接打开（独立）**: 直接打开 `web/xmetadataworkflow.html` 文件，在浏览器中使用
 
 </details>
 
