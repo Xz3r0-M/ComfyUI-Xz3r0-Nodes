@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+import comfy.utils
 import folder_paths
 import numpy as np
 import torch
@@ -117,7 +118,7 @@ class XImageSave:
         "Saved file path relative to ComfyUI output directory",
     )
     FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/Image"
+    CATEGORY = "♾️ Xz3r0/File-Processing"
 
     def save(
         self,
@@ -164,6 +165,7 @@ class XImageSave:
 
         # 保存图像序列
         saved_paths = []
+        progress_bar = comfy.utils.ProgressBar(len(images))
         for i, img_tensor in enumerate(images):
             # 转换张量到PIL图像
             img_pil = self._tensor_to_pil(img_tensor)
@@ -203,6 +205,9 @@ class XImageSave:
             # 记录相对路径
             relative_path = str(save_path.relative_to(output_dir))
             saved_paths.append(relative_path)
+
+            # 更新进度条
+            progress_bar.update_absolute(i + 1)
 
         # 输出保存路径(多个图像用分号分隔)
         save_path_str = ";".join(saved_paths) if saved_paths else ""

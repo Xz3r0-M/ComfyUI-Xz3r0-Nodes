@@ -134,7 +134,7 @@ class XResolution:
         "Output resolution height (after preset, scaling, and swap)",
     )
     FUNCTION = "process"
-    CATEGORY = "♾️ Xz3r0/Tools"
+    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
 
     def process(
         self, width: int, height: int, preset: str, scale: float, swap: bool

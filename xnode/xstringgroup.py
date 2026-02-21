@@ -33,8 +33,10 @@ class XStringGroup:
                     s.separation_method_options,
                     {
                         "default": "none",
-                        "tooltip": "Separation method between "
-                        "String 1 and String 2",
+                        "tooltip": "Separation method between String 1 and "
+                        "String 2 (none: '', newline: \\n, space: ' ', "
+                        "comma: ',', comma_space: ', ', period: '.', "
+                        "period_space: '. ')",
                     },
                 ),
                 "string_2": (
@@ -49,8 +51,10 @@ class XStringGroup:
                     s.separation_method_options,
                     {
                         "default": "none",
-                        "tooltip": "Separation method between "
-                        "String 2 and String 3",
+                        "tooltip": "Separation method between String 2 and "
+                        "String 3 (none: '', newline: \\n, space: ' ', "
+                        "comma: ',', comma_space: ', ', period: '.', "
+                        "period_space: '. ')",
                     },
                 ),
                 "string_3": (
@@ -65,8 +69,10 @@ class XStringGroup:
                     s.separation_method_options,
                     {
                         "default": "none",
-                        "tooltip": "Separation method between "
-                        "String 3 and String 4",
+                        "tooltip": "Separation method between String 3 and "
+                        "String 4 (none: '', newline: \\n, space: ' ', "
+                        "comma: ',', comma_space: ', ', period: '.', "
+                        "period_space: '. ')",
                     },
                 ),
                 "string_4": (
@@ -81,8 +87,10 @@ class XStringGroup:
                     s.separation_method_options,
                     {
                         "default": "none",
-                        "tooltip": "Separation method between "
-                        "String 4 and String 5",
+                        "tooltip": "Separation method between String 4 and "
+                        "String 5 (none: '', newline: \\n, space: ' ', "
+                        "comma: ',', comma_space: ', ', period: '.', "
+                        "period_space: '. ')",
                     },
                 ),
                 "string_5": (
@@ -125,7 +133,7 @@ class XStringGroup:
     )
     FUNCTION = "group_strings"
 
-    CATEGORY = "♾️ Xz3r0/Types"
+    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
 
     def group_strings(
         self,

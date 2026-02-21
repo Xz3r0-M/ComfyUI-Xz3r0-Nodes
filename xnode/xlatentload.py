@@ -88,7 +88,7 @@ class XLatentLoad:
     RETURN_NAMES = ("latent",)
     OUTPUT_TOOLTIPS = ("Loaded latent tensor (from input port or file)",)
     FUNCTION = "load"
-    CATEGORY = "♾️ Xz3r0/Latent"
+    CATEGORY = "♾️ Xz3r0/File-Processing"
 
     def load(
         self, latent_input: dict | None = None, latent_file: str = ""

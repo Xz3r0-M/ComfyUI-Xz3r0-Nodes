@@ -302,7 +302,7 @@
       },
       "separation_method_1_2": {
         "name": "Separation method 1-2",
-        "tooltip": "Separation method between String 1 and String 2",
+        "tooltip": "Separation method between String 1 and String 2 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -319,7 +319,7 @@
       },
       "separation_method_2_3": {
         "name": "Separation method 2-3",
-        "tooltip": "Separation method between String 2 and String 3",
+        "tooltip": "Separation method between String 2 and String 3 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -336,7 +336,7 @@
       },
       "separation_method_3_4": {
         "name": "Separation method 3-4",
-        "tooltip": "Separation method between String 3 and String 4",
+        "tooltip": "Separation method between String 3 and String 4 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -353,7 +353,7 @@
       },
       "separation_method_4_5": {
         "name": "Separation method 4-5",
-        "tooltip": "Separation method between String 4 and String 5",
+        "tooltip": "Separation method between String 4 and String 5 (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -397,6 +397,54 @@
       "6": {
         "name": "String 5",
         "tooltip": "Original output of String 5"
+      }
+    }
+  },
+  "XWorkflowSave": {
+    "display_name": "XWorkflowSave",
+    "description": "Workflow save node that saves the ComfyUI workflow as a JSON file with support for custom filename, subfolder, and datetime placeholders.",
+    "inputs": {
+      "anything": {
+        "name": "Any Input",
+        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. (Optional - works without any input)"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Any Output",
+        "tooltip": "Pass through the input data to downstream nodes"
+      }
+    }
+  },
+  "XDateTimeString": {
+    "display_name": "XDateTimeString",
+    "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
+    "inputs": {
+      "prefix": {
+        "name": "Prefix",
+        "tooltip": "Prefix string, added before datetime"
+      },
+      "format_template": {
+        "name": "Format Template",
+        "tooltip": "Datetime format template, supports placeholders: %Y%(year), %m%(month), %d%(day), %H%(hour), %M%(minute), %S%(second)"
+      },
+      "suffix": {
+        "name": "Suffix",
+        "tooltip": "Suffix string, added after datetime"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Datetime String",
+        "tooltip": "Formatted datetime string"
       }
     }
   }

@@ -11,6 +11,10 @@ from pathlib import Path
 # ================================
 from .xnode.xaudiosave import NODE_CLASS_MAPPINGS as XAUDIOSAVE_CM
 from .xnode.xaudiosave import NODE_DISPLAY_NAME_MAPPINGS as XAUDIOSAVE_DNM
+from .xnode.xdatetimestring import NODE_CLASS_MAPPINGS as XDATETIMESTRING_CM
+from .xnode.xdatetimestring import (
+    NODE_DISPLAY_NAME_MAPPINGS as XDATETIMESTRING_DNM,
+)
 from .xnode.ximagesave import NODE_CLASS_MAPPINGS as XIMAGESAVE_CM
 from .xnode.ximagesave import NODE_DISPLAY_NAME_MAPPINGS as XIMAGESAVE_DNM
 from .xnode.xlatentload import NODE_CLASS_MAPPINGS as XLATENTLOAD_CM
@@ -25,32 +29,40 @@ from .xnode.xstringgroup import NODE_CLASS_MAPPINGS as XSTRINGGROUP_CM
 from .xnode.xstringgroup import NODE_DISPLAY_NAME_MAPPINGS as XSTRINGGROUP_DNM
 from .xnode.xvideosave import NODE_CLASS_MAPPINGS as XVIDEOSAVE_CM
 from .xnode.xvideosave import NODE_DISPLAY_NAME_MAPPINGS as XVIDEOSAVE_DNM
+from .xnode.xworkflowsave import NODE_CLASS_MAPPINGS as XWORKFLOWSAVE_CM
+from .xnode.xworkflowsave import (
+    NODE_DISPLAY_NAME_MAPPINGS as XWORKFLOWSAVE_DNM,
+)
 
 # ================================
 # 自动合并所有节点映射
 # ================================
 
 
-def merge_node_mappings() -> tuple[dict, dict]:
+def merge_node_mappings() -> tuple[dict, dict, int]:
     """
     自动收集并合并所有节点映射
 
     Returns:
-        (NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS)
+        (NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, TOTAL_NODE_COUNT)
     """
     node_class_mappings = {}
     node_display_name_mappings = {}
+    total_node_count = 0
 
     for name, value in list(globals().items()):
         if name.endswith("_CM"):
+            total_node_count += len(value)
             node_class_mappings.update(value)
         elif name.endswith("_DNM"):
             node_display_name_mappings.update(value)
 
-    return node_class_mappings, node_display_name_mappings
+    return node_class_mappings, node_display_name_mappings, total_node_count
 
 
-NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = merge_node_mappings()
+NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, TOTAL_NODE_COUNT = (
+    merge_node_mappings()
+)
 
 # ================================
 # 检测依赖
@@ -112,7 +124,13 @@ def check_dependencies(
 # ================================
 
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+__all__ = [
+    "NODE_CLASS_MAPPINGS",
+    "NODE_DISPLAY_NAME_MAPPINGS",
+    "WEB_DIRECTORY",
+]
+
+WEB_DIRECTORY = "./web"
 
 # ================================
 
@@ -131,8 +149,9 @@ if missing_deps:
 else:
     print("[Xz3r0-Nodes] ✅ All dependencies installed", flush=True)
 
+loaded_count = len(NODE_CLASS_MAPPINGS)
 print(
-    f"""[Xz3r0-Nodes] 🎨 Loaded nodes: {len(NODE_CLASS_MAPPINGS)}
+    f"""[Xz3r0-Nodes] 🎨 Loaded nodes: {loaded_count}/{TOTAL_NODE_COUNT}
 [Xz3r0-Nodes] ==================================================
 """,
     flush=True,

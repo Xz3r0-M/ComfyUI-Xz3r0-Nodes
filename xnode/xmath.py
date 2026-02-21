@@ -155,7 +155,7 @@ class XMath:
         "Float result (exact value with decimal)",
     )
     FUNCTION = "calculate"
-    CATEGORY = "♾️ Xz3r0/Tools"
+    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
 
     def calculate(
         self,

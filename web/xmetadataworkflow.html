@@ -1,0 +1,1920 @@
+<!--
+    XMetadataWorkflow - ComfyUI 工作流元数据查看器
+    ================================================
+
+    功能概述:
+    ---------
+    这是一个用于查看 ComfyUI 工作流元数据的网页工具。支持从以下文件类型中提取和可视化工作流:
+    - PNG 图片 (包含工作流元数据的生成图片)
+    - Latent 潜空间文件 (.latent)
+    - JSON 工作流文件 (XVideoSave/XAudioSave/XWorkflowSave 生成的)
+
+    核心功能:
+    ---------
+    1. 文件解析:
+       - PNG: 从 tEXt/iTXt chunk 读取 prompt/workflow 元数据
+       - Latent: 从文件头部 JSON 读取 __metadata__
+       - JSON: 直接解析 prompt 字段 (仅支持包含 prompt 的格式)
+
+    2. 工作流可视化:
+       - 自动层级布局算法排列节点
+       - 显示节点类型、参数和连接关系
+       - 子图自动识别和颜色标记 (ID格式: "子图ID:节点ID")
+       - 支持缩放、平移、自适应视图
+
+    3. 交互功能:
+       - 折叠/展开节点参数
+       - 选中节点高亮相关连接
+       - 拖拽调整节点宽度
+
+    数据格式说明:
+    -------------
+    - 只使用 prompt 格式 (ComfyUI API 格式)
+    - 不使用 workflow 格式 (ComfyUI 前端格式)
+    - 节点位置使用自动排列算法，不依赖保存的位置信息
+    - 子图通过节点 ID 中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
+
+    作者: Xz3r0
+    项目: ComfyUI-Xz3r0-Nodes
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XMetadataWorkflow</title>
+    <style>
+        :root {
+            --bg-primary: #1e1e1e;
+            --bg-secondary: #252525;
+            --bg-tertiary: #2a2a2a;
+            --bg-canvas: #181818;
+            --bg-preview: #1a1a1a;
+            --bg-node: #333;
+            --bg-node-header: #3d3d3d;
+            --bg-param-key: #2a2a2a;
+            --bg-param-value: #252525;
+            --bg-note: #2a2525;
+            --bg-btn: #333;
+            --bg-btn-hover: #444;
+            --bg-latent-badge: #3d4d5d;
+
+            --border-primary: #3d3d3d;
+            --border-secondary: #444;
+            --border-tertiary: #555;
+            --border-param: #3a3a3a;
+
+            --text-primary: #fff;
+            --text-secondary: #ddd;
+            --text-tertiary: #aaa;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-placeholder: #555;
+            --text-hint: #444;
+
+            --accent: #ff69b4;
+            --accent-hover: rgba(123, 104, 238, 0.05);
+
+            --connection-line: #555;
+            --resize-handle: #555;
+
+            --shadow-node: rgba(0, 0, 0, 0.3);
+            --shadow-node-hover: rgba(0, 0, 0, 0.4);
+            --shadow-selected: rgba(200, 200, 200, 0.6);
+
+            --dot-pattern: #2a2a2a;
+
+            --header-btn-bg: rgba(255, 255, 255, 0.1);
+            --header-btn-bg-hover: rgba(255, 255, 255, 0.2);
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f0f0f0;
+            --bg-canvas: #e8e8e8;
+            --bg-preview: #f0f0f0;
+            --bg-node: #ffffff;
+            --bg-node-header: #e8e8e8;
+            --bg-param-key: #f0f0f0;
+            --bg-param-value: #f8f8f8;
+            --bg-note: #f8f0f0;
+            --bg-btn: #ffffff;
+            --bg-btn-hover: #f0f0f0;
+            --bg-latent-badge: #e0e8f0;
+
+            --border-primary: #ddd;
+            --border-secondary: #ccc;
+            --border-tertiary: #bbb;
+            --border-param: #e0e0e0;
+
+            --text-primary: #1a1a1a;
+            --text-secondary: #333;
+            --text-tertiary: #555;
+            --text-muted: #666;
+            --text-dim: #888;
+            --text-placeholder: #999;
+            --text-hint: #aaa;
+
+            --accent: #ff69b4;
+            --accent-hover: rgba(255, 105, 180, 0.1);
+
+            --connection-line: #aaa;
+            --resize-handle: #bbb;
+
+            --shadow-node: rgba(0, 0, 0, 0.1);
+            --shadow-node-hover: rgba(0, 0, 0, 0.15);
+            --shadow-selected: rgba(255, 105, 180, 0.4);
+
+            --dot-pattern: #d0d0d0;
+
+            --header-btn-bg: rgba(0, 0, 0, 0.05);
+            --header-btn-bg-hover: rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-primary);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 12px 15px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .language-switch {
+            display: flex;
+            padding: 10px 15px;
+            border-top: 1px solid var(--border-primary);
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .lang-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .lang-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .lang-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
+        .theme-switch {
+            display: flex;
+            padding: 10px 15px;
+            border-top: 1px solid var(--border-primary);
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .theme-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .theme-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .theme-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .theme-btn[data-theme="dark"]:not(.active) {
+            background: #1a1a1a;
+            border-color: #1a1a1a;
+            color: #fff;
+        }
+
+        .theme-btn[data-theme="light"]:not(.active) {
+            background: #ffffff;
+            border-color: #ffffff;
+            color: #1a1a1a;
+        }
+
+        .file-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            gap: 15px;
+        }
+
+        .file-area .file-input {
+            display: none;
+        }
+
+        .file-area .file-preview {
+            width: 100%;
+            aspect-ratio: 1;
+            background: var(--bg-preview);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid var(--border-primary);
+        }
+
+        .file-area .file-preview img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .file-area .file-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-placeholder);
+            cursor: pointer;
+            padding: 20px;
+            width: 100%;
+            height: 100%;
+            border: 2px dashed transparent;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .file-area .file-placeholder:hover {
+            border-color: var(--accent);
+            background: var(--accent-hover);
+        }
+
+        .file-area .file-placeholder .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .file-area .file-placeholder span {
+            font-size: 12px;
+            white-space: pre-line;
+            text-align: center;
+        }
+
+        .file-area .file-placeholder .hint {
+            font-size: 10px;
+            color: var(--text-hint);
+            margin-top: 4px;
+        }
+
+        .file-area .file-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .file-area .file-info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            font-size: 11px;
+        }
+
+        .file-area .file-info-item .label {
+            color: var(--text-dim);
+            flex-shrink: 0;
+        }
+
+        .file-area .file-info-item .value {
+            color: var(--text-tertiary);
+            text-align: right;
+            word-break: break-all;
+            margin-left: 10px;
+        }
+
+        .file-area .file-info-item .value.latent-badge {
+            display: inline-block;
+            background: var(--bg-latent-badge);
+            color: var(--accent);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .main-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: var(--bg-canvas);
+            background-image:
+                radial-gradient(circle, var(--dot-pattern) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        #canvas-wrapper {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .svg-connections {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 1;
+            overflow: visible;
+        }
+
+        .connection-line {
+            stroke: var(--connection-line);
+            stroke-width: 2;
+            fill: none;
+            transition: all 0.3s ease;
+        }
+
+        .connection-line.highlight {
+            stroke: var(--accent);
+            stroke-width: 3;
+            animation: line-flow 1.5s linear infinite;
+        }
+
+        .connection-line-base {
+            stroke: var(--connection-line);
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .connection-line-flow {
+            stroke: var(--accent);
+            stroke-width: 3;
+            fill: none;
+            animation: line-flow 1.5s linear infinite;
+        }
+
+        @keyframes line-flow {
+            0% {
+                stroke-dasharray: 10, 20;
+                stroke-dashoffset: 0;
+            }
+            100% {
+                stroke-dasharray: 10, 20;
+                stroke-dashoffset: -30;
+            }
+        }
+
+        .node {
+            position: absolute;
+            background: var(--bg-node);
+            border: 1px solid var(--border-secondary);
+            border-radius: 8px;
+            min-width: 180px;
+            width: 220px;
+            z-index: 10;
+            box-shadow: 0 4px 12px var(--shadow-node);
+            transition: box-shadow 0.1s, border-color 0.3s;
+            overflow: visible;
+        }
+
+        .node:hover {
+            box-shadow: 0 6px 16px var(--shadow-node-hover);
+        }
+
+        .node.selected {
+            border-color: var(--border-tertiary) !important;
+            box-shadow: 0 0 20px var(--shadow-selected), 0 0 40px var(--shadow-selected), 0 0 0 2px var(--shadow-selected) !important;
+            animation: node-glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes node-glow {
+            0% {
+                box-shadow: 0 0 20px var(--shadow-selected), 0 0 40px var(--shadow-selected), 0 0 0 2px var(--shadow-selected);
+            }
+            100% {
+                box-shadow: 0 0 30px var(--shadow-selected), 0 0 60px var(--shadow-selected), 0 0 0 3px var(--shadow-selected);
+            }
+        }
+
+        .node.collapsed .node-body {
+            display: none;
+        }
+
+        .subgraph-tag {
+            font-size: 9px;
+            color: #fff;
+            padding: 3px 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .node-id-tag {
+            font-size: 9px;
+            color: var(--text-muted);
+            padding: 3px 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .node-header {
+            padding: 6px 10px;
+            background: var(--bg-node-header);
+            border-radius: 7px 7px 0 0;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: move;
+            border-bottom: 1px solid var(--border-tertiary);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+
+        .header-btn {
+            width: 18px;
+            height: 18px;
+            border: none;
+            background: var(--header-btn-bg);
+            color: var(--text-tertiary);
+            border-radius: 3px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            transition: all 0.1s;
+        }
+
+        .header-btn:hover {
+            background: var(--header-btn-bg-hover);
+            color: var(--text-primary);
+        }
+
+        .node-body {
+            padding: 8px 10px;
+            font-size: 10px;
+            color: var(--text-tertiary);
+            max-height: none;
+            overflow-y: visible;
+        }
+
+        .node-body::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .node-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .node-body::-webkit-scrollbar-thumb {
+            background: var(--border-tertiary);
+            border-radius: 2px;
+        }
+
+        .param-row {
+            display: flex;
+            padding: 2px 0;
+            gap: 8px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border-param);
+        }
+
+        .param-key {
+            color: var(--text-muted);
+            flex-shrink: 0;
+            overflow: visible;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            background: var(--bg-param-key);
+            padding: 1px 4px;
+            border-radius: 2px;
+            text-align: left;
+        }
+
+        .param-value {
+            color: var(--text-secondary);
+            word-break: break-all;
+            text-align: left;
+            flex: 1;
+            overflow: visible;
+            text-overflow: clip;
+            white-space: normal;
+            word-wrap: break-word;
+            background: var(--bg-param-value);
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
+
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 24px;
+            height: 24px;
+            cursor: se-resize;
+            background: linear-gradient(135deg, transparent 50%, var(--resize-handle) 50%);
+            border-radius: 0 0 7px 0;
+        }
+
+        .resize-handle:hover {
+            background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+        }
+
+        .note-node .node-body {
+            padding: 8px;
+        }
+
+        .note-content {
+            font-size: 11px;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            background: var(--bg-note);
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .zoom-controls {
+            position: fixed;
+            bottom: 10px;
+            right: 20px;
+            display: flex;
+            gap: 4px;
+            z-index: 100;
+        }
+
+        .zoom-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--border-secondary);
+            background: var(--bg-btn);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .zoom-btn:hover {
+            background: var(--bg-btn-hover);
+            border-color: var(--border-tertiary);
+        }
+
+        .zoom-level {
+            width: 50px;
+            padding: 0 5px;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            background: var(--bg-btn);
+            border: 1px solid var(--border-secondary);
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .zoom-level:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">XMetadataWorkflow</div>
+            <div class="file-area" id="fileArea">
+                <input type="file" id="fileInput" class="file-input" accept=".png,.latent,.json">
+                <div class="file-preview" id="filePreview">
+                    <div class="file-placeholder" id="filePlaceholder">
+                        <span class="icon">📁</span>
+                        <span data-i18n="DroporSelect">拖放文件到此处或点击选择文件</span>
+                        <span class="hint" data-i18n="filetip"></span>
+                    </div>
+                </div>
+                <div class="file-info" id="fileInfo">
+                    <div class="file-info-item">
+                        <span class="label" data-i18n="filename">文件名</span>
+                        <span class="value" id="infoFilename">-</span>
+                    </div>
+                    <div class="file-info-item">
+                        <span class="label" data-i18n="filetype">类型</span>
+                        <span class="value" id="infoType">-</span>
+                    </div>
+                    <div class="file-info-item">
+                        <span class="label" data-i18n="filesize">大小</span>
+                        <span class="value" id="infoSize">-</span>
+                    </div>
+                    <div class="file-info-item">
+                        <span class="label" data-i18n="resolution">分辨率</span>
+                        <span class="value" id="infoResolution">-</span>
+                    </div>
+                    <div class="file-info-item">
+                        <span class="label" data-i18n="modified">修改日期</span>
+                        <span class="value" id="infoModified">-</span>
+                    </div>
+                    <div class="file-info-item">
+                        <span class="label" data-i18n="nodes">节点</span>
+                        <span class="value" id="infoNodeCount">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="language-switch" id="languageSwitch">
+                <button class="lang-btn" data-lang="zh">中文</button>
+                <button class="lang-btn" data-lang="en">EN</button>
+            </div>
+            <div class="theme-switch" id="themeSwitch">
+                <button class="theme-btn" data-theme="dark" data-i18n-title="darkMode">🌙</button>
+                <button class="theme-btn" data-theme="light" data-i18n-title="lightMode">☀️</button>
+            </div>
+        </div>
+        <div class="canvas-container" id="canvasContainer">
+            <div id="canvas-wrapper">
+                <svg class="svg-connections" id="connections"></svg>
+                <div id="canvas"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomOut" title="缩小" data-i18n-title="zoomOut">➖</button>
+        <input type="number" class="zoom-level" id="zoomLevel" value="100" min="10" max="500" title="输入缩放百分比" data-i18n-title="zoomLevel">
+        <span style="color: #888; font-size: 11px;"></span>
+        <button class="zoom-btn" id="zoomIn" title="放大" data-i18n-title="zoomIn">➕</button>
+        <button class="zoom-btn" id="zoomReset" title="重置到100%" data-i18n-title="zoomReset">🔁</button>
+        <button class="zoom-btn" id="zoomFit" title="适应窗口" data-i18n-title="zoomFit">☑️</button>
+    </div>
+
+    <script>
+        const SUBGRAPH_COLORS = [
+            '#8b0000', '#1b237e', '#1b5e20', '#4a148c', '#bf360c',
+            '#004d40', '#880e4f', '#004d40', '#33691e', '#bf360c',
+            '#311b92', '#e65100', '#01579b', '#1b5e20', '#e65100',
+            '#3e2723', '#263238', '#827717', '#f57f17', '#004d40'
+        ];
+
+        const i18n = {
+            zh: {
+                title: 'XMetadataWorkflow',
+                DroporSelect: '拖放文件到此处 或 点击选择文件',
+                filetip: '支持 .png 和 .latent\n以及 .json (由XWorkflowSave保存)',
+                filename: '文件名',
+                filetype: '类型',
+                filesize: '大小',
+                resolution: '分辨率',
+                modified: '修改日期',
+                nodes: '节点',
+                zoomOut: '缩小',
+                zoomIn: '放大',
+                zoomReset: '重置到100%',
+                zoomFit: '适应窗口',
+                zoomLevel: '输入缩放百分比',
+                toggleCollapse: '最小化',
+                expand: '展开',
+                detail: '详情',
+                bypass: '已 Bypass',
+                latent: 'Latent',
+                inputParams: '输入参数',
+                subgraph: '子图',
+                status: '状态',
+                input: '输入',
+                output: '输出',
+                darkMode: '暗黑模式',
+                lightMode: '亮色模式',
+                noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件缺少 prompt 字段，无法加载工作流。\n\n支持的格式：\n• XWorkflowSave 生成的 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件\n\n不支持：\n• ComfyUI 网页直接导出的 workflow JSON'
+            },
+            en: {
+                title: 'XMetadataWorkflow',
+                DroporSelect: 'Drop file here\nor click to select',
+                filetip: 'Supports .png, .latent\nand .json (from XWorkflowSave)',
+                filename: 'Filename',
+                filetype: 'Type',
+                filesize: 'Size',
+                resolution: 'Resolution',
+                modified: 'Modified',
+                nodes: 'Nodes',
+                zoomOut: 'Zoom Out',
+                zoomIn: 'Zoom In',
+                zoomReset: 'Reset 100%',
+                zoomFit: 'Fit Window',
+                zoomLevel: 'Enter zoom percentage',
+                toggleCollapse: 'Collapse',
+                expand: 'Expand',
+                detail: 'Detail',
+                bypass: 'Bypassed',
+                latent: 'Latent',
+                inputParams: 'Input Params',
+                subgraph: 'Subgraph',
+                status: 'Status',
+                input: 'Input',
+                output: 'Output',
+                darkMode: 'Dark Mode',
+                lightMode: 'Light Mode',
+                noPromptError: 'Unsupported JSON Format\n\nThis JSON file is missing the prompt field and cannot load the workflow.\n\nSupported formats:\n• JSON from XWorkflowSave\n• PNG images with prompt metadata\n• Latent files\n\nNot supported:\n• ComfyUI web-exported workflow JSON'
+            }
+        };
+
+        const browserLang = navigator.language || navigator.userLanguage || 'en';
+        let currentLang = browserLang.startsWith('zh') ? 'zh' : 'en';
+
+        /**
+         * 国际化翻译函数
+         * @param {string} key - 翻译键名
+         * @returns {string} 翻译后的文本，如果没有找到则返回键名
+         */
+        function t(key) {
+            return i18n[currentLang][key] || key;
+        }
+
+        /**
+         * 根据子图ID生成颜色
+         * 使用哈希算法确保同一子图始终获得相同颜色
+         * @param {string} subgraphId - 子图ID
+         * @returns {string} HSL颜色字符串
+         */
+        function getSubgraphColor(subgraphId) {
+            if (!subgraphId) return null;
+            let hash = 0;
+            const idStr = String(subgraphId);
+            for (let i = 0; i < idStr.length; i++) {
+                hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % SUBGRAPH_COLORS.length;
+            return SUBGRAPH_COLORS[index];
+        }
+
+        let workflowData = null;
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let nodeStates = {};
+        let selectedNodeId = null;
+
+        const canvasContainer = document.getElementById('canvasContainer');
+        const canvasWrapper = document.getElementById('canvas-wrapper');
+        const canvas = document.getElementById('canvas');
+        const connectionsSvg = document.getElementById('connections');
+        const zoomLevel = document.getElementById('zoomLevel');
+
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentLang = btn.dataset.lang;
+                updateLanguage();
+            });
+        });
+
+        document.querySelector(`.lang-btn[data-lang="${currentLang}"]`).classList.add('active');
+        updateLanguage();
+
+        let currentTheme = localStorage.getItem('theme') || 'dark';
+
+        /**
+         * 设置页面主题（亮色/暗色）
+         * @param {string} theme - 主题名称 'dark' 或 'light'
+         */
+        function setTheme(theme) {
+            currentTheme = theme;
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.theme-btn[data-theme="${theme}"]`).classList.add('active');
+        }
+
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                setTheme(btn.dataset.theme);
+            });
+        });
+
+        setTheme(currentTheme);
+
+        function updateLanguage() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                el.textContent = t(key);
+            });
+            document.querySelectorAll('[data-i18n-title]').forEach(el => {
+                const key = el.getAttribute('data-i18n-title');
+                el.title = t(key);
+            });
+            renderWorkflow();
+        }
+
+        const fileArea = document.getElementById('fileArea');
+        const filePlaceholder = document.getElementById('filePlaceholder');
+        const fileInput = document.getElementById('fileInput');
+
+        filePlaceholder.addEventListener('click', () => fileInput.click());
+        fileArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            filePlaceholder.classList.add('dragover');
+        });
+        fileArea.addEventListener('dragleave', () => {
+            filePlaceholder.classList.remove('dragover');
+        });
+        fileArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            filePlaceholder.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        document.getElementById('zoomIn').addEventListener('click', () => {
+            setZoom(scale * 1.2, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
+        });
+        document.getElementById('zoomOut').addEventListener('click', () => {
+            setZoom(scale / 1.2, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
+        });
+        document.getElementById('zoomReset').addEventListener('click', () => {
+            setZoom(1, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
+        });
+        document.getElementById('zoomFit').addEventListener('click', () => {
+            fitToView();
+        });
+
+        zoomLevel.addEventListener('change', () => {
+            const newScale = Math.max(0.1, Math.min(5, parseInt(zoomLevel.value) / 100));
+            setZoom(newScale, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
+        });
+
+        /**
+         * 自适应视图 - 缩放和平移以显示所有节点
+         * 计算所有节点的边界框，然后调整缩放和平移使所有节点可见
+         */
+        function fitToView() {
+            if (!workflowData || !workflowData.nodes) return;
+
+            const nodes = document.querySelectorAll('.node');
+            if (nodes.length === 0) return;
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+            // 计算所有节点的边界框
+            nodes.forEach(node => {
+                const x = parseFloat(node.style.left);
+                const y = parseFloat(node.style.top);
+                const w = node.offsetWidth;
+                const h = node.offsetHeight;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x + w);
+                maxY = Math.max(maxY, y + h);
+            });
+
+            const contentWidth = maxX - minX + 100;
+            const contentHeight = maxY - minY + 100;
+
+            // 计算合适的缩放比例
+            const scaleX = canvasContainer.clientWidth / contentWidth;
+            const scaleY = canvasContainer.clientHeight / contentHeight;
+            const newScale = Math.min(scaleX, scaleY, 2);
+
+            // 计算平移量使内容居中
+            const contentCenterX = (minX + maxX) / 2 * newScale;
+            const contentCenterY = (minY + maxY) / 2 * newScale;
+            const containerCenterX = canvasContainer.clientWidth / 2;
+            const containerCenterY = canvasContainer.clientHeight / 2;
+
+            panX = containerCenterX - contentCenterX;
+            panY = containerCenterY - contentCenterY;
+
+            scale = newScale;
+            updateTransform();
+        }
+
+        document.addEventListener('wheel', (e) => {
+            if (!workflowData || !workflowData.nodes) return;
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            setZoom(scale * delta, e.clientX, e.clientY);
+        }, { passive: false });
+
+        let isPanning = false;
+        let panStartX, panStartY;
+
+        canvasContainer.addEventListener('mousedown', (e) => {
+            if (e.target === canvasContainer || e.target === canvasWrapper) {
+                isPanning = true;
+                panStartX = e.clientX - panX;
+                panStartY = e.clientY - panY;
+                canvasContainer.style.cursor = 'grabbing';
+            }
+        });
+
+        canvasContainer.addEventListener('dblclick', (e) => {
+            if (e.target === canvasContainer || e.target === canvasWrapper) {
+                deselectAll();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.activeElement.tagName === 'INPUT') {
+                    document.activeElement.blur();
+                } else {
+                    deselectAll();
+                }
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                panX = e.clientX - panStartX;
+                panY = e.clientY - panStartY;
+                updateTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isPanning = false;
+            canvasContainer.style.cursor = 'default';
+        });
+
+        /**
+         * 设置画布缩放级别
+         * @param {number} newScale - 新的缩放比例
+         * @param {number} centerX - 缩放中心点 X 坐标
+         * @param {number} centerY - 缩放中心点 Y 坐标
+         */
+        function setZoom(newScale, centerX, centerY) {
+            newScale = Math.max(0.1, Math.min(5, newScale));
+
+            const rect = canvasContainer.getBoundingClientRect();
+            const mouseX = centerX - rect.left;
+            const mouseY = centerY - rect.top;
+
+            // 以鼠标位置为中心进行缩放
+            const scaleChange = newScale / scale;
+            panX = mouseX - (mouseX - panX) * scaleChange;
+            panY = mouseY - (mouseY - panY) * scaleChange;
+
+            scale = newScale;
+            updateTransform();
+        }
+
+        /**
+         * 更新画布的变换（平移和缩放）
+         * 同时更新缩放级别显示和连接线位置
+         */
+        function updateTransform() {
+            canvasWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            zoomLevel.value = Math.round(scale * 100);
+            updateConnectionPaths();
+        }
+
+        /**
+         * 处理用户选择的文件
+         * 流程：读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
+         * @param {File} file - 用户选择的文件对象
+         */
+        async function handleFile(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+
+            try {
+                const metadata = await readMetadataFromFile(uint8Array, file.name);
+                if (!metadata) {
+                    return;
+                }
+
+                updateFileInfo(file, uint8Array);
+
+                // 解析工作流数据
+                workflowData = parseWorkflow(metadata);
+
+                // 重置视图状态
+                scale = 1;
+                panX = 50;
+                panY = 50;
+                nodeStates = {};
+
+                // 渲染并自适应视图
+                renderWorkflow();
+                fitToView();
+
+                document.getElementById('infoNodeCount').textContent = Object.keys(workflowData.nodes).length;
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        /**
+         * 更新文件信息显示
+         * @param {File} file - 文件对象
+         * @param {Uint8Array} uint8Array - 文件内容的二进制数据
+         */
+        function updateFileInfo(file, uint8Array) {
+            const filename = file.name;
+            const ext = filename.split('.').pop().toLowerCase();
+            const size = formatFileSize(file.size);
+            const lastModified = new Date(file.lastModified).toLocaleString('zh-CN');
+
+            document.getElementById('infoFilename').textContent = filename;
+            document.getElementById('infoSize').textContent = size;
+            document.getElementById('infoModified').textContent = lastModified;
+
+            const typeMap = {
+                'png': 'PNG 图片',
+                'latent': 'Latent 潜空间',
+                'json': 'JSON 工作流'
+            };
+            document.getElementById('infoType').textContent = typeMap[ext] || ext;
+
+            // 根据文件类型显示不同的预览和信息
+            if (ext === 'png') {
+                const dims = getPngDimensions(uint8Array);
+                if (dims) {
+                    document.getElementById('infoResolution').textContent = `${dims.width} × ${dims.height}`;
+                    displayImagePreview(uint8Array);
+                } else {
+                    document.getElementById('infoResolution').textContent = currentLang === 'zh' ? '未知' : 'Unknown';
+                }
+            } else if (ext === 'latent') {
+                document.getElementById('infoResolution').innerHTML = `<span class="latent-badge">${t('latent')}</span>`;
+                displayLatentPreview();
+            } else {
+                document.getElementById('infoResolution').textContent = '-';
+                displayNoPreview();
+            }
+        }
+
+        /**
+         * 格式化文件大小为易读格式
+         * @param {number} bytes - 字节数
+         * @returns {string} 格式化后的文件大小 (如 "1.5 MB")
+         */
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        /**
+         * 从 PNG 二进制数据中提取图片尺寸
+         * 解析 IHDR chunk 获取宽度和高度
+         * @param {Uint8Array} data - PNG 文件的二进制数据
+         * @returns {Object|null} 包含 width 和 height 的对象，解析失败返回 null
+         */
+        function getPngDimensions(data) {
+            try {
+                if (data.length < 24) return null;
+
+                // 验证 PNG 文件签名
+                const pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+                for (let i = 0; i < 8; i++) {
+                    if (data[i] !== pngSignature[i]) return null;
+                }
+
+                // 遍历 chunks 查找 IHDR
+                let offset = 8;
+                while (offset < data.length - 12) {
+                    const length = (data[offset] << 24) | (data[offset + 1] << 16) |
+                                   (data[offset + 2] << 8) | data[offset + 3];
+
+                    const type = String.fromCharCode(
+                        data[offset + 4], data[offset + 5],
+                        data[offset + 6], data[offset + 7]
+                    );
+
+                    if (type === 'IHDR') {
+                        const width = (data[offset + 8] << 24) | (data[offset + 9] << 16) |
+                                     (data[offset + 10] << 8) | data[offset + 11];
+                        const height = (data[offset + 12] << 24) | (data[offset + 13] << 16) |
+                                      (data[offset + 14] << 8) | data[offset + 15];
+                        return { width, height };
+                    }
+
+                    if (type === 'IEND') break;
+                    offset += 12 + length;
+                }
+            } catch (e) {
+                console.error('Error getting PNG dimensions:', e);
+            }
+            return null;
+        }
+
+        /**
+         * 显示 PNG 图片预览
+         * @param {Uint8Array} uint8Array - PNG 文件的二进制数据
+         */
+        function displayImagePreview(uint8Array) {
+            const blob = new Blob([uint8Array], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+
+            const preview = document.getElementById('filePreview');
+            const placeholder = document.getElementById('filePlaceholder');
+
+            placeholder.innerHTML = '<img src="' + url + '" alt="预览" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
+            placeholder.style.cursor = 'pointer';
+            placeholder.title = '点击更换文件';
+        }
+
+        function displayLatentPreview() {
+            const placeholder = document.getElementById('filePlaceholder');
+            placeholder.innerHTML = `
+                <span class="icon">🧠</span>
+                <span>Latent 潜空间</span>
+                <span style="font-size: 10px; color: #555; margin-top: 8px;">无法直接预览</span>
+                <span style="font-size: 10px; color: #444; margin-top: 4px;">点击更换文件</span>
+            `;
+        }
+
+        function displayNoPreview() {
+            const placeholder = document.getElementById('filePlaceholder');
+            placeholder.innerHTML = `
+                <span class="icon">📄</span>
+                <span>JSON 工作流</span>
+                <span style="font-size: 10px; color: #444; margin-top: 4px;">点击更换文件</span>
+            `;
+        }
+
+        /**
+         * 根据文件扩展名选择对应的元数据读取函数
+         * 处理流程：
+         * 1. .latent 文件 -> readLatentMetadata (读取 latent 文件的头部元数据)
+         * 2. .json 文件 -> readJsonMetadata (解析 JSON 中的 prompt 字段)
+         * 3. 其他文件 (如 .png) -> readPngMetadata (从 PNG 的 tEXt/iTXt chunk 读取)
+         */
+        async function readMetadataFromFile(data, filename) {
+            if (filename.toLowerCase().endsWith('.latent')) {
+                return readLatentMetadata(data);
+            } else if (filename.toLowerCase().endsWith('.json')) {
+                return readJsonMetadata(data);
+            } else {
+                return readPngMetadata(data);
+            }
+        }
+
+        /**
+         * 读取 JSON 文件的元数据
+         * 处理逻辑：
+         * - 只支持包含 prompt 字段的 JSON (如 XVideoSave/XAudioSave/XWorkflowSave 生成的)
+         * - 不处理纯 workflow 格式的 JSON (如 ComfyUI 网页导出的)
+         * - 返回格式: { prompt: {...} }
+         */
+        async function readJsonMetadata(data) {
+            try {
+                const textDecoder = new TextDecoder('utf-8');
+                const text = textDecoder.decode(data);
+                const json = JSON.parse(text);
+
+                // 只接受包含 prompt 的 JSON (XVideoSave/XAudioSave/XWorkflowSave 格式)
+                if (json.prompt) {
+                    return { prompt: json.prompt };
+                }
+
+                // 不包含 prompt 的 JSON (如 ComfyUI 网页导出的 workflow) 显示错误提示
+                alert(t('noPromptError'));
+                return null;
+            } catch (e) {
+                console.error('JSON metadata read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * 从 PNG 文件中读取元数据
+         * PNG 格式: 元数据存储在 tEXt 或 iTXt chunk 中
+         * 返回格式: { prompt: "...", workflow: "..." } (字符串格式，需要 parseWorkflow 进一步解析)
+         */
+        async function readPngMetadata(data) {
+            try {
+                const textDecoder = new TextDecoder('utf-8');
+                let offset = 8;
+
+                while (offset < data.length - 12) {
+                    const length = (data[offset] << 24) | (data[offset + 1] << 16) |
+                                   (data[offset + 2] << 8) | data[offset + 3];
+
+                    if (length < 0 || length > data.length - offset - 12) break;
+
+                    const type = textDecoder.decode(data.slice(offset + 4, offset + 8));
+
+                    if (type === 'tEXt' || type === 'iTXt') {
+                        const chunkData = data.slice(offset + 8, offset + 8 + length);
+                        const text = textDecoder.decode(chunkData);
+                        return parsePngText(text);
+                    }
+
+                    if (type === 'IEND') break;
+                    offset += 12 + length;
+                }
+            } catch (e) {
+                console.error('PNG metadata read error:', e);
+            }
+            return null;
+        }
+
+        /**
+         * 从 Latent 文件中读取元数据
+         * Latent 格式: 前8字节是头部大小，后面是 JSON 格式的头部数据
+         * 头部中包含 __metadata__ 字段，其中有 prompt 和 workflow
+         * 返回格式: { prompt: {...} } 或 { workflow: {...} }
+         */
+        async function readLatentMetadata(data) {
+            try {
+                if (data.length < 8) return null;
+
+                const headerSize = Number(
+                    new BigUint64Array(data.slice(0, 8).buffer)[0]
+                );
+
+                if (headerSize < 0 || headerSize > data.length - 8) {
+                    return null;
+                }
+
+                const textDecoder = new TextDecoder('utf-8');
+                const headerJson = textDecoder.decode(
+                    data.slice(8, 8 + headerSize)
+                );
+
+                const header = JSON.parse(headerJson);
+
+                if (header.__metadata__) {
+                    const metadata = header.__metadata__;
+
+                    // 优先返回 prompt (与 parseWorkflow 的设计一致)
+                    if (metadata.prompt) {
+                        try {
+                            return { prompt: JSON.parse(metadata.prompt) };
+                        } catch {
+                            return { prompt: metadata.prompt };
+                        }
+                    }
+
+                    // 如果没有 prompt，返回 workflow (虽然 parseWorkflow 不会使用它)
+                    if (metadata.workflow) {
+                        try {
+                            return { workflow: JSON.parse(metadata.workflow) };
+                        } catch {
+                            return { workflow: metadata.workflow };
+                        }
+                    }
+
+                    return metadata;
+                }
+
+                return null;
+            } catch (e) {
+                console.error('Latent metadata read error:', e);
+            }
+            return null;
+        }
+
+        /**
+         * 解析 PNG tEXt chunk 的文本数据
+         * 格式: key\0value\0key\0value...
+         * 返回: { key: value, ... }
+         */
+        function parsePngText(text) {
+            const result = {};
+            const parts = text.split('\0');
+            for (let i = 0; i < parts.length - 1; i += 2) {
+                const key = parts[i];
+                const value = parts[i + 1];
+                if (key && value) {
+                    result[key] = value;
+                }
+            }
+            return result;
+        }
+
+        /**
+         * 解析工作流元数据，将 prompt 格式转换为内部使用的数据结构
+         *
+         * 设计原则：
+         * - 只使用 prompt 格式 (ComfyUI API 格式)，不使用 workflow 格式 (前端格式)
+         * - 节点位置使用自动排列算法，不使用 workflow 中的位置信息
+         * - 子图通过节点 ID 格式 "子图ID:节点ID" 识别
+         *
+         * 输入格式 (metadata):
+         * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...} }
+         * - JSON: { prompt: {...} } (仅支持 XVideoSave/XAudioSave/XWorkflowSave 生成的)
+         *
+         * 输出格式 (result):
+         * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName? } }
+         * - connections: [ { from, fromSlot, to, toSlot } ]
+         * - notes: [ { id, text, mode } ]
+         * - subgraphs: [ { id, name, nodes: [...] } ]
+         */
+        function parseWorkflow(metadata) {
+            const result = {
+                nodes: {},
+                connections: [],
+                notes: [],
+                subgraphs: []
+            };
+
+            try {
+                // 提取 prompt 数据
+                let promptData = null;
+
+                if (metadata.prompt) {
+                    promptData = typeof metadata.prompt === 'string' ?
+                        JSON.parse(metadata.prompt) : metadata.prompt;
+                }
+
+                if (!promptData) {
+                    console.error('No prompt data found in metadata');
+                    return result;
+                }
+
+                // prompt 格式直接是节点映射表: { 节点ID: 节点数据, ... }
+                result.nodes = promptData;
+
+                // 处理每个节点
+                for (const [nodeId, nodeData] of Object.entries(promptData)) {
+                    const inputs = nodeData.inputs || {};
+                    const classType = nodeData.class_type;
+
+                    // 提取 Note 节点
+                    if (classType === 'Note') {
+                        result.notes.push({
+                            id: nodeId,
+                            text: inputs.text || '',
+                            mode: inputs.mode
+                        });
+                    }
+
+                    // 提取连接关系
+                    // prompt 中的输入格式: inputs: { 参数名: [来源节点ID, 来源槽位], ... }
+                    for (const [inputName, inputValue] of Object.entries(inputs)) {
+                        if (Array.isArray(inputValue) && inputValue.length >= 2) {
+                            const [fromNode, fromSlot] = inputValue;
+                            result.connections.push({
+                                from: fromNode,
+                                fromSlot: fromSlot,
+                                to: nodeId,
+                                toSlot: inputName
+                            });
+                        }
+                    }
+                }
+
+                // 处理子图
+                // 子图节点 ID 格式: "子图ID:节点ID" (如 "18:8" 表示子图18中的节点8)
+                const subgraphMap = new Map();
+                for (const [nodeId, nodeData] of Object.entries(promptData)) {
+                    if (nodeId.includes(':')) {
+                        const [subgraphId, nodeIdPart] = nodeId.split(':');
+
+                        // 创建子图记录
+                        if (!subgraphMap.has(subgraphId)) {
+                            subgraphMap.set(subgraphId, {
+                                id: subgraphId,
+                                name: `Subgraph ${subgraphId}`,
+                                nodes: []
+                            });
+                        }
+
+                        // 添加节点到子图
+                        subgraphMap.get(subgraphId).nodes.push({
+                            id: nodeIdPart,
+                            ...nodeData
+                        });
+
+                        // 标记节点为子图节点，用于后续颜色分配
+                        nodeData.isSubgraphNode = true;
+                        nodeData.subgraphId = subgraphId;
+                        nodeData.subgraphName = `Subgraph ${subgraphId}`;
+                    }
+                }
+
+                // 将子图映射转换为数组
+                if (subgraphMap.size > 0) {
+                    result.subgraphs = Array.from(subgraphMap.values());
+                }
+            } catch (e) {
+                console.error('Parse workflow error:', e);
+            }
+
+            return result;
+        }
+
+        /**
+         * 渲染整个工作流
+         * 流程：清空画布 -> 计算节点位置 -> 渲染节点 -> 渲染连接线
+         */
+        function renderWorkflow() {
+            canvas.innerHTML = '';
+            connectionsSvg.innerHTML = '';
+
+            if (!workflowData || !workflowData.nodes) {
+                return;
+            }
+
+            const nodeCount = Object.keys(workflowData.nodes).length;
+            document.getElementById('infoNodeCount').textContent = nodeCount;
+
+            const nodePositions = calculateNodePositions();
+            renderNodes(nodePositions);
+            updateConnectionPaths();
+        }
+
+        /**
+         * 计算节点位置（自动排列算法）
+         * 使用层级布局算法：
+         * 1. 根据连接关系计算每个节点的层级（深度）
+         * 2. 同一层级的节点水平排列
+         * 3. 子图节点与主图节点分开处理层级
+         * @returns {Object} 节点ID到位置的映射 { 节点ID: {x, y} }
+         */
+        function calculateNodePositions() {
+            const positions = {};
+            const levels = {};
+            const nodeLevel = {};
+            const visited = new Set();
+
+            /**
+             * 递归计算节点的层级（深度）
+             * 子图节点的层级计算独立于主图节点
+             * @param {string} nodeId - 节点ID
+             * @returns {number} 节点的层级
+             */
+            function getLevel(nodeId) {
+                if (nodeLevel[nodeId] !== undefined) return nodeLevel[nodeId];
+
+                const node = workflowData.nodes[nodeId];
+                if (!node) return 0;
+
+                let maxInputLevel = 0;
+                for (const input of Object.values(node.inputs || {})) {
+                    if (Array.isArray(input) && input[0]) {
+                        const inputNodeId = input[0];
+                        const inputNode = workflowData.nodes[inputNodeId];
+
+                        if (inputNode) {
+                            const inputSubgraphId = inputNode.subgraphId;
+                            const currentSubgraphId = node.subgraphId;
+
+                            if (inputSubgraphId !== currentSubgraphId) {
+                                maxInputLevel = Math.max(maxInputLevel, getLevel(inputNodeId) + 1);
+                            } else {
+                                maxInputLevel = Math.max(maxInputLevel, getLevel(inputNodeId));
+                            }
+                        }
+                    }
+                }
+
+                nodeLevel[nodeId] = maxInputLevel + 1;
+                return nodeLevel[nodeId];
+            }
+
+            // 计算所有节点的层级
+            Object.keys(workflowData.nodes).forEach(id => getLevel(id));
+
+            // 按层级分组节点
+            const levelNodes = {};
+            for (const [id, level] of Object.entries(nodeLevel)) {
+                if (!levelNodes[level]) levelNodes[level] = [];
+                levelNodes[level].push(id);
+            }
+
+            // 为每个节点计算具体位置
+            for (const [level, nodeIds] of Object.entries(levelNodes)) {
+                const levelNum = parseInt(level);
+                nodeIds.forEach((nodeId, index) => {
+                    const x = 50 + levelNum * 260;  // 每层水平间距 260px
+                    const y = 50 + index * 180 + (levelNodes[level].length > 1 ? 0 : 50);  // 垂直间距 180px
+                    positions[nodeId] = { x, y };
+                });
+            }
+
+            return positions;
+        }
+
+        /**
+         * 渲染所有节点
+         * 为每个节点创建 DOM 元素，设置样式、位置、内容和事件处理
+         * @param {Object} positions - 节点ID到位置的映射
+         */
+        function renderNodes(positions) {
+            for (const [nodeId, nodeData] of Object.entries(workflowData.nodes)) {
+                // 确定节点位置（子图节点优先使用保存的位置）
+                const pos = nodeData.isSubgraphNode ?
+                    (nodeData.pos ? { x: nodeData.pos[0], y: nodeData.pos[1] } : positions[nodeId] || { x: 100, y: 100 }) :
+                    positions[nodeId] || { x: 100, y: 100 };
+                const classType = nodeData.class_type;
+
+                // 构建节点 CSS 类名
+                let className = 'node';
+                if (classType === 'Note') className += ' note-node';
+                if (nodeStates[nodeId]?.collapsed) className += ' collapsed';
+
+                // 创建节点元素
+                const nodeEl = document.createElement('div');
+                nodeEl.className = className;
+                nodeEl.style.left = pos.x + 'px';
+                nodeEl.style.top = pos.y + 'px';
+                nodeEl.dataset.nodeId = nodeId;
+
+                // 设置子图边框颜色
+                const subgraphColor = getSubgraphColor(nodeData.subgraphId);
+                if (subgraphColor) {
+                    nodeEl.style.borderColor = subgraphColor;
+                    nodeEl.style.boxShadow = `0 4px 12px ${subgraphColor}40`;
+                }
+                const isCollapsed = nodeStates[nodeId]?.collapsed || false;
+
+                let content = '';
+
+                if (classType === 'Note') {
+                    const noteData = workflowData.notes.find(n => n.id === nodeId);
+                    content = `
+                        <div class="node-header" data-node-id="${nodeId}">
+                            <span>${classType}</span>
+                            <div class="header-actions">
+                                <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
+                            </div>
+                        </div>
+                        <div class="node-body">
+                            <div class="note-content">${escapeHtml(noteData?.text || '')}</div>
+                        </div>
+                    `;
+                } else {
+                    const inputs = nodeData.inputs || {};
+                    const displayInputs = Object.entries(inputs);
+
+                    const subgraphTag = nodeData.subgraphName ?
+                        `<div class="subgraph-tag" data-subgraph-color="${subgraphColor}">${escapeHtml(nodeData.subgraphName)} [${nodeId}]</div>` :
+                        '';
+
+                    const nodeIdTag = !nodeData.subgraphName ?
+                        `<div class="node-id-tag">[${escapeHtml(nodeId)}]</div>` :
+                        '';
+
+                    content = `
+                        <div class="node-header" data-node-id="${nodeId}">
+                            <span>${classType}</span>
+                            <div class="header-actions">
+                                <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
+                            </div>
+                        </div>
+                        ${subgraphTag}
+                        ${nodeIdTag}
+                        <div class="node-body">
+                            ${displayInputs.map(([key, value]) => `
+                                <div class="param-row">
+                                    <span class="param-key" title="${escapeHtml(key)}">${escapeHtml(key)}</span>
+                                    <span class="param-value" title="${escapeHtml(String(value))}">${escapeHtml(truncateValue(value))}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="resize-handle" data-node="${nodeId}"></div>
+                    `;
+                }
+
+                nodeEl.innerHTML = content;
+
+                const subgraphTagEl = nodeEl.querySelector('.subgraph-tag');
+                if (subgraphTagEl && subgraphColor) {
+                    subgraphTagEl.style.background = subgraphColor;
+                    subgraphTagEl.style.borderBottomColor = subgraphColor;
+                }
+
+                nodeEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectNode(nodeId);
+                });
+
+                const header = nodeEl.querySelector('.node-header');
+                let isNodeDragging = false;
+                let nodeDragStartX, nodeDragStartY, nodeStartX, nodeStartY;
+
+                header.addEventListener('mousedown', (e) => {
+                    if (e.target.classList.contains('header-btn')) return;
+                    isNodeDragging = true;
+                    nodeDragStartX = e.clientX;
+                    nodeDragStartY = e.clientY;
+                    nodeStartX = parseFloat(nodeEl.style.left);
+                    nodeStartY = parseFloat(nodeEl.style.top);
+                    e.stopPropagation();
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    if (isNodeDragging) {
+                        const dx = (e.clientX - nodeDragStartX) / scale;
+                        const dy = (e.clientY - nodeDragStartY) / scale;
+                        nodeEl.style.left = (nodeStartX + dx) + 'px';
+                        nodeEl.style.top = (nodeStartY + dy) + 'px';
+                        updateConnectionPaths();
+                        updateConnectionHighlight();
+                    }
+                });
+
+                document.addEventListener('mouseup', () => {
+                    isNodeDragging = false;
+                });
+
+                nodeEl.querySelectorAll('.header-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const nodeId = btn.dataset.node;
+                        nodeStates[nodeId] = nodeStates[nodeId] || {};
+                        nodeStates[nodeId].collapsed = !nodeStates[nodeId].collapsed;
+                        renderWorkflow();
+                        setTimeout(updateTransform, 0);
+                    });
+                });
+
+                const resizeHandle = nodeEl.querySelector('.resize-handle');
+                if (resizeHandle) {
+                    let isResizing = false;
+                    let resizeStartX, resizeStartY, startWidth;
+                    let minHeaderWidth = 180;
+
+                    resizeHandle.addEventListener('mousedown', (e) => {
+                        isResizing = true;
+                        resizeStartX = e.clientX;
+                        resizeStartY = e.clientY;
+                        startWidth = nodeEl.offsetWidth;
+
+                        const header = nodeEl.querySelector('.node-header');
+                        if (header) {
+                            minHeaderWidth = Math.min(startWidth, header.scrollWidth + 20);
+                        }
+
+                        e.stopPropagation();
+                    });
+
+                    document.addEventListener('mousemove', (e) => {
+                        if (isResizing) {
+                            const dx = (e.clientX - resizeStartX) / scale;
+                            const newWidth = Math.max(minHeaderWidth, startWidth + dx);
+                            nodeEl.style.width = newWidth + 'px';
+                        }
+                    });
+
+                    document.addEventListener('mouseup', () => {
+                        isResizing = false;
+                    });
+                }
+
+                canvas.appendChild(nodeEl);
+            }
+        }
+
+        /**
+         * 截断过长的参数值用于显示
+         * @param {*} value - 参数值
+         * @returns {string} 截断后的字符串
+         */
+        function truncateValue(value) {
+            if (Array.isArray(value)) {
+                if (value.length === 2 && typeof value[0] === 'string') {
+                    return `[${value[0]}]`;
+                }
+                return `[${value.join(', ')}]`;
+            }
+            return String(value);
+        }
+
+        /**
+         * 更新连接线的 SVG 路径
+         * 根据节点位置计算贝塞尔曲线路径
+         */
+        function updateConnectionPaths() {
+            let svgContent = '';
+
+            for (const conn of workflowData.connections) {
+                const fromNodeEl = document.querySelector(`[data-node-id="${conn.from}"]`);
+                const toNodeEl = document.querySelector(`[data-node-id="${conn.to}"]`);
+
+                if (!fromNodeEl || !toNodeEl) continue;
+
+                // 获取节点位置和尺寸
+                const fromRect = {
+                    x: parseFloat(fromNodeEl.style.left),
+                    y: parseFloat(fromNodeEl.style.top),
+                    width: fromNodeEl.offsetWidth,
+                    height: fromNodeEl.offsetHeight
+                };
+
+                const toRect = {
+                    x: parseFloat(toNodeEl.style.left),
+                    y: parseFloat(toNodeEl.style.top),
+                    width: toNodeEl.offsetWidth,
+                    height: toNodeEl.offsetHeight
+                };
+
+                // 计算连接点坐标（从右侧中点出发，到左侧中点）
+                const x1 = fromRect.x + fromRect.width;
+                const y1 = fromRect.y + fromRect.height / 2;
+                const x2 = toRect.x;
+                const y2 = toRect.y + toRect.height / 2;
+                const midX = (x1 + x2) / 2;
+
+                const path = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                svgContent += `<path class="connection-line" d="${path}" data-from="${conn.from}" data-to="${conn.to}" />`;
+            }
+
+            connectionsSvg.innerHTML = svgContent;
+
+            const wrapperRect = canvasWrapper.getBoundingClientRect();
+            connectionsSvg.setAttribute('viewBox', `0 0 ${wrapperRect.width} ${wrapperRect.height}`);
+            connectionsSvg.style.width = wrapperRect.width + 'px';
+            connectionsSvg.style.height = wrapperRect.height + 'px';
+
+            updateConnectionHighlight();
+        }
+
+        /**
+         * 转义 HTML 特殊字符，防止 XSS 攻击
+         * @param {string} text - 原始文本
+         * @returns {string} 转义后的 HTML 安全文本
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /**
+         * 选中指定节点
+         * 添加选中样式和发光效果，并高亮相关连接线
+         * @param {string} nodeId - 节点ID
+         */
+        function selectNode(nodeId) {
+            // 清除所有节点的选中状态
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('selected');
+                node.style.boxShadow = '';
+            });
+
+            const nodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+            if (nodeEl) {
+                nodeEl.classList.add('selected');
+                selectedNodeId = nodeId;
+
+                // 根据子图ID获取发光颜色
+                const nodeData = workflowData ? Object.entries(workflowData.nodes || {}).find(([id]) => id === nodeId)?.[1] : null;
+                const subgraphId = nodeData?.subgraphId;
+                const glowColor = subgraphId ? getSubgraphColor(subgraphId) : '#cccccc';
+                const rgb = hexToRgb(glowColor);
+
+                // 设置多层发光效果
+                nodeEl.style.boxShadow = `0 0 20px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6), 0 0 40px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4), 0 0 0 2px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3) !important`;
+
+                updateConnectionHighlight();
+            }
+        }
+
+        /**
+         * 将十六进制颜色转换为 RGB 对象
+         * @param {string} hex - 十六进制颜色值（如 #ff69b4）
+         * @returns {Object} 包含 r, g, b 属性的对象
+         */
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 200, g: 200, b: 200 };
+        }
+
+        /**
+         * 取消所有节点的选中状态
+         * 清除选中样式、发光效果和连接线高亮
+         */
+        function deselectAll() {
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('selected');
+                node.style.boxShadow = '';
+            });
+            document.querySelectorAll('.connection-line-flow').forEach(line => {
+                line.remove();
+            });
+            document.querySelectorAll('.connection-line').forEach(line => {
+                delete line.dataset.hasFlow;
+            });
+            selectedNodeId = null;
+        }
+
+        /**
+         * 更新连接线的高亮状态
+         * 当节点被选中时，高亮与该节点相关的连接线
+         */
+        function updateConnectionHighlight() {
+            if (!selectedNodeId) {
+                document.querySelectorAll('.connection-line-flow').forEach(line => {
+                    line.remove();
+                });
+                document.querySelectorAll('.connection-line').forEach(line => {
+                    delete line.dataset.hasFlow;
+                });
+                return;
+            }
+
+            document.querySelectorAll('.connection-line').forEach(line => {
+                const fromNodeId = line.dataset.from;
+                const toNodeId = line.dataset.to;
+
+                // 如果连接线与选中节点相关，添加流动效果
+                if (fromNodeId === selectedNodeId || toNodeId === selectedNodeId) {
+                    if (!line.dataset.hasFlow) {
+                        const d = line.getAttribute('d');
+                        const flowLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        flowLine.setAttribute('d', d);
+                        flowLine.setAttribute('class', 'connection-line-flow');
+                        flowLine.setAttribute('data-from', fromNodeId);
+                        flowLine.setAttribute('data-to', toNodeId);
+                        connectionsSvg.appendChild(flowLine);
+                        line.dataset.hasFlow = 'true';
+                    }
+                } else {
+                    if (line.dataset.hasFlow === 'true') {
+                        line.dataset.hasFlow = 'false';
+                        const flowLine = connectionsSvg.querySelector(`.connection-line-flow[data-from="${fromNodeId}"][data-to="${toNodeId}"]`);
+                        if (flowLine) {
+                            flowLine.remove();
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
