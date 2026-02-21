@@ -440,7 +440,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 
 <details>
-<summary>⌨️ 工作流工具 👈</summary>
+<summary>⌨️ 工作流节点和工具 👈</summary>
 
 ### 📄 XWorkflowSave
 `♾️ Xz3r0/File-Processing`
@@ -503,7 +503,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 
 <details>
-<summary>🧩 网页扩展 👈</summary>
+<summary>🧩 ComfyUI网页扩展 👈</summary>
 
 ### 🖥️ 浮动窗口（按钮）
 `ComfyUI网页扩展 - 顶部菜单栏`
