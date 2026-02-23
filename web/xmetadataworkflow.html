@@ -1,20 +1,28 @@
 <!--
     XMetadataWorkflow - ComfyUI 工作流元数据查看器
     ================================================
+    版本: 1.1.0
+    更新日期: 2026-02-24
 
     功能概述:
     ---------
-    这是一个用于查看 ComfyUI 工作流元数据的网页工具。支持从以下文件类型中提取和可视化工作流:
-    - PNG 图片 (包含工作流元数据的生成图片)
-    - Latent 潜空间文件 (.latent)
-    - JSON 工作流文件 (XVideoSave/XAudioSave/XWorkflowSave 生成的)
+    一个独立的网页工具，用于查看和分析 ComfyUI 工作流元数据，无需启动 ComfyUI 即可预览工作流结构。
+
+    支持的文件格式:
+    ---------------
+    - PNG 图片 (.png) - 包含工作流元数据的生成图片
+    - Latent 潜空间文件 (.latent) - 包含 __metadata__ 的潜空间文件
+    - JSON 工作流文件 (.json) - 支持三种格式：
+        * XWorkflowSave 生成的格式 (包含 prompt 字段)
+        * ComfyUI 网页导出的 API 格式 (直接是 prompt 数据)
+        * ComfyUI 网页保存的完整 Workflow 格式 (包含 nodes 和 links 数组)
 
     核心功能:
     ---------
     1. 文件解析:
        - PNG: 从 tEXt/iTXt chunk 读取 prompt/workflow 元数据
        - Latent: 从文件头部 JSON 读取 __metadata__
-       - JSON: 直接解析 prompt 字段 (仅支持包含 prompt 的格式)
+       - JSON: 智能识别并解析三种工作流格式
 
     2. 工作流可视化:
        - 自动层级布局算法排列节点
@@ -24,18 +32,33 @@
 
     3. 交互功能:
        - 折叠/展开节点参数
-       - 选中节点高亮相关连接
+       - 选中节点高亮相关连接（带流动动画效果）
        - 拖拽调整节点宽度
+       - 节点拖拽重新布局
+
+    4. 界面特性:
+       - 支持暗黑/亮色主题切换
+       - 支持中英文语言切换
+       - 文件信息预览面板
+       - 响应式缩放控制
 
     数据格式说明:
     -------------
-    - 只使用 prompt 格式 (ComfyUI API 格式)
-    - 不使用 workflow 格式 (ComfyUI 前端格式)
+    - 内部统一使用 prompt 格式 (ComfyUI API 格式)
+    - 完整 Workflow 格式会自动转换为 Prompt API 格式
     - 节点位置使用自动排列算法，不依赖保存的位置信息
     - 子图通过节点 ID 中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
 
+    技术栈:
+    -------
+    - 纯前端实现，无需后端服务
+    - 原生 JavaScript (ES6+)
+    - SVG 绘制连接线
+    - CSS3 动画效果
+
     作者: Xz3r0
     项目: ComfyUI-Xz3r0-Nodes
+    许可证: MIT License
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -567,12 +590,27 @@
             word-break: break-all;
             text-align: left;
             flex: 1;
-            overflow: visible;
+            overflow: auto;
             text-overflow: clip;
-            white-space: normal;
+            white-space: pre-wrap;
             word-wrap: break-word;
             background: var(--bg-param-value);
             padding: 1px 4px;
+            border-radius: 2px;
+            max-height: 100px;
+        }
+
+        .param-value::-webkit-scrollbar {
+            width: 3px;
+            height: 3px;
+        }
+
+        .param-value::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .param-value::-webkit-scrollbar-thumb {
+            background: var(--border-tertiary);
             border-radius: 2px;
         }
 
@@ -694,8 +732,8 @@
                 </div>
             </div>
             <div class="language-switch" id="languageSwitch">
-                <button class="lang-btn" data-lang="zh">中文</button>
-                <button class="lang-btn" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="zh" data-i18n="langZh">中文</button>
+                <button class="lang-btn" data-lang="en" data-i18n="langEn">EN</button>
             </div>
             <div class="theme-switch" id="themeSwitch">
                 <button class="theme-btn" data-theme="dark" data-i18n-title="darkMode">🌙</button>
@@ -730,8 +768,10 @@
         const i18n = {
             zh: {
                 title: 'XMetadataWorkflow',
+                langZh: '中文',
+                langEn: 'English',
                 DroporSelect: '拖放文件到此处 或 点击选择文件',
-                filetip: '支持 .png 和 .latent\n以及 .json (由XWorkflowSave保存)',
+                filetip: '支持 .png 和 .latent\n以及 .json (三种格式)',
                 filename: '文件名',
                 filetype: '类型',
                 filesize: '大小',
@@ -755,12 +795,22 @@
                 output: '输出',
                 darkMode: '暗黑模式',
                 lightMode: '亮色模式',
-                noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件缺少 prompt 字段，无法加载工作流。\n\n支持的格式：\n• XWorkflowSave 生成的 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件\n\n不支持：\n• ComfyUI 网页直接导出的 workflow JSON'
+                noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件无法识别为有效的工作流格式。\n\n支持的格式：\n• XWorkflowSave 生成的 JSON (含 prompt 字段)\n• ComfyUI 网页导出的 API 格式 JSON\n• ComfyUI 网页保存的完整 Workflow 格式 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件',
+                latentFile: 'Latent 潜空间',
+                jsonWorkflow: 'JSON 工作流',
+                noPreview: '无法直接预览',
+                clickToChange: '点击更换文件',
+                typePng: 'PNG 图片',
+                typeLatent: 'Latent 潜空间',
+                typeJson: 'JSON 工作流',
+                unknown: '未知'
             },
             en: {
                 title: 'XMetadataWorkflow',
+                langZh: '中文',
+                langEn: 'English',
                 DroporSelect: 'Drop file here\nor click to select',
-                filetip: 'Supports .png, .latent\nand .json (from XWorkflowSave)',
+                filetip: 'Supports .png, .latent\nand .json (three formats)',
                 filename: 'Filename',
                 filetype: 'Type',
                 filesize: 'Size',
@@ -784,7 +834,15 @@
                 output: 'Output',
                 darkMode: 'Dark Mode',
                 lightMode: 'Light Mode',
-                noPromptError: 'Unsupported JSON Format\n\nThis JSON file is missing the prompt field and cannot load the workflow.\n\nSupported formats:\n• JSON from XWorkflowSave\n• PNG images with prompt metadata\n• Latent files\n\nNot supported:\n• ComfyUI web-exported workflow JSON'
+                noPromptError: 'Unsupported JSON Format\n\nThis JSON file cannot be recognized as a valid workflow format.\n\nSupported formats:\n• JSON from XWorkflowSave (with prompt field)\n• ComfyUI web-exported API format JSON\n• ComfyUI web-saved full Workflow format JSON\n• PNG images with prompt metadata\n• Latent files',
+                latentFile: 'Latent File',
+                jsonWorkflow: 'JSON Workflow',
+                noPreview: 'No preview available',
+                clickToChange: 'Click to change file',
+                typePng: 'PNG Image',
+                typeLatent: 'Latent File',
+                typeJson: 'JSON Workflow',
+                unknown: 'Unknown'
             }
         };
 
@@ -823,6 +881,7 @@
         let panY = 0;
         let nodeStates = {};
         let selectedNodeId = null;
+        let currentFileType = null; // 存储当前文件类型，用于语言切换时更新预览
 
         const canvasContainer = document.getElementById('canvasContainer');
         const canvasWrapper = document.getElementById('canvas-wrapper');
@@ -873,6 +932,30 @@
                 const key = el.getAttribute('data-i18n-title');
                 el.title = t(key);
             });
+
+            // 更新文件信息区域的类型显示
+            if (currentFileType) {
+                const typeMap = {
+                    'png': t('typePng'),
+                    'latent': t('typeLatent'),
+                    'json': t('typeJson')
+                };
+                document.getElementById('infoType').textContent = typeMap[currentFileType] || currentFileType;
+
+                // 更新预览区域的文本
+                if (currentFileType === 'latent') {
+                    displayLatentPreview();
+                } else if (currentFileType === 'json') {
+                    displayNoPreview();
+                } else if (currentFileType === 'png') {
+                    // 更新 PNG 预览的 title
+                    const placeholder = document.getElementById('filePlaceholder');
+                    if (placeholder) {
+                        placeholder.title = t('clickToChange');
+                    }
+                }
+            }
+
             renderWorkflow();
         }
 
@@ -1087,16 +1170,20 @@
             const filename = file.name;
             const ext = filename.split('.').pop().toLowerCase();
             const size = formatFileSize(file.size);
-            const lastModified = new Date(file.lastModified).toLocaleString('zh-CN');
+            const lastModified = new Date(file.lastModified).toLocaleString(currentLang === 'zh' ? 'zh-CN' : 'en-US');
+
+            // 保存当前文件类型，用于语言切换时更新
+            currentFileType = ext;
 
             document.getElementById('infoFilename').textContent = filename;
             document.getElementById('infoSize').textContent = size;
             document.getElementById('infoModified').textContent = lastModified;
 
+            // 使用 i18n 获取文件类型名称
             const typeMap = {
-                'png': 'PNG 图片',
-                'latent': 'Latent 潜空间',
-                'json': 'JSON 工作流'
+                'png': t('typePng'),
+                'latent': t('typeLatent'),
+                'json': t('typeJson')
             };
             document.getElementById('infoType').textContent = typeMap[ext] || ext;
 
@@ -1107,7 +1194,7 @@
                     document.getElementById('infoResolution').textContent = `${dims.width} × ${dims.height}`;
                     displayImagePreview(uint8Array);
                 } else {
-                    document.getElementById('infoResolution').textContent = currentLang === 'zh' ? '未知' : 'Unknown';
+                    document.getElementById('infoResolution').textContent = t('unknown');
                 }
             } else if (ext === 'latent') {
                 document.getElementById('infoResolution').innerHTML = `<span class="latent-badge">${t('latent')}</span>`;
@@ -1186,18 +1273,18 @@
             const preview = document.getElementById('filePreview');
             const placeholder = document.getElementById('filePlaceholder');
 
-            placeholder.innerHTML = '<img src="' + url + '" alt="预览" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
+            placeholder.innerHTML = '<img src="' + url + '" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
             placeholder.style.cursor = 'pointer';
-            placeholder.title = '点击更换文件';
+            placeholder.title = t('clickToChange');
         }
 
         function displayLatentPreview() {
             const placeholder = document.getElementById('filePlaceholder');
             placeholder.innerHTML = `
                 <span class="icon">🧠</span>
-                <span>Latent 潜空间</span>
-                <span style="font-size: 10px; color: #555; margin-top: 8px;">无法直接预览</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">点击更换文件</span>
+                <span>${t('latentFile')}</span>
+                <span style="font-size: 10px; color: #555; margin-top: 8px;">${t('noPreview')}</span>
+                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
             `;
         }
 
@@ -1205,8 +1292,8 @@
             const placeholder = document.getElementById('filePlaceholder');
             placeholder.innerHTML = `
                 <span class="icon">📄</span>
-                <span>JSON 工作流</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">点击更换文件</span>
+                <span>${t('jsonWorkflow')}</span>
+                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
             `;
         }
 
@@ -1214,7 +1301,7 @@
          * 根据文件扩展名选择对应的元数据读取函数
          * 处理流程：
          * 1. .latent 文件 -> readLatentMetadata (读取 latent 文件的头部元数据)
-         * 2. .json 文件 -> readJsonMetadata (解析 JSON 中的 prompt 字段)
+         * 2. .json 文件 -> readJsonMetadata (自动识别并解析两种 prompt 格式)
          * 3. 其他文件 (如 .png) -> readPngMetadata (从 PNG 的 tEXt/iTXt chunk 读取)
          */
         async function readMetadataFromFile(data, filename) {
@@ -1228,10 +1315,98 @@
         }
 
         /**
+         * 将完整 Workflow 格式转换为 Prompt API 格式
+         * 完整 Workflow 格式包含更多元数据（节点位置、大小等），但需要转换才能使用
+         *
+         * @param {Object} workflow - 完整 Workflow 格式的 JSON 对象
+         * @returns {Object} - Prompt API 格式的对象
+         */
+        function convertWorkflowToPrompt(workflow) {
+            const prompt = {};
+            const nodeMap = new Map();
+
+            // 首先建立节点 ID 映射
+            for (const node of workflow.nodes || []) {
+                nodeMap.set(node.id, node);
+            }
+
+            // 构建链接映射：linkId -> { origin_id, origin_slot, target_id, target_slot }
+            const linkMap = new Map();
+            for (const link of workflow.links || []) {
+                // link 格式: [id, origin_id, origin_slot, target_id, target_slot, type]
+                if (link.length >= 5) {
+                    linkMap.set(link[0], {
+                        origin_id: link[1],
+                        origin_slot: link[2],
+                        target_id: link[3],
+                        target_slot: link[4]
+                    });
+                }
+            }
+
+            // 转换每个节点
+            for (const node of workflow.nodes || []) {
+                const nodeData = {
+                    inputs: {},
+                    class_type: node.type,
+                    _meta: {
+                        title: node.properties?.["Node name for S&R"] || node.type
+                    }
+                };
+
+                // 处理 Note 和 MarkdownNote 节点（没有 inputs，但有 widgets_values）
+                if (node.type === 'Note' || node.type === 'MarkdownNote') {
+                    if (node.widgets_values && node.widgets_values.length > 0) {
+                        nodeData.inputs.text = node.widgets_values[0];
+                    }
+                    prompt[String(node.id)] = nodeData;
+                    continue;
+                }
+
+                // 收集该节点作为目标的所有链接（用于确定输入连接）
+                const incomingLinks = [];
+                for (const [linkId, linkInfo] of linkMap) {
+                    if (linkInfo.target_id === node.id) {
+                        incomingLinks.push(linkInfo);
+                    }
+                }
+
+                // 处理 widgets_values 和 inputs 的配对
+                let widgetIndex = 0;
+
+                for (const input of node.inputs || []) {
+                    if (input.link !== undefined && input.link !== null) {
+                        // 优先处理连接输入（即使 input 也有 widget）
+                        const linkInfo = linkMap.get(input.link);
+                        if (linkInfo) {
+                            nodeData.inputs[input.name] = [
+                                String(linkInfo.origin_id),
+                                linkInfo.origin_slot
+                            ];
+                        }
+                        // 如果这个输入也有 widget，需要跳过对应的 widgetIndex
+                        if (input.widget && node.widgets_values) {
+                            widgetIndex++;
+                        }
+                    } else if (input.widget && node.widgets_values && widgetIndex < node.widgets_values.length) {
+                        // 这是 widget 参数（没有连接），从 widgets_values 取值
+                        nodeData.inputs[input.name] = node.widgets_values[widgetIndex];
+                        widgetIndex++;
+                    }
+                }
+
+                prompt[String(node.id)] = nodeData;
+            }
+
+            return prompt;
+        }
+
+        /**
          * 读取 JSON 文件的元数据
          * 处理逻辑：
-         * - 只支持包含 prompt 字段的 JSON (如 XVideoSave/XAudioSave/XWorkflowSave 生成的)
-         * - 不处理纯 workflow 格式的 JSON (如 ComfyUI 网页导出的)
+         * - 支持包含 prompt 字段的 JSON (如 XWorkflowSave 生成的)
+         * - 支持 ComfyUI 官方网页导出的 API 格式 JSON (直接是 prompt 数据)
+         * - 支持 ComfyUI 网页保存的完整 Workflow 格式 JSON (包含 nodes 数组)
          * - 返回格式: { prompt: {...} }
          */
         async function readJsonMetadata(data) {
@@ -1240,12 +1415,32 @@
                 const text = textDecoder.decode(data);
                 const json = JSON.parse(text);
 
-                // 只接受包含 prompt 的 JSON (XVideoSave/XAudioSave/XWorkflowSave 格式)
+                // 情况1: 包含 prompt 字段的 JSON (XWorkflowSave)
                 if (json.prompt) {
                     return { prompt: json.prompt };
                 }
 
-                // 不包含 prompt 的 JSON (如 ComfyUI 网页导出的 workflow) 显示错误提示
+                // 情况2: ComfyUI 官方网页导出的 API 格式 JSON
+                // 特征: 直接是节点映射表，键是数字字符串，值包含 inputs 和 class_type
+                const keys = Object.keys(json);
+                const isPromptFormat = keys.length > 0 && keys.every(key => {
+                    const node = json[key];
+                    return node && typeof node === 'object' &&
+                           (node.inputs !== undefined || node.class_type !== undefined);
+                });
+
+                if (isPromptFormat) {
+                    return { prompt: json };
+                }
+
+                // 情况3: ComfyUI 网页保存的完整 Workflow 格式 JSON
+                // 特征: 包含 nodes 数组和 links 数组
+                if (json.nodes && Array.isArray(json.nodes) && json.links && Array.isArray(json.links)) {
+                    const prompt = convertWorkflowToPrompt(json);
+                    return { prompt: prompt };
+                }
+
+                // 无法识别的格式
                 alert(t('noPromptError'));
                 return null;
             } catch (e) {
@@ -1371,7 +1566,7 @@
          *
          * 输入格式 (metadata):
          * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...} }
-         * - JSON: { prompt: {...} } (仅支持 XVideoSave/XAudioSave/XWorkflowSave 生成的)
+         * - JSON: { prompt: {...} } (两种格式均已支持)
          *
          * 输出格式 (result):
          * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName? } }
@@ -1612,6 +1807,7 @@
                         <div class="node-body">
                             <div class="note-content">${escapeHtml(noteData?.text || '')}</div>
                         </div>
+                        <div class="resize-handle" data-node="${nodeId}"></div>
                     `;
                 } else {
                     const inputs = nodeData.inputs || {};
@@ -1703,26 +1899,21 @@
                 if (resizeHandle) {
                     let isResizing = false;
                     let resizeStartX, resizeStartY, startWidth;
-                    let minHeaderWidth = 180;
+                    const MIN_WIDTH = 180;
 
                     resizeHandle.addEventListener('mousedown', (e) => {
                         isResizing = true;
                         resizeStartX = e.clientX;
                         resizeStartY = e.clientY;
                         startWidth = nodeEl.offsetWidth;
-
-                        const header = nodeEl.querySelector('.node-header');
-                        if (header) {
-                            minHeaderWidth = Math.min(startWidth, header.scrollWidth + 20);
-                        }
-
+                        e.preventDefault();
                         e.stopPropagation();
                     });
 
                     document.addEventListener('mousemove', (e) => {
                         if (isResizing) {
                             const dx = (e.clientX - resizeStartX) / scale;
-                            const newWidth = Math.max(minHeaderWidth, startWidth + dx);
+                            const newWidth = Math.max(MIN_WIDTH, startWidth + dx);
                             nodeEl.style.width = newWidth + 'px';
                         }
                     });
@@ -1731,6 +1922,56 @@
                         isResizing = false;
                     });
                 }
+
+                // 为参数值添加滚轮事件，实现悬停时滚动
+                nodeEl.querySelectorAll('.param-value').forEach(paramValue => {
+                    paramValue.addEventListener('wheel', (e) => {
+                        // 检查内容是否超出可视区域
+                        const canScrollDown = paramValue.scrollHeight > paramValue.clientHeight;
+                        const canScrollUp = paramValue.scrollTop > 0;
+                        const canScroll = canScrollDown || canScrollUp;
+
+                        if (canScroll) {
+                            // 阻止事件冒泡，防止画布缩放
+                            e.stopPropagation();
+
+                            // 检查是否滚动到边界
+                            const isAtTop = paramValue.scrollTop <= 0 && e.deltaY < 0;
+                            const isAtBottom = paramValue.scrollTop + paramValue.clientHeight >= paramValue.scrollHeight && e.deltaY > 0;
+
+                            // 只有在没有到达边界时才阻止默认行为
+                            if (!isAtTop && !isAtBottom) {
+                                e.preventDefault();
+                                paramValue.scrollTop += e.deltaY;
+                            }
+                        }
+                    }, { passive: false });
+                });
+
+                // 为 Note 内容添加滚轮事件
+                nodeEl.querySelectorAll('.note-content').forEach(noteContent => {
+                    noteContent.addEventListener('wheel', (e) => {
+                        // 检查内容是否超出可视区域
+                        const canScrollDown = noteContent.scrollHeight > noteContent.clientHeight;
+                        const canScrollUp = noteContent.scrollTop > 0;
+                        const canScroll = canScrollDown || canScrollUp;
+
+                        if (canScroll) {
+                            // 阻止事件冒泡，防止画布缩放
+                            e.stopPropagation();
+
+                            // 检查是否滚动到边界
+                            const isAtTop = noteContent.scrollTop <= 0 && e.deltaY < 0;
+                            const isAtBottom = noteContent.scrollTop + noteContent.clientHeight >= noteContent.scrollHeight && e.deltaY > 0;
+
+                            // 只有在没有到达边界时才阻止默认行为
+                            if (!isAtTop && !isAtBottom) {
+                                e.preventDefault();
+                                noteContent.scrollTop += e.deltaY;
+                            }
+                        }
+                    }, { passive: false });
+                });
 
                 canvas.appendChild(nodeEl);
             }

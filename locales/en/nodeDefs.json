@@ -402,11 +402,19 @@
   },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "Workflow save node that saves the ComfyUI workflow as a JSON file with support for custom filename, subfolder, and datetime placeholders.",
+    "description": "Workflow save node that saves the ComfyUI workflow as a JSON file, supporting three save modes (auto/standard/full), custom filename, subfolder, and datetime placeholders.",
     "inputs": {
       "anything": {
         "name": "Any Input",
         "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. (Optional - works without any input)"
+      },
+      "workflow_json": {
+        "name": "Workflow JSON",
+        "tooltip": "Complete workflow JSON string from frontend. Required for full mode, optional for auto/standard mode."
+      },
+      "save_mode": {
+        "name": "Save Mode",
+        "tooltip": "Save mode: auto (auto-detect, prefer full), standard (use extra_pnginfo), full (require frontend workflow_json)"
       },
       "filename_prefix": {
         "name": "Filename Prefix",
@@ -421,6 +429,10 @@
       "0": {
         "name": "Any Output",
         "tooltip": "Pass through the input data to downstream nodes"
+      },
+      "1": {
+        "name": "Workflow Info",
+        "tooltip": "Workflow information summary including save status, node count, and data overview. Useful for debugging and verification."
       }
     }
   },

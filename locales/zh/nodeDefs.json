@@ -402,11 +402,19 @@
   },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "工作流保存节点，将ComfyUI工作流保存为JSON文件，支持自定义文件名、子文件夹和日期时间标识符。",
+    "description": "工作流保存节点，将ComfyUI工作流保存为JSON文件，支持三种保存模式(auto/standard/full)、自定义文件名、子文件夹和日期时间标识符。",
     "inputs": {
       "anything": {
         "name": "任意输入",
         "tooltip": "任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中。(可选 - 不连接也能正常工作)"
+      },
+      "workflow_json": {
+        "name": "工作流JSON",
+        "tooltip": "前端传来的完整工作流JSON字符串。full模式必需，auto/standard模式可选。"
+      },
+      "save_mode": {
+        "name": "保存模式",
+        "tooltip": "保存模式: auto(自动检测，优先完整数据), standard(使用extra_pnginfo), full(需要前端workflow_json)"
       },
       "filename_prefix": {
         "name": "文件名前缀",
@@ -421,6 +429,10 @@
       "0": {
         "name": "任意输出",
         "tooltip": "透传输入的数据，可直接传递给下游节点"
+      },
+      "1": {
+        "name": "工作流信息",
+        "tooltip": "工作流信息摘要，包含保存状态、节点数量和数据概览。可用于调试和验证。"
       }
     }
   },

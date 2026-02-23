@@ -148,23 +148,6 @@ app.registerExtension({
                 console.warn("[Xz3r0-Nodes] Failed to create menu button:", e);
             }
         }
-
-        // 如果新版 UI 不可用，创建备用按钮（兼容旧版 ComfyUI）
-        // if (!menuButtonCreated) {
-        //     const showButton = document.createElement("button");
-        //     showButton.className = "comfy-settings-btn";
-        //     showButton.textContent = "♾️";
-        //     showButton.style.cssText = "position: absolute; right: 72px; cursor: pointer;";
-        //     showButton.title = "Xz3r0 Window";
-        //     showButton.onclick = () => Xz3r0Window.toggle();
-
-        //     const settingsBtn = document.querySelector(".comfy-settings-btn");
-        //     if (settingsBtn) {
-        //         settingsBtn.before(showButton);
-        //     } else {
-        //         document.body.appendChild(showButton);
-        //     }
-        // }
     }
 });
 
