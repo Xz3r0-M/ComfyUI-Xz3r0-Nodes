@@ -346,7 +346,8 @@ class XWorkflowSave(io.ComfyNode):
                 "-" * 50,
                 "Data Overview:",
                 f"  Node Count: {analysis['node_count']}",
-                f"  Complete Metadata: {'Yes' if analysis['is_complete'] else 'No'}",
+                f"  Complete Metadata: "
+                f"{'Yes' if analysis['is_complete'] else 'No'}",
             ]
         )
 
@@ -397,7 +398,8 @@ class XWorkflowSave(io.ComfyNode):
         elif save_mode == "standard":
             # standard 模式: 显示标准数据信息
             info_lines.append(
-                "Mode Description: Using ComfyUI standard data (prompt + workflow)"
+                "Mode Description: Using ComfyUI "
+                "standard data (prompt + workflow)"
             )
             info_lines.append("")
             info_lines.append("Data Composition:")
@@ -461,7 +463,8 @@ class XWorkflowSave(io.ComfyNode):
 
         if save_mode == "full":
             info_lines.append(
-                "  This mode saves data with complete localized names and widget info"
+                "  This mode saves data with complete "
+                "localized names and widget info"
             )
             info_lines.append(
                 "  Suitable for scenarios requiring full UI state preservation"
@@ -475,10 +478,12 @@ class XWorkflowSave(io.ComfyNode):
             )
         else:
             info_lines.append(
-                "  Auto mode automatically selects the best available data source"
+                "  Auto mode automatically selects "
+                "the best available data source"
             )
             info_lines.append(
-                "  Prioritizes full data, falls back to standard data if unavailable"
+                "  Prioritizes full data, falls back "
+                "to standard data if unavailable"
             )
 
         info_lines.append("")
