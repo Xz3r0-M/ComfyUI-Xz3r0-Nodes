@@ -311,20 +311,20 @@ class XWorkflowSave(io.ComfyNode):
         relative_path: Path,
     ) -> str:
         """
-        Generate workflow_info output content
+        生成 workflow_info 输出内容
 
-        Generate different information summaries based on save mode:
-        - full mode: Display key information summary of complete workflow
-        - auto/standard mode: Display save status and data overview
+        根据保存模式生成不同的信息摘要:
+        - full 模式: 显示完整工作流的关键信息摘要
+        - auto/standard 模式: 显示保存状态和数据概览
 
         Args:
-            filename: Saved filename
-            workflow_data: Saved workflow data
-            save_mode: Save mode used
-            relative_path: Relative save path (based on ComfyUI output directory)
+            filename: 保存的文件名
+            workflow_data: 保存的工作流数据
+            save_mode: 使用的保存模式
+            relative_path: 相对保存路径 (基于 ComfyUI 输出目录)
 
         Returns:
-            str: Workflow information string
+            str: 工作流信息字符串
         """
         info_lines = [
             "=" * 50,
@@ -337,10 +337,10 @@ class XWorkflowSave(io.ComfyNode):
             "",
         ]
 
-        # Analyze data
+        # 分析数据
         analysis = cls._analyze_workflow(workflow_data)
 
-        # Data overview
+        # 数据概览
         info_lines.extend(
             [
                 "-" * 50,
@@ -355,11 +355,11 @@ class XWorkflowSave(io.ComfyNode):
         if analysis["has_widget"]:
             info_lines.append("  - Contains widget info")
 
-        # Add mode-specific information
+        # 添加模式特定的信息
         info_lines.extend(["", "-" * 50, "Data Content:"])
 
         if save_mode == "full":
-            # full mode: Display key information of complete workflow
+            # full 模式: 显示完整工作流的关键信息
             info_lines.append(
                 "Mode Description: Using full workflow data from frontend"
             )
@@ -380,7 +380,7 @@ class XWorkflowSave(io.ComfyNode):
             info_lines.append(f"  - Total Nodes: {len(nodes)}")
             info_lines.append(f"  - Total Links: {len(links)}")
 
-            # Display node type statistics
+            # 显示节点类型统计
             if nodes:
                 node_types = {}
                 for node in nodes:
@@ -391,11 +391,11 @@ class XWorkflowSave(io.ComfyNode):
                 info_lines.append("Node Type Statistics:")
                 for node_type, count in sorted(
                     node_types.items(), key=lambda x: x[1], reverse=True
-                )[:10]:  # Show top 10 only
+                )[:10]:  # 只显示前10个
                     info_lines.append(f"  - {node_type}: {count}")
 
         elif save_mode == "standard":
-            # standard mode: Display standard data information
+            # standard 模式: 显示标准数据信息
             info_lines.append(
                 "Mode Description: Using ComfyUI standard data (prompt + workflow)"
             )
@@ -425,14 +425,14 @@ class XWorkflowSave(io.ComfyNode):
             else:
                 info_lines.append("  - workflow: None")
 
-        else:  # auto mode
-            # auto mode: Display auto-detection results
+        else:  # auto 模式
+            # auto 模式: 显示自动检测结果
             info_lines.append(
                 "Mode Description: Auto-detect and select best data source"
             )
             info_lines.append("")
 
-            # Determine which data was actually used
+            # 确定实际使用了哪种数据
             has_nodes = "nodes" in workflow_data
             has_prompt = "prompt" in workflow_data
 
@@ -450,7 +450,7 @@ class XWorkflowSave(io.ComfyNode):
             else:
                 info_lines.append("Actually Used: No valid data recognized")
 
-        # Add tips
+        # 添加提示
         info_lines.extend(
             [
                 "",
