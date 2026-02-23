@@ -454,7 +454,8 @@
             z-index: 10;
             box-shadow: 0 4px 12px var(--shadow-node);
             transition: box-shadow 0.1s, border-color 0.3s;
-            overflow: visible;
+            overflow: hidden;
+            resize: horizontal;
         }
 
         .node:hover {
@@ -612,21 +613,6 @@
         .param-value::-webkit-scrollbar-thumb {
             background: var(--border-tertiary);
             border-radius: 2px;
-        }
-
-        .resize-handle {
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            width: 24px;
-            height: 24px;
-            cursor: se-resize;
-            background: linear-gradient(135deg, transparent 50%, var(--resize-handle) 50%);
-            border-radius: 0 0 7px 0;
-        }
-
-        .resize-handle:hover {
-            background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
         }
 
         .note-node .node-body {
@@ -1807,7 +1793,6 @@
                         <div class="node-body">
                             <div class="note-content">${escapeHtml(noteData?.text || '')}</div>
                         </div>
-                        <div class="resize-handle" data-node="${nodeId}"></div>
                     `;
                 } else {
                     const inputs = nodeData.inputs || {};
@@ -1838,7 +1823,6 @@
                                 </div>
                             `).join('')}
                         </div>
-                        <div class="resize-handle" data-node="${nodeId}"></div>
                     `;
                 }
 
@@ -1894,34 +1878,6 @@
                         setTimeout(updateTransform, 0);
                     });
                 });
-
-                const resizeHandle = nodeEl.querySelector('.resize-handle');
-                if (resizeHandle) {
-                    let isResizing = false;
-                    let resizeStartX, resizeStartY, startWidth;
-                    const MIN_WIDTH = 180;
-
-                    resizeHandle.addEventListener('mousedown', (e) => {
-                        isResizing = true;
-                        resizeStartX = e.clientX;
-                        resizeStartY = e.clientY;
-                        startWidth = nodeEl.offsetWidth;
-                        e.preventDefault();
-                        e.stopPropagation();
-                    });
-
-                    document.addEventListener('mousemove', (e) => {
-                        if (isResizing) {
-                            const dx = (e.clientX - resizeStartX) / scale;
-                            const newWidth = Math.max(MIN_WIDTH, startWidth + dx);
-                            nodeEl.style.width = newWidth + 'px';
-                        }
-                    });
-
-                    document.addEventListener('mouseup', () => {
-                        isResizing = false;
-                    });
-                }
 
                 // 为参数值添加滚轮事件，实现悬停时滚动
                 nodeEl.querySelectorAll('.param-value').forEach(paramValue => {
