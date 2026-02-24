@@ -3,9 +3,13 @@
 ================
 
 这个模块包含工作流JSON保存相关的节点。
-支持两种保存模式：
-1. 标准模式：保存 prompt + extra_pnginfo.workflow（简化数据）
-2. 完整模式：保存前端传来的完整 workflow（包含 localized_name 和 widget）
+支持四种保存模式：
+1. Auto：自动检测，优先使用 Prompt+FullWorkflow，
+   如前端扩展未加载则回退到 Standard
+2. Standard：保存 prompt + extra_pnginfo.workflow（简化数据）
+3. FullWorkflow：保存前端传来的完整 workflow
+   （包含 localized_name 和 widget）
+4. Prompt+FullWorkflow：同时保存 prompt 和完整 workflow
    通过自定义 API 接口 /xz3r0/xworkflowsave/capture 接收数据
 """
 
@@ -24,10 +28,13 @@ class XWorkflowSave(io.ComfyNode):
     """
     XWorkflowSave 工作流保存节点
 
-    将ComfyUI工作流保存为JSON文件，支持两种保存模式：
-    - 标准模式：保存 prompt + workflow（简化数据，来自 extra_pnginfo）
-    - 完整模式：保存完整 workflow（包含 localized_name 和 widget，
-      来自前端 API）
+    将ComfyUI工作流保存为JSON文件，支持四种保存模式：
+    - Auto：自动检测，优先使用 Prompt+FullWorkflow，
+            如前端扩展未加载则回退到 Standard
+    - Standard：保存 prompt + workflow（简化数据，来自 extra_pnginfo）
+    - FullWorkflow：保存完整 workflow（包含 localized_name 和 widget，
+                    来自前端 API）
+    - Prompt+FullWorkflow：同时保存 prompt 和完整 workflow
 
     功能:
         - 保存工作流到ComfyUI默认输出目录
@@ -39,7 +46,8 @@ class XWorkflowSave(io.ComfyNode):
 
     输入:
         anything: 任意输入(用于工作流连接，不处理数据，可选) (ANY)
-        save_mode: 保存模式选择 (COMBO)
+        save_mode: 保存模式选择 (COMBO: Auto/Standard/FullWorkflow/
+                   Prompt+FullWorkflow)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
@@ -54,9 +62,9 @@ class XWorkflowSave(io.ComfyNode):
         (anything输入为可选，可以不连接任何数据)
 
     技术说明:
-        完整模式通过前端扩展自动捕获 workflow 数据，
-        并通过 /xz3r0/xworkflowsave/capture API 发送到后端存储。
-        节点执行时通过 prompt_id 从存储中获取数据。
+        FullWorkflow 和 Prompt+FullWorkflow 模式通过前端扩展自动捕获
+        workflow 数据，并通过 /xz3r0/xworkflowsave/capture API 发送到
+        后端存储。节点执行时通过 unique_id 从存储中获取数据。
 
     """
 
@@ -69,9 +77,11 @@ class XWorkflowSave(io.ComfyNode):
             category="♾️ Xz3r0/File-Processing",
             description=(
                 "Workflow save node that saves the ComfyUI workflow as a "
-                "JSON file. Supports both standard mode (simplified data) "
-                "and full mode (complete workflow with localized_name). "
-                "Full mode uses custom API to receive data from frontend."
+                "JSON file. Supports four save modes: Auto (auto-detect), "
+                "Standard (prompt+workflow), FullWorkflow (complete "
+                "workflow with localized_name), and Prompt+FullWorkflow "
+                "(both). FullWorkflow modes use custom API to receive "
+                "data from frontend."
             ),
             inputs=[
                 io.AnyType.Input(

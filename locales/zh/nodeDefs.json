@@ -402,19 +402,15 @@
   },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "工作流保存节点，将ComfyUI工作流保存为JSON文件，支持三种保存模式(auto/standard/full)、自定义文件名、子文件夹和日期时间标识符。",
+    "description": "将ComfyUI工作流保存为JSON文件，支持四种保存模式（Auto自动检测、Standard标准模式、FullWorkflow完整工作流模式、Prompt+FullWorkflow组合模式），支持自定义文件名、子文件夹和日期时间标识符。",
     "inputs": {
       "anything": {
         "name": "任意输入",
-        "tooltip": "任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中。(可选 - 不连接也能正常工作)"
-      },
-      "workflow_json": {
-        "name": "工作流JSON",
-        "tooltip": "前端传来的完整工作流JSON字符串。full模式必需，auto/standard模式可选。"
+        "tooltip": "任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中。可选 - 不连接任何数据也能正常工作。"
       },
       "save_mode": {
         "name": "保存模式",
-        "tooltip": "保存模式: Auto(自动检测，优先Prompt+FullWorkflow), Standard(使用extra_pnginfo), FullWorkflow(仅完整工作流), Prompt+FullWorkflow(prompt+完整工作流)",
+        "tooltip": "保存模式: Auto(自动检测，优先Prompt+FullWorkflow，如前端扩展未加载则回退到Standard), Standard(使用extra_pnginfo保存prompt+workflow), FullWorkflow(仅保存完整工作流，需要前端API数据), Prompt+FullWorkflow(保存prompt+完整工作流，需要前端API数据)",
         "options": {
           "Auto": "自动",
           "Standard": "标准",
@@ -424,21 +420,21 @@
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%(年), %m%(月), %d%(日), %H%(时), %M%(分), %S%(秒)。默认: ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "子文件夹名称(不支持路径分隔符/和\\)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%。默认: Workflows"
       }
     },
     "outputs": {
-      "0": {
+      "anything": {
         "name": "任意输出",
         "tooltip": "透传输入的数据，可直接传递给下游节点"
       },
-      "1": {
+      "workflow_info": {
         "name": "工作流信息",
-        "tooltip": "工作流信息摘要，包含保存状态、节点数量和数据概览。可用于调试和验证。"
+        "tooltip": "工作流信息摘要，包含保存状态、节点数量、数据概览和文件路径。可用于调试和验证。"
       }
     }
   },

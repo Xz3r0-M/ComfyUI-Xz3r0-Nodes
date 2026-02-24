@@ -402,43 +402,39 @@
   },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "Workflow save node that saves the ComfyUI workflow as a JSON file, supporting three save modes (auto/standard/full), custom filename, subfolder, and datetime placeholders.",
+    "description": "Saves ComfyUI workflow as JSON file, supporting four save modes (Auto auto-detect, Standard mode, FullWorkflow mode, Prompt+FullWorkflow combined mode), custom filename, subfolder, and datetime placeholders.",
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. (Optional - works without any input)"
-      },
-      "workflow_json": {
-        "name": "Workflow JSON",
-        "tooltip": "Complete workflow JSON string from frontend. Required for full mode, optional for auto/standard mode."
+        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. Optional - node works without any input."
       },
       "save_mode": {
         "name": "Save Mode",
-        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow), Standard (use extra_pnginfo), FullWorkflow (full workflow only), Prompt+FullWorkflow (prompt + full workflow)",
+        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow, fallback to Standard if frontend extension not loaded), Standard (use extra_pnginfo to save prompt+workflow), FullWorkflow (save full workflow only, requires frontend API data), Prompt+FullWorkflow (save prompt + full workflow, requires frontend API data)",
         "options": {
           "Auto": "Auto",
           "Standard": "Standard",
-          "FullWorkflow": "Full Workflow",
-          "Prompt+FullWorkflow": "Prompt + Full Workflow"
+          "FullWorkflow": "FullWorkflow",
+          "Prompt+FullWorkflow": "Prompt+FullWorkflow"
         }
       },
       "filename_prefix": {
         "name": "Filename Prefix",
-        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%(year), %m%(month), %d%(day), %H%(hour), %M%(minute), %S%(second). Default: ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%"
       },
       "subfolder": {
         "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "Subfolder name (path separators / and \\ not allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%. Default: Workflows"
       }
     },
     "outputs": {
-      "0": {
+      "anything": {
         "name": "Any Output",
         "tooltip": "Pass through the input data to downstream nodes"
       },
-      "1": {
+      "workflow_info": {
         "name": "Workflow Info",
-        "tooltip": "Workflow information summary including save status, node count, and data overview. Useful for debugging and verification."
+        "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
       }
     }
   },
