@@ -414,7 +414,13 @@
       },
       "save_mode": {
         "name": "保存模式",
-        "tooltip": "保存模式: auto(自动检测，优先完整数据), standard(使用extra_pnginfo), full(需要前端workflow_json)"
+        "tooltip": "保存模式: Auto(自动检测，优先Prompt+FullWorkflow), Standard(使用extra_pnginfo), FullWorkflow(仅完整工作流), Prompt+FullWorkflow(prompt+完整工作流)",
+        "options": {
+          "Auto": "自动",
+          "Standard": "标准",
+          "FullWorkflow": "完整工作流",
+          "Prompt+FullWorkflow": "Prompt+完整工作流"
+        }
       },
       "filename_prefix": {
         "name": "文件名前缀",

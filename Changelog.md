@@ -1,53 +1,71 @@
-# 更新日志
+# 更新日志 | Changelog
 ---
 
 ## v1.4.0 主要更新
 
 ### 1. ⭐ 新增 `ComfyUI.Xz3r0.XWorkflowSave` (`xworkflowsave_extension.js`) 网页扩展
-- 从ComfyUI网页直接捕获完整工作流元数据给 `XWorkflowSave` 节点使用
-
-### 2. 🛠️ 增强 `XworkflowSave` 节点
-- 新增3种JSON保存模式: `auto`, `standard`, `full` (默认为: `auto` )
-- `auto` 模式会优先使用 `full` 模式, 不可用时自动回退到 `standard` 模式以保证兼容性
-- `standard` 模式使用ComfyUI标准后端API来获取工作流元数据, 优点: ComfyUI官方API支持, 缺点: 工作流元数据不完整, ( `note` 和 `markdown note` 节点不保存在元数据中)
-- `full` 模式使用专门创建的网页扩展 `xworkflowsave_extension.js` 来捕获前端网页中完整的工作流元数据，数据完整性与ComfyUI网页原生的保存工作流功能`Save`和`Save As`所一致 (`note` 和 `markdown note` 节点能够保存在元数据中)
+- 从ComfyUI网页直接捕获完整工作流元数据
+### 2. ⭐ 新增 `xworkflowsave_api` (自定义API)
+- 将 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展捕获的完整工作流元数据通过API传递给 `XWorkflowSave` 节点使用
+### 3. 🛠️ 增强 `XWorkflowSave` 节点
+- 新增3种JSON保存模式: Auto, Standard, FullWorkflow, Prompt+FullWorkflow (默认为: `Auto` )
+- `Auto` 模式默认会优先使用 `Prompt+FullWorkflow` 模式, 不可用时自动回退到 `Standard` 模式以保证兼容性
+- `Standard` 模式使用ComfyUI标准后端API来获取工作流元数据 (prompt + 标准workflow), 优点: ComfyUI官方API支持, 缺点: 标准workflow工作流元数据不完整 (`note` 和 `markdown note` 节点不保存在元数据中❌)
+- `FullWorkflow` 模式使用专门创建的网页扩展 `xworkflowsave_extension.js` 来捕获前端网页中更为完整的工作流元数据. 优点: 数据完整性与ComfyUI网页原生的保存工作流功能 `Save` 和 `Save As` 所一致 (`note` 和 `markdown note` 节点能够保存在元数据中✅), 缺点: 依赖网页扩展并且非ComfyUI官方原生支持 (如果ComfyUI官方将来改动相关网页代码可能会导致出错)
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="Button" width="200">
-- 新增文本框, 只用于网页扩展捕获给 `full` 模式的工作流元数据. 当模式为 `standard` 时, 文本框不会有(更新)内容
+
+- `Prompt+FullWorkflow` (优先推荐) 模式使用ComfyUI标准后端API来获取prompt字段元数据, 以及使用 `xworkflowsave_extension.js` 网页扩展来捕获前端网页中完整的工作流元数据, 优点: 所有模式中最为完整的工作流元数据, 缺点: 依赖网页扩展并且非ComfyUI官方原生支持
 - 新增 `工作流信息` 字符串输出端口, 可以检查保存信息
 
-### 3. 🛠️ 增强 `XMetadataWorkflow` 网页工具
+### 4. 🛠️ 增强 `XMetadataWorkflow` 网页工具
 - 支持完整工作流数据的JSON:
-    - ✅ ComfyUI网页原生的保存工作流功能`Save`和`Save As`所保存的JSON (自动保存在ComfyUI目录下 `user\default\workflows`)
-    - ✅ `XWorkflowSave` 节点 `full` 模式保存的JSON
+    - ✅ ComfyUI网页原生的保存工作流功能 `Save` 和 `Save As` 所保存的JSON (自动保存在ComfyUI目录下 `user\default\workflows`)
+    - ✅ `XWorkflowSave` 节点 `FullWorkflow` 模式保存的JSON
+    - ✅ `XWorkflowSave` 节点 `Prompt+FullWorkflow` 模式保存的JSON (合并得到最为完整的工作流元数据可视化)
+- 支持 `FullWorkflow` 元数据中的 `note` 和 `markdown note` 节点显示
+- 新增左边栏的隐藏/展开功能按钮
+- 支持 `Ctrl+鼠标左键` 框选多个节点并移动 (双击空白处 或 按 `ESC` 键取消框选)
 - 为节点内的长内容添加滚动条
-- 支持显示工作流中的 `note` 和 `markdown note` 节点
-- 修复一些之前在硬编码中还没有被本地化的语言
+- 为节点内的超长内容添加虚拟滚动以提升网页浏览性能
+- 修复一些之前在硬编码中还没有被本地化的文字
+- 修复一些BUG
 
-注意: `XMetadataWorkflow` 网页工具对于使用自行创建前端界面的第三方自定义节点是不兼容的 (网页工具只会显示存在于元数据中的内容)
+### 注意:
+- `XMetadataWorkflow` 网页工具对于使用自行创建前端界面的第三方自定义节点是不兼容的 (网页工具只会显示存在于元数据中的内容)
+- 从 `v1.3.0` 到 `v1.4.0` 新增的 (代码) 功能和节点以及工具我都只做了非常简单的测试, 代码有问题之后再说吧. 我需要缓一缓😵 (i need a doctor, call me a doctor)
 
 ## v1.4.0 Major Updates
 
 ### 1. ⭐ Added `ComfyUI.Xz3r0.XWorkflowSave` (`xworkflowsave_extension.js`) Web Extension
-- Captures complete workflow metadata directly from ComfyUI web interface for use with the `XWorkflowSave` node
+- Captures complete workflow metadata directly from the ComfyUI web interface
 
-### 2. 🛠️ Enhanced `XWorkflowSave` Node
-- Added 3 JSON save modes: `auto`, `standard`, `full` (default: `auto`)
-- `auto` mode prioritizes `full` mode, automatically falling back to `standard` mode when unavailable to ensure compatibility
-- `standard` mode uses ComfyUI's standard backend API to retrieve workflow metadata. Pros: ComfyUI official API support. Cons: Incomplete workflow metadata ( `note` and `markdown note` nodes are not saved in metadata)
-- `full` mode uses the specially created web extension `xworkflowsave_extension.js` to capture complete workflow metadata from the frontend web page. Data integrity is consistent with ComfyUI's native `Save` and `Save As` workflow functions ( `note` and `markdown note` nodes can be saved in metadata)
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="Button" width="200">
-- Added text box, used only for web extension to capture workflow metadata for `full` mode. When mode is `standard`, the text box will not have (updated) content
-- Added `Workflow Info` string output port to check save information
+### 2. ⭐ Added `xworkflowsave_api` (Custom API)
+- Transfers complete workflow metadata captured by the `ComfyUI.Xz3r0.XWorkflowSave` web extension to the `XWorkflowSave` node via API
 
-### 3. 🛠️ Enhanced `XMetadataWorkflow` Web Tool
-- Supports complete workflow data JSON:
-    - ✅ JSON saved by ComfyUI web native `Save` and `Save As` workflow functions (automatically saved in ComfyUI directory `user\default\workflows`)
-    - ✅ JSON saved by `XWorkflowSave` node in `full` mode
+### 3. 🛠️ Enhanced `XWorkflowSave` Node
+- Added 4 JSON save modes: Auto, Standard, FullWorkflow, Prompt+FullWorkflow (default: `Auto`)
+- `Auto` mode prioritizes `Prompt+FullWorkflow` mode by default, automatically falling back to `Standard` mode when unavailable for compatibility
+- `Standard` mode uses ComfyUI's standard backend API to get workflow metadata (prompt + standard workflow). Pros: Official ComfyUI API support. Cons: Standard workflow metadata is incomplete (`note` and `markdown note` nodes are not saved in metadata ❌)
+- `FullWorkflow` mode uses the specially created web extension `xworkflowsave_extension.js` to capture more complete workflow metadata from the frontend. Pros: Data completeness matches ComfyUI's native `Save` and `Save As` workflow functions (`note` and `markdown note` nodes can be saved in metadata ✅). Cons: Depends on web extension and is not officially supported by ComfyUI (may break if ComfyUI changes related web code in the future)
+- `Prompt+FullWorkflow` (Recommended) mode uses ComfyUI's standard backend API to get prompt field metadata, and uses the `xworkflowsave_extension.js` web extension to capture complete workflow metadata from the frontend. Pros: Most complete workflow metadata among all modes. Cons: Depends on web extension and is not officially supported by ComfyUI
+- Added `Workflow Info` string output port for checking save information
+
+### 4. 🛠️ Enhanced `XMetadataWorkflow` Web Tool
+- Supports JSON with complete workflow data:
+    - ✅ JSON saved by ComfyUI's native `Save` and `Save As` workflow functions (automatically saved in `user\default\workflows` under ComfyUI directory)
+    - ✅ JSON saved by `XWorkflowSave` node in `FullWorkflow` mode
+    - ✅ JSON saved by `XWorkflowSave` node in `Prompt+FullWorkflow` mode (merges to get the most complete workflow metadata visualization)
+- Supports display of `note` and `markdown note` nodes from `FullWorkflow` metadata
+- Added left sidebar hide/expand toggle button
+- Supports `Ctrl+Left Click` to box-select multiple nodes and move them (double-click empty space or press `ESC` to cancel selection)
 - Added scrollbars for long content within nodes
-- Supports displaying `note` and `markdown note` nodes in workflows
-- Fixed some previously hardcoded languages that were not localized
+- Added virtual scrolling for extremely long content to improve web browsing performance
+- Fixed some previously hardcoded text that wasn't localized
+- Fixed some bugs
 
-Note: `XMetadataWorkflow` web tool is incompatible with third-party custom nodes that use self-created frontend interfaces (the web tool will only display content that exists in metadata)
+### Notes:
+- `XMetadataWorkflow` web tool is incompatible with third-party custom nodes that create their own frontend interfaces (the tool only displays content that exists in the metadata)
+- From `v1.3.0` to `v1.4.0`, all newly added (code) features, nodes, and tools have only undergone very basic testing. If there are issues with the code, i'll deal with them later. I need a break😵 (i need a doctor, call me a doctor)
 
 ---
 

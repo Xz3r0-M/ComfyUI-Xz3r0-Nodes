@@ -38,9 +38,9 @@ ComfyUI-Xz3r0-Nodes 是一个ComfyUI自定义节点项目，当前主要目标�
 - ⌨️ 工作流节点 - 工作流元数据保存
 
 
-🧩 网页扩展工具 （数量总计：`1`）
+🧩 网页扩展工具 （数量总计：`2`）
 
-- ⌨️ 工作流工具 - 工作流元数据可视化查看工具
+- ⌨️ 工作流工具 - 工作流元数据可视化查看工具、XWorkflowSave网页扩展（捕获完整工作流元数据）
 
 ---
 
@@ -445,25 +445,42 @@ Latent保存节点，支持自定义文件名和元数据保存
 ### 📄 XWorkflowSave
 `♾️ Xz3r0/File-Processing`
 
-工作流保存节点，将ComfyUI工作流保存为JSON文件（适配 `XMetadataWorkflow`），支持自定义文件名和子文件夹
+工作流保存节点，将ComfyUI工作流保存为JSON文件（适配 `XMetadataWorkflow`），支持4种保存模式、自定义文件名和子文件夹
 
 **功能**:
 - 保存工作流到ComfyUI默认输出目录
+- 支持4种JSON保存模式: `Auto`, `Standard`, `FullWorkflow`, `Prompt+FullWorkflow`
 - 支持自定义文件名和子文件夹
 - 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
 - 路径安全防护 (防止路径遍历攻击)
 - 自动添加序列号防止覆盖(从00001开始)
 - 仅支持单级子文件夹创建
 - 保存工作流元数据 (prompt 和 workflow)
+- 工作流信息字符串输出，可检查保存状态
+
+**JSON保存模式说明**:
+
+| 模式 | 说明 | 优点 | 缺点 |
+|-----|------|------|------|
+| `Auto` (默认) | 自动模式，优先使用 `Prompt+FullWorkflow`，不可用时回退到 `Standard` | 智能选择最佳模式 | 依赖网页扩展 |
+| `Standard` | 使用ComfyUI标准后端API获取工作流元数据 | 官方API支持，兼容性好 | `note` 和 `markdown note` 节点不保存在元数据中❌ |
+| `FullWorkflow` | 使用网页扩展捕获前端完整工作流元数据 | 数据完整性与原生Save功能一致✅ | 依赖网页扩展，非官方原生支持 |
+| `Prompt+FullWorkflow` (推荐) | 结合标准API的prompt字段和网页扩展的完整workflow数据 | 所有模式中最完整的工作流元数据✅ | 依赖网页扩展，非官方原生支持 |
+
+**注意**: `FullWorkflow` 和 `Prompt+FullWorkflow` 模式依赖 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展
 
 **输入**:
 - `anything` (ANY): 任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中
 - `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
 - `subfolder` (STRING): 子文件夹名称 (默认：`Workflows`)
+- `save_mode` (下拉选择): JSON保存模式 (默认：`Auto`，可选：Auto, Standard, FullWorkflow, Prompt+FullWorkflow)
 
 **隐藏输入**:
 - `prompt` (PROMPT): 工作流提示词 (自动注入)
 - `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
+
+**输出**:
+- `workflow_info` (STRING): 工作流保存信息，显示保存模式和状态
 
 ---
 
@@ -474,23 +491,34 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 **功能**:
 - 支持多种文件格式：PNG图片、Latent文件、JSON工作流文件
+- 支持完整工作流数据的JSON（包括 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式保存的文件）
+- 支持显示 `note` 和 `markdown note` 节点内容
 - 简单的自动层级布局算法排列节点
 - 显示节点类型、参数和连接关系
 - 子图(Subgraph)自动颜色标记
 - 支持缩放、平移、自适应视图
 - 折叠/展开节点参数
 - 选中节点高亮相关连接
+- 左边栏隐藏/展开功能
+- `Ctrl+鼠标左键` 框选多个节点并移动 (双击空白处 或 按 `ESC` 键取消框选)
+- 节点内长内容滚动条支持
+- 超长内容虚拟滚动优化性能
 
 **支持的文件**:
 - PNG图片 (包含工作流元数据的生成图片)
 - Latent潜空间文件 (.latent)
-- JSON工作流文件 (适配 `XWorkflowSave` 生成的JSON文件，**不支持**ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
+- JSON工作流文件:
+  - ✅ ComfyUI网页原生的 `Save` 和 `Save As` 所保存的JSON (自动保存在 `user\default\workflows`)
+  - ✅ `XWorkflowSave` 节点 `FullWorkflow` 模式保存的JSON
+  - ✅ `XWorkflowSave` 节点 `Prompt+FullWorkflow` 模式保存的JSON (最完整的元数据)
+  - ⚠️ ComfyUI网页导出功能的JSON文件 (缺少 prompt 字段，会导致缺失节点参数)
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="XWorkflowSave Extension" width="200">
 
 **技术说明**:
-- 只使用 prompt 字段格式数据 (ComfyUI API)
+- 优先使用完整工作流数据 (如果JSON中包含)
 - 子图通过节点ID中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
 - 节点位置使用简单的自动排列算法
-- 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式元数据会导致某些节点或参数不会显示在窗口视图中(比如： `Markdown Note`)
+- 对于使用自行创建前端界面的第三方自定义节点可能不兼容 (只显示存在于元数据中的内容)
 
 **两种使用方式**:
 1. **在ComfyUI中使用（集成）**: 点击ComfyUI页面顶部菜单栏的 ♾️ 按钮，可打开或关闭浮动窗口，已将此网页工具嵌入到该浮动窗口中
@@ -521,6 +549,27 @@ Latent保存节点，支持自定义文件名和元数据保存
 - ComfyUI 页面 ➡️ 设置 ➡️ 扩展栏 ➡️ 点击扩展列表中此扩展 `ComfyUI.Xz3r0.xz3r0window` 右侧的开关按钮为关闭 ➡️ 刷新网页后顶部菜单栏的按钮就会消失
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bmclose.png" alt="Disabled button" width="700">
 
+---
+
+### 💾 XWorkflowSave 网页扩展
+`ComfyUI网页扩展 - xworkflowsave_extension.js`
+
+从ComfyUI网页直接捕获完整工作流元数据，为 `XWorkflowSave` 节点提供 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式所需的数据
+
+**功能**:
+- 捕获前端网页中的完整工作流元数据（包括 `note` 和 `markdown note` 节点）
+- 通过自定义API将数据传递给 `XWorkflowSave` 节点
+- 数据完整性与ComfyUI网页原生的 `Save` 和 `Save As` 功能一致
+
+**使用方式**:
+- 扩展会自动加载，无需手动操作
+- 在 `XWorkflowSave` 节点选择 `FullWorkflow` 或 `Prompt+FullWorkflow` 模式时自动使用
+- 如果扩展未加载或不可用，`Auto` 模式会自动回退到 `Standard` 模式
+
+**注意事项**:
+- 此扩展非ComfyUI官方原生支持，如果ComfyUI官方将来改动相关网页代码可能会导致出错
+- 扩展加载后会在浏览器控制台输出日志信息
+
 </details>
 
 ---
@@ -545,9 +594,11 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xlatentload.py   # Latent加载节点
 │   ├── xlatentsave.py   # Latent保存节点
 │   ├── xstringgroup.py  # 字符串组合节点
+│   ├── xworkflowsave_api.py  # 工作流保存节点API
 │   └── xworkflowsave.py # 工作流保存节点
 ├── web/                 # 网页扩展目录
 │   ├── xz3r0window.js   # ComfyUI浮动窗口扩展
+│   ├── xworkflowsave_extension.js  # XWorkflowSave网页扩展
 │   └── xmetadataworkflow.html  # 工作流元数据查看器
 ├── locales/             # 国际化支持 (节点显示名称和提示)
 │   ├── en/              # 英文定义

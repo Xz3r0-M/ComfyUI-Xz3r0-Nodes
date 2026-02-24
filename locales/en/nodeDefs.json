@@ -414,7 +414,13 @@
       },
       "save_mode": {
         "name": "Save Mode",
-        "tooltip": "Save mode: auto (auto-detect, prefer full), standard (use extra_pnginfo), full (require frontend workflow_json)"
+        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow), Standard (use extra_pnginfo), FullWorkflow (full workflow only), Prompt+FullWorkflow (prompt + full workflow)",
+        "options": {
+          "Auto": "Auto",
+          "Standard": "Standard",
+          "FullWorkflow": "Full Workflow",
+          "Prompt+FullWorkflow": "Prompt + Full Workflow"
+        }
       },
       "filename_prefix": {
         "name": "Filename Prefix",
