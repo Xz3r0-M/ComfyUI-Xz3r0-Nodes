@@ -1182,8 +1182,7 @@
             }
         };
 
-        const browserLang = navigator.language || navigator.userLanguage || 'en';
-        let currentLang = browserLang.startsWith('zh') ? 'zh' : 'en';
+        let currentLang = localStorage.getItem('lang') || 'en';
 
         /**
          * 国际化翻译函数
@@ -1233,6 +1232,7 @@
                 document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentLang = btn.dataset.lang;
+                localStorage.setItem('lang', currentLang);
                 updateLanguage();
             });
         });

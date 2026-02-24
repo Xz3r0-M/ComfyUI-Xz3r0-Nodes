@@ -41,12 +41,117 @@
 
 import { app } from "../../scripts/app.js";
 
+// ============================================
+// 本地化支持 (i18n)
+// ============================================
+
+/**
+ * 翻译字典
+ * 英文为默认语言，中文为本地化支持
+ */
+const TRANSLATIONS = {
+    en: {
+        settingEnableName: "Enable Xz3r0 Floating Window ♾️",
+        settingEnableTooltip: "Show Xz3r0 floating window button in the menu bar",
+        windowTitle: "♾️ Xz3r0 Windows",
+        closeBtn: "Close",
+        menuTooltip: "Xz3r0 Window",
+        opacityLabel: "Opacity"
+    },
+    zh: {
+        settingEnableName: "启用 Xz3r0 浮动窗口 ♾️",
+        settingEnableTooltip: "在菜单栏显示 Xz3r0 浮动窗口按钮",
+        windowTitle: "♾️ Xz3r0 窗口",
+        closeBtn: "关闭",
+        menuTooltip: "Xz3r0 窗口",
+        opacityLabel: "透明度"
+    }
+};
+
+/**
+ * 获取当前语言设置
+ * 优先从 ComfyUI 设置读取，其次从 localStorage 读取
+ * @returns {string} 语言代码 (en, zh 等)
+ */
+function getCurrentLocale() {
+    // 尝试从 ComfyUI 的 setting store 获取
+    if (window.app?.extensionManager?.setting) {
+        const comfyLocale = window.app.extensionManager.setting.get('Comfy.Locale');
+        if (comfyLocale) {
+            // 处理 zh-TW, zh-CN 等变体
+            const mainLang = comfyLocale.split('-')[0];
+            return TRANSLATIONS[comfyLocale] ? comfyLocale : mainLang;
+        }
+    }
+
+    // 从 localStorage 获取
+    const stored = localStorage.getItem('Comfy.Locale');
+    if (stored) {
+        const mainLang = stored.split('-')[0];
+        return TRANSLATIONS[stored] ? stored : mainLang;
+    }
+
+    // 默认返回英文
+    return 'en';
+}
+
+/**
+ * 翻译函数
+ * 根据键获取对应语言的文本，如果没有则回退到英文
+ * @param {string} key - 翻译键
+ * @returns {string} 翻译后的文本
+ */
+function t(key) {
+    const locale = getCurrentLocale();
+    // 优先使用当前语言，如果不存在则回退到英文
+    return TRANSLATIONS[locale]?.[key] ?? TRANSLATIONS.en[key] ?? key;
+}
+
+/**
+ * 菜单按钮引用
+ */
+let menuButton = null;
+
+/**
+ * 窗口启用状态
+ */
+let windowEnabled = true;
+
+/**
+ * 更新菜单按钮显示状态
+ */
+function updateMenuButtonVisibility() {
+    if (!menuButton) return;
+    menuButton.element.style.display = windowEnabled ? "" : "none";
+    if (!windowEnabled && window.Xz3r0Window?.instance?.isVisible) {
+        window.Xz3r0Window.instance.hide();
+    }
+}
+
 /**
  * 注册 ComfyUI 扩展
  * 在 ComfyUI 初始化时设置窗口按钮和样式
  */
 app.registerExtension({
     name: "ComfyUI.Xz3r0.xz3r0window",
+
+    /**
+     * 扩展设置配置
+     */
+    settings: [
+        {
+            id: "Xz3r0.Window.Enabled",
+            get name() { return t('settingEnableName'); },
+            type: "boolean",
+            defaultValue: true,
+            get tooltip() { return t('settingEnableTooltip'); },
+            onChange: (value) => {
+                if (windowEnabled === value) return;
+                windowEnabled = value;
+                updateMenuButtonVisibility();
+            }
+        }
+    ],
 
     /**
      * 扩展初始化函数
@@ -188,31 +293,82 @@ app.registerExtension({
                 height: 24px;
                 cursor: nwse-resize;
             }
+            .xz3r0-opacity-control {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                position: absolute;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+            .xz3r0-opacity-label {
+                font-size: 11px;
+                color: var(--input-text, #fff);
+                opacity: 0.8;
+            }
+            .xz3r0-opacity-slider {
+                width: 80px;
+                height: 4px;
+                -webkit-appearance: none;
+                appearance: none;
+                background: var(--border-color, #3d3d3d);
+                border-radius: 2px;
+                outline: none;
+                cursor: pointer;
+            }
+            .xz3r0-opacity-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 12px;
+                height: 12px;
+                background: var(--input-text, #fff);
+                border-radius: 50%;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+            .xz3r0-opacity-slider::-webkit-slider-thumb:hover {
+                background: #ff69b4;
+            }
+            .xz3r0-opacity-slider::-moz-range-thumb {
+                width: 12px;
+                height: 12px;
+                background: var(--input-text, #fff);
+                border-radius: 50%;
+                cursor: pointer;
+                border: none;
+                transition: background 0.2s;
+            }
+            .xz3r0-opacity-slider::-moz-range-thumb:hover {
+                background: #ff69b4;
+            }
+            .xz3r0-opacity-value {
+                font-size: 11px;
+                color: var(--input-text, #fff);
+                opacity: 0.8;
+                min-width: 32px;
+                text-align: right;
+            }
         `;
         document.head.appendChild(style);
-
-        let menuButtonCreated = false;
 
         // 尝试在新版 ComfyUI UI 中添加菜单按钮
         if (app.menu?.settingsGroup) {
             try {
                 const { ComfyButton } = await import("../../scripts/ui/components/button.js");
-                const menuButton = new ComfyButton({
+                menuButton = new ComfyButton({
                     action: () => Xz3r0Window.toggle(),
-                    tooltip: "Xz3r0 Window",
+                    tooltip: t('menuTooltip'),
                     content: "♾️",
                 });
                 app.menu.settingsGroup.append(menuButton);
-                menuButtonCreated = true;
+                // 根据设置显示/隐藏按钮
+                updateMenuButtonVisibility();
             } catch (e) {
                 console.warn("[Xz3r0-Nodes] Failed to create menu button:", e);
             }
         }
     }
 });
-
-// localStorage 键名，用于保存窗口状态
-const STORAGE_KEY = "xz3r0-metadataworkflow-state";
 
 /**
  * Xz3r0Window 窗口管理对象
@@ -223,35 +379,19 @@ const Xz3r0Window = {
     instance: null,
 
     /**
-     * 从 localStorage 加载窗口状态
-     * @returns {Object|null} 保存的状态对象，包含 left, top, width, height
+     * 加载窗口状态（不再使用 localStorage）
+     * @returns {null} 始终返回 null，使用默认状态
      */
     loadState() {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                return JSON.parse(saved);
-            }
-        } catch (e) {
-            console.warn("[Xz3r0-Nodes] Failed to load window state:", e);
-        }
         return null;
     },
 
     /**
-     * 保存窗口状态到 localStorage
+     * 保存窗口状态（不再使用 localStorage）
      * @param {Object} state - 窗口状态对象
-     * @param {string} state.left - 窗口左边距
-     * @param {string} state.top - 窗口上边距
-     * @param {string} state.width - 窗口宽度
-     * @param {string} state.height - 窗口高度
      */
     saveState(state) {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        } catch (e) {
-            console.warn("[Xz3r0-Nodes] Failed to save window state:", e);
-        }
+        // 不再保存到 localStorage
     },
 
     /**
@@ -283,36 +423,52 @@ const Xz3r0Window = {
      * @returns {Object} 窗口实例对象，包含 show/hide/destroy 方法
      */
     create() {
-        const savedState = this.loadState();
         const windowEl = document.createElement("div");
         windowEl.className = "xz3r0-floating-window";
 
-        // 设置窗口尺寸
-        const width = savedState?.width || "900px";
-        const height = savedState?.height || "700px";
-        windowEl.style.width = width;
-        windowEl.style.height = height;
+        // 默认尺寸
+        const DEFAULT_WIDTH = 900;
+        const DEFAULT_HEIGHT = 700;
 
-        // 计算位置：如果有保存的位置则使用，否则居中显示
-        if (savedState?.left && savedState?.top) {
-            windowEl.style.left = savedState.left;
-            windowEl.style.top = savedState.top;
-        } else {
-            // 第一次打开，居中显示
-            const numericWidth = parseInt(width, 10);
-            const numericHeight = parseInt(height, 10);
-            const centerLeft = Math.max(0, (window.innerWidth - numericWidth) / 2);
-            const centerTop = Math.max(0, (window.innerHeight - numericHeight) / 2);
-            windowEl.style.left = `${centerLeft}px`;
-            windowEl.style.top = `${centerTop}px`;
-        }
+        // 设置窗口尺寸
+        windowEl.style.width = `${DEFAULT_WIDTH}px`;
+        windowEl.style.height = `${DEFAULT_HEIGHT}px`;
+
+        // 居中显示
+        const centerLeft = Math.max(0, (window.innerWidth - DEFAULT_WIDTH) / 2);
+        const centerTop = Math.max(0, (window.innerHeight - DEFAULT_HEIGHT) / 2);
+        windowEl.style.left = `${centerLeft}px`;
+        windowEl.style.top = `${centerTop}px`;
 
         const header = document.createElement("div");
         header.className = "xz3r0-floating-window-header";
 
         const title = document.createElement("span");
         title.className = "xz3r0-floating-window-title";
-        title.textContent = "♾️ Xz3r0 Windows";
+        title.textContent = t('windowTitle');
+
+        // 透明度控制组件
+        const opacityControl = document.createElement("div");
+        opacityControl.className = "xz3r0-opacity-control";
+
+        const opacityLabel = document.createElement("span");
+        opacityLabel.className = "xz3r0-opacity-label";
+        opacityLabel.textContent = t('opacityLabel');
+
+        const opacitySlider = document.createElement("input");
+        opacitySlider.type = "range";
+        opacitySlider.className = "xz3r0-opacity-slider";
+        opacitySlider.min = "20";
+        opacitySlider.max = "100";
+        opacitySlider.value = "100";
+
+        const opacityValue = document.createElement("span");
+        opacityValue.className = "xz3r0-opacity-value";
+        opacityValue.textContent = "100%";
+
+        opacityControl.appendChild(opacityLabel);
+        opacityControl.appendChild(opacitySlider);
+        opacityControl.appendChild(opacityValue);
 
         const controls = document.createElement("div");
         controls.className = "xz3r0-floating-window-controls";
@@ -320,10 +476,11 @@ const Xz3r0Window = {
         const closeBtn = document.createElement("button");
         closeBtn.className = "xz3r0-floating-window-btn";
         closeBtn.innerHTML = "❌";
-        closeBtn.title = "Close";
+        closeBtn.title = t('closeBtn');
 
         controls.appendChild(closeBtn);
         header.appendChild(title);
+        header.appendChild(opacityControl);
         header.appendChild(controls);
 
         const content = document.createElement("div");
@@ -376,17 +533,19 @@ const Xz3r0Window = {
 
         /**
          * 使用 requestAnimationFrame 优化拖拽性能
+         * 限制窗口位置，确保窗口四边都不超出屏幕边界
          * @param {number} x - 目标 X 坐标
          * @param {number} y - 目标 Y 坐标
          */
         const updatePosition = (x, y) => {
-            const headerHeight = 40;
-            const minVisible = 100;
+            // 窗口左边不能小于0（不能超出屏幕左边缘）
+            // 窗口右边不能大于屏幕宽度（不能超出屏幕右边缘）
+            const maxLeft = window.innerWidth - windowEl.offsetWidth;
+            const newLeft = Math.max(0, Math.min(maxLeft, x));
 
-            const minLeft = -windowEl.offsetWidth + minVisible;
-            const maxLeft = window.innerWidth - minVisible;
-            const maxTop = window.innerHeight - headerHeight;
-            const newLeft = Math.max(minLeft, Math.min(maxLeft, x));
+            // 窗口顶部不能小于0（不能超出屏幕上边缘）
+            // 窗口底部不能大于屏幕高度（不能超出屏幕下边缘）
+            const maxTop = window.innerHeight - windowEl.offsetHeight;
             const newTop = Math.max(0, Math.min(maxTop, y));
 
             windowEl.style.left = `${newLeft}px`;
@@ -444,20 +603,36 @@ const Xz3r0Window = {
 
                 // 根据拉伸方向计算新尺寸和位置
                 if (resizeDirection.includes('e')) {
-                    newWidth = Math.max(RESIZE_MIN_WIDTH, resizeStartWidth + dx);
+                    // 限制右边不超出屏幕
+                    const maxWidth = window.innerWidth - resizeStartLeft;
+                    newWidth = Math.max(RESIZE_MIN_WIDTH, Math.min(resizeStartWidth + dx, maxWidth));
                 }
                 if (resizeDirection.includes('w')) {
-                    const maxDx = resizeStartWidth - RESIZE_MIN_WIDTH;
-                    const clampedDx = Math.min(dx, maxDx);
+                    // 限制左边不超出屏幕
+                    // 向左拉伸时，dx为负值，窗口宽度增加，left减小
+                    // 限制条件：newLeft >= 0 且 newWidth >= RESIZE_MIN_WIDTH
+                    // dx的最小值（最负）受限于：resizeStartLeft + dx >= 0 即 dx >= -resizeStartLeft
+                    // dx的最大值（最正）受限于：resizeStartWidth - dx >= RESIZE_MIN_WIDTH 即 dx <= resizeStartWidth - RESIZE_MIN_WIDTH
+                    const minDx = -resizeStartLeft;  // 不能向左超过屏幕左边缘
+                    const maxDx = resizeStartWidth - RESIZE_MIN_WIDTH;  // 不能小于最小宽度
+                    const clampedDx = Math.max(minDx, Math.min(dx, maxDx));
                     newWidth = resizeStartWidth - clampedDx;
                     newLeft = resizeStartLeft + clampedDx;
                 }
                 if (resizeDirection.includes('s')) {
-                    newHeight = Math.max(RESIZE_MIN_HEIGHT, resizeStartHeight + dy);
+                    // 限制底边不超出屏幕
+                    const maxHeight = window.innerHeight - resizeStartTop;
+                    newHeight = Math.max(RESIZE_MIN_HEIGHT, Math.min(resizeStartHeight + dy, maxHeight));
                 }
                 if (resizeDirection.includes('n')) {
-                    const maxDy = resizeStartHeight - RESIZE_MIN_HEIGHT;
-                    const clampedDy = Math.min(dy, maxDy);
+                    // 限制顶边不超出屏幕
+                    // 向上拉伸时，dy为负值，窗口高度增加，top减小
+                    // 限制条件：newTop >= 0 且 newHeight >= RESIZE_MIN_HEIGHT
+                    // dy的最小值（最负）受限于：resizeStartTop + dy >= 0 即 dy >= -resizeStartTop
+                    // dy的最大值（最正）受限于：resizeStartHeight - dy >= RESIZE_MIN_HEIGHT 即 dy <= resizeStartHeight - RESIZE_MIN_HEIGHT
+                    const minDy = -resizeStartTop;  // 不能向上超过屏幕顶部
+                    const maxDy = resizeStartHeight - RESIZE_MIN_HEIGHT;  // 不能小于最小高度
+                    const clampedDy = Math.max(minDy, Math.min(dy, maxDy));
                     newHeight = resizeStartHeight - clampedDy;
                     newTop = resizeStartTop + clampedDy;
                 }
@@ -524,6 +699,9 @@ const Xz3r0Window = {
         // 标题栏拖拽事件 - 使用 pointer 事件保持一致性
         header.addEventListener("pointerdown", (e) => {
             if (e.target.closest(".xz3r0-floating-window-btn")) return;
+            if (e.target.closest(".xz3r0-opacity-control")) return;
+            // 只有左键点击才触发拖拽
+            if (e.button !== 0) return;
 
             isDragging = true;
             hasDragStarted = false;
@@ -534,7 +712,130 @@ const Xz3r0Window = {
             pendingX = startLeft;
             pendingY = startTop;
 
+            // 捕获鼠标指针，确保即使鼠标移出标题栏也能继续接收事件
+            header.setPointerCapture(e.pointerId);
+
             e.preventDefault();
+        });
+
+        // 当失去指针捕获时（如鼠标松开），重置拖拽状态
+        header.addEventListener('lostpointercapture', () => {
+            if (isDragging) {
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
+                }
+
+                if (hasDragStarted) {
+                    updatePosition(pendingX, pendingY);
+                    Xz3r0Window.saveState({
+                        left: windowEl.style.left,
+                        top: windowEl.style.top,
+                        width: windowEl.style.width,
+                        height: windowEl.style.height
+                    });
+                }
+
+                header.classList.remove("dragging");
+                document.body.classList.remove("xz3r0-dragging");
+                document.body.style.userSelect = "";
+
+                isDragging = false;
+                hasDragStarted = false;
+            }
+        });
+
+        // 当鼠标移入标题栏时，检查鼠标左键是否真正按下
+        // 修复：鼠标移出后松开再移入会自动进入拖动状态的问题
+        header.addEventListener('pointerenter', (e) => {
+            // 如果处于拖拽状态但鼠标左键未按下，则重置状态
+            if (isDragging && (e.buttons & 1) === 0) {
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
+                }
+                header.classList.remove("dragging");
+                document.body.classList.remove("xz3r0-dragging");
+                document.body.style.userSelect = "";
+                isDragging = false;
+                hasDragStarted = false;
+            }
+        });
+
+        // Alt + 鼠标左键拖动窗口（在窗口任意位置）
+        // 通过监听 keydown/keyup 来检测 Alt 键状态，并控制 iframe 的 pointer-events
+        let isAltPressed = false;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Alt' && !isAltPressed) {
+                isAltPressed = true;
+                // 禁用 iframe 的鼠标事件，让事件能够传递到父窗口
+                iframe.style.pointerEvents = 'none';
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Alt' && isAltPressed) {
+                isAltPressed = false;
+                // 恢复 iframe 的鼠标事件
+                iframe.style.pointerEvents = 'auto';
+            }
+        });
+
+        // 当窗口失去焦点时，重置 Alt 状态
+        window.addEventListener('blur', () => {
+            if (isAltPressed) {
+                isAltPressed = false;
+                iframe.style.pointerEvents = 'auto';
+            }
+        });
+
+        windowEl.addEventListener('pointerdown', (e) => {
+            // 检查是否按住 Alt 键且是左键点击
+            if (!e.altKey || e.button !== 0) return;
+            // 排除标题栏、按钮和拉伸手柄（这些有独立的事件处理）
+            if (e.target.closest('.xz3r0-floating-window-header') ||
+                e.target.closest('.xz3r0-resize-handle')) return;
+
+            isDragging = true;
+            hasDragStarted = false;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = windowEl.offsetLeft;
+            startTop = windowEl.offsetTop;
+            pendingX = startLeft;
+            pendingY = startTop;
+
+            // 捕获鼠标指针
+            windowEl.setPointerCapture(e.pointerId);
+
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        // 当失去指针捕获时，重置 Alt+拖拽状态
+        windowEl.addEventListener('lostpointercapture', () => {
+            if (isDragging) {
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
+                }
+
+                if (hasDragStarted) {
+                    updatePosition(pendingX, pendingY);
+                    Xz3r0Window.saveState({
+                        left: windowEl.style.left,
+                        top: windowEl.style.top,
+                        width: windowEl.style.width,
+                        height: windowEl.style.height
+                    });
+                }
+
+                document.body.classList.remove("xz3r0-dragging");
+                document.body.style.userSelect = "";
+                isDragging = false;
+                hasDragStarted = false;
+            }
         });
 
         // 拉伸手柄事件 - 使用 pointer 事件确保捕获能正常工作
@@ -638,6 +939,29 @@ const Xz3r0Window = {
 
         // 关闭按钮事件
         closeBtn.addEventListener("click", () => state.hide());
+
+        // 透明度调整事件
+        opacitySlider.addEventListener("input", (e) => {
+            const opacity = e.target.value / 100;
+            windowEl.style.opacity = opacity;
+            opacityValue.textContent = `${e.target.value}%`;
+        });
+
+        // 透明度调整完成时保存状态
+        opacitySlider.addEventListener("change", (e) => {
+            localStorage.setItem('Xz3r0.Window.Opacity', e.target.value);
+        });
+
+        // 加载保存的透明度设置
+        const savedOpacity = localStorage.getItem('Xz3r0.Window.Opacity');
+        if (savedOpacity) {
+            const opacityValue_num = parseInt(savedOpacity, 10);
+            if (opacityValue_num >= 20 && opacityValue_num <= 100) {
+                opacitySlider.value = opacityValue_num;
+                windowEl.style.opacity = opacityValue_num / 100;
+                opacityValue.textContent = `${opacityValue_num}%`;
+            }
+        }
 
         return state;
     }
