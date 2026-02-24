@@ -467,7 +467,12 @@ Latent保存节点，支持自定义文件名和元数据保存
 | `FullWorkflow` | 使用网页扩展捕获前端完整工作流元数据 | 数据完整性与原生Save功能一致✅ | 依赖网页扩展，非官方原生支持 |
 | `Prompt+FullWorkflow` (推荐) | 结合标准API的prompt字段和网页扩展的完整workflow数据 | 所有模式中最完整的工作流元数据✅ | 依赖网页扩展，非官方原生支持 |
 
-**注意**: `FullWorkflow` 和 `Prompt+FullWorkflow` 模式依赖 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展
+**注意**: `FullWorkflow` 和 `Prompt+FullWorkflow` 模式依赖 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展和 `xworkflowsave_api` 自定义API
+
+**工作原理**:
+1. `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展从ComfyUI前端捕获完整工作流元数据
+2. `xworkflowsave_api` 自定义API接收网页扩展传来的数据
+3. `XWorkflowSave` 节点通过API获取数据并保存为JSON文件
 
 **输入**:
 - `anything` (ANY): 任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中
@@ -493,8 +498,8 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 支持多种文件格式：PNG图片、Latent文件、JSON工作流文件
 - 支持完整工作流数据的JSON（包括 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式保存的文件）
 - 支持显示 `note` 和 `markdown note` 节点内容
-- 简单的自动层级布局算法排列节点
-- 显示节点类型、参数和连接关系
+- 基于加载文件的元数据, 自动选择简单的自动层级布局算法或元数据中节点位置信息来排列节点
+- 显示节点参数和连接关系
 - 子图(Subgraph)自动颜色标记
 - 支持缩放、平移、自适应视图
 - 折叠/展开节点参数
@@ -511,7 +516,7 @@ Latent保存节点，支持自定义文件名和元数据保存
   - ✅ ComfyUI网页原生的 `Save` 和 `Save As` 所保存的JSON (自动保存在 `user\default\workflows`)
   - ✅ `XWorkflowSave` 节点 `FullWorkflow` 模式保存的JSON
   - ✅ `XWorkflowSave` 节点 `Prompt+FullWorkflow` 模式保存的JSON (最完整的元数据)
-  - ⚠️ ComfyUI网页导出功能的JSON文件 (缺少 prompt 字段，会导致缺失节点参数)
+  - ⚠️ ComfyUI网页导出功能的JSON文件 (缺少部分元数据，会导致缺失节点或参数)
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="XWorkflowSave Extension" width="200">
 
 **技术说明**:
@@ -552,22 +557,27 @@ Latent保存节点，支持自定义文件名和元数据保存
 ---
 
 ### 💾 XWorkflowSave 网页扩展
-`ComfyUI网页扩展 - xworkflowsave_extension.js`
+`ComfyUI网页扩展 - ComfyUI.Xz3r0.XWorkflowSave`
 
 从ComfyUI网页直接捕获完整工作流元数据，为 `XWorkflowSave` 节点提供 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式所需的数据
 
 **功能**:
 - 捕获前端网页中的完整工作流元数据（包括 `note` 和 `markdown note` 节点）
-- 通过自定义API将数据传递给 `XWorkflowSave` 节点
+- 通过 `xworkflowsave_api` 自定义API将数据传递给 `XWorkflowSave` 节点
 - 数据完整性与ComfyUI网页原生的 `Save` 和 `Save As` 功能一致
 
+**工作流程**:
+1. 网页扩展 (`ComfyUI.Xz3r0.XWorkflowSave`) 在ComfyUI前端捕获完整工作流数据
+2. 自定义API (`xworkflowsave_api`) 接收并缓存来自网页扩展的数据
+3. `XWorkflowSave` 节点调用API获取数据并保存为JSON文件
+
 **使用方式**:
-- 扩展会自动加载，无需手动操作
+- 扩展和API会自动加载，无需手动操作
 - 在 `XWorkflowSave` 节点选择 `FullWorkflow` 或 `Prompt+FullWorkflow` 模式时自动使用
-- 如果扩展未加载或不可用，`Auto` 模式会自动回退到 `Standard` 模式
+- 如果扩展未加载或API不可用，`Auto` 模式会自动回退到 `Standard` 模式
 
 **注意事项**:
-- 此扩展非ComfyUI官方原生支持，如果ComfyUI官方将来改动相关网页代码可能会导致出错
+- 此扩展和API非ComfyUI官方原生支持，如果ComfyUI官方将来改动相关代码可能会导致出错
 - 扩展加载后会在浏览器控制台输出日志信息
 
 </details>
