@@ -5,8 +5,8 @@
  * 功能概述:
  * ---------
  * 为 XWorkflowSave 节点提供完整 workflow 数据捕获支持。
- * 当节点使用 "full" 或 "auto" 模式时，自动捕获完整 workflow 数据
- * 并通过自定义 API 接口发送到后端。
+ * 当节点使用 "FullWorkflow"、"Auto" 或 "Prompt+FullWorkflow" 模式时，
+ * 自动捕获完整 workflow 数据并通过自定义 API 接口发送到后端。
  *
  * 核心功能:
  * ---------
@@ -62,9 +62,11 @@ app.registerExtension({
                     const modeWidget = node.widgets?.find(
                         w => w.name === "save_mode"
                     );
-                    const mode = modeWidget?.value || "auto";
-                    // full 模式或 auto 模式都可能需要完整 workflow
-                    return mode === "full" || mode === "auto";
+                    const mode = modeWidget?.value || "Auto";
+                    // FullWorkflow、Auto、Prompt+FullWorkflow 模式都需要完整 workflow
+                    return mode === "FullWorkflow" ||
+                           mode === "Auto" ||
+                           mode === "Prompt+FullWorkflow";
                 });
 
                 if (targetNodes.length > 0) {
@@ -77,7 +79,7 @@ app.registerExtension({
                             const modeWidget = node.widgets?.find(
                                 w => w.name === "save_mode"
                             );
-                            const mode = modeWidget?.value || "auto";
+                            const mode = modeWidget?.value || "Auto";
 
                             // 使用节点 ID 作为存储 key
                             const nodeId = String(node.id);

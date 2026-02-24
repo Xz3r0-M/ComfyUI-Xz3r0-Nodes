@@ -47,7 +47,7 @@ class XWorkflowSave(io.ComfyNode):
         workflow_info: 工作流信息摘要，包含保存状态和数据概览 (STRING)
 
     使用示例:
-        save_mode="auto",
+        save_mode="Auto",
         filename_prefix="Workflow_%Y%m%d",
         subfolder="Workflows"
         (anything输入为可选，可以不连接任何数据)
@@ -85,12 +85,19 @@ class XWorkflowSave(io.ComfyNode):
                 ),
                 io.Combo.Input(
                     "save_mode",
-                    options=["auto", "standard", "full"],
-                    default="auto",
+                    options=[
+                        "Auto",
+                        "Standard",
+                        "FullWorkflow",
+                        "Prompt+FullWorkflow",
+                    ],
+                    default="Auto",
                     tooltip=(
-                        "Save mode: auto (auto-detect, prefer full), "
-                        "standard (use extra_pnginfo), "
-                        "full (require frontend API data)"
+                        "Save mode: Auto (auto-detect, prefer "
+                        "Prompt+FullWorkflow, fallback to Standard), "
+                        "Standard (use extra_pnginfo), "
+                        "FullWorkflow (require frontend API data), "
+                        "Prompt+FullWorkflow (prompt + full_workflow)"
                     ),
                 ),
                 io.String.Input(
@@ -138,7 +145,7 @@ class XWorkflowSave(io.ComfyNode):
     def execute(
         cls,
         anything=None,
-        save_mode: str = "auto",
+        save_mode: str = "Auto",
         filename_prefix: str = "",
         subfolder: str = "",
     ) -> io.NodeOutput:
@@ -147,7 +154,8 @@ class XWorkflowSave(io.ComfyNode):
 
         Args:
             anything: 任意输入(用于工作流连接，不处理数据，可选)
-            save_mode: 保存模式("auto", "standard", "full")
+            save_mode: 保存模式("Auto", "Standard", "FullWorkflow",
+                             "Prompt+FullWorkflow")
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
 
@@ -215,7 +223,8 @@ class XWorkflowSave(io.ComfyNode):
         根据保存模式准备 workflow 数据
 
         Args:
-            save_mode: 保存模式("auto", "standard", "full")
+            save_mode: 保存模式("Auto", "Standard", "FullWorkflow",
+                             "Prompt+FullWorkflow")
 
         Returns:
             dict: 准备好的 workflow 数据
@@ -233,32 +242,46 @@ class XWorkflowSave(io.ComfyNode):
             if stored_data:
                 full_workflow_data = stored_data.get("workflow")
 
-        if save_mode == "full":
+        if save_mode == "FullWorkflow":
             # 完整模式：必须使用前端传来的 workflow 数据
             if not full_workflow_data:
                 raise ValueError(
-                    "Full mode requires workflow data from frontend API. "
-                    "Please ensure the frontend extension is loaded and "
-                    "the node is triggered via Queue Prompt."
+                    "FullWorkflow mode requires workflow data from "
+                    "frontend API. Please ensure the frontend "
+                    "extension is loaded and the node is triggered "
+                    "via Queue Prompt."
                 )
             workflow_data = full_workflow_data
 
-        elif save_mode == "standard":
+        elif save_mode == "Standard":
             # 标准模式：使用 prompt + extra_pnginfo
             if prompt is not None:
                 workflow_data["prompt"] = prompt
             if extra_pnginfo is not None:
                 workflow_data["workflow"] = extra_pnginfo.get("workflow")
 
-        else:  # auto mode
-            # 自动模式：优先使用完整 workflow，否则使用标准方式
+        elif save_mode == "Prompt+FullWorkflow":
+            # 合并模式：prompt + full_workflow
+            if prompt is not None:
+                workflow_data["prompt"] = prompt
             if full_workflow_data:
-                workflow_data = full_workflow_data
+                workflow_data["full_workflow"] = full_workflow_data
             else:
-                if prompt is not None:
-                    workflow_data["prompt"] = prompt
-                if extra_pnginfo is not None:
-                    workflow_data["workflow"] = extra_pnginfo.get("workflow")
+                raise ValueError(
+                    "Prompt+FullWorkflow mode requires full workflow "
+                    "data from frontend API. Please ensure the "
+                    "frontend extension is loaded and the node is "
+                    "triggered via Queue Prompt."
+                )
+
+        else:  # Auto mode
+            # 自动模式：优先使用 Prompt+FullWorkflow，如果前端失效则使用 Standard
+            if prompt is not None:
+                workflow_data["prompt"] = prompt
+            if full_workflow_data:
+                workflow_data["full_workflow"] = full_workflow_data
+            elif extra_pnginfo is not None:
+                workflow_data["workflow"] = extra_pnginfo.get("workflow")
 
         return workflow_data
 
@@ -297,6 +320,8 @@ class XWorkflowSave(io.ComfyNode):
             status_lines.append("Has prompt: Yes")
         if "workflow" in workflow_data:
             status_lines.append("Has workflow: Yes")
+        if "full_workflow" in workflow_data:
+            status_lines.append("Has full_workflow: Yes")
 
         return "\n".join(status_lines)
 
@@ -360,8 +385,8 @@ class XWorkflowSave(io.ComfyNode):
         # 添加模式特定的信息
         info_lines.extend(["", "-" * 50, "Data Content:"])
 
-        if save_mode == "full":
-            # full 模式: 显示完整工作流的关键信息
+        if save_mode == "FullWorkflow":
+            # FullWorkflow 模式: 显示完整工作流的关键信息
             info_lines.append(
                 "Mode Description: Using full workflow data from frontend API"
             )
@@ -396,8 +421,8 @@ class XWorkflowSave(io.ComfyNode):
                 )[:10]:  # 只显示前10个
                     info_lines.append(f"  - {node_type}: {count}")
 
-        elif save_mode == "standard":
-            # standard 模式: 显示标准数据信息
+        elif save_mode == "Standard":
+            # Standard 模式: 显示标准数据信息
             info_lines.append(
                 "Mode Description: Using ComfyUI "
                 "standard data (prompt + workflow)"
@@ -428,28 +453,77 @@ class XWorkflowSave(io.ComfyNode):
             else:
                 info_lines.append("  - workflow: None")
 
-        else:  # auto mode
-            # auto 模式: 显示自动检测结果
+        elif save_mode == "Prompt+FullWorkflow":
+            # Prompt+FullWorkflow 模式: 显示 prompt + full_workflow 信息
+            info_lines.append(
+                "Mode Description: Prompt+FullWorkflow mode "
+                "(prompt + full_workflow)"
+            )
+            info_lines.append("")
+            info_lines.append("Data Composition:")
+
+            if "prompt" in workflow_data:
+                prompt_data = workflow_data["prompt"]
+                if isinstance(prompt_data, dict):
+                    info_lines.append(
+                        f"  - prompt: Contains {len(prompt_data)} nodes"
+                    )
+                else:
+                    info_lines.append("  - prompt: Included")
+            else:
+                info_lines.append("  - prompt: None")
+
+            if "full_workflow" in workflow_data:
+                full_wf = workflow_data["full_workflow"]
+                if isinstance(full_wf, dict):
+                    nodes = full_wf.get("nodes", [])
+                    links = full_wf.get("links", [])
+                    info_lines.append(
+                        f"  - full_workflow: {len(nodes)} nodes, "
+                        f"{len(links)} links"
+                    )
+                else:
+                    info_lines.append("  - full_workflow: Included")
+            else:
+                info_lines.append("  - full_workflow: None")
+
+        else:  # Auto mode
+            # Auto 模式: 显示自动检测结果
             info_lines.append(
                 "Mode Description: Auto-detect and select best data source"
             )
             info_lines.append("")
 
             # 确定实际使用了哪种数据
-            has_nodes = "nodes" in workflow_data
+            has_full_workflow = "full_workflow" in workflow_data
+            has_workflow = "workflow" in workflow_data
             has_prompt = "prompt" in workflow_data
 
-            if has_nodes:
-                info_lines.append("Actually Used: Full workflow data (full)")
-                nodes = workflow_data.get("nodes", [])
-                links = workflow_data.get("links", [])
-                info_lines.append(f"  - Nodes: {len(nodes)}")
-                info_lines.append(f"  - Links: {len(links)}")
-            elif has_prompt:
-                info_lines.append("Actually Used: Standard data (standard)")
-                prompt_data = workflow_data.get("prompt", {})
-                if isinstance(prompt_data, dict):
-                    info_lines.append(f"  - prompt nodes: {len(prompt_data)}")
+            if has_full_workflow:
+                info_lines.append("Actually Used: Prompt+FullWorkflow data")
+                full_wf = workflow_data.get("full_workflow", {})
+                nodes = full_wf.get("nodes", [])
+                links = full_wf.get("links", [])
+                info_lines.append(f"  - FullWorkflow Nodes: {len(nodes)}")
+                info_lines.append(f"  - FullWorkflow Links: {len(links)}")
+                if has_prompt:
+                    prompt_data = workflow_data.get("prompt", {})
+                    if isinstance(prompt_data, dict):
+                        info_lines.append(
+                            f"  - Prompt nodes: {len(prompt_data)}"
+                        )
+            elif has_workflow:
+                info_lines.append("Actually Used: Standard data")
+                wf_data = workflow_data.get("workflow", {})
+                if isinstance(wf_data, dict):
+                    nodes = wf_data.get("nodes", [])
+                    info_lines.append(f"  - Workflow nodes: {len(nodes)}")
+                if has_prompt:
+                    prompt_data = workflow_data.get("prompt", {})
+                    if isinstance(prompt_data, dict):
+                        info_lines.append(
+                            f"  - Prompt nodes: {len(prompt_data)}"
+                        )
             else:
                 info_lines.append("Actually Used: No valid data recognized")
 
@@ -462,7 +536,7 @@ class XWorkflowSave(io.ComfyNode):
             ]
         )
 
-        if save_mode == "full":
+        if save_mode == "FullWorkflow":
             info_lines.append(
                 "  This mode saves data with complete "
                 "localized names and widget info"
@@ -470,12 +544,20 @@ class XWorkflowSave(io.ComfyNode):
             info_lines.append(
                 "  Suitable for scenarios requiring full UI state preservation"
             )
-        elif save_mode == "standard":
+        elif save_mode == "Standard":
             info_lines.append(
                 "  This mode saves data in ComfyUI standard format"
             )
             info_lines.append(
                 "  Best compatibility, but lacks some UI metadata"
+            )
+        elif save_mode == "Prompt+FullWorkflow":
+            info_lines.append(
+                "  Prompt+FullWorkflow mode combines prompt "
+                "and full_workflow data"
+            )
+            info_lines.append(
+                "  Provides both execution data and complete UI metadata"
             )
         else:
             info_lines.append(
@@ -483,8 +565,8 @@ class XWorkflowSave(io.ComfyNode):
                 "the best available data source"
             )
             info_lines.append(
-                "  Prioritizes full data, falls back "
-                "to standard data if unavailable"
+                "  Prioritizes Prompt+FullWorkflow, falls back "
+                "to Standard if frontend data unavailable"
             )
 
         info_lines.append("")

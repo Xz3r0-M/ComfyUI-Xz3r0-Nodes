@@ -182,6 +182,53 @@
             flex-direction: column;
             height: 100%;
             overflow: hidden;
+            transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            border-right: none;
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            left: 280px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 60px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-left: none;
+            border-radius: 0 6px 6px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: left 0.3s ease, background 0.2s;
+            padding: 0;
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+
+        .sidebar-toggle:hover {
+            background: var(--bg-btn-hover);
+            color: var(--accent);
+        }
+
+        .sidebar-toggle .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed + .sidebar-toggle {
+            left: 0;
+        }
+
+        .sidebar.collapsed + .sidebar-toggle .toggle-icon {
+            transform: rotate(180deg);
         }
 
         .sidebar-header {
@@ -515,8 +562,30 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            cursor: move;
+            cursor: default;
             border-bottom: 1px solid var(--border-tertiary);
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        .node-header.dragging {
+            cursor: move;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .selection-box {
+            position: absolute;
+            border: 2px dashed var(--accent);
+            background: rgba(255, 105, 180, 0.1);
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+
+        .node.multi-selected {
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 15px rgba(255, 105, 180, 0.5), 0 0 30px rgba(255, 105, 180, 0.3) !important;
         }
 
         .header-actions {
@@ -854,11 +923,15 @@
                 <button class="theme-btn" data-theme="light" data-i18n-title="lightMode">☀️</button>
             </div>
         </div>
+        <button class="sidebar-toggle" id="sidebarToggle" title="隐藏侧边栏" data-i18n-title="hideSidebar">
+            <span class="toggle-icon">◀</span>
+        </button>
         <div class="canvas-container" id="canvasContainer">
             <div id="canvas-wrapper">
                 <svg class="svg-connections" id="connections"></svg>
                 <div id="canvas"></div>
             </div>
+            <div class="selection-box" id="selectionBox"></div>
         </div>
     </div>
 
@@ -909,6 +982,8 @@
                 output: '输出',
                 darkMode: '暗黑模式',
                 lightMode: '亮色模式',
+                hideSidebar: '隐藏侧边栏',
+                showSidebar: '显示侧边栏',
                 noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件无法识别为有效的工作流格式。\n\n支持的格式：\n• XWorkflowSave 生成的 JSON (含 prompt 字段)\n• ComfyUI 网页导出的 API 格式 JSON\n• ComfyUI 网页保存的完整 Workflow 格式 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件',
                 latentFile: 'Latent 潜空间',
                 jsonWorkflow: 'JSON 工作流',
@@ -954,6 +1029,8 @@
                 output: 'Output',
                 darkMode: 'Dark Mode',
                 lightMode: 'Light Mode',
+                hideSidebar: 'Hide Sidebar',
+                showSidebar: 'Show Sidebar',
                 noPromptError: 'Unsupported JSON Format\n\nThis JSON file cannot be recognized as a valid workflow format.\n\nSupported formats:\n• JSON from XWorkflowSave (with prompt field)\n• ComfyUI web-exported API format JSON\n• ComfyUI web-saved full Workflow format JSON\n• PNG images with prompt metadata\n• Latent files',
                 latentFile: 'Latent File',
                 jsonWorkflow: 'JSON Workflow',
@@ -1007,6 +1084,7 @@
         let panY = 0;
         let nodeStates = {};
         let selectedNodeId = null;
+        let selectedNodeIds = new Set(); // 多选节点集合
         let currentFileType = null; // 存储当前文件类型，用于语言切换时更新预览
         let currentPreviewUrl = null; // 当前预览图片的 Object URL，用于内存释放
 
@@ -1015,6 +1093,7 @@
         const canvas = document.getElementById('canvas');
         const connectionsSvg = document.getElementById('connections');
         const zoomLevel = document.getElementById('zoomLevel');
+        const selectionBox = document.getElementById('selectionBox');
 
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1049,6 +1128,37 @@
         });
 
         setTheme(currentTheme);
+
+        // 侧边栏折叠功能
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        let sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+
+        /**
+         * 切换侧边栏显示/隐藏状态
+         */
+        function toggleSidebar() {
+            sidebarCollapsed = !sidebarCollapsed;
+            if (sidebarCollapsed) {
+                sidebar.classList.add('collapsed');
+                sidebarToggle.title = t('showSidebar');
+                sidebarToggle.setAttribute('data-i18n-title', 'showSidebar');
+            } else {
+                sidebar.classList.remove('collapsed');
+                sidebarToggle.title = t('hideSidebar');
+                sidebarToggle.setAttribute('data-i18n-title', 'hideSidebar');
+            }
+            localStorage.setItem('sidebarCollapsed', sidebarCollapsed);
+        }
+
+        sidebarToggle.addEventListener('click', toggleSidebar);
+
+        // 初始化侧边栏状态
+        if (sidebarCollapsed) {
+            sidebar.classList.add('collapsed');
+            sidebarToggle.title = t('showSidebar');
+            sidebarToggle.setAttribute('data-i18n-title', 'showSidebar');
+        }
 
         function updateLanguage() {
             document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -1182,7 +1292,34 @@
         let isPanning = false;
         let panStartX, panStartY;
 
+        // 框选相关变量
+        let isSelecting = false;
+        let selectionStartX, selectionStartY;
+        let isMultiDragging = false;
+        let multiDragStartX, multiDragStartY;
+        let multiDragNodePositions = new Map();
+
+        // 拖动标记，用于防止拖动后触发点击事件
+        let justFinishedDrag = false;
+
         canvasContainer.addEventListener('mousedown', (e) => {
+            // Ctrl+左键：开始框选
+            if (e.ctrlKey && e.button === 0 && (e.target === canvasContainer || e.target === canvasWrapper)) {
+                isSelecting = true;
+                // 使用相对于 canvasContainer 的坐标（不受 transform 影响）
+                const rect = canvasContainer.getBoundingClientRect();
+                selectionStartX = e.clientX - rect.left;
+                selectionStartY = e.clientY - rect.top;
+                selectionBox.style.display = 'block';
+                selectionBox.style.left = selectionStartX + 'px';
+                selectionBox.style.top = selectionStartY + 'px';
+                selectionBox.style.width = '0px';
+                selectionBox.style.height = '0px';
+                e.preventDefault();
+                return;
+            }
+
+            // 普通情况：平移画布
             if (e.target === canvasContainer || e.target === canvasWrapper) {
                 isPanning = true;
                 panStartX = e.clientX - panX;
@@ -1194,6 +1331,8 @@
         canvasContainer.addEventListener('dblclick', (e) => {
             if (e.target === canvasContainer || e.target === canvasWrapper) {
                 deselectAll();
+                selectedNodeIds.clear();
+                updateMultiSelection();
             }
         });
 
@@ -1203,6 +1342,8 @@
                     document.activeElement.blur();
                 } else {
                     deselectAll();
+                    selectedNodeIds.clear();
+                    updateMultiSelection();
                 }
             }
         });
@@ -1213,12 +1354,129 @@
                 panY = e.clientY - panStartY;
                 updateTransform();
             }
+
+            // 更新框选框
+            if (isSelecting) {
+                // 使用相对于 canvasContainer 的坐标（不受 transform 影响）
+                const rect = canvasContainer.getBoundingClientRect();
+                const currentX = e.clientX - rect.left;
+                const currentY = e.clientY - rect.top;
+
+                const left = Math.min(selectionStartX, currentX);
+                const top = Math.min(selectionStartY, currentY);
+                const width = Math.abs(currentX - selectionStartX);
+                const height = Math.abs(currentY - selectionStartY);
+
+                selectionBox.style.left = left + 'px';
+                selectionBox.style.top = top + 'px';
+                selectionBox.style.width = width + 'px';
+                selectionBox.style.height = height + 'px';
+            }
+
+            // 多节点拖动
+            if (isMultiDragging && selectedNodeIds.size > 0) {
+                const dx = (e.clientX - multiDragStartX) / scale;
+                const dy = (e.clientY - multiDragStartY) / scale;
+
+                selectedNodeIds.forEach(nodeId => {
+                    const nodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+                    const startPos = multiDragNodePositions.get(nodeId);
+                    if (nodeEl && startPos) {
+                        nodeEl.style.left = (startPos.x + dx) + 'px';
+                        nodeEl.style.top = (startPos.y + dy) + 'px';
+                    }
+                });
+
+                updateConnectionPaths();
+                updateConnectionHighlight();
+            }
         });
 
-        document.addEventListener('mouseup', () => {
+        document.addEventListener('mouseup', (e) => {
+            // 结束框选
+            if (isSelecting) {
+                const containerRect = canvasContainer.getBoundingClientRect();
+                const endX = e.clientX - containerRect.left;
+                const endY = e.clientY - containerRect.top;
+
+                // 选择框的视口坐标
+                const selLeft = Math.min(selectionStartX, endX);
+                const selTop = Math.min(selectionStartY, endY);
+                const selRight = Math.max(selectionStartX, endX);
+                const selBottom = Math.max(selectionStartY, endY);
+
+                // 将选择框坐标转换为节点坐标系（考虑 pan 和 scale）
+                const nodeLeft = (selLeft - panX) / scale;
+                const nodeTop = (selTop - panY) / scale;
+                const nodeRight = (selRight - panX) / scale;
+                const nodeBottom = (selBottom - panY) / scale;
+
+                // 检测哪些节点在选择框内
+                document.querySelectorAll('.node').forEach(nodeEl => {
+                    const nodeX = parseFloat(nodeEl.style.left);
+                    const nodeY = parseFloat(nodeEl.style.top);
+                    const nodeW = nodeEl.offsetWidth;
+                    const nodeH = nodeEl.offsetHeight;
+
+                    // 检查节点是否在选择框内（部分重叠也算）
+                    if (nodeX < nodeRight && nodeX + nodeW > nodeLeft &&
+                        nodeY < nodeBottom && nodeY + nodeH > nodeTop) {
+                        const nodeId = nodeEl.dataset.nodeId;
+                        selectedNodeIds.add(nodeId);
+                    }
+                });
+
+                updateMultiSelection();
+                selectionBox.style.display = 'none';
+                isSelecting = false;
+            }
+
+            // 结束多节点拖动
+            if (isMultiDragging) {
+                // 保存新位置
+                selectedNodeIds.forEach(nodeId => {
+                    const nodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+                    if (nodeEl) {
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[nodeId] = {
+                            x: parseFloat(nodeEl.style.left),
+                            y: parseFloat(nodeEl.style.top)
+                        };
+                    }
+                });
+
+                document.body.style.userSelect = '';
+                document.body.style.webkitUserSelect = '';
+                isMultiDragging = false;
+                multiDragNodePositions.clear();
+
+                // 设置标记，防止触发点击事件
+                justFinishedDrag = true;
+                // 延迟重置标记，确保 click 事件能检测到
+                setTimeout(() => {
+                    justFinishedDrag = false;
+                }, 50);
+            }
+
             isPanning = false;
             canvasContainer.style.cursor = 'default';
         });
+
+        /**
+         * 更新多选节点的视觉状态
+         */
+        function updateMultiSelection() {
+            document.querySelectorAll('.node').forEach(nodeEl => {
+                const nodeId = nodeEl.dataset.nodeId;
+                if (selectedNodeIds.has(nodeId)) {
+                    nodeEl.classList.add('multi-selected');
+                } else {
+                    nodeEl.classList.remove('multi-selected');
+                }
+            });
+        }
 
         /**
          * 设置画布缩放级别
@@ -1284,13 +1542,6 @@
                 panX = 50;
                 panY = 50;
                 nodeStates = {};
-
-                // 默认折叠 XWorkflowSave 节点
-                if (workflowData.xworkflowSaveNodes && workflowData.xworkflowSaveNodes.length > 0) {
-                    for (const nodeId of workflowData.xworkflowSaveNodes) {
-                        nodeStates[nodeId] = { collapsed: true };
-                    }
-                }
 
                 // 渲染并自适应视图
                 renderWorkflow();
@@ -1561,6 +1812,46 @@
         }
 
         /**
+         * 合并 prompt 和 full_workflow 的数据
+         * 以 full_workflow 转换后的数据为基础，用 prompt 中的执行结果补充
+         *
+         * @param {Object} promptData - prompt 格式的数据（包含执行结果）
+         * @param {Object} workflowData - full_workflow 格式的数据（包含完整结构）
+         * @returns {Object} - 合并后的 prompt 格式数据
+         */
+        function mergePromptAndWorkflow(promptData, workflowData) {
+            // 首先将 full_workflow 转换为 prompt 格式
+            const merged = convertWorkflowToPrompt(workflowData);
+
+            // 然后从原始 prompt 中补充执行结果
+            for (const [nodeId, nodeData] of Object.entries(promptData)) {
+                if (!merged[nodeId]) {
+                    // 如果 merged 中没有这个节点，直接添加
+                    merged[nodeId] = nodeData;
+                    continue;
+                }
+
+                if (nodeData.inputs) {
+                    // 确保 merged 节点有 inputs 对象
+                    if (!merged[nodeId].inputs) {
+                        merged[nodeId].inputs = {};
+                    }
+
+                    // 遍历 prompt 中的 inputs，将执行结果合并到 merged
+                    for (const [inputName, inputValue] of Object.entries(nodeData.inputs)) {
+                        // 特殊处理：如果是数组（表示连接），保留 merged 中的值
+                        // 否则使用 prompt 中的值（执行结果）
+                        if (!Array.isArray(inputValue)) {
+                            merged[nodeId].inputs[inputName] = inputValue;
+                        }
+                    }
+                }
+            }
+
+            return merged;
+        }
+
+        /**
          * 读取 JSON 文件的元数据
          * 处理逻辑：
          * - 支持包含 prompt 字段的 JSON (如 XWorkflowSave 生成的)
@@ -1575,8 +1866,22 @@
                 const json = JSON.parse(text);
 
                 // 情况1: 包含 prompt 字段的 JSON (XWorkflowSave)
-                // 可能同时包含 workflow 字段
+                // 可能同时包含 workflow 字段或 full_workflow 字段 (merge 模式)
                 if (json.prompt) {
+                    // 检查是否有 full_workflow (merge 模式)
+                    // full_workflow 包含更完整的数据，需要与 prompt 合并
+                    if (json.full_workflow && json.full_workflow.nodes) {
+                        // 合并 prompt 和 full_workflow 的数据
+                        const mergedPrompt = mergePromptAndWorkflow(
+                            json.prompt,
+                            json.full_workflow
+                        );
+                        return {
+                            prompt: mergedPrompt,
+                            workflow: json.full_workflow
+                        };
+                    }
+                    // 否则使用标准的 workflow 字段
                     return {
                         prompt: json.prompt,
                         workflow: json.workflow || null
@@ -2157,46 +2462,126 @@
 
                 nodeEl.addEventListener('click', (e) => {
                     e.stopPropagation();
+
+                    // 如果刚刚完成了拖动，不执行点击逻辑
+                    if (justFinishedDrag) {
+                        justFinishedDrag = false;
+                        return;
+                    }
+
+                    // Ctrl+点击：切换多选状态
+                    if (e.ctrlKey) {
+                        if (selectedNodeIds.has(nodeId)) {
+                            selectedNodeIds.delete(nodeId);
+                        } else {
+                            selectedNodeIds.add(nodeId);
+                        }
+                        updateMultiSelection();
+                        return;
+                    }
+
+                    // 普通点击：单选
+                    selectedNodeIds.clear();
+                    updateMultiSelection();
                     selectNode(nodeId);
                 });
 
                 const header = nodeEl.querySelector('.node-header');
                 let isNodeDragging = false;
+                let hasDragStarted = false;
                 let nodeDragStartX, nodeDragStartY, nodeStartX, nodeStartY;
+                const DRAG_THRESHOLD = 3; // 拖动阈值（像素）
 
                 header.addEventListener('mousedown', (e) => {
                     if (e.target.classList.contains('header-btn')) return;
+
+                    // 如果点击的节点在多选集合中，启动多节点拖动
+                    if (selectedNodeIds.has(nodeId) && selectedNodeIds.size > 1) {
+                        isMultiDragging = true;
+                        multiDragStartX = e.clientX;
+                        multiDragStartY = e.clientY;
+                        multiDragNodePositions.clear();
+
+                        // 保存所有选中节点的初始位置
+                        selectedNodeIds.forEach(id => {
+                            const el = document.querySelector(`[data-node-id="${id}"]`);
+                            if (el) {
+                                multiDragNodePositions.set(id, {
+                                    x: parseFloat(el.style.left),
+                                    y: parseFloat(el.style.top)
+                                });
+                            }
+                        });
+
+                        document.body.style.userSelect = 'none';
+                        document.body.style.webkitUserSelect = 'none';
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+
+                    // 单节点拖动
                     isNodeDragging = true;
+                    hasDragStarted = false;
                     nodeDragStartX = e.clientX;
                     nodeDragStartY = e.clientY;
                     nodeStartX = parseFloat(nodeEl.style.left);
                     nodeStartY = parseFloat(nodeEl.style.top);
-                    e.preventDefault();
+                    // 不阻止默认行为，允许文本选择
                     e.stopPropagation();
                 });
 
                 document.addEventListener('mousemove', (e) => {
                     if (isNodeDragging) {
-                        const dx = (e.clientX - nodeDragStartX) / scale;
-                        const dy = (e.clientY - nodeDragStartY) / scale;
-                        nodeEl.style.left = (nodeStartX + dx) + 'px';
-                        nodeEl.style.top = (nodeStartY + dy) + 'px';
-                        updateConnectionPaths();
-                        updateConnectionHighlight();
+                        const dx = e.clientX - nodeDragStartX;
+                        const dy = e.clientY - nodeDragStartY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        // 只有当移动距离超过阈值时才真正开始拖动
+                        if (!hasDragStarted && distance > DRAG_THRESHOLD) {
+                            hasDragStarted = true;
+                            // 开始拖动时阻止文本选择并改变光标样式
+                            header.classList.add('dragging');
+                            document.body.style.userSelect = 'none';
+                            document.body.style.webkitUserSelect = 'none';
+                        }
+
+                        if (hasDragStarted) {
+                            const scaledDx = dx / scale;
+                            const scaledDy = dy / scale;
+                            nodeEl.style.left = (nodeStartX + scaledDx) + 'px';
+                            nodeEl.style.top = (nodeStartY + scaledDy) + 'px';
+                            updateConnectionPaths();
+                            updateConnectionHighlight();
+                        }
                     }
                 });
 
                 document.addEventListener('mouseup', () => {
                     if (isNodeDragging) {
-                        // 保存节点新位置到 workflowData
-                        const newX = parseFloat(nodeEl.style.left);
-                        const newY = parseFloat(nodeEl.style.top);
-                        if (!workflowData.nodePositions) {
-                            workflowData.nodePositions = {};
+                        // 恢复文本选择和光标样式
+                        header.classList.remove('dragging');
+                        document.body.style.userSelect = '';
+                        document.body.style.webkitUserSelect = '';
+
+                        // 只有真正拖动过才保存位置
+                        if (hasDragStarted) {
+                            const newX = parseFloat(nodeEl.style.left);
+                            const newY = parseFloat(nodeEl.style.top);
+                            if (!workflowData.nodePositions) {
+                                workflowData.nodePositions = {};
+                            }
+                            workflowData.nodePositions[nodeId] = { x: newX, y: newY };
+
+                            // 设置标记，防止触发点击事件
+                            justFinishedDrag = true;
+                            setTimeout(() => {
+                                justFinishedDrag = false;
+                            }, 50);
                         }
-                        workflowData.nodePositions[nodeId] = { x: newX, y: newY };
                     }
                     isNodeDragging = false;
+                    hasDragStarted = false;
                 });
 
                 // 使用 ResizeObserver 监听节点宽度变化并保存
@@ -2304,6 +2689,10 @@
                     return `[${value[0]}]`;
                 }
                 return `[${value.join(', ')}]`;
+            }
+            // 空字符串显示为 (empty)，以便用户知道参数存在
+            if (value === '') {
+                return '(empty)';
             }
             return String(value);
         }
