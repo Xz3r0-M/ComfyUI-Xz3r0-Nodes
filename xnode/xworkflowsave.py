@@ -6,6 +6,7 @@
 支持两种保存模式：
 1. 标准模式：保存 prompt + extra_pnginfo.workflow（简化数据）
 2. 完整模式：保存前端传来的完整 workflow（包含 localized_name 和 widget）
+   通过自定义 API 接口 /xz3r0/xworkflowsave/capture 接收数据
 """
 
 import json
@@ -16,6 +17,8 @@ from pathlib import Path
 import folder_paths
 from comfy_api.latest import io, ui
 
+from .xworkflowsave_api import workflow_store
+
 
 class XWorkflowSave(io.ComfyNode):
     """
@@ -23,7 +26,7 @@ class XWorkflowSave(io.ComfyNode):
 
     将ComfyUI工作流保存为JSON文件，支持两种保存模式：
     - 标准模式：保存 prompt + workflow（简化数据，来自 extra_pnginfo）
-    - 完整模式：保存完整 workflow（包含 localized_name 和 widget，来自前端）
+    - 完整模式：保存完整 workflow（包含 localized_name 和 widget，来自前端 API）
 
     功能:
         - 保存工作流到ComfyUI默认输出目录
@@ -35,7 +38,6 @@ class XWorkflowSave(io.ComfyNode):
 
     输入:
         anything: 任意输入(用于工作流连接，不处理数据，可选) (ANY)
-        workflow_json: 完整 workflow JSON 字符串(可选，用于完整模式) (STRING)
         save_mode: 保存模式选择 (COMBO)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
@@ -49,7 +51,11 @@ class XWorkflowSave(io.ComfyNode):
         filename_prefix="Workflow_%Y%m%d",
         subfolder="Workflows"
         (anything输入为可选，可以不连接任何数据)
-        (workflow_json输入为可选，完整模式下需要前端扩展支持)
+
+    技术说明:
+        完整模式通过前端扩展自动捕获 workflow 数据，
+        并通过 /xz3r0/xworkflowsave/capture API 发送到后端存储。
+        节点执行时通过 prompt_id 从存储中获取数据。
 
     """
 
@@ -63,7 +69,8 @@ class XWorkflowSave(io.ComfyNode):
             description=(
                 "Workflow save node that saves the ComfyUI workflow as a "
                 "JSON file. Supports both standard mode (simplified data) "
-                "and full mode (complete workflow with localized_name)."
+                "and full mode (complete workflow with localized_name). "
+                "Full mode uses custom API to receive data from frontend."
             ),
             inputs=[
                 io.AnyType.Input(
@@ -76,17 +83,6 @@ class XWorkflowSave(io.ComfyNode):
                         "Optional - node works without any input."
                     ),
                 ),
-                io.String.Input(
-                    "workflow_json",
-                    default="",
-                    multiline=True,
-                    tooltip=(
-                        "Complete workflow JSON string from frontend. "
-                        "Required for full mode. Should include "
-                        "localized_name and widget fields. "
-                        "Optional for auto/standard mode."
-                    ),
-                ),
                 io.Combo.Input(
                     "save_mode",
                     options=["auto", "standard", "full"],
@@ -94,7 +90,7 @@ class XWorkflowSave(io.ComfyNode):
                     tooltip=(
                         "Save mode: auto (auto-detect, prefer full), "
                         "standard (use extra_pnginfo), "
-                        "full (require frontend workflow_json)"
+                        "full (require frontend API data)"
                     ),
                 ),
                 io.String.Input(
@@ -130,7 +126,11 @@ class XWorkflowSave(io.ComfyNode):
                     ),
                 ),
             ],
-            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            hidden=[
+                io.Hidden.prompt,
+                io.Hidden.extra_pnginfo,
+                io.Hidden.unique_id,
+            ],
             is_output_node=True,
         )
 
@@ -138,7 +138,6 @@ class XWorkflowSave(io.ComfyNode):
     def execute(
         cls,
         anything=None,
-        workflow_json: str = "",
         save_mode: str = "auto",
         filename_prefix: str = "",
         subfolder: str = "",
@@ -148,7 +147,6 @@ class XWorkflowSave(io.ComfyNode):
 
         Args:
             anything: 任意输入(用于工作流连接，不处理数据，可选)
-            workflow_json: 完整 workflow JSON 字符串(可选)
             save_mode: 保存模式("auto", "standard", "full")
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
@@ -184,7 +182,7 @@ class XWorkflowSave(io.ComfyNode):
         save_path = save_dir / final_filename
 
         # 根据保存模式准备数据
-        workflow_data = cls._prepare_workflow_data(save_mode, workflow_json)
+        workflow_data = cls._prepare_workflow_data(save_mode)
 
         # 保存文件
         with open(save_path, "w", encoding="utf-8") as f:
@@ -212,15 +210,12 @@ class XWorkflowSave(io.ComfyNode):
         )
 
     @classmethod
-    def _prepare_workflow_data(
-        cls, save_mode: str, workflow_json: str
-    ) -> dict:
+    def _prepare_workflow_data(cls, save_mode: str) -> dict:
         """
         根据保存模式准备 workflow 数据
 
         Args:
             save_mode: 保存模式("auto", "standard", "full")
-            workflow_json: 前端传来的完整 workflow JSON 字符串
 
         Returns:
             dict: 准备好的 workflow 数据
@@ -228,22 +223,25 @@ class XWorkflowSave(io.ComfyNode):
         workflow_data = {}
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
+        unique_id = cls.hidden.unique_id
 
-        # 检查 workflow_json 是否有效
-        has_full_workflow = (
-            workflow_json
-            and workflow_json.strip()
-            and workflow_json.strip() != "{}"
-        )
+        # 尝试从 API 存储获取完整 workflow 数据
+        full_workflow_data = None
+        if unique_id:
+            # 使用 unique_id 作为 prompt_id 从存储获取数据
+            stored_data = workflow_store.retrieve(unique_id)
+            if stored_data:
+                full_workflow_data = stored_data.get("workflow")
 
         if save_mode == "full":
-            # 完整模式：必须使用前端传来的 workflow_json
-            if not has_full_workflow:
+            # 完整模式：必须使用前端传来的 workflow 数据
+            if not full_workflow_data:
                 raise ValueError(
-                    "Full mode requires workflow_json from frontend. "
-                    "Please ensure the frontend extension is loaded."
+                    "Full mode requires workflow data from frontend API. "
+                    "Please ensure the frontend extension is loaded and "
+                    "the node is triggered via Queue Prompt."
                 )
-            workflow_data = json.loads(workflow_json)
+            workflow_data = full_workflow_data
 
         elif save_mode == "standard":
             # 标准模式：使用 prompt + extra_pnginfo
@@ -254,8 +252,8 @@ class XWorkflowSave(io.ComfyNode):
 
         else:  # auto mode
             # 自动模式：优先使用完整 workflow，否则使用标准方式
-            if has_full_workflow:
-                workflow_data = json.loads(workflow_json)
+            if full_workflow_data:
+                workflow_data = full_workflow_data
             else:
                 if prompt is not None:
                     workflow_data["prompt"] = prompt
@@ -326,13 +324,16 @@ class XWorkflowSave(io.ComfyNode):
         Returns:
             str: 工作流信息字符串
         """
+        # 统一使用正斜杠，确保跨平台一致性
+        posix_path = relative_path.as_posix()
+
         info_lines = [
             "=" * 50,
             "Workflow Save Info",
             "=" * 50,
             "",
             f"Filename: {filename}",
-            f"Save Path: [output_dir]/{relative_path}",
+            f"Save Path: [output_dir]/{posix_path}",
             f"Save Mode: {save_mode}",
             "",
         ]
@@ -362,7 +363,7 @@ class XWorkflowSave(io.ComfyNode):
         if save_mode == "full":
             # full 模式: 显示完整工作流的关键信息
             info_lines.append(
-                "Mode Description: Using full workflow data from frontend"
+                "Mode Description: Using full workflow data from frontend API"
             )
             info_lines.append("")
             info_lines.append("Workflow Structure:")
@@ -427,7 +428,7 @@ class XWorkflowSave(io.ComfyNode):
             else:
                 info_lines.append("  - workflow: None")
 
-        else:  # auto 模式
+        else:  # auto mode
             # auto 模式: 显示自动检测结果
             info_lines.append(
                 "Mode Description: Auto-detect and select best data source"
