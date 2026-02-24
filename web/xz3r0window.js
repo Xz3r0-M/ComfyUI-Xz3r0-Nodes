@@ -10,8 +10,8 @@
  * 核心功能:
  * ---------
  * 1. 窗口管理:
- *    - 拖拽移动（标题栏拖动）
- *    - 调整大小（右下角拖拽）
+ *    - 拖拽移动（标题栏拖动，带阈值防误触）
+ *    - 调整大小（四边和四角都可拉伸，类似 Windows 窗口）
  *    - 显示/隐藏切换
  *    - 状态持久化（位置/大小保存到 localStorage）
  *
@@ -26,7 +26,8 @@
  * ---------
  * - 使用 CSS 变量适配 ComfyUI 主题
  * - 使用 localStorage 持久化窗口状态
- * - 使用鼠标事件实现拖拽和调整大小
+ * - 使用鼠标事件实现拖拽，带阈值和 RAF 优化
+ * - 使用鼠标事件实现四边四角拉伸
  * - 限制窗口位置防止完全拖出屏幕
  *
  * 文件结构:
@@ -65,6 +66,8 @@ app.registerExtension({
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
+                min-width: 400px;
+                min-height: 300px;
             }
             .xz3r0-floating-window-header {
                 display: flex;
@@ -73,8 +76,15 @@ app.registerExtension({
                 padding: 8px 12px;
                 background: var(--comfy-input-bg, #252525);
                 border-bottom: 1px solid var(--border-color, #3d3d3d);
-                cursor: move;
+                cursor: grab;
                 user-select: none;
+                flex-shrink: 0;
+            }
+            .xz3r0-floating-window-header:active {
+                cursor: grabbing;
+            }
+            .xz3r0-floating-window-header.dragging {
+                cursor: grabbing;
             }
             .xz3r0-floating-window-title {
                 font-weight: 600;
@@ -88,45 +98,95 @@ app.registerExtension({
             .xz3r0-floating-window-btn {
                 width: 24px;
                 height: 24px;
-                border: none;
+                border: 1px solid transparent;
                 border-radius: 4px;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 font-size: 16px;
-                background: transparent;
+                background: #C9C9C9;
                 color: var(--input-text, #fff);
-                transition: color 0.2s;
+                transition: all 0.2s;
             }
             .xz3r0-floating-window-btn:hover {
-                color: #e74c3c;
+                border-color: #ff69b4;
             }
             .xz3r0-floating-window-content {
                 flex: 1;
                 overflow: hidden;
+                min-height: 0;
             }
             .xz3r0-floating-window-content iframe {
                 width: 100%;
                 height: 100%;
                 border: none;
             }
-            .xz3r0-floating-window-resize {
+            .xz3r0-dragging {
+                user-select: none !important;
+            }
+            .xz3r0-resizing {
+                user-select: none !important;
+            }
+            .xz3r0-resize-handle {
                 position: absolute;
-                bottom: 0;
-                right: 0;
+                z-index: 10001;
+            }
+            .xz3r0-resize-handle-n {
+                top: -8px;
+                left: 16px;
+                right: 16px;
+                height: 16px;
+                cursor: ns-resize;
+            }
+            .xz3r0-resize-handle-s {
+                bottom: -8px;
+                left: 16px;
+                right: 16px;
+                height: 16px;
+                cursor: ns-resize;
+            }
+            .xz3r0-resize-handle-w {
+                left: -8px;
+                top: 16px;
+                bottom: 16px;
+                width: 16px;
+                cursor: ew-resize;
+            }
+            .xz3r0-resize-handle-e {
+                right: -8px;
+                top: 16px;
+                bottom: 16px;
+                width: 16px;
+                cursor: ew-resize;
+            }
+            .xz3r0-resize-handle-nw {
+                top: -8px;
+                left: -8px;
                 width: 24px;
                 height: 24px;
-                cursor: se-resize;
-                background: linear-gradient(135deg, transparent 50%, var(--border-color, #555) 50%);
-                border-radius: 0 0 8px 0;
+                cursor: nwse-resize;
             }
-            .xz3r0-floating-window-resize:hover {
-                background: linear-gradient(135deg, transparent 50%, var(--p-primary-color, #4a90e2) 50%);
+            .xz3r0-resize-handle-ne {
+                top: -8px;
+                right: -8px;
+                width: 24px;
+                height: 24px;
+                cursor: nesw-resize;
             }
-            .xz3r0-dragging {
-                cursor: se-resize !important;
-                user-select: none !important;
+            .xz3r0-resize-handle-sw {
+                bottom: -8px;
+                left: -8px;
+                width: 24px;
+                height: 24px;
+                cursor: nesw-resize;
+            }
+            .xz3r0-resize-handle-se {
+                bottom: -8px;
+                right: -8px;
+                width: 24px;
+                height: 24px;
+                cursor: nwse-resize;
             }
         `;
         document.head.appendChild(style);
@@ -226,10 +286,26 @@ const Xz3r0Window = {
         const savedState = this.loadState();
         const windowEl = document.createElement("div");
         windowEl.className = "xz3r0-floating-window";
-        windowEl.style.width = savedState?.width || "900px";
-        windowEl.style.height = savedState?.height || "700px";
-        windowEl.style.left = savedState?.left || "100px";
-        windowEl.style.top = savedState?.top || "100px";
+
+        // 设置窗口尺寸
+        const width = savedState?.width || "900px";
+        const height = savedState?.height || "700px";
+        windowEl.style.width = width;
+        windowEl.style.height = height;
+
+        // 计算位置：如果有保存的位置则使用，否则居中显示
+        if (savedState?.left && savedState?.top) {
+            windowEl.style.left = savedState.left;
+            windowEl.style.top = savedState.top;
+        } else {
+            // 第一次打开，居中显示
+            const numericWidth = parseInt(width, 10);
+            const numericHeight = parseInt(height, 10);
+            const centerLeft = Math.max(0, (window.innerWidth - numericWidth) / 2);
+            const centerTop = Math.max(0, (window.innerHeight - numericHeight) / 2);
+            windowEl.style.left = `${centerLeft}px`;
+            windowEl.style.top = `${centerTop}px`;
+        }
 
         const header = document.createElement("div");
         header.className = "xz3r0-floating-window-header";
@@ -257,61 +333,178 @@ const Xz3r0Window = {
         iframe.src = "/extensions/ComfyUI-Xz3r0-Nodes/xmetadataworkflow.html";
         content.appendChild(iframe);
 
-        const resizeHandle = document.createElement("div");
-        resizeHandle.className = "xz3r0-floating-window-resize";
-
         windowEl.appendChild(header);
         windowEl.appendChild(content);
-        windowEl.appendChild(resizeHandle);
         document.body.appendChild(windowEl);
 
-        // 拖拽和调整大小的状态变量
+        // 创建拉伸手柄
+        const resizeHandles = [
+            { class: 'xz3r0-resize-handle-n', direction: 'n' },
+            { class: 'xz3r0-resize-handle-s', direction: 's' },
+            { class: 'xz3r0-resize-handle-w', direction: 'w' },
+            { class: 'xz3r0-resize-handle-e', direction: 'e' },
+            { class: 'xz3r0-resize-handle-nw', direction: 'nw' },
+            { class: 'xz3r0-resize-handle-ne', direction: 'ne' },
+            { class: 'xz3r0-resize-handle-sw', direction: 'sw' },
+            { class: 'xz3r0-resize-handle-se', direction: 'se' }
+        ];
+
+        resizeHandles.forEach(({ class: className, direction }) => {
+            const handle = document.createElement('div');
+            handle.className = `xz3r0-resize-handle ${className}`;
+            handle.dataset.direction = direction;
+            windowEl.appendChild(handle);
+        });
+
+        // 拖拽状态变量
         let isDragging = false;
+        let hasDragStarted = false;
+        let startX, startY, startLeft, startTop;
+        const DRAG_THRESHOLD = 3;
+        let rafId = null;
+        let pendingX = 0;
+        let pendingY = 0;
+
+        // 拉伸状态变量
         let isResizing = false;
-        let startX, startY, startLeft, startTop, startWidth, startHeight;
+        let resizeDirection = '';
+        let resizeStartX, resizeStartY;
+        let resizeStartWidth, resizeStartHeight;
+        let resizeStartLeft, resizeStartTop;
+        const RESIZE_MIN_WIDTH = 400;
+        const RESIZE_MIN_HEIGHT = 300;
+
+        /**
+         * 使用 requestAnimationFrame 优化拖拽性能
+         * @param {number} x - 目标 X 坐标
+         * @param {number} y - 目标 Y 坐标
+         */
+        const updatePosition = (x, y) => {
+            const headerHeight = 40;
+            const minVisible = 100;
+
+            const minLeft = -windowEl.offsetWidth + minVisible;
+            const maxLeft = window.innerWidth - minVisible;
+            const maxTop = window.innerHeight - headerHeight;
+            const newLeft = Math.max(minLeft, Math.min(maxLeft, x));
+            const newTop = Math.max(0, Math.min(maxTop, y));
+
+            windowEl.style.left = `${newLeft}px`;
+            windowEl.style.top = `${newTop}px`;
+        };
+
+        /**
+         * 动画帧回调，用于优化拖拽性能
+         */
+        const onAnimationFrame = () => {
+            if (isDragging && hasDragStarted) {
+                updatePosition(pendingX, pendingY);
+                rafId = requestAnimationFrame(onAnimationFrame);
+            } else {
+                rafId = null;
+            }
+        };
 
         /**
          * 鼠标移动事件处理
-         * 处理窗口拖拽和调整大小
+         * 处理窗口拖拽和拉伸
          * @param {MouseEvent} e - 鼠标事件对象
          */
         const handleMouseMove = (e) => {
             if (isDragging) {
                 const dx = e.clientX - startX;
                 const dy = e.clientY - startY;
-                const headerHeight = 40;
-                const minVisible = 100; // 窗口边缘最小可见像素
+                const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // 计算新的位置，限制在屏幕范围内
-                const minLeft = -windowEl.offsetWidth + minVisible;
-                const maxLeft = window.innerWidth - minVisible;
-                const maxTop = window.innerHeight - headerHeight;
-                const newLeft = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
-                const newTop = Math.max(0, Math.min(maxTop, startTop + dy));
+                if (!hasDragStarted && distance > DRAG_THRESHOLD) {
+                    hasDragStarted = true;
+                    header.classList.add("dragging");
+                    document.body.classList.add("xz3r0-dragging");
+                    document.body.style.userSelect = "none";
 
-                windowEl.style.left = `${newLeft}px`;
-                windowEl.style.top = `${newTop}px`;
+                    if (!rafId) {
+                        rafId = requestAnimationFrame(onAnimationFrame);
+                    }
+                }
+
+                if (hasDragStarted) {
+                    pendingX = startLeft + dx;
+                    pendingY = startTop + dy;
+                }
             }
-            if (isResizing) {
-                const dx = e.clientX - startX;
-                const dy = e.clientY - startY;
 
-                // 限制最小尺寸
-                const newWidth = Math.max(400, startWidth + dx);
-                const newHeight = Math.max(300, startHeight + dy);
+            if (isResizing) {
+                const dx = e.clientX - resizeStartX;
+                const dy = e.clientY - resizeStartY;
+
+                let newWidth = resizeStartWidth;
+                let newHeight = resizeStartHeight;
+                let newLeft = resizeStartLeft;
+                let newTop = resizeStartTop;
+
+                // 根据拉伸方向计算新尺寸和位置
+                if (resizeDirection.includes('e')) {
+                    newWidth = Math.max(RESIZE_MIN_WIDTH, resizeStartWidth + dx);
+                }
+                if (resizeDirection.includes('w')) {
+                    const maxDx = resizeStartWidth - RESIZE_MIN_WIDTH;
+                    const clampedDx = Math.min(dx, maxDx);
+                    newWidth = resizeStartWidth - clampedDx;
+                    newLeft = resizeStartLeft + clampedDx;
+                }
+                if (resizeDirection.includes('s')) {
+                    newHeight = Math.max(RESIZE_MIN_HEIGHT, resizeStartHeight + dy);
+                }
+                if (resizeDirection.includes('n')) {
+                    const maxDy = resizeStartHeight - RESIZE_MIN_HEIGHT;
+                    const clampedDy = Math.min(dy, maxDy);
+                    newHeight = resizeStartHeight - clampedDy;
+                    newTop = resizeStartTop + clampedDy;
+                }
 
                 windowEl.style.width = `${newWidth}px`;
                 windowEl.style.height = `${newHeight}px`;
+                windowEl.style.left = `${newLeft}px`;
+                windowEl.style.top = `${newTop}px`;
             }
         };
 
         /**
          * 鼠标释放事件处理
-         * 保存窗口状态并清除拖拽/调整大小状态
+         * 保存窗口状态并清除拖拽/拉伸状态
+         * 确保一旦鼠标左键松开就立即重置所有状态
          */
         const handleMouseUp = () => {
-            if (isDragging || isResizing) {
-                // 保存当前状态到 localStorage
+            // 处理拖拽状态
+            if (isDragging) {
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
+                }
+
+                if (hasDragStarted) {
+                    updatePosition(pendingX, pendingY);
+                    Xz3r0Window.saveState({
+                        left: windowEl.style.left,
+                        top: windowEl.style.top,
+                        width: windowEl.style.width,
+                        height: windowEl.style.height
+                    });
+                }
+
+                header.classList.remove("dragging");
+                document.body.classList.remove("xz3r0-dragging");
+                document.body.style.userSelect = "";
+            }
+
+            // 处理拉伸状态 - 确保鼠标松开时立即重置
+            if (isResizing) {
+                isResizing = false;
+                resizeDirection = '';
+                document.body.classList.remove("xz3r0-resizing");
+                document.body.style.userSelect = "";
+
+                // 保存状态
                 Xz3r0Window.saveState({
                     left: windowEl.style.left,
                     top: windowEl.style.top,
@@ -319,37 +512,87 @@ const Xz3r0Window = {
                     height: windowEl.style.height
                 });
             }
+
             isDragging = false;
-            isResizing = false;
-            document.body.classList.remove("xz3r0-dragging");
+            hasDragStarted = false;
         };
 
-        // 绑定全局鼠标事件
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
+        // 绑定全局鼠标事件 - 使用 pointer 事件以支持 setPointerCapture
+        document.addEventListener("pointermove", handleMouseMove);
+        document.addEventListener("pointerup", handleMouseUp);
 
-        // 标题栏拖拽事件
-        header.addEventListener("mousedown", (e) => {
-            // 如果点击的是按钮，不启动拖拽
+        // 标题栏拖拽事件 - 使用 pointer 事件保持一致性
+        header.addEventListener("pointerdown", (e) => {
             if (e.target.closest(".xz3r0-floating-window-btn")) return;
+
             isDragging = true;
+            hasDragStarted = false;
             startX = e.clientX;
             startY = e.clientY;
             startLeft = windowEl.offsetLeft;
             startTop = windowEl.offsetTop;
+            pendingX = startLeft;
+            pendingY = startTop;
+
             e.preventDefault();
         });
 
-        // 右下角调整大小事件
-        resizeHandle.addEventListener("mousedown", (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            startWidth = windowEl.offsetWidth;
-            startHeight = windowEl.offsetHeight;
-            document.body.classList.add("xz3r0-dragging");
-            e.preventDefault();
-            e.stopPropagation();
+        // 拉伸手柄事件 - 使用 pointer 事件确保捕获能正常工作
+        windowEl.querySelectorAll('.xz3r0-resize-handle').forEach(handle => {
+            handle.addEventListener('pointerdown', (e) => {
+                // 只有左键点击才触发拉伸
+                if (e.button !== 0) return;
+
+                isResizing = true;
+                resizeDirection = handle.dataset.direction;
+                resizeStartX = e.clientX;
+                resizeStartY = e.clientY;
+                resizeStartWidth = windowEl.offsetWidth;
+                resizeStartHeight = windowEl.offsetHeight;
+                resizeStartLeft = windowEl.offsetLeft;
+                resizeStartTop = windowEl.offsetTop;
+
+                document.body.classList.add("xz3r0-resizing");
+                document.body.style.userSelect = "none";
+
+                // 捕获鼠标指针，确保即使鼠标移出手柄也能继续接收事件
+                handle.setPointerCapture(e.pointerId);
+
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            // 当失去指针捕获时（如鼠标松开），重置拉伸状态
+            handle.addEventListener('lostpointercapture', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizeDirection = '';
+                    document.body.classList.remove("xz3r0-resizing");
+                    document.body.style.userSelect = "";
+
+                    // 保存状态
+                    Xz3r0Window.saveState({
+                        left: windowEl.style.left,
+                        top: windowEl.style.top,
+                        width: windowEl.style.width,
+                        height: windowEl.style.height
+                    });
+                }
+            });
+        });
+
+        // 当鼠标移入拉伸手柄时，检查鼠标左键是否真正按下
+        // 修复：鼠标移出后松开再移入会自动进入拉伸状态的问题
+        windowEl.querySelectorAll('.xz3r0-resize-handle').forEach(handle => {
+            handle.addEventListener('pointerenter', (e) => {
+                // 如果处于拉伸状态但鼠标左键未按下，则重置状态
+                if (isResizing && (e.buttons & 1) === 0) {
+                    isResizing = false;
+                    resizeDirection = '';
+                    document.body.classList.remove("xz3r0-resizing");
+                    document.body.style.userSelect = "";
+                }
+            });
         });
 
         /**
@@ -382,8 +625,12 @@ const Xz3r0Window = {
              * 移除事件监听和 DOM 元素，清理资源
              */
             destroy() {
-                document.removeEventListener("mousemove", handleMouseMove);
-                document.removeEventListener("mouseup", handleMouseUp);
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                }
+
+                document.removeEventListener("pointermove", handleMouseMove);
+                document.removeEventListener("pointerup", handleMouseUp);
                 windowEl.remove();
                 Xz3r0Window.instance = null;
             }

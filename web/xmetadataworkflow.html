@@ -215,8 +215,9 @@
         }
 
         .sidebar-toggle:hover {
-            background: var(--bg-btn-hover);
+            border-color: var(--accent);
             color: var(--accent);
+            background: var(--bg-secondary);
         }
 
         .sidebar-toggle .toggle-icon {
@@ -266,12 +267,14 @@
         .lang-btn:hover {
             border-color: var(--accent);
             color: var(--accent);
+            background: var(--bg-tertiary);
         }
 
         .lang-btn.active {
-            background: var(--accent);
+            background: var(--bg-tertiary);
             border-color: var(--accent);
-            color: var(--text-primary);
+            color: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
         }
 
         .theme-switch {
@@ -299,9 +302,9 @@
         }
 
         .theme-btn.active {
-            background: var(--accent);
             border-color: var(--accent);
-            color: #fff;
+            color: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
         }
 
         .theme-btn[data-theme="dark"]:not(.active) {
@@ -310,10 +313,22 @@
             color: #fff;
         }
 
+        .theme-btn[data-theme="dark"].active {
+            background: #1a1a1a;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
         .theme-btn[data-theme="light"]:not(.active) {
             background: #ffffff;
             border-color: #ffffff;
             color: #1a1a1a;
+        }
+
+        .theme-btn[data-theme="light"].active {
+            background: #ffffff;
+            border-color: var(--accent);
+            color: var(--accent);
         }
 
         .file-area {
@@ -480,6 +495,20 @@
             animation: line-flow 1.5s linear infinite;
         }
 
+        /* 连接点圆点样式 */
+        .connection-dot {
+            fill: var(--bg-node);
+            stroke: var(--connection-line);
+            stroke-width: 2;
+            transition: all 0.3s ease;
+        }
+
+        .connection-dot.highlight {
+            fill: var(--accent);
+            stroke: var(--accent);
+            stroke-width: 2;
+        }
+
         @keyframes line-flow {
             0% {
                 stroke-dasharray: 10, 20;
@@ -497,12 +526,110 @@
             border: 1px solid var(--border-secondary);
             border-radius: 8px;
             min-width: 180px;
+            min-height: 60px;
             width: 220px;
             z-index: 10;
             box-shadow: 0 4px 12px var(--shadow-node);
             transition: box-shadow 0.1s, border-color 0.3s;
             overflow: hidden;
-            resize: horizontal;
+        }
+
+        /* 节点拉伸控制点 */
+        .resize-handle {
+            position: absolute;
+            z-index: 100;
+            background: transparent;
+        }
+
+        .resize-handle:hover,
+        .resize-handle.active {
+            background: var(--accent);
+        }
+
+        /* 角控制点 - 8x8px */
+        .resize-handle.nw,
+        .resize-handle.ne,
+        .resize-handle.sw,
+        .resize-handle.se {
+            width: 10px;
+            height: 10px;
+        }
+
+        .resize-handle.nw {
+            top: -5px;
+            left: -5px;
+            cursor: nw-resize;
+            border-radius: 0 0 4px 0;
+        }
+
+        .resize-handle.ne {
+            top: -5px;
+            right: -5px;
+            cursor: ne-resize;
+            border-radius: 0 0 0 4px;
+        }
+
+        .resize-handle.sw {
+            bottom: -5px;
+            left: -5px;
+            cursor: sw-resize;
+            border-radius: 0 4px 0 0;
+        }
+
+        .resize-handle.se {
+            bottom: -5px;
+            right: -5px;
+            cursor: se-resize;
+            border-radius: 4px 0 0 0;
+        }
+
+        /* 边控制点 */
+        .resize-handle.n,
+        .resize-handle.s {
+            width: calc(100% - 20px);
+            height: 6px;
+            left: 10px;
+        }
+
+        .resize-handle.n {
+            top: -3px;
+            cursor: n-resize;
+            border-radius: 0 0 3px 3px;
+        }
+
+        .resize-handle.s {
+            bottom: -3px;
+            cursor: s-resize;
+            border-radius: 3px 3px 0 0;
+        }
+
+        .resize-handle.w,
+        .resize-handle.e {
+            width: 6px;
+            height: calc(100% - 20px);
+            top: 10px;
+        }
+
+        .resize-handle.w {
+            left: -3px;
+            cursor: w-resize;
+            border-radius: 0 3px 3px 0;
+        }
+
+        .resize-handle.e {
+            right: -3px;
+            cursor: e-resize;
+            border-radius: 3px 0 0 3px;
+        }
+
+        /* 节点正在拉伸时的样式 */
+        .node.resizing {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .node.resizing .node-header {
+            cursor: default !important;
         }
 
         .node:hover {
@@ -556,9 +683,6 @@
             font-size: 11px;
             font-weight: 600;
             color: var(--text-primary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -566,6 +690,14 @@
             border-bottom: 1px solid var(--border-tertiary);
             user-select: text;
             -webkit-user-select: text;
+        }
+
+        .node-header-text {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .node-header.dragging {
@@ -738,8 +870,9 @@
         }
 
         .zoom-btn:hover {
-            background: var(--bg-btn-hover);
-            border-color: var(--border-tertiary);
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-btn);
         }
 
         .zoom-level {
@@ -811,15 +944,15 @@
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 11px;
             line-height: 16px;
+            overflow: auto;
         }
 
         .virtual-scroll-line {
             padding: 0 8px;
             white-space: pre;
-            overflow: hidden;
-            text-overflow: ellipsis;
             height: 16px;
             line-height: 16px;
+            min-width: fit-content;
         }
 
         .virtual-scroll-line:hover {
@@ -1302,6 +1435,19 @@
         // 拖动标记，用于防止拖动后触发点击事件
         let justFinishedDrag = false;
 
+        // 节点拉伸状态变量
+        let isResizing = false;
+        let resizeNodeId = null;
+        let resizeDirection = null;
+        let resizeStartX = 0;
+        let resizeStartY = 0;
+        let resizeStartWidth = 0;
+        let resizeStartHeight = 0;
+        let resizeStartLeft = 0;
+        let resizeStartTop = 0;
+        const MIN_NODE_WIDTH = 180;
+        const MIN_NODE_HEIGHT = 60;
+
         canvasContainer.addEventListener('mousedown', (e) => {
             // Ctrl+左键：开始框选
             if (e.ctrlKey && e.button === 0 && (e.target === canvasContainer || e.target === canvasWrapper)) {
@@ -1349,6 +1495,70 @@
         });
 
         document.addEventListener('mousemove', (e) => {
+            // 处理节点拉伸 - 放在最前面确保及时响应
+            if (isResizing && resizeNodeId) {
+                const nodeEl = document.querySelector(`[data-node-id="${resizeNodeId}"]`);
+                if (nodeEl) {
+                    // 计算鼠标移动距离（考虑画布缩放）
+                    const dx = (e.clientX - resizeStartX) / scale;
+                    const dy = (e.clientY - resizeStartY) / scale;
+
+                    let newWidth = resizeStartWidth;
+                    let newHeight = resizeStartHeight;
+                    let newLeft = resizeStartLeft;
+                    let newTop = resizeStartTop;
+
+                    // 根据拉伸方向计算新的尺寸和位置
+                    switch (resizeDirection) {
+                        case 'e': // 东 - 右边
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth + dx);
+                            break;
+                        case 'w': // 西 - 左边
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth - dx);
+                            newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
+                            break;
+                        case 's': // 南 - 下边
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight + dy);
+                            break;
+                        case 'n': // 北 - 上边
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight - dy);
+                            newTop = resizeStartTop + (resizeStartHeight - newHeight);
+                            break;
+                        case 'se': // 东南 - 右下角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth + dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight + dy);
+                            break;
+                        case 'sw': // 西南 - 左下角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth - dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight + dy);
+                            newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
+                            break;
+                        case 'ne': // 东北 - 右上角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth + dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight - dy);
+                            newTop = resizeStartTop + (resizeStartHeight - newHeight);
+                            break;
+                        case 'nw': // 西北 - 左上角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth - dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight - dy);
+                            newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
+                            newTop = resizeStartTop + (resizeStartHeight - newHeight);
+                            break;
+                    }
+
+                    // 应用新的尺寸和位置
+                    nodeEl.style.width = newWidth + 'px';
+                    nodeEl.style.height = newHeight + 'px';
+                    nodeEl.style.left = newLeft + 'px';
+                    nodeEl.style.top = newTop + 'px';
+
+                    // 立即更新连接线
+                    updateConnectionPaths();
+                    updateConnectionHighlight();
+                }
+                return; // 拉伸时阻止其他操作
+            }
+
             if (isPanning) {
                 panX = e.clientX - panStartX;
                 panY = e.clientY - panStartY;
@@ -1393,6 +1603,51 @@
         });
 
         document.addEventListener('mouseup', (e) => {
+            // 结束节点拉伸 - 放在最前面确保及时清理状态
+            if (isResizing) {
+                const nodeEl = document.querySelector(`[data-node-id="${resizeNodeId}"]`);
+                if (nodeEl) {
+                    // 移除拉伸中样式
+                    nodeEl.classList.remove('resizing');
+                    nodeEl.querySelectorAll('.resize-handle').forEach(h => {
+                        h.classList.remove('active');
+                    });
+
+                    // 保存节点尺寸状态
+                    if (!nodeStates[resizeNodeId]) {
+                        nodeStates[resizeNodeId] = {};
+                    }
+                    nodeStates[resizeNodeId].width = nodeEl.offsetWidth;
+                    nodeStates[resizeNodeId].height = nodeEl.offsetHeight;
+
+                    // 保存节点位置（如果位置发生了变化）
+                    const newLeft = parseFloat(nodeEl.style.left);
+                    const newTop = parseFloat(nodeEl.style.top);
+                    if (newLeft !== resizeStartLeft || newTop !== resizeStartTop) {
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[resizeNodeId] = {
+                            x: newLeft,
+                            y: newTop
+                        };
+                    }
+                }
+
+                // 立即清理所有拉伸状态
+                document.body.style.userSelect = '';
+                document.body.style.webkitUserSelect = '';
+                isResizing = false;
+                resizeNodeId = null;
+                resizeDirection = null;
+
+                // 设置标记，防止触发点击事件
+                justFinishedDrag = true;
+                setTimeout(() => {
+                    justFinishedDrag = false;
+                }, 50);
+            }
+
             // 结束框选
             if (isSelecting) {
                 const containerRect = canvasContainer.getBoundingClientRect();
@@ -2190,6 +2445,22 @@
                 }
             });
 
+            // 在清空画布前，保存所有节点的当前位置
+            // 这样可以确保用户拖动后的位置不会丢失
+            document.querySelectorAll('.node').forEach(node => {
+                const nodeId = node.dataset.nodeId;
+                if (nodeId) {
+                    const left = parseFloat(node.style.left);
+                    const top = parseFloat(node.style.top);
+                    if (!isNaN(left) && !isNaN(top)) {
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[nodeId] = { x: left, y: top };
+                    }
+                }
+            });
+
             canvas.innerHTML = '';
             connectionsSvg.innerHTML = '';
 
@@ -2342,9 +2613,15 @@
                 nodeEl.style.top = pos.y + 'px';
                 nodeEl.dataset.nodeId = nodeId;
 
-                // 恢复保存的节点宽度 - 只在节点未折叠时恢复，避免折叠状态宽度计算问题
+                // 恢复保存的节点尺寸 - 只在节点未折叠时恢复，避免折叠状态尺寸计算问题
                 if (nodeStates[nodeId]?.width && !nodeStates[nodeId]?.collapsed) {
                     nodeEl.style.width = nodeStates[nodeId].width + 'px';
+                }
+                if (nodeStates[nodeId]?.height && !nodeStates[nodeId]?.collapsed) {
+                    nodeEl.style.height = nodeStates[nodeId].height + 'px';
+                } else if (!nodeStates[nodeId]?.collapsed) {
+                    // 设置默认高度，确保节点有合适的高度显示内容
+                    nodeEl.style.height = 'auto';
                 }
 
                 // 设置子图边框颜色
@@ -2361,7 +2638,7 @@
                     const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
-                            <span>${classType}</span>
+                            <span class="node-header-text">${classType}</span>
                             <div class="header-actions">
                                 <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
@@ -2384,7 +2661,7 @@
 
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
-                            <span>${classType}</span>
+                            <span class="node-header-text">${classType}</span>
                             <div class="header-actions">
                                 <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
@@ -2404,53 +2681,79 @@
 
                 nodeEl.innerHTML = content;
 
+                // 添加8个方向的拉伸手柄
+                const resizeHandles = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
+                resizeHandles.forEach(direction => {
+                    const handle = document.createElement('div');
+                    handle.className = `resize-handle ${direction}`;
+                    handle.dataset.direction = direction;
+                    handle.dataset.nodeId = nodeId;
+                    nodeEl.appendChild(handle);
+                });
+
                 // 处理长文本参数 - 使用虚拟滚动
                 if (classType === 'Note' || classType === 'MarkdownNote') {
                     // Note 节点特殊处理 - 检查 note-content
-                    const noteContent = nodeEl.querySelector('.note-content');
-                    if (noteContent) {
-                        const text = noteContent.textContent;
-                        if (needsVirtualScroll(text)) {
-                            // 获取完整内容
-                            const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
-                            const fullText = noteDataItem?.text || text;
+                    try {
+                        const noteContent = nodeEl.querySelector('.note-content');
+                        if (noteContent) {
+                            const text = noteContent.textContent;
+                            if (needsVirtualScroll(text)) {
+                                // 获取完整内容
+                                const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
+                                const fullText = noteDataItem?.text || text;
 
-                            // 创建虚拟滚动容器替换原有内容（Note节点使用更小的高度）
-                            const longContainer = createLongTextContainer(fullText, 'content', { maxHeight: 150 });
-                            noteContent.innerHTML = '';
-                            noteContent.style.maxHeight = 'none';
-                            noteContent.appendChild(longContainer);
+                                // 创建虚拟滚动容器替换原有内容（Note节点使用更小的高度）
+                                const longContainer = createLongTextContainer(fullText, 'content', { maxHeight: 150 });
+                                noteContent.innerHTML = '';
+                                noteContent.style.maxHeight = 'none';
+                                noteContent.appendChild(longContainer);
+                            }
                         }
+                    } catch (error) {
+                        console.error('Error processing Note node:', error);
                     }
                 } else {
                     // 普通节点处理参数
-                    const nodeBody = nodeEl.querySelector('.node-body');
-                    if (nodeBody) {
-                        const paramRows = nodeBody.querySelectorAll('.param-row');
-                        paramRows.forEach((row, index) => {
-                            const keyEl = row.querySelector('.param-key');
-                            const valueEl = row.querySelector('.param-value');
-                            if (keyEl && valueEl) {
-                                const key = keyEl.textContent;
-                                const value = valueEl.textContent;
+                    try {
+                        const nodeBody = nodeEl.querySelector('.node-body');
+                        if (nodeBody) {
+                            const paramRows = nodeBody.querySelectorAll('.param-row');
+                            paramRows.forEach((row, index) => {
+                                try {
+                                    const keyEl = row.querySelector('.param-key');
+                                    const valueEl = row.querySelector('.param-value');
+                                    if (keyEl && valueEl) {
+                                        const key = keyEl.textContent;
+                                        const value = valueEl.textContent;
 
-                                // 检查是否需要虚拟滚动
-                                if (needsVirtualScroll(value)) {
-                                    // 获取原始值（从 inputs 中获取完整内容）
-                                    const originalValue = nodeData.inputs?.[key] || value;
-                                    const fullContent = String(originalValue);
+                                        // 检查是否需要虚拟滚动
+                                        if (needsVirtualScroll(value)) {
+                                            // 获取原始值（从 inputs 中获取完整内容）
+                                            let originalValue = nodeData.inputs?.[key] || value;
+                                            // 如果是数组，转换为JSON字符串
+                                            if (Array.isArray(originalValue)) {
+                                                originalValue = JSON.stringify(originalValue);
+                                            }
+                                            const fullContent = String(originalValue);
 
-                                    // 替换为长文本容器
-                                    row.classList.add('long-param');
-                                    const longContainer = createLongTextContainer(fullContent, key);
+                                            // 替换为长文本容器
+                                            row.classList.add('long-param');
+                                            const longContainer = createLongTextContainer(fullContent, key);
 
-                                    // 清空并添加新容器
-                                    valueEl.innerHTML = '';
-                                    valueEl.className = 'param-value-container';
-                                    valueEl.appendChild(longContainer);
+                                            // 清空并添加新容器
+                                            valueEl.innerHTML = '';
+                                            valueEl.className = 'param-value-container';
+                                            valueEl.appendChild(longContainer);
+                                        }
+                                    }
+                                } catch (paramError) {
+                                    console.error('Error processing parameter:', paramError);
                                 }
-                            }
-                        });
+                            });
+                        }
+                    } catch (bodyError) {
+                        console.error('Error processing node body:', bodyError);
                     }
                 }
 
@@ -2582,6 +2885,33 @@
                     }
                     isNodeDragging = false;
                     hasDragStarted = false;
+                });
+
+                // 为拉伸手柄添加事件监听
+                nodeEl.querySelectorAll('.resize-handle').forEach(handle => {
+                    handle.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        // 初始化拉伸状态
+                        isResizing = true;
+                        resizeNodeId = nodeId;
+                        resizeDirection = handle.dataset.direction;
+                        resizeStartX = e.clientX;
+                        resizeStartY = e.clientY;
+                        resizeStartWidth = nodeEl.offsetWidth;
+                        resizeStartHeight = nodeEl.offsetHeight;
+                        resizeStartLeft = parseFloat(nodeEl.style.left);
+                        resizeStartTop = parseFloat(nodeEl.style.top);
+
+                        // 添加拉伸中样式
+                        nodeEl.classList.add('resizing');
+                        handle.classList.add('active');
+
+                        // 阻止文本选择
+                        document.body.style.userSelect = 'none';
+                        document.body.style.webkitUserSelect = 'none';
+                    });
                 });
 
                 // 使用 ResizeObserver 监听节点宽度变化并保存
@@ -2797,61 +3127,67 @@
          * @returns {HTMLElement} 虚拟滚动容器
          */
         function createVirtualScroll(content, options = {}) {
-            const {
-                maxHeight = 200,
-                lineHeight = 16,
-                maxPreviewLength = 5000
-            } = options;
+            try {
+                const {
+                    maxHeight = 200,
+                    lineHeight = 16,
+                    maxPreviewLength = 5000
+                } = options;
 
-            if (content.length <= maxPreviewLength) {
-                const div = document.createElement('div');
-                div.className = 'param-value-short';
-                div.textContent = content;
-                return div;
-            }
-
-            const lines = splitIntoLines(content);
-            const totalHeight = lines.length * lineHeight;
-
-            const container = document.createElement('div');
-            container.className = 'virtual-scroll-container';
-            container.style.height = maxHeight + 'px';
-            container.style.overflow = 'auto';
-            container.style.position = 'relative';
-
-            const spacer = document.createElement('div');
-            spacer.className = 'virtual-scroll-spacer';
-            spacer.style.height = totalHeight + 'px';
-            container.appendChild(spacer);
-
-            const visibleLayer = document.createElement('div');
-            visibleLayer.className = 'virtual-scroll-visible';
-            visibleLayer.style.position = 'absolute';
-            visibleLayer.style.top = '0';
-            visibleLayer.style.left = '0';
-            visibleLayer.style.right = '0';
-            container.appendChild(visibleLayer);
-
-            const visibleCount = Math.ceil(maxHeight / lineHeight) + 2;
-
-            const renderVisibleLines = () => {
-                const scrollTop = container.scrollTop;
-                const startIndex = Math.max(0, Math.floor(scrollTop / lineHeight));
-                const endIndex = Math.min(startIndex + visibleCount, lines.length);
-
-                const fragment = document.createDocumentFragment();
-                for (let i = startIndex; i < endIndex; i++) {
-                    const lineEl = document.createElement('div');
-                    lineEl.className = 'virtual-scroll-line';
-                    lineEl.style.height = lineHeight + 'px';
-                    lineEl.textContent = lines[i] || ' ';
-                    fragment.appendChild(lineEl);
+                // 确保content是字符串
+                if (typeof content !== 'string') {
+                    content = String(content);
                 }
 
-                visibleLayer.innerHTML = '';
-                visibleLayer.appendChild(fragment);
-                visibleLayer.style.top = (startIndex * lineHeight) + 'px';
-            };
+                if (content.length <= maxPreviewLength) {
+                    const div = document.createElement('div');
+                    div.className = 'param-value-short';
+                    div.textContent = content;
+                    return div;
+                }
+
+                const lines = splitIntoLines(content);
+                const totalHeight = lines.length * lineHeight;
+
+                const container = document.createElement('div');
+                container.className = 'virtual-scroll-container';
+                container.style.height = maxHeight + 'px';
+                container.style.overflow = 'auto';
+                container.style.position = 'relative';
+
+                const spacer = document.createElement('div');
+                spacer.className = 'virtual-scroll-spacer';
+                spacer.style.height = totalHeight + 'px';
+                container.appendChild(spacer);
+
+                const visibleLayer = document.createElement('div');
+                visibleLayer.className = 'virtual-scroll-visible';
+                visibleLayer.style.position = 'absolute';
+                visibleLayer.style.top = '0';
+                visibleLayer.style.left = '0';
+                visibleLayer.style.minWidth = '100%';
+                container.appendChild(visibleLayer);
+
+                const visibleCount = Math.ceil(maxHeight / lineHeight) + 2;
+
+                const renderVisibleLines = () => {
+                    const scrollTop = container.scrollTop;
+                    const startIndex = Math.max(0, Math.floor(scrollTop / lineHeight));
+                    const endIndex = Math.min(startIndex + visibleCount, lines.length);
+
+                    const fragment = document.createDocumentFragment();
+                    for (let i = startIndex; i < endIndex; i++) {
+                        const lineEl = document.createElement('div');
+                        lineEl.className = 'virtual-scroll-line';
+                        lineEl.style.height = lineHeight + 'px';
+                        lineEl.textContent = lines[i] || ' ';
+                        fragment.appendChild(lineEl);
+                    }
+
+                    visibleLayer.innerHTML = '';
+                    visibleLayer.appendChild(fragment);
+                    visibleLayer.style.top = (startIndex * lineHeight) + 'px';
+                };
 
             let ticking = false;
             container.addEventListener('scroll', () => {
@@ -2866,27 +3202,43 @@
 
             // 添加滚轮事件支持
             container.addEventListener('wheel', (e) => {
-                // 始终阻止事件冒泡和默认行为，防止触发视图缩放
-                e.preventDefault();
+                // 阻止事件冒泡，防止触发视图缩放
                 e.stopPropagation();
 
+                // 处理横向滚动（Shift+滚轮或横向滚轮）
+                if (e.shiftKey || e.deltaX !== 0) {
+                    e.preventDefault();
+                    container.scrollLeft += e.deltaX || e.deltaY;
+                    return;
+                }
+
+                // 处理纵向滚动
                 const isAtTop = container.scrollTop === 0 && e.deltaY < 0;
                 const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1 && e.deltaY > 0;
 
-                // 只有在没有到达边界时才滚动
+                // 只有在没有到达纵向边界时才阻止默认行为并滚动
                 if (!isAtTop && !isAtBottom) {
+                    e.preventDefault();
                     container.scrollTop += e.deltaY;
                 }
             }, { passive: false });
 
-            renderVisibleLines();
+                renderVisibleLines();
 
-            container.virtualScrollData = {
-                lines: lines,
-                getAllContent: () => content
-            };
+                container.virtualScrollData = {
+                    lines: lines,
+                    getAllContent: () => content
+                };
 
-            return container;
+                return container;
+            } catch (error) {
+                console.error('createVirtualScroll error:', error);
+                // 出错时返回一个简单的div显示内容
+                const div = document.createElement('div');
+                div.className = 'param-value-short';
+                div.textContent = typeof content === 'string' ? content : String(content);
+                return div;
+            }
         }
 
         /**
@@ -2897,41 +3249,50 @@
          * @returns {HTMLElement} 长文本容器
          */
         function createLongTextContainer(content, paramKey, options = {}) {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'long-text-wrapper';
+            try {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'long-text-wrapper';
 
-            const header = document.createElement('div');
-            header.className = 'long-text-header';
-            header.innerHTML = `
-                <span class="long-text-info">${formatBytes(content.length)} · ${splitIntoLines(content).length.toLocaleString()} ${t('lines')}</span>
-                <div class="long-text-actions">
-                    <button class="text-action-btn" data-action="copy">📋 ${t('copy')}</button>
-                    <button class="text-action-btn" data-action="download">💾 ${t('download')}</button>
-                </div>
-            `;
-            wrapper.appendChild(header);
+                const header = document.createElement('div');
+                header.className = 'long-text-header';
+                header.innerHTML = `
+                    <span class="long-text-info">${formatBytes(content.length)} · ${splitIntoLines(content).length.toLocaleString()} ${t('lines')}</span>
+                    <div class="long-text-actions">
+                        <button class="text-action-btn" data-action="copy">📋 ${t('copy')}</button>
+                        <button class="text-action-btn" data-action="download">💾 ${t('download')}</button>
+                    </div>
+                `;
+                wrapper.appendChild(header);
 
-            const virtualScroll = createVirtualScroll(content, options);
-            wrapper.appendChild(virtualScroll);
+                const virtualScroll = createVirtualScroll(content, options);
+                wrapper.appendChild(virtualScroll);
 
-            header.querySelectorAll('.text-action-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const action = btn.dataset.action;
-                    if (action === 'copy') {
-                        copyToClipboard(content);
-                    } else if (action === 'download') {
-                        downloadText(content, `${paramKey}.txt`);
-                    }
+                header.querySelectorAll('.text-action-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const action = btn.dataset.action;
+                        if (action === 'copy') {
+                            copyToClipboard(content);
+                        } else if (action === 'download') {
+                            downloadText(content, `${paramKey}.txt`);
+                        }
+                    });
                 });
-            });
 
-            return wrapper;
+                return wrapper;
+            } catch (error) {
+                console.error('createLongTextContainer error:', error);
+                // 出错时返回一个简单的div显示内容
+                const div = document.createElement('div');
+                div.className = 'param-value-short';
+                div.textContent = typeof content === 'string' ? content : String(content);
+                return div;
+            }
         }
 
         /**
          * 更新连接线的 SVG 路径
-         * 根据节点位置计算贝塞尔曲线路径
+         * 根据节点位置计算贝塞尔曲线路径，连接点位于节点边框上
          */
         function updateConnectionPaths() {
             let svgContent = '';
@@ -2957,15 +3318,25 @@
                     height: toNodeEl.offsetHeight
                 };
 
-                // 计算连接点坐标（从右侧中点出发，到左侧中点）
-                const x1 = fromRect.x + fromRect.width;
+                // 计算连接点坐标（从右侧边框中点出发，到左侧边框中点）
+                const dotRadius = 5; // 圆点半径
+                const x1 = fromRect.x + fromRect.width; // 起点在右边框
                 const y1 = fromRect.y + fromRect.height / 2;
-                const x2 = toRect.x;
+                const x2 = toRect.x; // 终点在左边框
                 const y2 = toRect.y + toRect.height / 2;
+
+                // 计算贝塞尔曲线控制点
                 const midX = (x1 + x2) / 2;
 
-                const path = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                // 绘制连接线路径（从圆点边缘开始，到圆点边缘结束）
+                const path = `M ${x1 + dotRadius} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2 - dotRadius} ${y2}`;
                 svgContent += `<path class="connection-line" d="${path}" data-from="${conn.from}" data-to="${conn.to}" />`;
+
+                // 添加起点圆点（在右边框上）
+                svgContent += `<circle class="connection-dot" cx="${x1}" cy="${y1}" r="${dotRadius}" data-dot-type="output" data-node="${conn.from}" />`;
+
+                // 添加终点圆点（在左边框上）
+                svgContent += `<circle class="connection-dot" cx="${x2}" cy="${y2}" r="${dotRadius}" data-dot-type="input" data-node="${conn.to}" />`;
             }
 
             connectionsSvg.innerHTML = svgContent;
@@ -3048,12 +3419,15 @@
             document.querySelectorAll('.connection-line').forEach(line => {
                 delete line.dataset.hasFlow;
             });
+            document.querySelectorAll('.connection-dot').forEach(dot => {
+                dot.classList.remove('highlight');
+            });
             selectedNodeId = null;
         }
 
         /**
          * 更新连接线的高亮状态
-         * 当节点被选中时，高亮与该节点相关的连接线
+         * 当节点被选中时，高亮与该节点相关的连接线和连接点
          */
         function updateConnectionHighlight() {
             if (!selectedNodeId) {
@@ -3062,6 +3436,9 @@
                 });
                 document.querySelectorAll('.connection-line').forEach(line => {
                     delete line.dataset.hasFlow;
+                });
+                document.querySelectorAll('.connection-dot').forEach(dot => {
+                    dot.classList.remove('highlight');
                 });
                 return;
             }
@@ -3090,6 +3467,16 @@
                             flowLine.remove();
                         }
                     }
+                }
+            });
+
+            // 高亮相关的连接点
+            document.querySelectorAll('.connection-dot').forEach(dot => {
+                const dotNodeId = dot.dataset.node;
+                if (dotNodeId === selectedNodeId) {
+                    dot.classList.add('highlight');
+                } else {
+                    dot.classList.remove('highlight');
                 }
             });
         }
