@@ -46,7 +46,9 @@ class WorkflowDataStore:
         cls._timestamps[prompt_id] = time.time()
 
     @classmethod
-    def retrieve(cls, prompt_id: str, auto_cleanup: bool = True) -> dict | None:
+    def retrieve(
+        cls, prompt_id: str, auto_cleanup: bool = True
+    ) -> dict | None:
         """
         获取工作流数据
 
@@ -92,7 +94,8 @@ class WorkflowDataStore:
         """清理过期数据（备用机制）"""
         current_time = time.time()
         expired_keys = [
-            key for key, timestamp in cls._timestamps.items()
+            key
+            for key, timestamp in cls._timestamps.items()
             if current_time - timestamp > cls._expire_seconds
         ]
         for key in expired_keys:
@@ -110,7 +113,7 @@ class WorkflowDataStore:
         total_entries = len(cls._data)
         total_size = 0
 
-        for key, value in cls._data.items():
+        for _, value in cls._data.items():
             # 估算数据大小（粗略计算）
             try:
                 size = len(json.dumps(value))
@@ -121,7 +124,7 @@ class WorkflowDataStore:
         return {
             "entries": total_entries,
             "estimated_bytes": total_size,
-            "estimated_mb": round(total_size / (1024 * 1024), 2)
+            "estimated_mb": round(total_size / (1024 * 1024), 2),
         }
 
 
@@ -133,9 +136,8 @@ workflow_store = WorkflowDataStore()
 # API 路由定义
 # ================================
 
-@server.PromptServer.instance.routes.post(
-    "/xz3r0/xworkflowsave/capture"
-)
+
+@server.PromptServer.instance.routes.post("/xz3r0/xworkflowsave/capture")
 async def capture_workflow(request: web.Request) -> web.Response:
     """
     接收前端捕获的工作流数据
@@ -157,40 +159,38 @@ async def capture_workflow(request: web.Request) -> web.Response:
 
         if not prompt_id:
             return web.json_response(
-                {"status": "error", "message": "Missing prompt_id"},
-                status=400
+                {"status": "error", "message": "Missing prompt_id"}, status=400
             )
 
         if not workflow:
             return web.json_response(
                 {"status": "error", "message": "Missing workflow data"},
-                status=400
+                status=400,
             )
 
         # 存储数据
-        workflow_store.store(prompt_id, {
-            "workflow": workflow,
-            "mode": data.get("mode", "auto"),
-            "timestamp": time.time()
-        })
+        workflow_store.store(
+            prompt_id,
+            {
+                "workflow": workflow,
+                "mode": data.get("mode", "auto"),
+                "timestamp": time.time(),
+            },
+        )
 
         return web.json_response({"status": "success"})
 
     except json.JSONDecodeError:
         return web.json_response(
-            {"status": "error", "message": "Invalid JSON"},
-            status=400
+            {"status": "error", "message": "Invalid JSON"}, status=400
         )
     except Exception as e:
         return web.json_response(
-            {"status": "error", "message": str(e)},
-            status=500
+            {"status": "error", "message": str(e)}, status=500
         )
 
 
-@server.PromptServer.instance.routes.post(
-    "/xz3r0/xworkflowsave/cleanup"
-)
+@server.PromptServer.instance.routes.post("/xz3r0/xworkflowsave/cleanup")
 async def cleanup_workflow(request: web.Request) -> web.Response:
     """
     主动清理工作流数据
@@ -209,32 +209,24 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
 
         if not prompt_id:
             return web.json_response(
-                {"status": "error", "message": "Missing prompt_id"},
-                status=400
+                {"status": "error", "message": "Missing prompt_id"}, status=400
             )
 
         cleaned = workflow_store.cleanup(prompt_id)
 
-        return web.json_response({
-            "status": "success",
-            "cleaned": cleaned
-        })
+        return web.json_response({"status": "success", "cleaned": cleaned})
 
     except json.JSONDecodeError:
         return web.json_response(
-            {"status": "error", "message": "Invalid JSON"},
-            status=400
+            {"status": "error", "message": "Invalid JSON"}, status=400
         )
     except Exception as e:
         return web.json_response(
-            {"status": "error", "message": str(e)},
-            status=500
+            {"status": "error", "message": str(e)}, status=500
         )
 
 
-@server.PromptServer.instance.routes.get(
-    "/xz3r0/xworkflowsave/status"
-)
+@server.PromptServer.instance.routes.get("/xz3r0/xworkflowsave/status")
 async def get_status(request: web.Request) -> web.Response:
     """
     获取存储状态（调试用）
@@ -244,11 +236,13 @@ async def get_status(request: web.Request) -> web.Response:
     """
     memory_info = workflow_store.get_memory_usage()
 
-    return web.json_response({
-        "stored_prompts": list(workflow_store._data.keys()),
-        "count": memory_info["entries"],
-        "memory_usage": {
-            "estimated_bytes": memory_info["estimated_bytes"],
-            "estimated_mb": memory_info["estimated_mb"]
+    return web.json_response(
+        {
+            "stored_prompts": list(workflow_store._data.keys()),
+            "count": memory_info["entries"],
+            "memory_usage": {
+                "estimated_bytes": memory_info["estimated_bytes"],
+                "estimated_mb": memory_info["estimated_mb"],
+            },
         }
-    })
+    )

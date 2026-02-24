@@ -26,7 +26,8 @@ class XWorkflowSave(io.ComfyNode):
 
     将ComfyUI工作流保存为JSON文件，支持两种保存模式：
     - 标准模式：保存 prompt + workflow（简化数据，来自 extra_pnginfo）
-    - 完整模式：保存完整 workflow（包含 localized_name 和 widget，来自前端 API）
+    - 完整模式：保存完整 workflow（包含 localized_name 和 widget，
+      来自前端 API）
 
     功能:
         - 保存工作流到ComfyUI默认输出目录
@@ -275,7 +276,8 @@ class XWorkflowSave(io.ComfyNode):
                 )
 
         else:  # Auto mode
-            # 自动模式：优先使用 Prompt+FullWorkflow，如果前端失效则使用 Standard
+            # 自动模式：优先使用 Prompt+FullWorkflow，
+            # 如果前端失效则使用 Standard
             if prompt is not None:
                 workflow_data["prompt"] = prompt
             if full_workflow_data:
