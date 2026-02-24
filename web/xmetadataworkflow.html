@@ -630,6 +630,21 @@
             overflow-y: auto;
         }
 
+        .note-content .long-text-wrapper {
+            background: transparent;
+            border: none;
+            margin: -8px;
+        }
+
+        .note-content .long-text-header {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .note-content .virtual-scroll-container {
+            padding: 0 8px;
+        }
+
         .zoom-controls {
             position: fixed;
             bottom: 10px;
@@ -674,6 +689,119 @@
         .zoom-level:focus {
             outline: none;
             border-color: var(--accent);
+        }
+
+        /* 虚拟滚动样式 */
+        .long-text-wrapper {
+            border: 1px solid var(--border-secondary);
+            border-radius: 4px;
+            background: var(--bg-param-value);
+            overflow: hidden;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .long-text-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2px 6px;
+            background: var(--bg-param-key);
+            border-bottom: 1px solid var(--border-tertiary);
+            font-size: 10px;
+        }
+
+        .long-text-info {
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .long-text-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .text-action-btn {
+            font-size: 9px;
+            padding: 1px 4px;
+            background: var(--bg-btn);
+            border: 1px solid var(--border-tertiary);
+            border-radius: 2px;
+            cursor: pointer;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        .text-action-btn:hover {
+            background: var(--bg-btn-hover);
+        }
+
+        .virtual-scroll-container {
+            background: var(--bg-param-value);
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 16px;
+        }
+
+        .virtual-scroll-line {
+            padding: 0 8px;
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            height: 16px;
+            line-height: 16px;
+        }
+
+        .virtual-scroll-line:hover {
+            background: var(--bg-btn-hover);
+        }
+
+        .param-value-short {
+            padding: 4px 8px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow: auto;
+            max-height: 100px;
+        }
+
+        .long-param {
+            flex-direction: row;
+            align-items: flex-start;
+        }
+
+        .long-param .param-key {
+            margin-bottom: 0;
+            flex-shrink: 0;
+            margin-right: 8px;
+            margin-top: 4px;
+        }
+
+        .param-value-container {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Toast 提示 */
+        .toast-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            z-index: 10000;
+            font-size: 14px;
+            animation: fadeInOut 2s ease;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+            10% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            90% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
         }
     </style>
 </head>
@@ -789,7 +917,12 @@
                 typePng: 'PNG 图片',
                 typeLatent: 'Latent 潜空间',
                 typeJson: 'JSON 工作流',
-                unknown: '未知'
+                unknown: '未知',
+                copied: '已复制到剪贴板',
+                downloadStarted: '已开始下载',
+                lines: '行',
+                copy: '复制',
+                download: '下载'
             },
             en: {
                 title: 'XMetadataWorkflow',
@@ -828,7 +961,12 @@
                 typePng: 'PNG Image',
                 typeLatent: 'Latent File',
                 typeJson: 'JSON Workflow',
-                unknown: 'Unknown'
+                unknown: 'Unknown',
+                copied: 'Copied to clipboard',
+                downloadStarted: 'Download started',
+                lines: 'lines',
+                copy: 'Copy',
+                download: 'Download'
             }
         };
 
@@ -1653,12 +1791,13 @@
                         result.xworkflowSaveNodes.push(nodeId);
                     }
 
-                    // 提取 Note 节点
-                    if (classType === 'Note') {
+                    // 提取 Note 节点（包括 MarkdownNote）
+                    if (classType === 'Note' || classType === 'MarkdownNote') {
                         result.notes.push({
                             id: nodeId,
                             text: inputs.text || '',
-                            mode: inputs.mode
+                            mode: inputs.mode,
+                            classType: classType
                         });
                     }
 
@@ -1864,7 +2003,7 @@
 
                 // 构建节点 CSS 类名
                 let className = 'node';
-                if (classType === 'Note') className += ' note-node';
+                if (classType === 'Note' || classType === 'MarkdownNote') className += ' note-node';
                 if (nodeStates[nodeId]?.collapsed) className += ' collapsed';
 
                 // 创建节点元素
@@ -1873,6 +2012,11 @@
                 nodeEl.style.left = pos.x + 'px';
                 nodeEl.style.top = pos.y + 'px';
                 nodeEl.dataset.nodeId = nodeId;
+
+                // 恢复保存的节点宽度 - 只在节点未折叠时恢复，避免折叠状态宽度计算问题
+                if (nodeStates[nodeId]?.width && !nodeStates[nodeId]?.collapsed) {
+                    nodeEl.style.width = nodeStates[nodeId].width + 'px';
+                }
 
                 // 设置子图边框颜色
                 const subgraphColor = getSubgraphColor(nodeData.subgraphId);
@@ -1884,8 +2028,8 @@
 
                 let content = '';
 
-                if (classType === 'Note') {
-                    const noteData = workflowData.notes.find(n => n.id === nodeId);
+                if (classType === 'Note' || classType === 'MarkdownNote') {
+                    const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
                             <span>${classType}</span>
@@ -1894,7 +2038,7 @@
                             </div>
                         </div>
                         <div class="node-body">
-                            <div class="note-content">${escapeHtml(noteData?.text || '')}</div>
+                            <div class="note-content">${escapeHtml(noteDataItem?.text || '')}</div>
                         </div>
                     `;
                 } else {
@@ -1931,6 +2075,56 @@
 
                 nodeEl.innerHTML = content;
 
+                // 处理长文本参数 - 使用虚拟滚动
+                if (classType === 'Note' || classType === 'MarkdownNote') {
+                    // Note 节点特殊处理 - 检查 note-content
+                    const noteContent = nodeEl.querySelector('.note-content');
+                    if (noteContent) {
+                        const text = noteContent.textContent;
+                        if (needsVirtualScroll(text)) {
+                            // 获取完整内容
+                            const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
+                            const fullText = noteDataItem?.text || text;
+
+                            // 创建虚拟滚动容器替换原有内容（Note节点使用更小的高度）
+                            const longContainer = createLongTextContainer(fullText, 'content', { maxHeight: 150 });
+                            noteContent.innerHTML = '';
+                            noteContent.style.maxHeight = 'none';
+                            noteContent.appendChild(longContainer);
+                        }
+                    }
+                } else {
+                    // 普通节点处理参数
+                    const nodeBody = nodeEl.querySelector('.node-body');
+                    if (nodeBody) {
+                        const paramRows = nodeBody.querySelectorAll('.param-row');
+                        paramRows.forEach((row, index) => {
+                            const keyEl = row.querySelector('.param-key');
+                            const valueEl = row.querySelector('.param-value');
+                            if (keyEl && valueEl) {
+                                const key = keyEl.textContent;
+                                const value = valueEl.textContent;
+
+                                // 检查是否需要虚拟滚动
+                                if (needsVirtualScroll(value)) {
+                                    // 获取原始值（从 inputs 中获取完整内容）
+                                    const originalValue = nodeData.inputs?.[key] || value;
+                                    const fullContent = String(originalValue);
+
+                                    // 替换为长文本容器
+                                    row.classList.add('long-param');
+                                    const longContainer = createLongTextContainer(fullContent, key);
+
+                                    // 清空并添加新容器
+                                    valueEl.innerHTML = '';
+                                    valueEl.className = 'param-value-container';
+                                    valueEl.appendChild(longContainer);
+                                }
+                            }
+                        });
+                    }
+                }
+
                 const subgraphTagEl = nodeEl.querySelector('.subgraph-tag');
                 if (subgraphTagEl && subgraphColor) {
                     subgraphTagEl.style.background = subgraphColor;
@@ -1953,6 +2147,7 @@
                     nodeDragStartY = e.clientY;
                     nodeStartX = parseFloat(nodeEl.style.left);
                     nodeStartY = parseFloat(nodeEl.style.top);
+                    e.preventDefault();
                     e.stopPropagation();
                 });
 
@@ -1968,7 +2163,45 @@
                 });
 
                 document.addEventListener('mouseup', () => {
+                    if (isNodeDragging) {
+                        // 保存节点新位置到 workflowData
+                        const newX = parseFloat(nodeEl.style.left);
+                        const newY = parseFloat(nodeEl.style.top);
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[nodeId] = { x: newX, y: newY };
+                    }
                     isNodeDragging = false;
+                });
+
+                // 使用 ResizeObserver 监听节点宽度变化并保存
+                // 使用 requestAnimationFrame 确保节点已完全渲染
+                requestAnimationFrame(() => {
+                    let initialWidth = nodeEl.offsetWidth;
+                    let isFirstObservation = true;
+
+                    const resizeObserver = new ResizeObserver((entries) => {
+                        for (const entry of entries) {
+                            const width = entry.contentRect.width;
+                            // 跳过第一次观察（初始渲染），只在用户手动调整大小时保存
+                            if (isFirstObservation) {
+                                isFirstObservation = false;
+                                initialWidth = width;
+                                continue;
+                            }
+                            // 只在节点未折叠且宽度真正改变时保存
+                            if (width > 0 && !nodeEl.classList.contains('collapsed') && Math.abs(width - initialWidth) > 1) {
+                                nodeStates[nodeId] = nodeStates[nodeId] || {};
+                                nodeStates[nodeId].width = width;
+                                initialWidth = width;
+                            }
+                        }
+                    });
+                    resizeObserver.observe(nodeEl);
+
+                    // 保存 observer 引用以便清理
+                    nodeEl._resizeObserver = resizeObserver;
                 });
 
                 nodeEl.querySelectorAll('.header-btn').forEach(btn => {
@@ -2049,6 +2282,238 @@
                 return `[${value.join(', ')}]`;
             }
             return String(value);
+        }
+
+        /**
+         * 检测内容是否需要虚拟滚动
+         * @param {string} content - 内容字符串
+         * @returns {boolean} 是否需要虚拟滚动
+         */
+        function needsVirtualScroll(content) {
+            if (!content || typeof content !== 'string') return false;
+            return content.length > 5000 || content.split('\n').length > 100;
+        }
+
+        /**
+         * 将文本分割成行
+         * @param {string} text - 文本内容
+         * @param {number} maxLineLength - 每行最大长度
+         * @returns {string[]} 行数组
+         */
+        function splitIntoLines(text, maxLineLength = 200) {
+            const rawLines = text.split('\n');
+            const lines = [];
+
+            for (const rawLine of rawLines) {
+                if (rawLine.length <= maxLineLength) {
+                    lines.push(rawLine);
+                } else {
+                    for (let i = 0; i < rawLine.length; i += maxLineLength) {
+                        lines.push(rawLine.substring(i, i + maxLineLength));
+                    }
+                }
+            }
+
+            return lines;
+        }
+
+        /**
+         * 格式化字节大小
+         * @param {number} bytes - 字节数
+         * @returns {string} 格式化后的字符串
+         */
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        /**
+         * 复制文本到剪贴板
+         * @param {string} text - 要复制的文本
+         */
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast(t('copied'));
+            } catch (err) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast(t('copied'));
+            }
+        }
+
+        /**
+         * 下载文本文件
+         * @param {string} text - 文本内容
+         * @param {string} filename - 文件名
+         */
+        function downloadText(text, filename) {
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(t('downloadStarted'));
+        }
+
+        /**
+         * 显示 Toast 提示
+         * @param {string} message - 提示消息
+         */
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast-message';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        /**
+         * 创建虚拟滚动容器
+         * @param {string} content - 长文本内容
+         * @param {Object} options - 配置选项
+         * @returns {HTMLElement} 虚拟滚动容器
+         */
+        function createVirtualScroll(content, options = {}) {
+            const {
+                maxHeight = 200,
+                lineHeight = 16,
+                maxPreviewLength = 5000
+            } = options;
+
+            if (content.length <= maxPreviewLength) {
+                const div = document.createElement('div');
+                div.className = 'param-value-short';
+                div.textContent = content;
+                return div;
+            }
+
+            const lines = splitIntoLines(content);
+            const totalHeight = lines.length * lineHeight;
+
+            const container = document.createElement('div');
+            container.className = 'virtual-scroll-container';
+            container.style.height = maxHeight + 'px';
+            container.style.overflow = 'auto';
+            container.style.position = 'relative';
+
+            const spacer = document.createElement('div');
+            spacer.className = 'virtual-scroll-spacer';
+            spacer.style.height = totalHeight + 'px';
+            container.appendChild(spacer);
+
+            const visibleLayer = document.createElement('div');
+            visibleLayer.className = 'virtual-scroll-visible';
+            visibleLayer.style.position = 'absolute';
+            visibleLayer.style.top = '0';
+            visibleLayer.style.left = '0';
+            visibleLayer.style.right = '0';
+            container.appendChild(visibleLayer);
+
+            const visibleCount = Math.ceil(maxHeight / lineHeight) + 2;
+
+            const renderVisibleLines = () => {
+                const scrollTop = container.scrollTop;
+                const startIndex = Math.max(0, Math.floor(scrollTop / lineHeight));
+                const endIndex = Math.min(startIndex + visibleCount, lines.length);
+
+                const fragment = document.createDocumentFragment();
+                for (let i = startIndex; i < endIndex; i++) {
+                    const lineEl = document.createElement('div');
+                    lineEl.className = 'virtual-scroll-line';
+                    lineEl.style.height = lineHeight + 'px';
+                    lineEl.textContent = lines[i] || ' ';
+                    fragment.appendChild(lineEl);
+                }
+
+                visibleLayer.innerHTML = '';
+                visibleLayer.appendChild(fragment);
+                visibleLayer.style.top = (startIndex * lineHeight) + 'px';
+            };
+
+            let ticking = false;
+            container.addEventListener('scroll', () => {
+                if (!ticking) {
+                    requestAnimationFrame(() => {
+                        renderVisibleLines();
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            });
+
+            // 添加滚轮事件支持
+            container.addEventListener('wheel', (e) => {
+                // 始终阻止事件冒泡和默认行为，防止触发视图缩放
+                e.preventDefault();
+                e.stopPropagation();
+
+                const isAtTop = container.scrollTop === 0 && e.deltaY < 0;
+                const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1 && e.deltaY > 0;
+
+                // 只有在没有到达边界时才滚动
+                if (!isAtTop && !isAtBottom) {
+                    container.scrollTop += e.deltaY;
+                }
+            }, { passive: false });
+
+            renderVisibleLines();
+
+            container.virtualScrollData = {
+                lines: lines,
+                getAllContent: () => content
+            };
+
+            return container;
+        }
+
+        /**
+         * 创建长文本容器（带头部和操作按钮）
+         * @param {string} content - 文本内容
+         * @param {string} paramKey - 参数名
+         * @param {Object} options - 配置选项
+         * @returns {HTMLElement} 长文本容器
+         */
+        function createLongTextContainer(content, paramKey, options = {}) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'long-text-wrapper';
+
+            const header = document.createElement('div');
+            header.className = 'long-text-header';
+            header.innerHTML = `
+                <span class="long-text-info">${formatBytes(content.length)} · ${splitIntoLines(content).length.toLocaleString()} ${t('lines')}</span>
+                <div class="long-text-actions">
+                    <button class="text-action-btn" data-action="copy">📋 ${t('copy')}</button>
+                    <button class="text-action-btn" data-action="download">💾 ${t('download')}</button>
+                </div>
+            `;
+            wrapper.appendChild(header);
+
+            const virtualScroll = createVirtualScroll(content, options);
+            wrapper.appendChild(virtualScroll);
+
+            header.querySelectorAll('.text-action-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = btn.dataset.action;
+                    if (action === 'copy') {
+                        copyToClipboard(content);
+                    } else if (action === 'download') {
+                        downloadText(content, `${paramKey}.txt`);
+                    }
+                });
+            });
+
+            return wrapper;
         }
 
         /**
