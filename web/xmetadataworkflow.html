@@ -922,7 +922,8 @@
                 downloadStarted: '已开始下载',
                 lines: '行',
                 copy: '复制',
-                download: '下载'
+                download: '下载',
+                fileTooLarge: '文件过大，最大支持 100MB'
             },
             en: {
                 title: 'XMetadataWorkflow',
@@ -966,7 +967,8 @@
                 downloadStarted: 'Download started',
                 lines: 'lines',
                 copy: 'Copy',
-                download: 'Download'
+                download: 'Download',
+                fileTooLarge: 'File too large, maximum 100MB supported'
             }
         };
 
@@ -1006,6 +1008,7 @@
         let nodeStates = {};
         let selectedNodeId = null;
         let currentFileType = null; // 存储当前文件类型，用于语言切换时更新预览
+        let currentPreviewUrl = null; // 当前预览图片的 Object URL，用于内存释放
 
         const canvasContainer = document.getElementById('canvasContainer');
         const canvasWrapper = document.getElementById('canvas-wrapper');
@@ -1251,10 +1254,17 @@
 
         /**
          * 处理用户选择的文件
-         * 流程：读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
+         * 流程：检查文件大小 -> 读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
          * @param {File} file - 用户选择的文件对象
          */
         async function handleFile(file) {
+            // 文件大小限制：100MB
+            const MAX_FILE_SIZE = 100 * 1024 * 1024;
+            if (file.size > MAX_FILE_SIZE) {
+                alert(t('fileTooLarge'));
+                return;
+            }
+
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
 
@@ -1398,13 +1408,19 @@
          * @param {Uint8Array} uint8Array - PNG 文件的二进制数据
          */
         function displayImagePreview(uint8Array) {
+            // 释放上一次的 Object URL，防止内存泄漏
+            if (currentPreviewUrl) {
+                URL.revokeObjectURL(currentPreviewUrl);
+                currentPreviewUrl = null;
+            }
+
             const blob = new Blob([uint8Array], { type: 'image/png' });
-            const url = URL.createObjectURL(blob);
+            currentPreviewUrl = URL.createObjectURL(blob);
 
             const preview = document.getElementById('filePreview');
             const placeholder = document.getElementById('filePlaceholder');
 
-            placeholder.innerHTML = '<img src="' + url + '" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
+            placeholder.innerHTML = '<img src="' + currentPreviewUrl + '" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
             placeholder.style.cursor = 'pointer';
             placeholder.title = t('clickToChange');
         }
@@ -1858,9 +1874,17 @@
 
         /**
          * 渲染整个工作流
-         * 流程：清空画布 -> 计算节点位置 -> 渲染节点 -> 渲染连接线
+         * 流程：清理旧资源 -> 清空画布 -> 计算节点位置 -> 渲染节点 -> 渲染连接线
          */
         function renderWorkflow() {
+            // 清理旧的 ResizeObserver，防止内存泄漏
+            document.querySelectorAll('.node').forEach(node => {
+                if (node._resizeObserver) {
+                    node._resizeObserver.disconnect();
+                    node._resizeObserver = null;
+                }
+            });
+
             canvas.innerHTML = '';
             connectionsSvg.innerHTML = '';
 
