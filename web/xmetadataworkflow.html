@@ -1137,6 +1137,13 @@
                 panY = 50;
                 nodeStates = {};
 
+                // 默认折叠 XWorkflowSave 节点
+                if (workflowData.xworkflowSaveNodes && workflowData.xworkflowSaveNodes.length > 0) {
+                    for (const nodeId of workflowData.xworkflowSaveNodes) {
+                        nodeStates[nodeId] = { collapsed: true };
+                    }
+                }
+
                 // 渲染并自适应视图
                 renderWorkflow();
                 fitToView();
@@ -1289,6 +1296,10 @@
          * 1. .latent 文件 -> readLatentMetadata (读取 latent 文件的头部元数据)
          * 2. .json 文件 -> readJsonMetadata (自动识别并解析两种 prompt 格式)
          * 3. 其他文件 (如 .png) -> readPngMetadata (从 PNG 的 tEXt/iTXt chunk 读取)
+         *
+         * 返回格式: { prompt: {...}, workflow: {...} }
+         * - prompt: ComfyUI API 格式的工作流数据
+         * - workflow: 完整的 Workflow 格式（包含节点位置等信息，可能为 null）
          */
         async function readMetadataFromFile(data, filename) {
             if (filename.toLowerCase().endsWith('.latent')) {
@@ -1339,6 +1350,14 @@
                         title: node.properties?.["Node name for S&R"] || node.type
                     }
                 };
+
+                // 保存节点位置信息（如果有）
+                if (node.pos && Array.isArray(node.pos) && node.pos.length >= 2) {
+                    nodeData._meta.pos = [node.pos[0], node.pos[1]];
+                }
+                if (node.size && Array.isArray(node.size) && node.size.length >= 2) {
+                    nodeData._meta.size = [node.size[0], node.size[1]];
+                }
 
                 // 处理 Note 和 MarkdownNote 节点（没有 inputs，但有 widgets_values）
                 if (node.type === 'Note' || node.type === 'MarkdownNote') {
@@ -1393,7 +1412,7 @@
          * - 支持包含 prompt 字段的 JSON (如 XWorkflowSave 生成的)
          * - 支持 ComfyUI 官方网页导出的 API 格式 JSON (直接是 prompt 数据)
          * - 支持 ComfyUI 网页保存的完整 Workflow 格式 JSON (包含 nodes 数组)
-         * - 返回格式: { prompt: {...} }
+         * - 返回格式: { prompt: {...}, workflow: {...} }
          */
         async function readJsonMetadata(data) {
             try {
@@ -1402,8 +1421,12 @@
                 const json = JSON.parse(text);
 
                 // 情况1: 包含 prompt 字段的 JSON (XWorkflowSave)
+                // 可能同时包含 workflow 字段
                 if (json.prompt) {
-                    return { prompt: json.prompt };
+                    return {
+                        prompt: json.prompt,
+                        workflow: json.workflow || null
+                    };
                 }
 
                 // 情况2: ComfyUI 官方网页导出的 API 格式 JSON
@@ -1416,14 +1439,14 @@
                 });
 
                 if (isPromptFormat) {
-                    return { prompt: json };
+                    return { prompt: json, workflow: null };
                 }
 
                 // 情况3: ComfyUI 网页保存的完整 Workflow 格式 JSON
                 // 特征: 包含 nodes 数组和 links 数组
                 if (json.nodes && Array.isArray(json.nodes) && json.links && Array.isArray(json.links)) {
                     const prompt = convertWorkflowToPrompt(json);
-                    return { prompt: prompt };
+                    return { prompt: prompt, workflow: json };
                 }
 
                 // 无法识别的格式
@@ -1444,6 +1467,7 @@
             try {
                 const textDecoder = new TextDecoder('utf-8');
                 let offset = 8;
+                const result = { prompt: null, workflow: null };
 
                 while (offset < data.length - 12) {
                     const length = (data[offset] << 24) | (data[offset + 1] << 16) |
@@ -1456,11 +1480,19 @@
                     if (type === 'tEXt' || type === 'iTXt') {
                         const chunkData = data.slice(offset + 8, offset + 8 + length);
                         const text = textDecoder.decode(chunkData);
-                        return parsePngText(text);
+                        const parsed = parsePngText(text);
+                        // 合并解析结果
+                        if (parsed.prompt) result.prompt = parsed.prompt;
+                        if (parsed.workflow) result.workflow = parsed.workflow;
                     }
 
                     if (type === 'IEND') break;
                     offset += 12 + length;
+                }
+
+                // 如果找到了 prompt 或 workflow，返回结果
+                if (result.prompt || result.workflow) {
+                    return result;
                 }
             } catch (e) {
                 console.error('PNG metadata read error:', e);
@@ -1472,7 +1504,7 @@
          * 从 Latent 文件中读取元数据
          * Latent 格式: 前8字节是头部大小，后面是 JSON 格式的头部数据
          * 头部中包含 __metadata__ 字段，其中有 prompt 和 workflow
-         * 返回格式: { prompt: {...} } 或 { workflow: {...} }
+         * 返回格式: { prompt: {...}, workflow: {...} }
          */
         async function readLatentMetadata(data) {
             try {
@@ -1495,23 +1527,29 @@
 
                 if (header.__metadata__) {
                     const metadata = header.__metadata__;
+                    const result = { prompt: null, workflow: null };
 
-                    // 优先返回 prompt (与 parseWorkflow 的设计一致)
+                    // 解析 prompt
                     if (metadata.prompt) {
                         try {
-                            return { prompt: JSON.parse(metadata.prompt) };
+                            result.prompt = JSON.parse(metadata.prompt);
                         } catch {
-                            return { prompt: metadata.prompt };
+                            result.prompt = metadata.prompt;
                         }
                     }
 
-                    // 如果没有 prompt，返回 workflow (虽然 parseWorkflow 不会使用它)
+                    // 解析 workflow
                     if (metadata.workflow) {
                         try {
-                            return { workflow: JSON.parse(metadata.workflow) };
+                            result.workflow = JSON.parse(metadata.workflow);
                         } catch {
-                            return { workflow: metadata.workflow };
+                            result.workflow = metadata.workflow;
                         }
+                    }
+
+                    // 如果找到了 prompt 或 workflow，返回结果
+                    if (result.prompt || result.workflow) {
+                        return result;
                     }
 
                     return metadata;
@@ -1546,26 +1584,29 @@
          * 解析工作流元数据，将 prompt 格式转换为内部使用的数据结构
          *
          * 设计原则：
-         * - 只使用 prompt 格式 (ComfyUI API 格式)，不使用 workflow 格式 (前端格式)
-         * - 节点位置使用自动排列算法，不使用 workflow 中的位置信息
+         * - 优先使用 prompt 格式 (ComfyUI API 格式)
+         * - 如果有 workflow 格式数据，提取节点位置信息
          * - 子图通过节点 ID 格式 "子图ID:节点ID" 识别
          *
          * 输入格式 (metadata):
-         * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...} }
-         * - JSON: { prompt: {...} } (两种格式均已支持)
+         * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...}, workflow: {...} }
+         * - JSON: { prompt: {...}, workflow: {...} } (两种格式均已支持)
          *
          * 输出格式 (result):
-         * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName? } }
+         * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName?, _meta?: { pos: [x, y], size: [w, h] } } }
          * - connections: [ { from, fromSlot, to, toSlot } ]
          * - notes: [ { id, text, mode } ]
          * - subgraphs: [ { id, name, nodes: [...] } ]
+         * - nodePositions: { 节点ID: { x, y } } - 从 workflow 中提取的节点位置（如果有）
          */
         function parseWorkflow(metadata) {
             const result = {
                 nodes: {},
                 connections: [],
                 notes: [],
-                subgraphs: []
+                subgraphs: [],
+                nodePositions: null,  // 存储从 workflow 中提取的位置信息
+                xworkflowSaveNodes: [] // 存储 XWorkflowSave 节点的ID列表
             };
 
             try {
@@ -1585,10 +1626,32 @@
                 // prompt 格式直接是节点映射表: { 节点ID: 节点数据, ... }
                 result.nodes = promptData;
 
+                // 提取 workflow 中的节点位置信息（如果有）
+                if (metadata.workflow && metadata.workflow.nodes) {
+                    result.nodePositions = {};
+                    for (const node of metadata.workflow.nodes) {
+                        if (node.pos && Array.isArray(node.pos) && node.pos.length >= 2) {
+                            result.nodePositions[String(node.id)] = {
+                                x: node.pos[0],
+                                y: node.pos[1]
+                            };
+                        }
+                    }
+                    // 如果没有找到任何位置信息，设为 null
+                    if (Object.keys(result.nodePositions).length === 0) {
+                        result.nodePositions = null;
+                    }
+                }
+
                 // 处理每个节点
                 for (const [nodeId, nodeData] of Object.entries(promptData)) {
                     const inputs = nodeData.inputs || {};
                     const classType = nodeData.class_type;
+
+                    // 检测 XWorkflowSave 节点
+                    if (classType === 'XWorkflowSave') {
+                        result.xworkflowSaveNodes.push(nodeId);
+                    }
 
                     // 提取 Note 节点
                     if (classType === 'Note') {
@@ -1675,18 +1738,49 @@
         }
 
         /**
-         * 计算节点位置（自动排列算法）
-         * 使用层级布局算法：
-         * 1. 根据连接关系计算每个节点的层级（深度）
-         * 2. 同一层级的节点水平排列
+         * 计算节点位置
+         * 优先使用从 workflow 中保存的原始位置，如果没有则使用自动层级布局算法
+         *
+         * 逻辑：
+         * 1. 如果 workflowData.nodePositions 存在，优先使用保存的位置
+         * 2. 对于没有保存位置的节点，使用自动层级布局算法计算
          * 3. 子图节点与主图节点分开处理层级
+         *
          * @returns {Object} 节点ID到位置的映射 { 节点ID: {x, y} }
          */
         function calculateNodePositions() {
             const positions = {};
-            const levels = {};
+
+            // 第一步：优先使用从 workflow 中保存的原始位置
+            if (workflowData.nodePositions) {
+                for (const [nodeId, pos] of Object.entries(workflowData.nodePositions)) {
+                    positions[nodeId] = { x: pos.x, y: pos.y };
+                }
+            }
+
+            // 第二步：为没有保存位置的节点使用自动层级布局算法
+            const autoLayoutNodes = Object.keys(workflowData.nodes).filter(
+                nodeId => !positions[nodeId]
+            );
+
+            if (autoLayoutNodes.length > 0) {
+                const autoPositions = calculateAutoLayoutPositions(autoLayoutNodes, positions);
+                Object.assign(positions, autoPositions);
+            }
+
+            return positions;
+        }
+
+        /**
+         * 自动层级布局算法
+         * 为没有保存位置的节点计算位置
+         * @param {string[]} nodeIds - 需要自动布局的节点ID列表
+         * @param {Object} savedPositions - 已保存的节点位置映射（用于计算边界）
+         * @returns {Object} 节点ID到位置的映射
+         */
+        function calculateAutoLayoutPositions(nodeIds, savedPositions) {
+            const positions = {};
             const nodeLevel = {};
-            const visited = new Set();
 
             /**
              * 递归计算节点的层级（深度）
@@ -1723,8 +1817,8 @@
                 return nodeLevel[nodeId];
             }
 
-            // 计算所有节点的层级
-            Object.keys(workflowData.nodes).forEach(id => getLevel(id));
+            // 计算所有需要自动布局的节点的层级
+            nodeIds.forEach(id => getLevel(id));
 
             // 按层级分组节点
             const levelNodes = {};
@@ -1733,11 +1827,22 @@
                 levelNodes[level].push(id);
             }
 
+            // 计算已保存位置的节点的边界，用于确定自动布局的起始位置
+            let maxSavedX = 0;
+            let maxSavedY = 0;
+            if (savedPositions) {
+                for (const pos of Object.values(savedPositions)) {
+                    maxSavedX = Math.max(maxSavedX, pos.x);
+                    maxSavedY = Math.max(maxSavedY, pos.y);
+                }
+            }
+
             // 为每个节点计算具体位置
-            for (const [level, nodeIds] of Object.entries(levelNodes)) {
+            const startX = maxSavedX > 0 ? maxSavedX + 300 : 50;
+            for (const [level, nodes] of Object.entries(levelNodes)) {
                 const levelNum = parseInt(level);
-                nodeIds.forEach((nodeId, index) => {
-                    const x = 50 + levelNum * 260;  // 每层水平间距 260px
+                nodes.forEach((nodeId, index) => {
+                    const x = startX + levelNum * 260;  // 每层水平间距 260px
                     const y = 50 + index * 180 + (levelNodes[level].length > 1 ? 0 : 50);  // 垂直间距 180px
                     positions[nodeId] = { x, y };
                 });
@@ -1753,10 +1858,8 @@
          */
         function renderNodes(positions) {
             for (const [nodeId, nodeData] of Object.entries(workflowData.nodes)) {
-                // 确定节点位置（子图节点优先使用保存的位置）
-                const pos = nodeData.isSubgraphNode ?
-                    (nodeData.pos ? { x: nodeData.pos[0], y: nodeData.pos[1] } : positions[nodeId] || { x: 100, y: 100 }) :
-                    positions[nodeId] || { x: 100, y: 100 };
+                // 确定节点位置（优先使用从 workflow 中保存的位置）
+                const pos = positions[nodeId] || { x: 100, y: 100 };
                 const classType = nodeData.class_type;
 
                 // 构建节点 CSS 类名
