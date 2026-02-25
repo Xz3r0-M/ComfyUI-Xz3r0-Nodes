@@ -38,9 +38,10 @@ ComfyUI-Xz3r0-Nodes 是一个ComfyUI自定义节点项目，当前主要目标�
 - ⌨️ 工作流节点 - 工作流元数据保存
 
 
-🧩 网页扩展工具 （数量总计：`1`）
+🧩 网页扩展工具 （数量总计：`3`）
 
-- ⌨️ 工作流工具 - 工作流元数据可视化查看工具
+- ⌨️ 工作流工具 - 工作流元数据可视化查看工具、XWorkflowSave网页扩展（捕获完整工作流元数据）
+- 🔍 视图工具 - XFitView（工作流加载时自动适应视图）
 
 ---
 
@@ -445,25 +446,47 @@ Latent保存节点，支持自定义文件名和元数据保存
 ### 📄 XWorkflowSave
 `♾️ Xz3r0/File-Processing`
 
-工作流保存节点，将ComfyUI工作流保存为JSON文件（适配 `XMetadataWorkflow`），支持自定义文件名和子文件夹
+工作流保存节点，将ComfyUI工作流保存为JSON文件（适配 `XMetadataWorkflow`），支持4种保存模式、自定义文件名和子文件夹
 
 **功能**:
 - 保存工作流到ComfyUI默认输出目录
+- 支持4种JSON保存模式: `Auto`, `Standard`, `FullWorkflow`, `Prompt+FullWorkflow`
 - 支持自定义文件名和子文件夹
 - 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
 - 路径安全防护 (防止路径遍历攻击)
 - 自动添加序列号防止覆盖(从00001开始)
 - 仅支持单级子文件夹创建
 - 保存工作流元数据 (prompt 和 workflow)
+- 工作流信息字符串输出，可检查保存状态
+
+**JSON保存模式说明**:
+
+| 模式 | 说明 | 优点 | 缺点 |
+|-----|------|------|------|
+| `Auto` (默认) | 自动模式，优先使用 `Prompt+FullWorkflow`，不可用时回退到 `Standard` | 智能选择最佳模式 | 依赖网页扩展 |
+| `Standard` | 使用ComfyUI标准后端API获取工作流元数据 | 官方API支持，兼容性好 | `note` 和 `markdown note` 节点不保存在元数据中❌ |
+| `FullWorkflow` | 使用网页扩展捕获前端完整工作流元数据 | 数据完整性与原生Save功能一致✅ | 依赖网页扩展，非官方原生支持 |
+| `Prompt+FullWorkflow` (推荐) | 结合标准API的prompt字段和网页扩展的完整workflow数据 | 所有模式中最完整的工作流元数据✅ | 依赖网页扩展，非官方原生支持 |
+
+**注意**: `FullWorkflow` 和 `Prompt+FullWorkflow` 模式依赖 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展和 `xworkflowsave_api` 自定义API
+
+**工作原理**:
+1. `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展从ComfyUI前端捕获完整工作流元数据
+2. `xworkflowsave_api` 自定义API接收网页扩展传来的数据
+3. `XWorkflowSave` 节点通过API获取数据并保存为JSON文件
 
 **输入**:
 - `anything` (ANY): 任意输入类型，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中
 - `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
 - `subfolder` (STRING): 子文件夹名称 (默认：`Workflows`)
+- `save_mode` (下拉选择): JSON保存模式 (默认：`Auto`，可选：Auto, Standard, FullWorkflow, Prompt+FullWorkflow)
 
 **隐藏输入**:
 - `prompt` (PROMPT): 工作流提示词 (自动注入)
 - `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
+
+**输出**:
+- `workflow_info` (STRING): 工作流保存信息，显示保存模式和状态
 
 ---
 
@@ -474,52 +497,131 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 **功能**:
 - 支持多种文件格式：PNG图片、Latent文件、JSON工作流文件
-- 简单的自动层级布局算法排列节点
-- 显示节点类型、参数和连接关系
+- 支持完整工作流数据的JSON（包括 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式保存的文件）
+- 支持显示 `note` 和 `markdown note` 节点内容
+- 基于加载文件的元数据, 自动选择简单的自动层级布局算法或元数据中节点位置信息来排列节点
+- 显示节点参数和连接关系
 - 子图(Subgraph)自动颜色标记
 - 支持缩放、平移、自适应视图
 - 折叠/展开节点参数
 - 选中节点高亮相关连接
+- 左边栏隐藏/展开功能
+- `Ctrl+鼠标左键` 框选多个节点并移动 (双击空白处 或 按 `ESC` 键取消框选)
+- 节点内长内容滚动条支持
+- 超长内容虚拟滚动优化性能
 
 **支持的文件**:
 - PNG图片 (包含工作流元数据的生成图片)
 - Latent潜空间文件 (.latent)
-- JSON工作流文件 (适配 `XWorkflowSave` 生成的JSON文件，**不支持**ComfyUI网页导出功能的JSON文件, 因为缺少 prompt 字段导致缺失节点参数名)
+- JSON工作流文件:
+  - ✅ ComfyUI网页界面原生的 `Save` 和 `Save As` 所保存的JSON (自动保存在 `user\default\workflows`)
+  - ✅ `XWorkflowSave` 节点的 `FullWorkflow` 模式保存的JSON
+  - ✅ `XWorkflowSave` 节点的 `Prompt+FullWorkflow` 模式保存的JSON (推荐, 最完整的元数据)
+  - ⚠️ ComfyUI网页界面导出功能的JSON文件 (缺少部分元数据，会导致缺失节点或参数)
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="XWorkflowSave Extension" width="200">
 
 **技术说明**:
-- 只使用 prompt 字段格式数据 (ComfyUI API)
+- 优先使用完整工作流数据 (如果JSON中包含)
 - 子图通过节点ID中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
 - 节点位置使用简单的自动排列算法
-- 由于ComfyUI本身默认储存元数据方式的原因，使用 prompt 字段格式元数据会导致某些节点或参数不会显示在窗口视图中(比如： `Markdown Note`)
+- 对于使用自行创建前端界面的第三方自定义节点可能不兼容 (只显示存在于元数据中的内容)
 
 **两种使用方式**:
 1. **在ComfyUI中使用（集成）**: 点击ComfyUI页面顶部菜单栏的 ♾️ 按钮，可打开或关闭浮动窗口，已将此网页工具嵌入到该浮动窗口中
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bm.png" alt="Open" width="700">
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Open" width="500">
 
-2. **浏览器直接打开（独立）**: 直接打开 `web/xmetadataworkflow.html` 文件，在浏览器中使用
+2. **浏览器直接打开（独立）**: 直接打开 `web/XMetadataWorkflow.html` 文件，在浏览器中使用
 
 </details>
 
 
 
 <details>
-<summary>🧩 ComfyUI网页扩展 👈</summary>
+<summary>🧩 ComfyUI网页界面扩展 👈</summary>
 
-### 🖥️ 浮动窗口（按钮）
-`ComfyUI网页扩展 - 顶部菜单栏`
+### 🖥️ ♾️ XFloatingWindow 浮动窗口（顶部菜单栏 按钮）
+`ComfyUI网页界面扩展 - ComfyUI.Xz3r0.XFloatingWindow`
 
-为ComfyUI页面增加可打开的浮动窗口
+为ComfyUI网页界面增加可打开的浮动窗口
 
 **窗口功能**
 - `XMetadataWorkflow`（工作流元数据查看器）
+- 窗口透明度调整 (20% - 100%)
+- 窗口最大化按钮
+- `Alt+鼠标左键` 快捷拖动窗口
 
 **使用按钮**:
-- 在ComfyUI页面顶部菜单栏中的 ♾️ 按钮，点击可 打开或关闭 浮动窗口
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Button" width="700">
+- 在ComfyUI网页界面顶部菜单栏中的 ♾️ 按钮，点击可 打开或关闭 浮动窗口
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Button" width="500">
+
+**设置选项**:
+- **Enable ♾️ XFloatingWindow (Button)** (启用浮动窗口按钮):
+控制是否在顶部菜单栏显示 ♾️ 按钮
+  - 默认: `启用`
+  - 位置: ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ 窗口 (Window)
 
 **禁用按钮**:
-- ComfyUI 页面 ➡️ 设置 ➡️ 扩展栏 ➡️ 点击扩展列表中此扩展 `ComfyUI.Xz3r0.xz3r0window` 右侧的开关按钮为关闭 ➡️ 刷新网页后顶部菜单栏的按钮就会消失
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bmclose.png" alt="Disabled button" width="700">
+- ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ 窗口 (Window) ➡️ 关闭 `Enable ♾️ XFloatingWindow (Button)` 开关
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFloatingWindow.png" alt="XFloatingWindow" width="700">
+
+
+---
+
+### 💾 XWorkflowSave
+`ComfyUI网页扩展 - ComfyUI.Xz3r0.XWorkflowSave`
+
+从ComfyUI网页直接捕获完整工作流元数据，为 `XWorkflowSave` 节点提供 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式所需的数据
+
+**功能**:
+- 捕获前端网页中的完整工作流元数据（包括 `note` 和 `markdown note` 节点）
+- 通过 `xworkflowsave_api` 自定义API将数据传递给 `XWorkflowSave` 节点
+- 数据完整性与ComfyUI网页界面原生的 `Save` 和 `Save As` 功能一致
+
+**工作流程**:
+1. 网页扩展 (`ComfyUI.Xz3r0.XWorkflowSave`) 在ComfyUI前端捕获完整工作流数据
+2. 自定义API (`xworkflowsave_api`) 接收并缓存来自网页扩展的数据
+3. `XWorkflowSave` 节点调用API获取数据并保存为JSON文件
+
+**使用方式**:
+- 扩展和API会自动加载，无需手动操作
+- 在 `XWorkflowSave` 节点选择 `FullWorkflow` 或 `Prompt+FullWorkflow` 模式时自动使用
+- 如果扩展未加载或API不可用，`Auto` 模式会自动回退到 `Standard` 模式
+
+**注意事项**:
+- 此扩展和API非ComfyUI官方原生支持，如果ComfyUI官方将来改动相关代码可能会导致出错
+- 扩展加载后会在浏览器控制台输出日志信息
+
+---
+
+### 🔍 XFitView
+`ComfyUI网页界面扩展 - ComfyUI.Xz3r0.XFitView`
+
+打开ComfyUI网页界面或载入新工作流时，自动执行ComfyUI网页界面原生的`适应视图`功能，确保工作流内容完整显示在画布可视区域内
+
+**功能**:
+- **页面首次加载适应**: 页面首次加载完成后自动适应视图
+- **工作流加载适应**: 监听工作流加载事件，新工作流载入后自动适应视图
+- **智能去重机制**: 基于工作流特征生成唯一标识
+- **防抖控制**: 同一工作流200ms内多次触发只执行一次，不同工作流之间立即触发
+
+**设置选项**:
+- **Workflow Load Mode** (工作流加载模式): 选择何时自动适应视图 (默认为: `never` )
+  - `first` 模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
+  - `always` 模式: 每次加载或切换工作流都适应视图
+  - `never` 模式: 禁用自动适应
+- **Fit View Delay** (适应视图延迟): 延迟时间 0-2000ms 可调，默认 300ms
+  - 如果视图适应不正确，可适当调整延迟时间
+
+**设置位置**:
+- ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFitView
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFitView.png" alt="XFitView" width="700">
+
+**工作原理**:
+- 使用 ComfyUI 扩展 API 注册扩展
+- 监听 `app.graph.onConfigure` 和 `app.loadGraphData` 事件
+- 基于节点类型、连接拓扑生成工作流唯一标识
+- 使用 cyrb53 哈希算法生成64位哈希值，显著降低冲突概率
+- 通过触发ComfyUI页面右下角的原生 Fit View 按钮实现适应视图功能
 
 </details>
 
@@ -545,17 +647,23 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xlatentload.py   # Latent加载节点
 │   ├── xlatentsave.py   # Latent保存节点
 │   ├── xstringgroup.py  # 字符串组合节点
+│   ├── xworkflowsave_api.py  # 工作流保存节点API
 │   └── xworkflowsave.py # 工作流保存节点
 ├── web/                 # 网页扩展目录
-│   ├── xz3r0window.js   # ComfyUI浮动窗口扩展
-│   └── xmetadataworkflow.html  # 工作流元数据查看器
-├── locales/             # 国际化支持 (节点显示名称和提示)
-│   ├── en/              # 英文定义
-│   │   └── nodeDefs.json
-│   └── zh/              # 中文定义
-│       └── nodeDefs.json
+│   ├── XFitView.js   # ComfyUI网页界面自动适应视图扩展
+│   ├── XFloatingWindow.js   # ComfyUI浮动窗口扩展
+│   ├── XWorkflowSave_Extension.js  # XWorkflowSave的网页扩展
+│   └── XMetadataWorkflow.html  # 工作流元数据可视化查看器
+├── locales/             # ComfyUI标准本地化支持
+│   ├── en/              # 英文
+│   │   ├── nodeDefs.json   # 节点本地化文件
+│   │   └── settings.json   # 网页扩展本地化文件
+│   └── zh/              # 中文
+│       ├── nodeDefs.json   # 节点本地化文件
+│       └── settings.json   # 网页扩展本地化文件
 ├── preview/             # 预览图片
-│   └── preview.png
+│   ├── preview.png
+│   └── XMetadataWorkflow_preview.png
 ├── .gitignore           # Git 忽略文件
 ├── Changelog.md         # 更新日志
 ├── LICENSE              # MIT 许可证

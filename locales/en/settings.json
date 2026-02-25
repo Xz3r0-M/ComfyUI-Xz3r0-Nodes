@@ -1,0 +1,19 @@
+{
+  "Xz3r0_XFitView_WorkflowLoadMode": {
+    "name": "Workflow Load Mode",
+    "tooltip": "Choose when to auto-fit view when loading workflows",
+    "options": {
+      "first": "First time only (resets on page refresh)",
+      "always": "Every time",
+      "never": "Never"
+    }
+  },
+  "Xz3r0_XFitView_Delay": {
+    "name": "Fit View Delay (ms)",
+    "tooltip": "Delay before fitting view (milliseconds). Increase if view doesn't fit correctly. Range: 0-2000ms"
+  },
+  "Xz3r0_XFloatingWindow_Enabled": {
+    "name": "Enable ♾️ XFloatingWindow (Button)",
+    "tooltip": "Show floating window button [♾️] in the top-menu bar"
+  }
+}

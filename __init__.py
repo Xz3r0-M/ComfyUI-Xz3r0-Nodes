@@ -7,6 +7,13 @@ import re
 from pathlib import Path
 
 # ================================
+# 导入 API 模块（必须先导入以注册路由）
+# ================================
+# 这个导入会触发 API 路由的注册
+# 必须在导入节点模块之前完成
+from .xnode import xworkflowsave_api
+
+# ================================
 # 导入节点模块
 # ================================
 from .xnode.xaudiosave import NODE_CLASS_MAPPINGS as XAUDIOSAVE_CM

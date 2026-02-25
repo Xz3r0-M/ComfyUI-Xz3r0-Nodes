@@ -3,6 +3,14 @@
 ================
 
 这个模块包含工作流JSON保存相关的节点。
+支持四种保存模式：
+1. Auto：自动检测，优先使用 Prompt+FullWorkflow，
+   如前端扩展未加载则回退到 Standard
+2. Standard：保存 prompt + extra_pnginfo.workflow（简化数据）
+3. FullWorkflow：保存前端传来的完整 workflow
+   （包含 localized_name 和 widget）
+4. Prompt+FullWorkflow：同时保存 prompt 和完整 workflow
+   通过自定义 API 接口 /xz3r0/xworkflowsave/capture 接收数据
 """
 
 import json
@@ -13,12 +21,20 @@ from pathlib import Path
 import folder_paths
 from comfy_api.latest import io, ui
 
+from .xworkflowsave_api import workflow_store
+
 
 class XWorkflowSave(io.ComfyNode):
     """
     XWorkflowSave 工作流保存节点
 
-    将ComfyUI工作流保存为JSON文件，支持自定义文件名、子文件夹、日期时间标识符。
+    将ComfyUI工作流保存为JSON文件，支持四种保存模式：
+    - Auto：自动检测，优先使用 Prompt+FullWorkflow，
+            如前端扩展未加载则回退到 Standard
+    - Standard：保存 prompt + workflow（简化数据，来自 extra_pnginfo）
+    - FullWorkflow：保存完整 workflow（包含 localized_name 和 widget，
+                    来自前端 API）
+    - Prompt+FullWorkflow：同时保存 prompt 和完整 workflow
 
     功能:
         - 保存工作流到ComfyUI默认输出目录
@@ -27,21 +43,28 @@ class XWorkflowSave(io.ComfyNode):
         - 自动添加序列号防止覆盖(从00001开始)
         - 仅支持单级子文件夹创建
         - 安全防护(防止路径遍历攻击，禁用路径分隔符)
-        - 输出相对路径(不泄露绝对路径)
 
     输入:
         anything: 任意输入(用于工作流连接，不处理数据，可选) (ANY)
+        save_mode: 保存模式选择 (COMBO: Auto/Standard/FullWorkflow/
+                   Prompt+FullWorkflow)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
     输出:
         anything: 透传输入的数据，可直接传递给下游节点 (ANY)
+        workflow_info: 工作流信息摘要，包含保存状态和数据概览 (STRING)
 
     使用示例:
+        save_mode="Auto",
         filename_prefix="Workflow_%Y%m%d",
         subfolder="Workflows"
         (anything输入为可选，可以不连接任何数据)
-        可以将图像或其他数据输入到anything，保存工作流后透传给下游节点
+
+    技术说明:
+        FullWorkflow 和 Prompt+FullWorkflow 模式通过前端扩展自动捕获
+        workflow 数据，并通过 /xz3r0/xworkflowsave/capture API 发送到
+        后端存储。节点执行时通过 unique_id 从存储中获取数据。
 
     """
 
@@ -53,9 +76,12 @@ class XWorkflowSave(io.ComfyNode):
             display_name="XWorkflowSave",
             category="♾️ Xz3r0/File-Processing",
             description=(
-                "Saves the current ComfyUI workflow as a JSON file "
-                "to your output directory. Useful for archiving "
-                "workflows separately from media files."
+                "Workflow save node that saves the ComfyUI workflow as a "
+                "JSON file. Supports four save modes: Auto (auto-detect), "
+                "Standard (prompt+workflow), FullWorkflow (complete "
+                "workflow with localized_name), and Prompt+FullWorkflow "
+                "(both). FullWorkflow modes use custom API to receive "
+                "data from frontend."
             ),
             inputs=[
                 io.AnyType.Input(
@@ -66,6 +92,23 @@ class XWorkflowSave(io.ComfyNode):
                         "This input is not processed, only used to "
                         "link the node into your workflow. "
                         "Optional - node works without any input."
+                    ),
+                ),
+                io.Combo.Input(
+                    "save_mode",
+                    options=[
+                        "Auto",
+                        "Standard",
+                        "FullWorkflow",
+                        "Prompt+FullWorkflow",
+                    ],
+                    default="Auto",
+                    tooltip=(
+                        "Save mode: Auto (auto-detect, prefer "
+                        "Prompt+FullWorkflow, fallback to Standard), "
+                        "Standard (use extra_pnginfo), "
+                        "FullWorkflow (require frontend API data), "
+                        "Prompt+FullWorkflow (prompt + full_workflow)"
                     ),
                 ),
                 io.String.Input(
@@ -92,8 +135,20 @@ class XWorkflowSave(io.ComfyNode):
                     "anything",
                     tooltip="Pass through the input data to downstream nodes",
                 ),
+                io.String.Output(
+                    "workflow_info",
+                    tooltip=(
+                        "Workflow information summary including save status, "
+                        "node count, and data overview. "
+                        "Useful for debugging and verification."
+                    ),
+                ),
             ],
-            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            hidden=[
+                io.Hidden.prompt,
+                io.Hidden.extra_pnginfo,
+                io.Hidden.unique_id,
+            ],
             is_output_node=True,
         )
 
@@ -101,6 +156,7 @@ class XWorkflowSave(io.ComfyNode):
     def execute(
         cls,
         anything=None,
+        save_mode: str = "Auto",
         filename_prefix: str = "",
         subfolder: str = "",
     ) -> io.NodeOutput:
@@ -109,6 +165,8 @@ class XWorkflowSave(io.ComfyNode):
 
         Args:
             anything: 任意输入(用于工作流连接，不处理数据，可选)
+            save_mode: 保存模式("Auto", "Standard", "FullWorkflow",
+                             "Prompt+FullWorkflow")
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
 
@@ -142,31 +200,447 @@ class XWorkflowSave(io.ComfyNode):
         )
         save_path = save_dir / final_filename
 
-        # 保存工作流JSON文件
-        prompt = cls.hidden.prompt
-        extra_pnginfo = cls.hidden.extra_pnginfo
+        # 根据保存模式准备数据
+        workflow_data = cls._prepare_workflow_data(save_mode)
 
-        workflow_data = {}
-        if prompt is not None:
-            workflow_data["prompt"] = prompt
-        if extra_pnginfo is not None:
-            workflow_data["workflow"] = extra_pnginfo.get("workflow")
-
+        # 保存文件
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(workflow_data, f, indent=2, ensure_ascii=False)
+
+        # 生成状态信息
+        status_msg = cls._generate_status_message(
+            final_filename, workflow_data, save_mode
+        )
+
+        # 生成 workflow_info 输出内容
+        # 构建相对路径 (基于 ComfyUI 输出目录)
+        relative_path = Path(final_filename)
+        if safe_subfolder:
+            relative_path = Path(safe_subfolder) / final_filename
+        workflow_info = cls._generate_workflow_info(
+            final_filename, workflow_data, save_mode, relative_path
+        )
 
         # 返回保存结果和透传数据
         return io.NodeOutput(
             anything,
-            ui=ui.PreviewText(f"Workflow saved: {final_filename}"),
+            workflow_info,
+            ui=ui.PreviewText(status_msg),
         )
+
+    @classmethod
+    def _prepare_workflow_data(cls, save_mode: str) -> dict:
+        """
+        根据保存模式准备 workflow 数据
+
+        Args:
+            save_mode: 保存模式("Auto", "Standard", "FullWorkflow",
+                             "Prompt+FullWorkflow")
+
+        Returns:
+            dict: 准备好的 workflow 数据
+        """
+        workflow_data = {}
+        prompt = cls.hidden.prompt
+        extra_pnginfo = cls.hidden.extra_pnginfo
+        unique_id = cls.hidden.unique_id
+
+        # 尝试从 API 存储获取完整 workflow 数据
+        full_workflow_data = None
+        if unique_id:
+            # 使用 unique_id 作为 prompt_id 从存储获取数据
+            stored_data = workflow_store.retrieve(unique_id)
+            if stored_data:
+                full_workflow_data = stored_data.get("workflow")
+
+        if save_mode == "FullWorkflow":
+            # 完整模式：必须使用前端传来的 workflow 数据
+            if not full_workflow_data:
+                raise ValueError(
+                    "FullWorkflow mode requires workflow data from "
+                    "frontend API. Please ensure the frontend "
+                    "extension is loaded and the node is triggered "
+                    "via Queue Prompt."
+                )
+            workflow_data = full_workflow_data
+
+        elif save_mode == "Standard":
+            # 标准模式：使用 prompt + extra_pnginfo
+            if prompt is not None:
+                workflow_data["prompt"] = prompt
+            if extra_pnginfo is not None:
+                workflow_data["workflow"] = extra_pnginfo.get("workflow")
+
+        elif save_mode == "Prompt+FullWorkflow":
+            # 合并模式：prompt + full_workflow
+            if prompt is not None:
+                workflow_data["prompt"] = prompt
+            if full_workflow_data:
+                workflow_data["full_workflow"] = full_workflow_data
+            else:
+                raise ValueError(
+                    "Prompt+FullWorkflow mode requires full workflow "
+                    "data from frontend API. Please ensure the "
+                    "frontend extension is loaded and the node is "
+                    "triggered via Queue Prompt."
+                )
+
+        else:  # Auto mode
+            # 自动模式：优先使用 Prompt+FullWorkflow，
+            # 如果前端失效则使用 Standard
+            if prompt is not None:
+                workflow_data["prompt"] = prompt
+            if full_workflow_data:
+                workflow_data["full_workflow"] = full_workflow_data
+            elif extra_pnginfo is not None:
+                workflow_data["workflow"] = extra_pnginfo.get("workflow")
+
+        return workflow_data
+
+    @classmethod
+    def _generate_status_message(
+        cls, filename: str, workflow_data: dict, save_mode: str
+    ) -> str:
+        """
+        生成保存状态信息
+
+        Args:
+            filename: 保存的文件名
+            workflow_data: 保存的 workflow 数据
+            save_mode: 使用的保存模式
+
+        Returns:
+            str: 状态信息字符串
+        """
+        # 分析数据完整性
+        analysis = cls._analyze_workflow(workflow_data)
+
+        status_lines = [
+            f"Saved: {filename}",
+            f"Mode: {save_mode}",
+        ]
+
+        if analysis["node_count"] > 0:
+            status_lines.extend(
+                [
+                    f"Nodes: {analysis['node_count']}",
+                    f"Complete: {analysis['is_complete']}",
+                ]
+            )
+
+        if "prompt" in workflow_data:
+            status_lines.append("Has prompt: Yes")
+        if "workflow" in workflow_data:
+            status_lines.append("Has workflow: Yes")
+        if "full_workflow" in workflow_data:
+            status_lines.append("Has full_workflow: Yes")
+
+        return "\n".join(status_lines)
+
+    @classmethod
+    def _generate_workflow_info(
+        cls,
+        filename: str,
+        workflow_data: dict,
+        save_mode: str,
+        relative_path: Path,
+    ) -> str:
+        """
+        生成 workflow_info 输出内容
+
+        根据保存模式生成不同的信息摘要:
+        - full 模式: 显示完整工作流的关键信息摘要
+        - auto/standard 模式: 显示保存状态和数据概览
+
+        Args:
+            filename: 保存的文件名
+            workflow_data: 保存的工作流数据
+            save_mode: 使用的保存模式
+            relative_path: 相对保存路径 (基于 ComfyUI 输出目录)
+
+        Returns:
+            str: 工作流信息字符串
+        """
+        # 统一使用正斜杠，确保跨平台一致性
+        posix_path = relative_path.as_posix()
+
+        info_lines = [
+            "=" * 50,
+            "Workflow Save Info",
+            "=" * 50,
+            "",
+            f"Filename: {filename}",
+            f"Save Path: [output_dir]/{posix_path}",
+            f"Save Mode: {save_mode}",
+            "",
+        ]
+
+        # 分析数据
+        analysis = cls._analyze_workflow(workflow_data)
+
+        # 数据概览
+        info_lines.extend(
+            [
+                "-" * 50,
+                "Data Overview:",
+                f"  Node Count: {analysis['node_count']}",
+                f"  Complete Metadata: "
+                f"{'Yes' if analysis['is_complete'] else 'No'}",
+            ]
+        )
+
+        if analysis["has_localized_name"]:
+            info_lines.append("  - Contains localized_name")
+        if analysis["has_widget"]:
+            info_lines.append("  - Contains widget info")
+
+        # 添加模式特定的信息
+        info_lines.extend(["", "-" * 50, "Data Content:"])
+
+        if save_mode == "FullWorkflow":
+            # FullWorkflow 模式: 显示完整工作流的关键信息
+            info_lines.append(
+                "Mode Description: Using full workflow data from frontend API"
+            )
+            info_lines.append("")
+            info_lines.append("Workflow Structure:")
+
+            if "last_node_id" in workflow_data:
+                info_lines.append(
+                    f"  - Last Node ID: {workflow_data['last_node_id']}"
+                )
+            if "last_link_id" in workflow_data:
+                info_lines.append(
+                    f"  - Last Link ID: {workflow_data['last_link_id']}"
+                )
+
+            nodes = workflow_data.get("nodes", [])
+            links = workflow_data.get("links", [])
+            info_lines.append(f"  - Total Nodes: {len(nodes)}")
+            info_lines.append(f"  - Total Links: {len(links)}")
+
+            # 显示节点类型统计
+            if nodes:
+                node_types = {}
+                for node in nodes:
+                    node_type = node.get("type", "Unknown")
+                    node_types[node_type] = node_types.get(node_type, 0) + 1
+
+                info_lines.append("")
+                info_lines.append("Node Type Statistics:")
+                for node_type, count in sorted(
+                    node_types.items(), key=lambda x: x[1], reverse=True
+                )[:10]:  # 只显示前10个
+                    info_lines.append(f"  - {node_type}: {count}")
+
+        elif save_mode == "Standard":
+            # Standard 模式: 显示标准数据信息
+            info_lines.append(
+                "Mode Description: Using ComfyUI "
+                "standard data (prompt + workflow)"
+            )
+            info_lines.append("")
+            info_lines.append("Data Composition:")
+
+            if "prompt" in workflow_data:
+                prompt_data = workflow_data["prompt"]
+                if isinstance(prompt_data, dict):
+                    info_lines.append(
+                        f"  - prompt: Contains {len(prompt_data)} nodes"
+                    )
+                else:
+                    info_lines.append("  - prompt: Included")
+            else:
+                info_lines.append("  - prompt: None")
+
+            if "workflow" in workflow_data:
+                wf_data = workflow_data["workflow"]
+                if isinstance(wf_data, dict):
+                    nodes = wf_data.get("nodes", [])
+                    info_lines.append(
+                        f"  - workflow: Contains {len(nodes)} nodes"
+                    )
+                else:
+                    info_lines.append("  - workflow: Included")
+            else:
+                info_lines.append("  - workflow: None")
+
+        elif save_mode == "Prompt+FullWorkflow":
+            # Prompt+FullWorkflow 模式: 显示 prompt + full_workflow 信息
+            info_lines.append(
+                "Mode Description: Prompt+FullWorkflow mode "
+                "(prompt + full_workflow)"
+            )
+            info_lines.append("")
+            info_lines.append("Data Composition:")
+
+            if "prompt" in workflow_data:
+                prompt_data = workflow_data["prompt"]
+                if isinstance(prompt_data, dict):
+                    info_lines.append(
+                        f"  - prompt: Contains {len(prompt_data)} nodes"
+                    )
+                else:
+                    info_lines.append("  - prompt: Included")
+            else:
+                info_lines.append("  - prompt: None")
+
+            if "full_workflow" in workflow_data:
+                full_wf = workflow_data["full_workflow"]
+                if isinstance(full_wf, dict):
+                    nodes = full_wf.get("nodes", [])
+                    links = full_wf.get("links", [])
+                    info_lines.append(
+                        f"  - full_workflow: {len(nodes)} nodes, "
+                        f"{len(links)} links"
+                    )
+                else:
+                    info_lines.append("  - full_workflow: Included")
+            else:
+                info_lines.append("  - full_workflow: None")
+
+        else:  # Auto mode
+            # Auto 模式: 显示自动检测结果
+            info_lines.append(
+                "Mode Description: Auto-detect and select best data source"
+            )
+            info_lines.append("")
+
+            # 确定实际使用了哪种数据
+            has_full_workflow = "full_workflow" in workflow_data
+            has_workflow = "workflow" in workflow_data
+            has_prompt = "prompt" in workflow_data
+
+            if has_full_workflow:
+                info_lines.append("Actually Used: Prompt+FullWorkflow data")
+                full_wf = workflow_data.get("full_workflow", {})
+                nodes = full_wf.get("nodes", [])
+                links = full_wf.get("links", [])
+                info_lines.append(f"  - FullWorkflow Nodes: {len(nodes)}")
+                info_lines.append(f"  - FullWorkflow Links: {len(links)}")
+                if has_prompt:
+                    prompt_data = workflow_data.get("prompt", {})
+                    if isinstance(prompt_data, dict):
+                        info_lines.append(
+                            f"  - Prompt nodes: {len(prompt_data)}"
+                        )
+            elif has_workflow:
+                info_lines.append("Actually Used: Standard data")
+                wf_data = workflow_data.get("workflow", {})
+                if isinstance(wf_data, dict):
+                    nodes = wf_data.get("nodes", [])
+                    info_lines.append(f"  - Workflow nodes: {len(nodes)}")
+                if has_prompt:
+                    prompt_data = workflow_data.get("prompt", {})
+                    if isinstance(prompt_data, dict):
+                        info_lines.append(
+                            f"  - Prompt nodes: {len(prompt_data)}"
+                        )
+            else:
+                info_lines.append("Actually Used: No valid data recognized")
+
+        # 添加提示
+        info_lines.extend(
+            [
+                "",
+                "=" * 50,
+                "Tips:",
+            ]
+        )
+
+        if save_mode == "FullWorkflow":
+            info_lines.append(
+                "  This mode saves data with complete "
+                "localized names and widget info"
+            )
+            info_lines.append(
+                "  Suitable for scenarios requiring full UI state preservation"
+            )
+        elif save_mode == "Standard":
+            info_lines.append(
+                "  This mode saves data in ComfyUI standard format"
+            )
+            info_lines.append(
+                "  Best compatibility, but lacks some UI metadata"
+            )
+        elif save_mode == "Prompt+FullWorkflow":
+            info_lines.append(
+                "  Prompt+FullWorkflow mode combines prompt "
+                "and full_workflow data"
+            )
+            info_lines.append(
+                "  Provides both execution data and complete UI metadata"
+            )
+        else:
+            info_lines.append(
+                "  Auto mode automatically selects "
+                "the best available data source"
+            )
+            info_lines.append(
+                "  Prioritizes Prompt+FullWorkflow, falls back "
+                "to Standard if frontend data unavailable"
+            )
+
+        info_lines.append("")
+
+        return "\n".join(info_lines)
+
+    @classmethod
+    def _analyze_workflow(cls, data: dict) -> dict:
+        """
+        分析 workflow 数据的完整性
+
+        Args:
+            data: workflow 数据
+
+        Returns:
+            dict: 分析结果
+        """
+        result = {
+            "node_count": 0,
+            "has_localized_name": False,
+            "has_widget": False,
+            "is_complete": False,
+        }
+
+        if not isinstance(data, dict):
+            return result
+
+        nodes = data.get("nodes", [])
+        result["node_count"] = len(nodes)
+
+        if not nodes:
+            return result
+
+        # 检查第一个节点的 inputs 是否包含 localized_name 和 widget
+        for node in nodes:
+            inputs = node.get("inputs", [])
+            for input_data in inputs:
+                if "localized_name" in input_data:
+                    result["has_localized_name"] = True
+                if "widget" in input_data:
+                    result["has_widget"] = True
+
+                if result["has_localized_name"] and result["has_widget"]:
+                    break
+
+            if result["has_localized_name"] and result["has_widget"]:
+                break
+
+        # 判断是否为完整格式
+        result["is_complete"] = (
+            result["has_localized_name"] and result["has_widget"]
+        )
+
+        return result
 
     @classmethod
     def _sanitize_path(cls, path: str) -> str:
         """
         清理路径，防止遍历攻击并禁用多级目录
 
-        将所有危险字符和路径分隔符替换为下划线，确保只允许单级文件夹名称
+        将所有危险字符和路径分隔符替换为下划线，
+        确保只允许单级文件夹名称
 
         Args:
             path: 原始路径或文件夹名称

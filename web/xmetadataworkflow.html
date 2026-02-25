@@ -1,41 +1,89 @@
 <!--
     XMetadataWorkflow - ComfyUI 工作流元数据查看器
     ================================================
+    版本: 1.2.2
+    更新日期: 2026-02-25
 
     功能概述:
     ---------
-    这是一个用于查看 ComfyUI 工作流元数据的网页工具。支持从以下文件类型中提取和可视化工作流:
-    - PNG 图片 (包含工作流元数据的生成图片)
-    - Latent 潜空间文件 (.latent)
-    - JSON 工作流文件 (XVideoSave/XAudioSave/XWorkflowSave 生成的)
+    一个独立的网页工具，用于查看和分析 ComfyUI 工作流元数据，无需启动 ComfyUI 即可预览工作流结构。
+
+    支持的文件格式:
+    ---------------
+    - PNG 图片 (.png) - 包含工作流元数据的生成图片
+    - Latent 潜空间文件 (.latent) - 包含 __metadata__ 的潜空间文件
+    - JSON 工作流文件 (.json) - 支持三种格式：
+        * XWorkflowSave 生成的格式 (包含 prompt 字段，支持 merge 模式)
+        * ComfyUI 网页导出的 API 格式 (直接是 prompt 数据)
+        * ComfyUI 网页保存的完整 Workflow 格式 (包含 nodes 和 links 数组)
 
     核心功能:
     ---------
     1. 文件解析:
        - PNG: 从 tEXt/iTXt chunk 读取 prompt/workflow 元数据
        - Latent: 从文件头部 JSON 读取 __metadata__
-       - JSON: 直接解析 prompt 字段 (仅支持包含 prompt 的格式)
+       - JSON: 智能识别并解析三种工作流格式
+       - Merge 模式: 自动合并 prompt 和 full_workflow 数据，保留执行结果和完整结构
 
     2. 工作流可视化:
        - 自动层级布局算法排列节点
+       - 优先使用保存的节点位置信息（如果可用）
        - 显示节点类型、参数和连接关系
        - 子图自动识别和颜色标记 (ID格式: "子图ID:节点ID")
+       - 选中节点发光效果（基于子图颜色）
+       - 连接点圆点显示（输入在左侧，输出在右侧）
        - 支持缩放、平移、自适应视图
 
     3. 交互功能:
        - 折叠/展开节点参数
-       - 选中节点高亮相关连接
-       - 拖拽调整节点宽度
+       - 单击选中节点，高亮相关连接（带流动动画效果）
+       - 多选节点: Ctrl+点击 或 框选(Ctrl+拖拽)
+       - 节点拖拽重新布局（支持多节点同时拖拽）
+       - 节点大小调整: 8个方向拉伸控制点（角+边）
+       - 画布平移: 鼠标空白处拖拽 或 中键拖拽
+       - 滚轮缩放，以鼠标位置为中心
+       - 复制节点名称: 点击标题栏左侧 📋 按钮，快速复制节点类型名称到剪贴板
+
+    4. 界面特性:
+       - 支持暗黑/亮色主题切换（本地存储记忆）
+       - 支持中英文语言切换（本地存储记忆）
+       - 侧边栏折叠/展开功能（默认展开，不持久化）
+       - 文件信息预览面板（图片预览、Latent标识）
+       - 缩放控制: 按钮、输入框精确设置、适应窗口
+       - 虚拟滚动: 长文本参数使用虚拟滚动优化性能
+       - 长文本操作: 一键复制、下载为文件
+       - Toast 提示: 操作反馈（复制成功、下载开始等）
+
+    5. 特殊节点处理:
+       - XWorkflowSave 节点识别和标记
+       - Note/MarkdownNote 节点特殊显示
+       - Bypass 节点状态显示
 
     数据格式说明:
     -------------
-    - 只使用 prompt 格式 (ComfyUI API 格式)
-    - 不使用 workflow 格式 (ComfyUI 前端格式)
-    - 节点位置使用自动排列算法，不依赖保存的位置信息
+    - 内部统一使用 prompt 格式 (ComfyUI API 格式)
+    - 完整 Workflow 格式会自动转换为 Prompt API 格式
+    - Merge 模式: 合并 prompt（执行结果）和 full_workflow（完整结构）数据
+    - 节点位置优先使用 workflow 中保存的原始位置
     - 子图通过节点 ID 中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
+
+    技术栈:
+    -------
+    - 纯前端实现，无需后端服务
+    - 原生 JavaScript (ES6+)
+    - SVG 绘制连接线和连接点
+    - CSS3 动画效果（流动线条、发光效果）
+    - ResizeObserver 监听节点尺寸变化
+
+    性能优化:
+    ---------
+    - 虚拟滚动: 长文本内容分段渲染
+    - ResizeObserver: 及时清理防止内存泄漏
+    - Object URL 管理: 及时释放预览图片内存
 
     作者: Xz3r0
     项目: ComfyUI-Xz3r0-Nodes
+    许可证: MIT License
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -159,6 +207,54 @@
             flex-direction: column;
             height: 100%;
             overflow: hidden;
+            transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            opacity: 0;
+            border-right: none;
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            left: 280px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 60px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-left: none;
+            border-radius: 0 6px 6px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: left 0.3s ease, background 0.2s;
+            padding: 0;
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+
+        .sidebar-toggle:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-secondary);
+        }
+
+        .sidebar-toggle .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed + .sidebar-toggle {
+            left: 0;
+        }
+
+        .sidebar.collapsed + .sidebar-toggle .toggle-icon {
+            transform: rotate(180deg);
         }
 
         .sidebar-header {
@@ -196,12 +292,14 @@
         .lang-btn:hover {
             border-color: var(--accent);
             color: var(--accent);
+            background: var(--bg-tertiary);
         }
 
         .lang-btn.active {
-            background: var(--accent);
+            background: var(--bg-tertiary);
             border-color: var(--accent);
-            color: var(--text-primary);
+            color: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
         }
 
         .theme-switch {
@@ -229,9 +327,9 @@
         }
 
         .theme-btn.active {
-            background: var(--accent);
             border-color: var(--accent);
-            color: #fff;
+            color: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
         }
 
         .theme-btn[data-theme="dark"]:not(.active) {
@@ -240,10 +338,22 @@
             color: #fff;
         }
 
+        .theme-btn[data-theme="dark"].active {
+            background: #1a1a1a;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
         .theme-btn[data-theme="light"]:not(.active) {
             background: #ffffff;
             border-color: #ffffff;
             color: #1a1a1a;
+        }
+
+        .theme-btn[data-theme="light"].active {
+            background: #ffffff;
+            border-color: var(--accent);
+            color: var(--accent);
         }
 
         .file-area {
@@ -410,6 +520,20 @@
             animation: line-flow 1.5s linear infinite;
         }
 
+        /* 连接点圆点样式 */
+        .connection-dot {
+            fill: var(--bg-node);
+            stroke: var(--connection-line);
+            stroke-width: 2;
+            transition: all 0.3s ease;
+        }
+
+        .connection-dot.highlight {
+            fill: var(--accent);
+            stroke: var(--accent);
+            stroke-width: 2;
+        }
+
         @keyframes line-flow {
             0% {
                 stroke-dasharray: 10, 20;
@@ -427,11 +551,110 @@
             border: 1px solid var(--border-secondary);
             border-radius: 8px;
             min-width: 180px;
+            min-height: 60px;
             width: 220px;
             z-index: 10;
             box-shadow: 0 4px 12px var(--shadow-node);
             transition: box-shadow 0.1s, border-color 0.3s;
-            overflow: visible;
+            overflow: hidden;
+        }
+
+        /* 节点拉伸控制点 */
+        .resize-handle {
+            position: absolute;
+            z-index: 100;
+            background: transparent;
+        }
+
+        .resize-handle:hover,
+        .resize-handle.active {
+            background: var(--accent);
+        }
+
+        /* 角控制点 - 8x8px */
+        .resize-handle.nw,
+        .resize-handle.ne,
+        .resize-handle.sw,
+        .resize-handle.se {
+            width: 10px;
+            height: 10px;
+        }
+
+        .resize-handle.nw {
+            top: -5px;
+            left: -5px;
+            cursor: nw-resize;
+            border-radius: 0 0 4px 0;
+        }
+
+        .resize-handle.ne {
+            top: -5px;
+            right: -5px;
+            cursor: ne-resize;
+            border-radius: 0 0 0 4px;
+        }
+
+        .resize-handle.sw {
+            bottom: -5px;
+            left: -5px;
+            cursor: sw-resize;
+            border-radius: 0 4px 0 0;
+        }
+
+        .resize-handle.se {
+            bottom: -5px;
+            right: -5px;
+            cursor: se-resize;
+            border-radius: 4px 0 0 0;
+        }
+
+        /* 边控制点 */
+        .resize-handle.n,
+        .resize-handle.s {
+            width: calc(100% - 20px);
+            height: 6px;
+            left: 10px;
+        }
+
+        .resize-handle.n {
+            top: -3px;
+            cursor: n-resize;
+            border-radius: 0 0 3px 3px;
+        }
+
+        .resize-handle.s {
+            bottom: -3px;
+            cursor: s-resize;
+            border-radius: 3px 3px 0 0;
+        }
+
+        .resize-handle.w,
+        .resize-handle.e {
+            width: 6px;
+            height: calc(100% - 20px);
+            top: 10px;
+        }
+
+        .resize-handle.w {
+            left: -3px;
+            cursor: w-resize;
+            border-radius: 0 3px 3px 0;
+        }
+
+        .resize-handle.e {
+            right: -3px;
+            cursor: e-resize;
+            border-radius: 3px 0 0 3px;
+        }
+
+        /* 节点正在拉伸时的样式 */
+        .node.resizing {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .node.resizing .node-header {
+            cursor: default !important;
         }
 
         .node:hover {
@@ -485,14 +708,41 @@
             font-size: 11px;
             font-weight: 600;
             color: var(--text-primary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             display: flex;
             align-items: center;
             gap: 6px;
-            cursor: move;
+            cursor: default;
+            user-select: none;
+            -webkit-user-select: none;
             border-bottom: 1px solid var(--border-tertiary);
+        }
+
+        .node-header-text {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .node-header.dragging {
+            cursor: move;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .selection-box {
+            position: absolute;
+            border: 2px dashed var(--accent);
+            background: rgba(255, 105, 180, 0.1);
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+
+        .node.multi-selected {
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 15px rgba(255, 105, 180, 0.5), 0 0 30px rgba(255, 105, 180, 0.3) !important;
         }
 
         .header-actions {
@@ -567,28 +817,28 @@
             word-break: break-all;
             text-align: left;
             flex: 1;
-            overflow: visible;
+            overflow: auto;
             text-overflow: clip;
-            white-space: normal;
+            white-space: pre-wrap;
             word-wrap: break-word;
             background: var(--bg-param-value);
             padding: 1px 4px;
             border-radius: 2px;
+            max-height: 100px;
         }
 
-        .resize-handle {
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            width: 24px;
-            height: 24px;
-            cursor: se-resize;
-            background: linear-gradient(135deg, transparent 50%, var(--resize-handle) 50%);
-            border-radius: 0 0 7px 0;
+        .param-value::-webkit-scrollbar {
+            width: 3px;
+            height: 3px;
         }
 
-        .resize-handle:hover {
-            background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+        .param-value::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .param-value::-webkit-scrollbar-thumb {
+            background: var(--border-tertiary);
+            border-radius: 2px;
         }
 
         .note-node .node-body {
@@ -604,6 +854,21 @@
             border-radius: 4px;
             max-height: 150px;
             overflow-y: auto;
+        }
+
+        .note-content .long-text-wrapper {
+            background: transparent;
+            border: none;
+            margin: -8px;
+        }
+
+        .note-content .long-text-header {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .note-content .virtual-scroll-container {
+            padding: 0 8px;
         }
 
         .zoom-controls {
@@ -630,8 +895,9 @@
         }
 
         .zoom-btn:hover {
-            background: var(--bg-btn-hover);
-            border-color: var(--border-tertiary);
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-btn);
         }
 
         .zoom-level {
@@ -650,6 +916,119 @@
         .zoom-level:focus {
             outline: none;
             border-color: var(--accent);
+        }
+
+        /* 虚拟滚动样式 */
+        .long-text-wrapper {
+            border: 1px solid var(--border-secondary);
+            border-radius: 4px;
+            background: var(--bg-param-value);
+            overflow: hidden;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .long-text-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2px 6px;
+            background: var(--bg-param-key);
+            border-bottom: 1px solid var(--border-tertiary);
+            font-size: 10px;
+        }
+
+        .long-text-info {
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .long-text-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .text-action-btn {
+            font-size: 9px;
+            padding: 1px 4px;
+            background: var(--bg-btn);
+            border: 1px solid var(--border-tertiary);
+            border-radius: 2px;
+            cursor: pointer;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        .text-action-btn:hover {
+            background: var(--bg-btn-hover);
+        }
+
+        .virtual-scroll-container {
+            background: var(--bg-param-value);
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 16px;
+            overflow: auto;
+        }
+
+        .virtual-scroll-line {
+            padding: 0 8px;
+            white-space: pre;
+            height: 16px;
+            line-height: 16px;
+            min-width: fit-content;
+        }
+
+        .virtual-scroll-line:hover {
+            background: var(--bg-btn-hover);
+        }
+
+        .param-value-short {
+            padding: 4px 8px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow: auto;
+            max-height: 100px;
+        }
+
+        .long-param {
+            flex-direction: row;
+            align-items: flex-start;
+        }
+
+        .long-param .param-key {
+            margin-bottom: 0;
+            flex-shrink: 0;
+            margin-right: 8px;
+            margin-top: 4px;
+        }
+
+        .param-value-container {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Toast 提示 */
+        .toast-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            z-index: 10000;
+            font-size: 14px;
+            animation: fadeInOut 2s ease;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+            10% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            90% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
         }
     </style>
 </head>
@@ -694,19 +1073,23 @@
                 </div>
             </div>
             <div class="language-switch" id="languageSwitch">
-                <button class="lang-btn" data-lang="zh">中文</button>
-                <button class="lang-btn" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="zh" data-i18n="langZh">中文</button>
+                <button class="lang-btn" data-lang="en" data-i18n="langEn">EN</button>
             </div>
             <div class="theme-switch" id="themeSwitch">
                 <button class="theme-btn" data-theme="dark" data-i18n-title="darkMode">🌙</button>
                 <button class="theme-btn" data-theme="light" data-i18n-title="lightMode">☀️</button>
             </div>
         </div>
+        <button class="sidebar-toggle" id="sidebarToggle" title="隐藏侧边栏" data-i18n-title="hideSidebar">
+            <span class="toggle-icon">◀</span>
+        </button>
         <div class="canvas-container" id="canvasContainer">
             <div id="canvas-wrapper">
                 <svg class="svg-connections" id="connections"></svg>
                 <div id="canvas"></div>
             </div>
+            <div class="selection-box" id="selectionBox"></div>
         </div>
     </div>
 
@@ -730,8 +1113,10 @@
         const i18n = {
             zh: {
                 title: 'XMetadataWorkflow',
+                langZh: '中文',
+                langEn: 'English',
                 DroporSelect: '拖放文件到此处 或 点击选择文件',
-                filetip: '支持 .png 和 .latent\n以及 .json (由XWorkflowSave保存)',
+                filetip: '支持 .png 和 .latent\n以及 .json (三种格式)',
                 filename: '文件名',
                 filetype: '类型',
                 filesize: '大小',
@@ -755,12 +1140,31 @@
                 output: '输出',
                 darkMode: '暗黑模式',
                 lightMode: '亮色模式',
-                noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件缺少 prompt 字段，无法加载工作流。\n\n支持的格式：\n• XWorkflowSave 生成的 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件\n\n不支持：\n• ComfyUI 网页直接导出的 workflow JSON'
+                hideSidebar: '隐藏侧边栏',
+                showSidebar: '显示侧边栏',
+                noPromptError: '不支持的 JSON 格式\n\n此 JSON 文件无法识别为有效的工作流格式。\n\n支持的格式：\n• XWorkflowSave 生成的 JSON (含 prompt 字段)\n• ComfyUI 网页导出的 API 格式 JSON\n• ComfyUI 网页保存的完整 Workflow 格式 JSON\n• 包含 prompt 元数据的 PNG 图片\n• Latent 潜空间文件',
+                latentFile: 'Latent 潜空间',
+                jsonWorkflow: 'JSON 工作流',
+                noPreview: '无法直接预览',
+                clickToChange: '点击更换文件',
+                typePng: 'PNG 图片',
+                typeLatent: 'Latent 潜空间',
+                typeJson: 'JSON 工作流',
+                unknown: '未知',
+                copied: '已复制到剪贴板',
+                downloadStarted: '已开始下载',
+                lines: '行',
+                copy: '复制',
+                download: '下载',
+                fileTooLarge: '文件过大，最大支持 100MB',
+                copyTitle: '复制节点名称'
             },
             en: {
                 title: 'XMetadataWorkflow',
+                langZh: '中文',
+                langEn: 'English',
                 DroporSelect: 'Drop file here\nor click to select',
-                filetip: 'Supports .png, .latent\nand .json (from XWorkflowSave)',
+                filetip: 'Supports .png, .latent\nand .json (three formats)',
                 filename: 'Filename',
                 filetype: 'Type',
                 filesize: 'Size',
@@ -784,12 +1188,28 @@
                 output: 'Output',
                 darkMode: 'Dark Mode',
                 lightMode: 'Light Mode',
-                noPromptError: 'Unsupported JSON Format\n\nThis JSON file is missing the prompt field and cannot load the workflow.\n\nSupported formats:\n• JSON from XWorkflowSave\n• PNG images with prompt metadata\n• Latent files\n\nNot supported:\n• ComfyUI web-exported workflow JSON'
+                hideSidebar: 'Hide Sidebar',
+                showSidebar: 'Show Sidebar',
+                noPromptError: 'Unsupported JSON Format\n\nThis JSON file cannot be recognized as a valid workflow format.\n\nSupported formats:\n• JSON from XWorkflowSave (with prompt field)\n• ComfyUI web-exported API format JSON\n• ComfyUI web-saved full Workflow format JSON\n• PNG images with prompt metadata\n• Latent files',
+                latentFile: 'Latent File',
+                jsonWorkflow: 'JSON Workflow',
+                noPreview: 'No preview available',
+                clickToChange: 'Click to change file',
+                typePng: 'PNG Image',
+                typeLatent: 'Latent File',
+                typeJson: 'JSON Workflow',
+                unknown: 'Unknown',
+                copied: 'Copied to clipboard',
+                downloadStarted: 'Download started',
+                lines: 'lines',
+                copy: 'Copy',
+                download: 'Download',
+                fileTooLarge: 'File too large, maximum 100MB supported',
+                copyTitle: 'Copy Node Name'
             }
         };
 
-        const browserLang = navigator.language || navigator.userLanguage || 'en';
-        let currentLang = browserLang.startsWith('zh') ? 'zh' : 'en';
+        let currentLang = localStorage.getItem('lang') || 'en';
 
         /**
          * 国际化翻译函数
@@ -823,18 +1243,23 @@
         let panY = 0;
         let nodeStates = {};
         let selectedNodeId = null;
+        let selectedNodeIds = new Set(); // 多选节点集合
+        let currentFileType = null; // 存储当前文件类型，用于语言切换时更新预览
+        let currentPreviewUrl = null; // 当前预览图片的 Object URL，用于内存释放
 
         const canvasContainer = document.getElementById('canvasContainer');
         const canvasWrapper = document.getElementById('canvas-wrapper');
         const canvas = document.getElementById('canvas');
         const connectionsSvg = document.getElementById('connections');
         const zoomLevel = document.getElementById('zoomLevel');
+        const selectionBox = document.getElementById('selectionBox');
 
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentLang = btn.dataset.lang;
+                localStorage.setItem('lang', currentLang);
                 updateLanguage();
             });
         });
@@ -864,6 +1289,33 @@
 
         setTheme(currentTheme);
 
+        // 侧边栏折叠功能
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        let sidebarCollapsed = false; // 默认展开，不持久化存储
+
+        /**
+         * 切换侧边栏显示/隐藏状态
+         */
+        function toggleSidebar() {
+            sidebarCollapsed = !sidebarCollapsed;
+            if (sidebarCollapsed) {
+                sidebar.classList.add('collapsed');
+                sidebarToggle.title = t('showSidebar');
+                sidebarToggle.setAttribute('data-i18n-title', 'showSidebar');
+            } else {
+                sidebar.classList.remove('collapsed');
+                sidebarToggle.title = t('hideSidebar');
+                sidebarToggle.setAttribute('data-i18n-title', 'hideSidebar');
+            }
+        }
+
+        sidebarToggle.addEventListener('click', toggleSidebar);
+
+        // 初始化侧边栏状态（默认展开）
+        sidebarToggle.title = t('hideSidebar');
+        sidebarToggle.setAttribute('data-i18n-title', 'hideSidebar');
+
         function updateLanguage() {
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 const key = el.getAttribute('data-i18n');
@@ -873,6 +1325,30 @@
                 const key = el.getAttribute('data-i18n-title');
                 el.title = t(key);
             });
+
+            // 更新文件信息区域的类型显示
+            if (currentFileType) {
+                const typeMap = {
+                    'png': t('typePng'),
+                    'latent': t('typeLatent'),
+                    'json': t('typeJson')
+                };
+                document.getElementById('infoType').textContent = typeMap[currentFileType] || currentFileType;
+
+                // 更新预览区域的文本
+                if (currentFileType === 'latent') {
+                    displayLatentPreview();
+                } else if (currentFileType === 'json') {
+                    displayNoPreview();
+                } else if (currentFileType === 'png') {
+                    // 更新 PNG 预览的 title
+                    const placeholder = document.getElementById('filePlaceholder');
+                    if (placeholder) {
+                        placeholder.title = t('clickToChange');
+                    }
+                }
+            }
+
             renderWorkflow();
         }
 
@@ -972,7 +1448,47 @@
         let isPanning = false;
         let panStartX, panStartY;
 
+        // 框选相关变量
+        let isSelecting = false;
+        let selectionStartX, selectionStartY;
+        let isMultiDragging = false;
+        let multiDragStartX, multiDragStartY;
+        let multiDragNodePositions = new Map();
+
+        // 拖动标记，用于防止拖动后触发点击事件
+        let justFinishedDrag = false;
+
+        // 节点拉伸状态变量
+        let isResizing = false;
+        let resizeNodeId = null;
+        let resizeDirection = null;
+        let resizeStartX = 0;
+        let resizeStartY = 0;
+        let resizeStartWidth = 0;
+        let resizeStartHeight = 0;
+        let resizeStartLeft = 0;
+        let resizeStartTop = 0;
+        const MIN_NODE_WIDTH = 180;
+        const MIN_NODE_HEIGHT = 60;
+
         canvasContainer.addEventListener('mousedown', (e) => {
+            // Ctrl+左键：开始框选
+            if (e.ctrlKey && e.button === 0 && (e.target === canvasContainer || e.target === canvasWrapper)) {
+                isSelecting = true;
+                // 使用相对于 canvasContainer 的坐标（不受 transform 影响）
+                const rect = canvasContainer.getBoundingClientRect();
+                selectionStartX = e.clientX - rect.left;
+                selectionStartY = e.clientY - rect.top;
+                selectionBox.style.display = 'block';
+                selectionBox.style.left = selectionStartX + 'px';
+                selectionBox.style.top = selectionStartY + 'px';
+                selectionBox.style.width = '0px';
+                selectionBox.style.height = '0px';
+                e.preventDefault();
+                return;
+            }
+
+            // 普通情况：平移画布
             if (e.target === canvasContainer || e.target === canvasWrapper) {
                 isPanning = true;
                 panStartX = e.clientX - panX;
@@ -984,6 +1500,8 @@
         canvasContainer.addEventListener('dblclick', (e) => {
             if (e.target === canvasContainer || e.target === canvasWrapper) {
                 deselectAll();
+                selectedNodeIds.clear();
+                updateMultiSelection();
             }
         });
 
@@ -993,22 +1511,250 @@
                     document.activeElement.blur();
                 } else {
                     deselectAll();
+                    selectedNodeIds.clear();
+                    updateMultiSelection();
                 }
             }
         });
 
         document.addEventListener('mousemove', (e) => {
+            // 处理节点拉伸 - 放在最前面确保及时响应
+            if (isResizing && resizeNodeId) {
+                const nodeEl = document.querySelector(`[data-node-id="${resizeNodeId}"]`);
+                if (nodeEl) {
+                    // 计算鼠标移动距离（考虑画布缩放）
+                    const dx = (e.clientX - resizeStartX) / scale;
+                    const dy = (e.clientY - resizeStartY) / scale;
+
+                    let newWidth = resizeStartWidth;
+                    let newHeight = resizeStartHeight;
+                    let newLeft = resizeStartLeft;
+                    let newTop = resizeStartTop;
+
+                    // 根据拉伸方向计算新的尺寸和位置
+                    switch (resizeDirection) {
+                        case 'e': // 东 - 右边
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth + dx);
+                            break;
+                        case 'w': // 西 - 左边
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth - dx);
+                            newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
+                            break;
+                        case 's': // 南 - 下边
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight + dy);
+                            break;
+                        case 'n': // 北 - 上边
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight - dy);
+                            newTop = resizeStartTop + (resizeStartHeight - newHeight);
+                            break;
+                        case 'se': // 东南 - 右下角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth + dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight + dy);
+                            break;
+                        case 'sw': // 西南 - 左下角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth - dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight + dy);
+                            newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
+                            break;
+                        case 'ne': // 东北 - 右上角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth + dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight - dy);
+                            newTop = resizeStartTop + (resizeStartHeight - newHeight);
+                            break;
+                        case 'nw': // 西北 - 左上角
+                            newWidth = Math.max(MIN_NODE_WIDTH, resizeStartWidth - dx);
+                            newHeight = Math.max(MIN_NODE_HEIGHT, resizeStartHeight - dy);
+                            newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
+                            newTop = resizeStartTop + (resizeStartHeight - newHeight);
+                            break;
+                    }
+
+                    // 应用新的尺寸和位置
+                    nodeEl.style.width = newWidth + 'px';
+                    nodeEl.style.height = newHeight + 'px';
+                    nodeEl.style.left = newLeft + 'px';
+                    nodeEl.style.top = newTop + 'px';
+
+                    // 立即更新连接线
+                    updateConnectionPaths();
+                    updateConnectionHighlight();
+                }
+                return; // 拉伸时阻止其他操作
+            }
+
             if (isPanning) {
                 panX = e.clientX - panStartX;
                 panY = e.clientY - panStartY;
                 updateTransform();
             }
+
+            // 更新框选框
+            if (isSelecting) {
+                // 使用相对于 canvasContainer 的坐标（不受 transform 影响）
+                const rect = canvasContainer.getBoundingClientRect();
+                const currentX = e.clientX - rect.left;
+                const currentY = e.clientY - rect.top;
+
+                const left = Math.min(selectionStartX, currentX);
+                const top = Math.min(selectionStartY, currentY);
+                const width = Math.abs(currentX - selectionStartX);
+                const height = Math.abs(currentY - selectionStartY);
+
+                selectionBox.style.left = left + 'px';
+                selectionBox.style.top = top + 'px';
+                selectionBox.style.width = width + 'px';
+                selectionBox.style.height = height + 'px';
+            }
+
+            // 多节点拖动
+            if (isMultiDragging && selectedNodeIds.size > 0) {
+                const dx = (e.clientX - multiDragStartX) / scale;
+                const dy = (e.clientY - multiDragStartY) / scale;
+
+                selectedNodeIds.forEach(nodeId => {
+                    const nodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+                    const startPos = multiDragNodePositions.get(nodeId);
+                    if (nodeEl && startPos) {
+                        nodeEl.style.left = (startPos.x + dx) + 'px';
+                        nodeEl.style.top = (startPos.y + dy) + 'px';
+                    }
+                });
+
+                updateConnectionPaths();
+                updateConnectionHighlight();
+            }
         });
 
-        document.addEventListener('mouseup', () => {
+        document.addEventListener('mouseup', (e) => {
+            // 结束节点拉伸 - 放在最前面确保及时清理状态
+            if (isResizing) {
+                const nodeEl = document.querySelector(`[data-node-id="${resizeNodeId}"]`);
+                if (nodeEl) {
+                    // 移除拉伸中样式
+                    nodeEl.classList.remove('resizing');
+                    nodeEl.querySelectorAll('.resize-handle').forEach(h => {
+                        h.classList.remove('active');
+                    });
+
+                    // 保存节点尺寸状态
+                    if (!nodeStates[resizeNodeId]) {
+                        nodeStates[resizeNodeId] = {};
+                    }
+                    nodeStates[resizeNodeId].width = nodeEl.offsetWidth;
+                    nodeStates[resizeNodeId].height = nodeEl.offsetHeight;
+
+                    // 保存节点位置（如果位置发生了变化）
+                    const newLeft = parseFloat(nodeEl.style.left);
+                    const newTop = parseFloat(nodeEl.style.top);
+                    if (newLeft !== resizeStartLeft || newTop !== resizeStartTop) {
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[resizeNodeId] = {
+                            x: newLeft,
+                            y: newTop
+                        };
+                    }
+                }
+
+                // 立即清理所有拉伸状态
+                document.body.style.userSelect = '';
+                document.body.style.webkitUserSelect = '';
+                isResizing = false;
+                resizeNodeId = null;
+                resizeDirection = null;
+
+                // 设置标记，防止触发点击事件
+                justFinishedDrag = true;
+                setTimeout(() => {
+                    justFinishedDrag = false;
+                }, 50);
+            }
+
+            // 结束框选
+            if (isSelecting) {
+                const containerRect = canvasContainer.getBoundingClientRect();
+                const endX = e.clientX - containerRect.left;
+                const endY = e.clientY - containerRect.top;
+
+                // 选择框的视口坐标
+                const selLeft = Math.min(selectionStartX, endX);
+                const selTop = Math.min(selectionStartY, endY);
+                const selRight = Math.max(selectionStartX, endX);
+                const selBottom = Math.max(selectionStartY, endY);
+
+                // 将选择框坐标转换为节点坐标系（考虑 pan 和 scale）
+                const nodeLeft = (selLeft - panX) / scale;
+                const nodeTop = (selTop - panY) / scale;
+                const nodeRight = (selRight - panX) / scale;
+                const nodeBottom = (selBottom - panY) / scale;
+
+                // 检测哪些节点在选择框内
+                document.querySelectorAll('.node').forEach(nodeEl => {
+                    const nodeX = parseFloat(nodeEl.style.left);
+                    const nodeY = parseFloat(nodeEl.style.top);
+                    const nodeW = nodeEl.offsetWidth;
+                    const nodeH = nodeEl.offsetHeight;
+
+                    // 检查节点是否在选择框内（部分重叠也算）
+                    if (nodeX < nodeRight && nodeX + nodeW > nodeLeft &&
+                        nodeY < nodeBottom && nodeY + nodeH > nodeTop) {
+                        const nodeId = nodeEl.dataset.nodeId;
+                        selectedNodeIds.add(nodeId);
+                    }
+                });
+
+                updateMultiSelection();
+                selectionBox.style.display = 'none';
+                isSelecting = false;
+            }
+
+            // 结束多节点拖动
+            if (isMultiDragging) {
+                // 保存新位置
+                selectedNodeIds.forEach(nodeId => {
+                    const nodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+                    if (nodeEl) {
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[nodeId] = {
+                            x: parseFloat(nodeEl.style.left),
+                            y: parseFloat(nodeEl.style.top)
+                        };
+                    }
+                });
+
+                document.body.style.userSelect = '';
+                document.body.style.webkitUserSelect = '';
+                isMultiDragging = false;
+                multiDragNodePositions.clear();
+
+                // 设置标记，防止触发点击事件
+                justFinishedDrag = true;
+                // 延迟重置标记，确保 click 事件能检测到
+                setTimeout(() => {
+                    justFinishedDrag = false;
+                }, 50);
+            }
+
             isPanning = false;
             canvasContainer.style.cursor = 'default';
         });
+
+        /**
+         * 更新多选节点的视觉状态
+         */
+        function updateMultiSelection() {
+            document.querySelectorAll('.node').forEach(nodeEl => {
+                const nodeId = nodeEl.dataset.nodeId;
+                if (selectedNodeIds.has(nodeId)) {
+                    nodeEl.classList.add('multi-selected');
+                } else {
+                    nodeEl.classList.remove('multi-selected');
+                }
+            });
+        }
 
         /**
          * 设置画布缩放级别
@@ -1044,10 +1790,17 @@
 
         /**
          * 处理用户选择的文件
-         * 流程：读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
+         * 流程：检查文件大小 -> 读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
          * @param {File} file - 用户选择的文件对象
          */
         async function handleFile(file) {
+            // 文件大小限制：100MB
+            const MAX_FILE_SIZE = 100 * 1024 * 1024;
+            if (file.size > MAX_FILE_SIZE) {
+                alert(t('fileTooLarge'));
+                return;
+            }
+
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
 
@@ -1087,16 +1840,20 @@
             const filename = file.name;
             const ext = filename.split('.').pop().toLowerCase();
             const size = formatFileSize(file.size);
-            const lastModified = new Date(file.lastModified).toLocaleString('zh-CN');
+            const lastModified = new Date(file.lastModified).toLocaleString(currentLang === 'zh' ? 'zh-CN' : 'en-US');
+
+            // 保存当前文件类型，用于语言切换时更新
+            currentFileType = ext;
 
             document.getElementById('infoFilename').textContent = filename;
             document.getElementById('infoSize').textContent = size;
             document.getElementById('infoModified').textContent = lastModified;
 
+            // 使用 i18n 获取文件类型名称
             const typeMap = {
-                'png': 'PNG 图片',
-                'latent': 'Latent 潜空间',
-                'json': 'JSON 工作流'
+                'png': t('typePng'),
+                'latent': t('typeLatent'),
+                'json': t('typeJson')
             };
             document.getElementById('infoType').textContent = typeMap[ext] || ext;
 
@@ -1107,7 +1864,7 @@
                     document.getElementById('infoResolution').textContent = `${dims.width} × ${dims.height}`;
                     displayImagePreview(uint8Array);
                 } else {
-                    document.getElementById('infoResolution').textContent = currentLang === 'zh' ? '未知' : 'Unknown';
+                    document.getElementById('infoResolution').textContent = t('unknown');
                 }
             } else if (ext === 'latent') {
                 document.getElementById('infoResolution').innerHTML = `<span class="latent-badge">${t('latent')}</span>`;
@@ -1180,24 +1937,30 @@
          * @param {Uint8Array} uint8Array - PNG 文件的二进制数据
          */
         function displayImagePreview(uint8Array) {
+            // 释放上一次的 Object URL，防止内存泄漏
+            if (currentPreviewUrl) {
+                URL.revokeObjectURL(currentPreviewUrl);
+                currentPreviewUrl = null;
+            }
+
             const blob = new Blob([uint8Array], { type: 'image/png' });
-            const url = URL.createObjectURL(blob);
+            currentPreviewUrl = URL.createObjectURL(blob);
 
             const preview = document.getElementById('filePreview');
             const placeholder = document.getElementById('filePlaceholder');
 
-            placeholder.innerHTML = '<img src="' + url + '" alt="预览" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
+            placeholder.innerHTML = '<img src="' + currentPreviewUrl + '" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">';
             placeholder.style.cursor = 'pointer';
-            placeholder.title = '点击更换文件';
+            placeholder.title = t('clickToChange');
         }
 
         function displayLatentPreview() {
             const placeholder = document.getElementById('filePlaceholder');
             placeholder.innerHTML = `
                 <span class="icon">🧠</span>
-                <span>Latent 潜空间</span>
-                <span style="font-size: 10px; color: #555; margin-top: 8px;">无法直接预览</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">点击更换文件</span>
+                <span>${t('latentFile')}</span>
+                <span style="font-size: 10px; color: #555; margin-top: 8px;">${t('noPreview')}</span>
+                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
             `;
         }
 
@@ -1205,8 +1968,8 @@
             const placeholder = document.getElementById('filePlaceholder');
             placeholder.innerHTML = `
                 <span class="icon">📄</span>
-                <span>JSON 工作流</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">点击更换文件</span>
+                <span>${t('jsonWorkflow')}</span>
+                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
             `;
         }
 
@@ -1214,8 +1977,12 @@
          * 根据文件扩展名选择对应的元数据读取函数
          * 处理流程：
          * 1. .latent 文件 -> readLatentMetadata (读取 latent 文件的头部元数据)
-         * 2. .json 文件 -> readJsonMetadata (解析 JSON 中的 prompt 字段)
+         * 2. .json 文件 -> readJsonMetadata (自动识别并解析两种 prompt 格式)
          * 3. 其他文件 (如 .png) -> readPngMetadata (从 PNG 的 tEXt/iTXt chunk 读取)
+         *
+         * 返回格式: { prompt: {...}, workflow: {...} }
+         * - prompt: ComfyUI API 格式的工作流数据
+         * - workflow: 完整的 Workflow 格式（包含节点位置等信息，可能为 null）
          */
         async function readMetadataFromFile(data, filename) {
             if (filename.toLowerCase().endsWith('.latent')) {
@@ -1228,11 +1995,147 @@
         }
 
         /**
+         * 将完整 Workflow 格式转换为 Prompt API 格式
+         * 完整 Workflow 格式包含更多元数据（节点位置、大小等），但需要转换才能使用
+         *
+         * @param {Object} workflow - 完整 Workflow 格式的 JSON 对象
+         * @returns {Object} - Prompt API 格式的对象
+         */
+        function convertWorkflowToPrompt(workflow) {
+            const prompt = {};
+            const nodeMap = new Map();
+
+            // 首先建立节点 ID 映射
+            for (const node of workflow.nodes || []) {
+                nodeMap.set(node.id, node);
+            }
+
+            // 构建链接映射：linkId -> { origin_id, origin_slot, target_id, target_slot }
+            const linkMap = new Map();
+            for (const link of workflow.links || []) {
+                // link 格式: [id, origin_id, origin_slot, target_id, target_slot, type]
+                if (link.length >= 5) {
+                    linkMap.set(link[0], {
+                        origin_id: link[1],
+                        origin_slot: link[2],
+                        target_id: link[3],
+                        target_slot: link[4]
+                    });
+                }
+            }
+
+            // 转换每个节点
+            for (const node of workflow.nodes || []) {
+                const nodeData = {
+                    inputs: {},
+                    class_type: node.type,
+                    _meta: {
+                        title: node.properties?.["Node name for S&R"] || node.type
+                    }
+                };
+
+                // 保存节点位置信息（如果有）
+                if (node.pos && Array.isArray(node.pos) && node.pos.length >= 2) {
+                    nodeData._meta.pos = [node.pos[0], node.pos[1]];
+                }
+                if (node.size && Array.isArray(node.size) && node.size.length >= 2) {
+                    nodeData._meta.size = [node.size[0], node.size[1]];
+                }
+
+                // 处理 Note 和 MarkdownNote 节点（没有 inputs，但有 widgets_values）
+                if (node.type === 'Note' || node.type === 'MarkdownNote') {
+                    if (node.widgets_values && node.widgets_values.length > 0) {
+                        nodeData.inputs.text = node.widgets_values[0];
+                    }
+                    prompt[String(node.id)] = nodeData;
+                    continue;
+                }
+
+                // 收集该节点作为目标的所有链接（用于确定输入连接）
+                const incomingLinks = [];
+                for (const [linkId, linkInfo] of linkMap) {
+                    if (linkInfo.target_id === node.id) {
+                        incomingLinks.push(linkInfo);
+                    }
+                }
+
+                // 处理 widgets_values 和 inputs 的配对
+                let widgetIndex = 0;
+
+                for (const input of node.inputs || []) {
+                    if (input.link !== undefined && input.link !== null) {
+                        // 优先处理连接输入（即使 input 也有 widget）
+                        const linkInfo = linkMap.get(input.link);
+                        if (linkInfo) {
+                            nodeData.inputs[input.name] = [
+                                String(linkInfo.origin_id),
+                                linkInfo.origin_slot
+                            ];
+                        }
+                        // 如果这个输入也有 widget，需要跳过对应的 widgetIndex
+                        if (input.widget && node.widgets_values) {
+                            widgetIndex++;
+                        }
+                    } else if (input.widget && node.widgets_values && widgetIndex < node.widgets_values.length) {
+                        // 这是 widget 参数（没有连接），从 widgets_values 取值
+                        nodeData.inputs[input.name] = node.widgets_values[widgetIndex];
+                        widgetIndex++;
+                    }
+                }
+
+                prompt[String(node.id)] = nodeData;
+            }
+
+            return prompt;
+        }
+
+        /**
+         * 合并 prompt 和 full_workflow 的数据
+         * 以 full_workflow 转换后的数据为基础，用 prompt 中的执行结果补充
+         *
+         * @param {Object} promptData - prompt 格式的数据（包含执行结果）
+         * @param {Object} workflowData - full_workflow 格式的数据（包含完整结构）
+         * @returns {Object} - 合并后的 prompt 格式数据
+         */
+        function mergePromptAndWorkflow(promptData, workflowData) {
+            // 首先将 full_workflow 转换为 prompt 格式
+            const merged = convertWorkflowToPrompt(workflowData);
+
+            // 然后从原始 prompt 中补充执行结果
+            for (const [nodeId, nodeData] of Object.entries(promptData)) {
+                if (!merged[nodeId]) {
+                    // 如果 merged 中没有这个节点，直接添加
+                    merged[nodeId] = nodeData;
+                    continue;
+                }
+
+                if (nodeData.inputs) {
+                    // 确保 merged 节点有 inputs 对象
+                    if (!merged[nodeId].inputs) {
+                        merged[nodeId].inputs = {};
+                    }
+
+                    // 遍历 prompt 中的 inputs，将执行结果合并到 merged
+                    for (const [inputName, inputValue] of Object.entries(nodeData.inputs)) {
+                        // 特殊处理：如果是数组（表示连接），保留 merged 中的值
+                        // 否则使用 prompt 中的值（执行结果）
+                        if (!Array.isArray(inputValue)) {
+                            merged[nodeId].inputs[inputName] = inputValue;
+                        }
+                    }
+                }
+            }
+
+            return merged;
+        }
+
+        /**
          * 读取 JSON 文件的元数据
          * 处理逻辑：
-         * - 只支持包含 prompt 字段的 JSON (如 XVideoSave/XAudioSave/XWorkflowSave 生成的)
-         * - 不处理纯 workflow 格式的 JSON (如 ComfyUI 网页导出的)
-         * - 返回格式: { prompt: {...} }
+         * - 支持包含 prompt 字段的 JSON (如 XWorkflowSave 生成的)
+         * - 支持 ComfyUI 官方网页导出的 API 格式 JSON (直接是 prompt 数据)
+         * - 支持 ComfyUI 网页保存的完整 Workflow 格式 JSON (包含 nodes 数组)
+         * - 返回格式: { prompt: {...}, workflow: {...} }
          */
         async function readJsonMetadata(data) {
             try {
@@ -1240,12 +2143,50 @@
                 const text = textDecoder.decode(data);
                 const json = JSON.parse(text);
 
-                // 只接受包含 prompt 的 JSON (XVideoSave/XAudioSave/XWorkflowSave 格式)
+                // 情况1: 包含 prompt 字段的 JSON (XWorkflowSave)
+                // 可能同时包含 workflow 字段或 full_workflow 字段 (merge 模式)
                 if (json.prompt) {
-                    return { prompt: json.prompt };
+                    // 检查是否有 full_workflow (merge 模式)
+                    // full_workflow 包含更完整的数据，需要与 prompt 合并
+                    if (json.full_workflow && json.full_workflow.nodes) {
+                        // 合并 prompt 和 full_workflow 的数据
+                        const mergedPrompt = mergePromptAndWorkflow(
+                            json.prompt,
+                            json.full_workflow
+                        );
+                        return {
+                            prompt: mergedPrompt,
+                            workflow: json.full_workflow
+                        };
+                    }
+                    // 否则使用标准的 workflow 字段
+                    return {
+                        prompt: json.prompt,
+                        workflow: json.workflow || null
+                    };
                 }
 
-                // 不包含 prompt 的 JSON (如 ComfyUI 网页导出的 workflow) 显示错误提示
+                // 情况2: ComfyUI 官方网页导出的 API 格式 JSON
+                // 特征: 直接是节点映射表，键是数字字符串，值包含 inputs 和 class_type
+                const keys = Object.keys(json);
+                const isPromptFormat = keys.length > 0 && keys.every(key => {
+                    const node = json[key];
+                    return node && typeof node === 'object' &&
+                           (node.inputs !== undefined || node.class_type !== undefined);
+                });
+
+                if (isPromptFormat) {
+                    return { prompt: json, workflow: null };
+                }
+
+                // 情况3: ComfyUI 网页保存的完整 Workflow 格式 JSON
+                // 特征: 包含 nodes 数组和 links 数组
+                if (json.nodes && Array.isArray(json.nodes) && json.links && Array.isArray(json.links)) {
+                    const prompt = convertWorkflowToPrompt(json);
+                    return { prompt: prompt, workflow: json };
+                }
+
+                // 无法识别的格式
                 alert(t('noPromptError'));
                 return null;
             } catch (e) {
@@ -1263,6 +2204,7 @@
             try {
                 const textDecoder = new TextDecoder('utf-8');
                 let offset = 8;
+                const result = { prompt: null, workflow: null };
 
                 while (offset < data.length - 12) {
                     const length = (data[offset] << 24) | (data[offset + 1] << 16) |
@@ -1275,11 +2217,19 @@
                     if (type === 'tEXt' || type === 'iTXt') {
                         const chunkData = data.slice(offset + 8, offset + 8 + length);
                         const text = textDecoder.decode(chunkData);
-                        return parsePngText(text);
+                        const parsed = parsePngText(text);
+                        // 合并解析结果
+                        if (parsed.prompt) result.prompt = parsed.prompt;
+                        if (parsed.workflow) result.workflow = parsed.workflow;
                     }
 
                     if (type === 'IEND') break;
                     offset += 12 + length;
+                }
+
+                // 如果找到了 prompt 或 workflow，返回结果
+                if (result.prompt || result.workflow) {
+                    return result;
                 }
             } catch (e) {
                 console.error('PNG metadata read error:', e);
@@ -1291,7 +2241,7 @@
          * 从 Latent 文件中读取元数据
          * Latent 格式: 前8字节是头部大小，后面是 JSON 格式的头部数据
          * 头部中包含 __metadata__ 字段，其中有 prompt 和 workflow
-         * 返回格式: { prompt: {...} } 或 { workflow: {...} }
+         * 返回格式: { prompt: {...}, workflow: {...} }
          */
         async function readLatentMetadata(data) {
             try {
@@ -1314,23 +2264,29 @@
 
                 if (header.__metadata__) {
                     const metadata = header.__metadata__;
+                    const result = { prompt: null, workflow: null };
 
-                    // 优先返回 prompt (与 parseWorkflow 的设计一致)
+                    // 解析 prompt
                     if (metadata.prompt) {
                         try {
-                            return { prompt: JSON.parse(metadata.prompt) };
+                            result.prompt = JSON.parse(metadata.prompt);
                         } catch {
-                            return { prompt: metadata.prompt };
+                            result.prompt = metadata.prompt;
                         }
                     }
 
-                    // 如果没有 prompt，返回 workflow (虽然 parseWorkflow 不会使用它)
+                    // 解析 workflow
                     if (metadata.workflow) {
                         try {
-                            return { workflow: JSON.parse(metadata.workflow) };
+                            result.workflow = JSON.parse(metadata.workflow);
                         } catch {
-                            return { workflow: metadata.workflow };
+                            result.workflow = metadata.workflow;
                         }
+                    }
+
+                    // 如果找到了 prompt 或 workflow，返回结果
+                    if (result.prompt || result.workflow) {
+                        return result;
                     }
 
                     return metadata;
@@ -1365,26 +2321,29 @@
          * 解析工作流元数据，将 prompt 格式转换为内部使用的数据结构
          *
          * 设计原则：
-         * - 只使用 prompt 格式 (ComfyUI API 格式)，不使用 workflow 格式 (前端格式)
-         * - 节点位置使用自动排列算法，不使用 workflow 中的位置信息
+         * - 优先使用 prompt 格式 (ComfyUI API 格式)
+         * - 如果有 workflow 格式数据，提取节点位置信息
          * - 子图通过节点 ID 格式 "子图ID:节点ID" 识别
          *
          * 输入格式 (metadata):
-         * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...} }
-         * - JSON: { prompt: {...} } (仅支持 XVideoSave/XAudioSave/XWorkflowSave 生成的)
+         * - PNG/Latent: { prompt: "{...}" } 或 { prompt: {...}, workflow: {...} }
+         * - JSON: { prompt: {...}, workflow: {...} } (两种格式均已支持)
          *
          * 输出格式 (result):
-         * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName? } }
+         * - nodes: { 节点ID: { inputs: {...}, class_type: "...", isSubgraphNode?, subgraphId?, subgraphName?, _meta?: { pos: [x, y], size: [w, h] } } }
          * - connections: [ { from, fromSlot, to, toSlot } ]
          * - notes: [ { id, text, mode } ]
          * - subgraphs: [ { id, name, nodes: [...] } ]
+         * - nodePositions: { 节点ID: { x, y } } - 从 workflow 中提取的节点位置（如果有）
          */
         function parseWorkflow(metadata) {
             const result = {
                 nodes: {},
                 connections: [],
                 notes: [],
-                subgraphs: []
+                subgraphs: [],
+                nodePositions: null,  // 存储从 workflow 中提取的位置信息
+                xworkflowSaveNodes: [] // 存储 XWorkflowSave 节点的ID列表
             };
 
             try {
@@ -1404,17 +2363,40 @@
                 // prompt 格式直接是节点映射表: { 节点ID: 节点数据, ... }
                 result.nodes = promptData;
 
+                // 提取 workflow 中的节点位置信息（如果有）
+                if (metadata.workflow && metadata.workflow.nodes) {
+                    result.nodePositions = {};
+                    for (const node of metadata.workflow.nodes) {
+                        if (node.pos && Array.isArray(node.pos) && node.pos.length >= 2) {
+                            result.nodePositions[String(node.id)] = {
+                                x: node.pos[0],
+                                y: node.pos[1]
+                            };
+                        }
+                    }
+                    // 如果没有找到任何位置信息，设为 null
+                    if (Object.keys(result.nodePositions).length === 0) {
+                        result.nodePositions = null;
+                    }
+                }
+
                 // 处理每个节点
                 for (const [nodeId, nodeData] of Object.entries(promptData)) {
                     const inputs = nodeData.inputs || {};
                     const classType = nodeData.class_type;
 
-                    // 提取 Note 节点
-                    if (classType === 'Note') {
+                    // 检测 XWorkflowSave 节点
+                    if (classType === 'XWorkflowSave') {
+                        result.xworkflowSaveNodes.push(nodeId);
+                    }
+
+                    // 提取 Note 节点（包括 MarkdownNote）
+                    if (classType === 'Note' || classType === 'MarkdownNote') {
                         result.notes.push({
                             id: nodeId,
                             text: inputs.text || '',
-                            mode: inputs.mode
+                            mode: inputs.mode,
+                            classType: classType
                         });
                     }
 
@@ -1475,9 +2457,33 @@
 
         /**
          * 渲染整个工作流
-         * 流程：清空画布 -> 计算节点位置 -> 渲染节点 -> 渲染连接线
+         * 流程：清理旧资源 -> 清空画布 -> 计算节点位置 -> 渲染节点 -> 渲染连接线
          */
         function renderWorkflow() {
+            // 清理旧的 ResizeObserver，防止内存泄漏
+            document.querySelectorAll('.node').forEach(node => {
+                if (node._resizeObserver) {
+                    node._resizeObserver.disconnect();
+                    node._resizeObserver = null;
+                }
+            });
+
+            // 在清空画布前，保存所有节点的当前位置
+            // 这样可以确保用户拖动后的位置不会丢失
+            document.querySelectorAll('.node').forEach(node => {
+                const nodeId = node.dataset.nodeId;
+                if (nodeId) {
+                    const left = parseFloat(node.style.left);
+                    const top = parseFloat(node.style.top);
+                    if (!isNaN(left) && !isNaN(top)) {
+                        if (!workflowData.nodePositions) {
+                            workflowData.nodePositions = {};
+                        }
+                        workflowData.nodePositions[nodeId] = { x: left, y: top };
+                    }
+                }
+            });
+
             canvas.innerHTML = '';
             connectionsSvg.innerHTML = '';
 
@@ -1494,18 +2500,49 @@
         }
 
         /**
-         * 计算节点位置（自动排列算法）
-         * 使用层级布局算法：
-         * 1. 根据连接关系计算每个节点的层级（深度）
-         * 2. 同一层级的节点水平排列
+         * 计算节点位置
+         * 优先使用从 workflow 中保存的原始位置，如果没有则使用自动层级布局算法
+         *
+         * 逻辑：
+         * 1. 如果 workflowData.nodePositions 存在，优先使用保存的位置
+         * 2. 对于没有保存位置的节点，使用自动层级布局算法计算
          * 3. 子图节点与主图节点分开处理层级
+         *
          * @returns {Object} 节点ID到位置的映射 { 节点ID: {x, y} }
          */
         function calculateNodePositions() {
             const positions = {};
-            const levels = {};
+
+            // 第一步：优先使用从 workflow 中保存的原始位置
+            if (workflowData.nodePositions) {
+                for (const [nodeId, pos] of Object.entries(workflowData.nodePositions)) {
+                    positions[nodeId] = { x: pos.x, y: pos.y };
+                }
+            }
+
+            // 第二步：为没有保存位置的节点使用自动层级布局算法
+            const autoLayoutNodes = Object.keys(workflowData.nodes).filter(
+                nodeId => !positions[nodeId]
+            );
+
+            if (autoLayoutNodes.length > 0) {
+                const autoPositions = calculateAutoLayoutPositions(autoLayoutNodes, positions);
+                Object.assign(positions, autoPositions);
+            }
+
+            return positions;
+        }
+
+        /**
+         * 自动层级布局算法
+         * 为没有保存位置的节点计算位置
+         * @param {string[]} nodeIds - 需要自动布局的节点ID列表
+         * @param {Object} savedPositions - 已保存的节点位置映射（用于计算边界）
+         * @returns {Object} 节点ID到位置的映射
+         */
+        function calculateAutoLayoutPositions(nodeIds, savedPositions) {
+            const positions = {};
             const nodeLevel = {};
-            const visited = new Set();
 
             /**
              * 递归计算节点的层级（深度）
@@ -1542,8 +2579,8 @@
                 return nodeLevel[nodeId];
             }
 
-            // 计算所有节点的层级
-            Object.keys(workflowData.nodes).forEach(id => getLevel(id));
+            // 计算所有需要自动布局的节点的层级
+            nodeIds.forEach(id => getLevel(id));
 
             // 按层级分组节点
             const levelNodes = {};
@@ -1552,11 +2589,22 @@
                 levelNodes[level].push(id);
             }
 
+            // 计算已保存位置的节点的边界，用于确定自动布局的起始位置
+            let maxSavedX = 0;
+            let maxSavedY = 0;
+            if (savedPositions) {
+                for (const pos of Object.values(savedPositions)) {
+                    maxSavedX = Math.max(maxSavedX, pos.x);
+                    maxSavedY = Math.max(maxSavedY, pos.y);
+                }
+            }
+
             // 为每个节点计算具体位置
-            for (const [level, nodeIds] of Object.entries(levelNodes)) {
+            const startX = maxSavedX > 0 ? maxSavedX + 300 : 50;
+            for (const [level, nodes] of Object.entries(levelNodes)) {
                 const levelNum = parseInt(level);
-                nodeIds.forEach((nodeId, index) => {
-                    const x = 50 + levelNum * 260;  // 每层水平间距 260px
+                nodes.forEach((nodeId, index) => {
+                    const x = startX + levelNum * 260;  // 每层水平间距 260px
                     const y = 50 + index * 180 + (levelNodes[level].length > 1 ? 0 : 50);  // 垂直间距 180px
                     positions[nodeId] = { x, y };
                 });
@@ -1572,15 +2620,13 @@
          */
         function renderNodes(positions) {
             for (const [nodeId, nodeData] of Object.entries(workflowData.nodes)) {
-                // 确定节点位置（子图节点优先使用保存的位置）
-                const pos = nodeData.isSubgraphNode ?
-                    (nodeData.pos ? { x: nodeData.pos[0], y: nodeData.pos[1] } : positions[nodeId] || { x: 100, y: 100 }) :
-                    positions[nodeId] || { x: 100, y: 100 };
+                // 确定节点位置（优先使用从 workflow 中保存的位置）
+                const pos = positions[nodeId] || { x: 100, y: 100 };
                 const classType = nodeData.class_type;
 
                 // 构建节点 CSS 类名
                 let className = 'node';
-                if (classType === 'Note') className += ' note-node';
+                if (classType === 'Note' || classType === 'MarkdownNote') className += ' note-node';
                 if (nodeStates[nodeId]?.collapsed) className += ' collapsed';
 
                 // 创建节点元素
@@ -1589,6 +2635,17 @@
                 nodeEl.style.left = pos.x + 'px';
                 nodeEl.style.top = pos.y + 'px';
                 nodeEl.dataset.nodeId = nodeId;
+
+                // 恢复保存的节点尺寸 - 只在节点未折叠时恢复，避免折叠状态尺寸计算问题
+                if (nodeStates[nodeId]?.width && !nodeStates[nodeId]?.collapsed) {
+                    nodeEl.style.width = nodeStates[nodeId].width + 'px';
+                }
+                if (nodeStates[nodeId]?.height && !nodeStates[nodeId]?.collapsed) {
+                    nodeEl.style.height = nodeStates[nodeId].height + 'px';
+                } else if (!nodeStates[nodeId]?.collapsed) {
+                    // 设置默认高度，确保节点有合适的高度显示内容
+                    nodeEl.style.height = 'auto';
+                }
 
                 // 设置子图边框颜色
                 const subgraphColor = getSubgraphColor(nodeData.subgraphId);
@@ -1600,17 +2657,18 @@
 
                 let content = '';
 
-                if (classType === 'Note') {
-                    const noteData = workflowData.notes.find(n => n.id === nodeId);
+                if (classType === 'Note' || classType === 'MarkdownNote') {
+                    const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
-                            <span>${classType}</span>
+                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
+                            <span class="node-header-text">${classType}</span>
                             <div class="header-actions">
                                 <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
                         </div>
                         <div class="node-body">
-                            <div class="note-content">${escapeHtml(noteData?.text || '')}</div>
+                            <div class="note-content">${escapeHtml(noteDataItem?.text || '')}</div>
                         </div>
                     `;
                 } else {
@@ -1627,7 +2685,8 @@
 
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
-                            <span>${classType}</span>
+                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
+                            <span class="node-header-text">${classType}</span>
                             <div class="header-actions">
                                 <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
@@ -1642,11 +2701,86 @@
                                 </div>
                             `).join('')}
                         </div>
-                        <div class="resize-handle" data-node="${nodeId}"></div>
                     `;
                 }
 
                 nodeEl.innerHTML = content;
+
+                // 添加8个方向的拉伸手柄
+                const resizeHandles = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
+                resizeHandles.forEach(direction => {
+                    const handle = document.createElement('div');
+                    handle.className = `resize-handle ${direction}`;
+                    handle.dataset.direction = direction;
+                    handle.dataset.nodeId = nodeId;
+                    nodeEl.appendChild(handle);
+                });
+
+                // 处理长文本参数 - 使用虚拟滚动
+                if (classType === 'Note' || classType === 'MarkdownNote') {
+                    // Note 节点特殊处理 - 检查 note-content
+                    try {
+                        const noteContent = nodeEl.querySelector('.note-content');
+                        if (noteContent) {
+                            const text = noteContent.textContent;
+                            if (needsVirtualScroll(text)) {
+                                // 获取完整内容
+                                const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
+                                const fullText = noteDataItem?.text || text;
+
+                                // 创建虚拟滚动容器替换原有内容（Note节点使用更小的高度）
+                                const longContainer = createLongTextContainer(fullText, 'content', { maxHeight: 150 });
+                                noteContent.innerHTML = '';
+                                noteContent.style.maxHeight = 'none';
+                                noteContent.appendChild(longContainer);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error processing Note node:', error);
+                    }
+                } else {
+                    // 普通节点处理参数
+                    try {
+                        const nodeBody = nodeEl.querySelector('.node-body');
+                        if (nodeBody) {
+                            const paramRows = nodeBody.querySelectorAll('.param-row');
+                            paramRows.forEach((row, index) => {
+                                try {
+                                    const keyEl = row.querySelector('.param-key');
+                                    const valueEl = row.querySelector('.param-value');
+                                    if (keyEl && valueEl) {
+                                        const key = keyEl.textContent;
+                                        const value = valueEl.textContent;
+
+                                        // 检查是否需要虚拟滚动
+                                        if (needsVirtualScroll(value)) {
+                                            // 获取原始值（从 inputs 中获取完整内容）
+                                            let originalValue = nodeData.inputs?.[key] || value;
+                                            // 如果是数组，转换为JSON字符串
+                                            if (Array.isArray(originalValue)) {
+                                                originalValue = JSON.stringify(originalValue);
+                                            }
+                                            const fullContent = String(originalValue);
+
+                                            // 替换为长文本容器
+                                            row.classList.add('long-param');
+                                            const longContainer = createLongTextContainer(fullContent, key);
+
+                                            // 清空并添加新容器
+                                            valueEl.innerHTML = '';
+                                            valueEl.className = 'param-value-container';
+                                            valueEl.appendChild(longContainer);
+                                        }
+                                    }
+                                } catch (paramError) {
+                                    console.error('Error processing parameter:', paramError);
+                                }
+                            });
+                        }
+                    } catch (bodyError) {
+                        console.error('Error processing node body:', bodyError);
+                    }
+                }
 
                 const subgraphTagEl = nodeEl.querySelector('.subgraph-tag');
                 if (subgraphTagEl && subgraphColor) {
@@ -1656,42 +2790,198 @@
 
                 nodeEl.addEventListener('click', (e) => {
                     e.stopPropagation();
+
+                    // 如果刚刚完成了拖动，不执行点击逻辑
+                    if (justFinishedDrag) {
+                        justFinishedDrag = false;
+                        return;
+                    }
+
+                    // Ctrl+点击：切换多选状态
+                    if (e.ctrlKey) {
+                        if (selectedNodeIds.has(nodeId)) {
+                            selectedNodeIds.delete(nodeId);
+                        } else {
+                            selectedNodeIds.add(nodeId);
+                        }
+                        updateMultiSelection();
+                        return;
+                    }
+
+                    // 普通点击：单选
+                    selectedNodeIds.clear();
+                    updateMultiSelection();
                     selectNode(nodeId);
                 });
 
                 const header = nodeEl.querySelector('.node-header');
                 let isNodeDragging = false;
+                let hasDragStarted = false;
                 let nodeDragStartX, nodeDragStartY, nodeStartX, nodeStartY;
+                const DRAG_THRESHOLD = 3; // 拖动阈值（像素）
 
                 header.addEventListener('mousedown', (e) => {
                     if (e.target.classList.contains('header-btn')) return;
+
+                    // 如果点击的节点在多选集合中，启动多节点拖动
+                    if (selectedNodeIds.has(nodeId) && selectedNodeIds.size > 1) {
+                        isMultiDragging = true;
+                        multiDragStartX = e.clientX;
+                        multiDragStartY = e.clientY;
+                        multiDragNodePositions.clear();
+
+                        // 保存所有选中节点的初始位置
+                        selectedNodeIds.forEach(id => {
+                            const el = document.querySelector(`[data-node-id="${id}"]`);
+                            if (el) {
+                                multiDragNodePositions.set(id, {
+                                    x: parseFloat(el.style.left),
+                                    y: parseFloat(el.style.top)
+                                });
+                            }
+                        });
+
+                        document.body.style.userSelect = 'none';
+                        document.body.style.webkitUserSelect = 'none';
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+
+                    // 单节点拖动
                     isNodeDragging = true;
+                    hasDragStarted = false;
                     nodeDragStartX = e.clientX;
                     nodeDragStartY = e.clientY;
                     nodeStartX = parseFloat(nodeEl.style.left);
                     nodeStartY = parseFloat(nodeEl.style.top);
+                    // 阻止默认行为，防止文本选择
+                    e.preventDefault();
                     e.stopPropagation();
                 });
 
                 document.addEventListener('mousemove', (e) => {
                     if (isNodeDragging) {
-                        const dx = (e.clientX - nodeDragStartX) / scale;
-                        const dy = (e.clientY - nodeDragStartY) / scale;
-                        nodeEl.style.left = (nodeStartX + dx) + 'px';
-                        nodeEl.style.top = (nodeStartY + dy) + 'px';
-                        updateConnectionPaths();
-                        updateConnectionHighlight();
+                        const dx = e.clientX - nodeDragStartX;
+                        const dy = e.clientY - nodeDragStartY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        // 只有当移动距离超过阈值时才真正开始拖动
+                        if (!hasDragStarted && distance > DRAG_THRESHOLD) {
+                            hasDragStarted = true;
+                            // 开始拖动时阻止文本选择并改变光标样式
+                            header.classList.add('dragging');
+                            document.body.style.userSelect = 'none';
+                            document.body.style.webkitUserSelect = 'none';
+                        }
+
+                        if (hasDragStarted) {
+                            const scaledDx = dx / scale;
+                            const scaledDy = dy / scale;
+                            nodeEl.style.left = (nodeStartX + scaledDx) + 'px';
+                            nodeEl.style.top = (nodeStartY + scaledDy) + 'px';
+                            updateConnectionPaths();
+                            updateConnectionHighlight();
+                        }
                     }
                 });
 
                 document.addEventListener('mouseup', () => {
+                    if (isNodeDragging) {
+                        // 恢复文本选择和光标样式
+                        header.classList.remove('dragging');
+                        document.body.style.userSelect = '';
+                        document.body.style.webkitUserSelect = '';
+
+                        // 只有真正拖动过才保存位置
+                        if (hasDragStarted) {
+                            const newX = parseFloat(nodeEl.style.left);
+                            const newY = parseFloat(nodeEl.style.top);
+                            if (!workflowData.nodePositions) {
+                                workflowData.nodePositions = {};
+                            }
+                            workflowData.nodePositions[nodeId] = { x: newX, y: newY };
+
+                            // 设置标记，防止触发点击事件
+                            justFinishedDrag = true;
+                            setTimeout(() => {
+                                justFinishedDrag = false;
+                            }, 50);
+                        }
+                    }
                     isNodeDragging = false;
+                    hasDragStarted = false;
+                });
+
+                // 为拉伸手柄添加事件监听
+                nodeEl.querySelectorAll('.resize-handle').forEach(handle => {
+                    handle.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        // 初始化拉伸状态
+                        isResizing = true;
+                        resizeNodeId = nodeId;
+                        resizeDirection = handle.dataset.direction;
+                        resizeStartX = e.clientX;
+                        resizeStartY = e.clientY;
+                        resizeStartWidth = nodeEl.offsetWidth;
+                        resizeStartHeight = nodeEl.offsetHeight;
+                        resizeStartLeft = parseFloat(nodeEl.style.left);
+                        resizeStartTop = parseFloat(nodeEl.style.top);
+
+                        // 添加拉伸中样式
+                        nodeEl.classList.add('resizing');
+                        handle.classList.add('active');
+
+                        // 阻止文本选择
+                        document.body.style.userSelect = 'none';
+                        document.body.style.webkitUserSelect = 'none';
+                    });
+                });
+
+                // 使用 ResizeObserver 监听节点宽度变化并保存
+                // 使用 requestAnimationFrame 确保节点已完全渲染
+                requestAnimationFrame(() => {
+                    let initialWidth = nodeEl.offsetWidth;
+                    let isFirstObservation = true;
+
+                    const resizeObserver = new ResizeObserver((entries) => {
+                        for (const entry of entries) {
+                            const width = entry.contentRect.width;
+                            // 跳过第一次观察（初始渲染），只在用户手动调整大小时保存
+                            if (isFirstObservation) {
+                                isFirstObservation = false;
+                                initialWidth = width;
+                                continue;
+                            }
+                            // 只在节点未折叠且宽度真正改变时保存
+                            if (width > 0 && !nodeEl.classList.contains('collapsed') && Math.abs(width - initialWidth) > 1) {
+                                nodeStates[nodeId] = nodeStates[nodeId] || {};
+                                nodeStates[nodeId].width = width;
+                                initialWidth = width;
+                            }
+                        }
+                    });
+                    resizeObserver.observe(nodeEl);
+
+                    // 保存 observer 引用以便清理
+                    nodeEl._resizeObserver = resizeObserver;
                 });
 
                 nodeEl.querySelectorAll('.header-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const nodeId = btn.dataset.node;
+
+                        // 处理复制标题按钮
+                        if (btn.classList.contains('copy-title-btn')) {
+                            const title = btn.dataset.title;
+                            copyToClipboard(title);
+                            return;
+                        }
+
+                        // 处理折叠/展开按钮
                         nodeStates[nodeId] = nodeStates[nodeId] || {};
                         nodeStates[nodeId].collapsed = !nodeStates[nodeId].collapsed;
                         renderWorkflow();
@@ -1699,38 +2989,55 @@
                     });
                 });
 
-                const resizeHandle = nodeEl.querySelector('.resize-handle');
-                if (resizeHandle) {
-                    let isResizing = false;
-                    let resizeStartX, resizeStartY, startWidth;
-                    let minHeaderWidth = 180;
+                // 为参数值添加滚轮事件，实现悬停时滚动
+                nodeEl.querySelectorAll('.param-value').forEach(paramValue => {
+                    paramValue.addEventListener('wheel', (e) => {
+                        // 检查内容是否超出可视区域
+                        const canScrollDown = paramValue.scrollHeight > paramValue.clientHeight;
+                        const canScrollUp = paramValue.scrollTop > 0;
+                        const canScroll = canScrollDown || canScrollUp;
 
-                    resizeHandle.addEventListener('mousedown', (e) => {
-                        isResizing = true;
-                        resizeStartX = e.clientX;
-                        resizeStartY = e.clientY;
-                        startWidth = nodeEl.offsetWidth;
+                        if (canScroll) {
+                            // 阻止事件冒泡，防止画布缩放
+                            e.stopPropagation();
 
-                        const header = nodeEl.querySelector('.node-header');
-                        if (header) {
-                            minHeaderWidth = Math.min(startWidth, header.scrollWidth + 20);
+                            // 检查是否滚动到边界
+                            const isAtTop = paramValue.scrollTop <= 0 && e.deltaY < 0;
+                            const isAtBottom = paramValue.scrollTop + paramValue.clientHeight >= paramValue.scrollHeight && e.deltaY > 0;
+
+                            // 只有在没有到达边界时才阻止默认行为
+                            if (!isAtTop && !isAtBottom) {
+                                e.preventDefault();
+                                paramValue.scrollTop += e.deltaY;
+                            }
                         }
+                    }, { passive: false });
+                });
 
-                        e.stopPropagation();
-                    });
+                // 为 Note 内容添加滚轮事件
+                nodeEl.querySelectorAll('.note-content').forEach(noteContent => {
+                    noteContent.addEventListener('wheel', (e) => {
+                        // 检查内容是否超出可视区域
+                        const canScrollDown = noteContent.scrollHeight > noteContent.clientHeight;
+                        const canScrollUp = noteContent.scrollTop > 0;
+                        const canScroll = canScrollDown || canScrollUp;
 
-                    document.addEventListener('mousemove', (e) => {
-                        if (isResizing) {
-                            const dx = (e.clientX - resizeStartX) / scale;
-                            const newWidth = Math.max(minHeaderWidth, startWidth + dx);
-                            nodeEl.style.width = newWidth + 'px';
+                        if (canScroll) {
+                            // 阻止事件冒泡，防止画布缩放
+                            e.stopPropagation();
+
+                            // 检查是否滚动到边界
+                            const isAtTop = noteContent.scrollTop <= 0 && e.deltaY < 0;
+                            const isAtBottom = noteContent.scrollTop + noteContent.clientHeight >= noteContent.scrollHeight && e.deltaY > 0;
+
+                            // 只有在没有到达边界时才阻止默认行为
+                            if (!isAtTop && !isAtBottom) {
+                                e.preventDefault();
+                                noteContent.scrollTop += e.deltaY;
+                            }
                         }
-                    });
-
-                    document.addEventListener('mouseup', () => {
-                        isResizing = false;
-                    });
-                }
+                    }, { passive: false });
+                });
 
                 canvas.appendChild(nodeEl);
             }
@@ -1748,12 +3055,279 @@
                 }
                 return `[${value.join(', ')}]`;
             }
+            // 空字符串显示为 (empty)，以便用户知道参数存在
+            if (value === '') {
+                return '(empty)';
+            }
             return String(value);
         }
 
         /**
+         * 检测内容是否需要虚拟滚动
+         * @param {string} content - 内容字符串
+         * @returns {boolean} 是否需要虚拟滚动
+         */
+        function needsVirtualScroll(content) {
+            if (!content || typeof content !== 'string') return false;
+            return content.length > 5000 || content.split('\n').length > 100;
+        }
+
+        /**
+         * 将文本分割成行
+         * @param {string} text - 文本内容
+         * @param {number} maxLineLength - 每行最大长度
+         * @returns {string[]} 行数组
+         */
+        function splitIntoLines(text, maxLineLength = 200) {
+            const rawLines = text.split('\n');
+            const lines = [];
+
+            for (const rawLine of rawLines) {
+                if (rawLine.length <= maxLineLength) {
+                    lines.push(rawLine);
+                } else {
+                    for (let i = 0; i < rawLine.length; i += maxLineLength) {
+                        lines.push(rawLine.substring(i, i + maxLineLength));
+                    }
+                }
+            }
+
+            return lines;
+        }
+
+        /**
+         * 格式化字节大小
+         * @param {number} bytes - 字节数
+         * @returns {string} 格式化后的字符串
+         */
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        /**
+         * 复制文本到剪贴板
+         * @param {string} text - 要复制的文本
+         */
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast(t('copied'));
+            } catch (err) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast(t('copied'));
+            }
+        }
+
+        /**
+         * 下载文本文件
+         * @param {string} text - 文本内容
+         * @param {string} filename - 文件名
+         */
+        function downloadText(text, filename) {
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(t('downloadStarted'));
+        }
+
+        /**
+         * 显示 Toast 提示
+         * @param {string} message - 提示消息
+         */
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast-message';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        /**
+         * 创建虚拟滚动容器
+         * @param {string} content - 长文本内容
+         * @param {Object} options - 配置选项
+         * @returns {HTMLElement} 虚拟滚动容器
+         */
+        function createVirtualScroll(content, options = {}) {
+            try {
+                const {
+                    maxHeight = 200,
+                    lineHeight = 16,
+                    maxPreviewLength = 5000
+                } = options;
+
+                // 确保content是字符串
+                if (typeof content !== 'string') {
+                    content = String(content);
+                }
+
+                if (content.length <= maxPreviewLength) {
+                    const div = document.createElement('div');
+                    div.className = 'param-value-short';
+                    div.textContent = content;
+                    return div;
+                }
+
+                const lines = splitIntoLines(content);
+                const totalHeight = lines.length * lineHeight;
+
+                const container = document.createElement('div');
+                container.className = 'virtual-scroll-container';
+                container.style.height = maxHeight + 'px';
+                container.style.overflow = 'auto';
+                container.style.position = 'relative';
+
+                const spacer = document.createElement('div');
+                spacer.className = 'virtual-scroll-spacer';
+                spacer.style.height = totalHeight + 'px';
+                container.appendChild(spacer);
+
+                const visibleLayer = document.createElement('div');
+                visibleLayer.className = 'virtual-scroll-visible';
+                visibleLayer.style.position = 'absolute';
+                visibleLayer.style.top = '0';
+                visibleLayer.style.left = '0';
+                visibleLayer.style.minWidth = '100%';
+                container.appendChild(visibleLayer);
+
+                const visibleCount = Math.ceil(maxHeight / lineHeight) + 2;
+
+                const renderVisibleLines = () => {
+                    const scrollTop = container.scrollTop;
+                    const startIndex = Math.max(0, Math.floor(scrollTop / lineHeight));
+                    const endIndex = Math.min(startIndex + visibleCount, lines.length);
+
+                    const fragment = document.createDocumentFragment();
+                    for (let i = startIndex; i < endIndex; i++) {
+                        const lineEl = document.createElement('div');
+                        lineEl.className = 'virtual-scroll-line';
+                        lineEl.style.height = lineHeight + 'px';
+                        lineEl.textContent = lines[i] || ' ';
+                        fragment.appendChild(lineEl);
+                    }
+
+                    visibleLayer.innerHTML = '';
+                    visibleLayer.appendChild(fragment);
+                    visibleLayer.style.top = (startIndex * lineHeight) + 'px';
+                };
+
+            let ticking = false;
+            container.addEventListener('scroll', () => {
+                if (!ticking) {
+                    requestAnimationFrame(() => {
+                        renderVisibleLines();
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            });
+
+            // 添加滚轮事件支持
+            container.addEventListener('wheel', (e) => {
+                // 阻止事件冒泡，防止触发视图缩放
+                e.stopPropagation();
+
+                // 处理横向滚动（Shift+滚轮或横向滚轮）
+                if (e.shiftKey || e.deltaX !== 0) {
+                    e.preventDefault();
+                    container.scrollLeft += e.deltaX || e.deltaY;
+                    return;
+                }
+
+                // 处理纵向滚动
+                const isAtTop = container.scrollTop === 0 && e.deltaY < 0;
+                const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1 && e.deltaY > 0;
+
+                // 只有在没有到达纵向边界时才阻止默认行为并滚动
+                if (!isAtTop && !isAtBottom) {
+                    e.preventDefault();
+                    container.scrollTop += e.deltaY;
+                }
+            }, { passive: false });
+
+                renderVisibleLines();
+
+                container.virtualScrollData = {
+                    lines: lines,
+                    getAllContent: () => content
+                };
+
+                return container;
+            } catch (error) {
+                console.error('createVirtualScroll error:', error);
+                // 出错时返回一个简单的div显示内容
+                const div = document.createElement('div');
+                div.className = 'param-value-short';
+                div.textContent = typeof content === 'string' ? content : String(content);
+                return div;
+            }
+        }
+
+        /**
+         * 创建长文本容器（带头部和操作按钮）
+         * @param {string} content - 文本内容
+         * @param {string} paramKey - 参数名
+         * @param {Object} options - 配置选项
+         * @returns {HTMLElement} 长文本容器
+         */
+        function createLongTextContainer(content, paramKey, options = {}) {
+            try {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'long-text-wrapper';
+
+                const header = document.createElement('div');
+                header.className = 'long-text-header';
+                header.innerHTML = `
+                    <span class="long-text-info">${formatBytes(content.length)} · ${splitIntoLines(content).length.toLocaleString()} ${t('lines')}</span>
+                    <div class="long-text-actions">
+                        <button class="text-action-btn" data-action="copy">📋 ${t('copy')}</button>
+                        <button class="text-action-btn" data-action="download">💾 ${t('download')}</button>
+                    </div>
+                `;
+                wrapper.appendChild(header);
+
+                const virtualScroll = createVirtualScroll(content, options);
+                wrapper.appendChild(virtualScroll);
+
+                header.querySelectorAll('.text-action-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const action = btn.dataset.action;
+                        if (action === 'copy') {
+                            copyToClipboard(content);
+                        } else if (action === 'download') {
+                            downloadText(content, `${paramKey}.txt`);
+                        }
+                    });
+                });
+
+                return wrapper;
+            } catch (error) {
+                console.error('createLongTextContainer error:', error);
+                // 出错时返回一个简单的div显示内容
+                const div = document.createElement('div');
+                div.className = 'param-value-short';
+                div.textContent = typeof content === 'string' ? content : String(content);
+                return div;
+            }
+        }
+
+        /**
          * 更新连接线的 SVG 路径
-         * 根据节点位置计算贝塞尔曲线路径
+         * 根据节点位置计算贝塞尔曲线路径，连接点位于节点边框上
          */
         function updateConnectionPaths() {
             let svgContent = '';
@@ -1779,15 +3353,25 @@
                     height: toNodeEl.offsetHeight
                 };
 
-                // 计算连接点坐标（从右侧中点出发，到左侧中点）
-                const x1 = fromRect.x + fromRect.width;
+                // 计算连接点坐标（从右侧边框中点出发，到左侧边框中点）
+                const dotRadius = 5; // 圆点半径
+                const x1 = fromRect.x + fromRect.width; // 起点在右边框
                 const y1 = fromRect.y + fromRect.height / 2;
-                const x2 = toRect.x;
+                const x2 = toRect.x; // 终点在左边框
                 const y2 = toRect.y + toRect.height / 2;
+
+                // 计算贝塞尔曲线控制点
                 const midX = (x1 + x2) / 2;
 
-                const path = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                // 绘制连接线路径（从圆点边缘开始，到圆点边缘结束）
+                const path = `M ${x1 + dotRadius} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2 - dotRadius} ${y2}`;
                 svgContent += `<path class="connection-line" d="${path}" data-from="${conn.from}" data-to="${conn.to}" />`;
+
+                // 添加起点圆点（在右边框上）
+                svgContent += `<circle class="connection-dot" cx="${x1}" cy="${y1}" r="${dotRadius}" data-dot-type="output" data-node="${conn.from}" />`;
+
+                // 添加终点圆点（在左边框上）
+                svgContent += `<circle class="connection-dot" cx="${x2}" cy="${y2}" r="${dotRadius}" data-dot-type="input" data-node="${conn.to}" />`;
             }
 
             connectionsSvg.innerHTML = svgContent;
@@ -1870,12 +3454,15 @@
             document.querySelectorAll('.connection-line').forEach(line => {
                 delete line.dataset.hasFlow;
             });
+            document.querySelectorAll('.connection-dot').forEach(dot => {
+                dot.classList.remove('highlight');
+            });
             selectedNodeId = null;
         }
 
         /**
          * 更新连接线的高亮状态
-         * 当节点被选中时，高亮与该节点相关的连接线
+         * 当节点被选中时，高亮与该节点相关的连接线和连接点
          */
         function updateConnectionHighlight() {
             if (!selectedNodeId) {
@@ -1884,6 +3471,9 @@
                 });
                 document.querySelectorAll('.connection-line').forEach(line => {
                     delete line.dataset.hasFlow;
+                });
+                document.querySelectorAll('.connection-dot').forEach(dot => {
+                    dot.classList.remove('highlight');
                 });
                 return;
             }
@@ -1912,6 +3502,16 @@
                             flowLine.remove();
                         }
                     }
+                }
+            });
+
+            // 高亮相关的连接点
+            document.querySelectorAll('.connection-dot').forEach(dot => {
+                const dotNodeId = dot.dataset.node;
+                if (dotNodeId === selectedNodeId) {
+                    dot.classList.add('highlight');
+                } else {
+                    dot.classList.remove('highlight');
                 }
             });
         }
