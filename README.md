@@ -515,8 +515,8 @@ Latent保存节点，支持自定义文件名和元数据保存
 - Latent潜空间文件 (.latent)
 - JSON工作流文件:
   - ✅ ComfyUI网页界面原生的 `Save` 和 `Save As` 所保存的JSON (自动保存在 `user\default\workflows`)
-  - ✅ `XWorkflowSave` 节点 `FullWorkflow` 模式保存的JSON
-  - ✅ `XWorkflowSave` 节点 `Prompt+FullWorkflow` 模式保存的JSON (最完整的元数据)
+  - ✅ `XWorkflowSave` 节点的 `FullWorkflow` 模式保存的JSON
+  - ✅ `XWorkflowSave` 节点的 `Prompt+FullWorkflow` 模式保存的JSON (推荐, 最完整的元数据)
   - ⚠️ ComfyUI网页界面导出功能的JSON文件 (缺少部分元数据，会导致缺失节点或参数)
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="XWorkflowSave Extension" width="200">
 
@@ -528,7 +528,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 **两种使用方式**:
 1. **在ComfyUI中使用（集成）**: 点击ComfyUI页面顶部菜单栏的 ♾️ 按钮，可打开或关闭浮动窗口，已将此网页工具嵌入到该浮动窗口中
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Open" width="700">
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Open" width="500">
 
 2. **浏览器直接打开（独立）**: 直接打开 `web/XMetadataWorkflow.html` 文件，在浏览器中使用
 
@@ -567,7 +567,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 ---
 
-### 💾 XWorkflowSave 网页扩展
+### 💾 XWorkflowSave
 `ComfyUI网页扩展 - ComfyUI.Xz3r0.XWorkflowSave`
 
 从ComfyUI网页直接捕获完整工作流元数据，为 `XWorkflowSave` 节点提供 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式所需的数据
@@ -593,7 +593,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 ---
 
-### 🔍 XFitView 网页扩展
+### 🔍 XFitView
 `ComfyUI网页界面扩展 - ComfyUI.Xz3r0.XFitView`
 
 打开ComfyUI网页界面或载入新工作流时，自动执行ComfyUI网页界面原生的`适应视图`功能，确保工作流内容完整显示在画布可视区域内
@@ -605,10 +605,10 @@ Latent保存节点，支持自定义文件名和元数据保存
 - **防抖控制**: 同一工作流200ms内多次触发只执行一次，不同工作流之间立即触发
 
 **设置选项**:
-- **Workflow Load Mode** (工作流加载模式): 选择何时自动适应视图
+- **Workflow Load Mode** (工作流加载模式): 选择何时自动适应视图 (默认为: `never` )
   - `first` 模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
   - `always` 模式: 每次加载或切换工作流都适应视图
-  - `never` 模式: 禁用自动适应 (默认)
+  - `never` 模式: 禁用自动适应
 - **Fit View Delay** (适应视图延迟): 延迟时间 0-2000ms 可调，默认 300ms
   - 如果视图适应不正确，可适当调整延迟时间
 
@@ -650,16 +650,20 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── xworkflowsave_api.py  # 工作流保存节点API
 │   └── xworkflowsave.py # 工作流保存节点
 ├── web/                 # 网页扩展目录
+│   ├── XFitView.js   # ComfyUI网页界面自动适应视图扩展
 │   ├── XFloatingWindow.js   # ComfyUI浮动窗口扩展
-│   ├── XWorkflowSave_Extension.js  # XWorkflowSave网页扩展
-│   └── XMetadataWorkflow.html  # 工作流元数据查看器
-├── locales/             # 国际化支持 (节点显示名称和提示)
-│   ├── en/              # 英文定义
-│   │   └── nodeDefs.json
-│   └── zh/              # 中文定义
-│       └── nodeDefs.json
+│   ├── XWorkflowSave_Extension.js  # XWorkflowSave的网页扩展
+│   └── XMetadataWorkflow.html  # 工作流元数据可视化查看器
+├── locales/             # ComfyUI标准本地化支持
+│   ├── en/              # 英文
+│   │   ├── nodeDefs.json   # 节点本地化文件
+│   │   └── settings.json   # 网页扩展本地化文件
+│   └── zh/              # 中文
+│       ├── nodeDefs.json   # 节点本地化文件
+│       └── settings.json   # 网页扩展本地化文件
 ├── preview/             # 预览图片
-│   └── preview.png
+│   ├── preview.png
+│   └── XMetadataWorkflow_preview.png
 ├── .gitignore           # Git 忽略文件
 ├── Changelog.md         # 更新日志
 ├── LICENSE              # MIT 许可证
