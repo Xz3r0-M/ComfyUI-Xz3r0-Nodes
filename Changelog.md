@@ -19,6 +19,7 @@
     - `never` 从不 模式: 禁用自动适应
 - 通过ComfyUI设置页面更改设置
     - ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFitView
+    - 支持中英本地化
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFitView.png" alt="XFitView" width="500">
 
 ### 4. 🛠️ 增强 `XWorkflowSave` 节点
@@ -54,11 +55,71 @@
 - 新增 窗口四周拉伸和限制尺寸功能
 - 新增 `Alt+鼠标左键` 可直接拖动浮动窗口
 - 优化和修复一些BUG
+- 支持中英本地化
 
 ### 注意:
 - `XMetadataWorkflow` 网页工具对于使用自行创建前端界面的第三方自定义节点是不兼容的 (网页工具只会显示存在于元数据中的内容)
 - 从 `v1.3.0` 到 `v1.4.0` 新增的 (代码) 功能和节点以及工具我没有做完整测试, 代码很可能有问题, 但我需要缓一缓 (i need a doctor, call me a doctor😇)
 
+## v1.4.0 Major Updates
+
+### 1. ⭐ Added `XWorkflowSave_Extension` Web Extension (*XWorkflowSave_Extension.js*)
+- Captures complete workflow metadata directly from ComfyUI web interface
+- `XWorkflowSave` node automatically calls this web extension
+
+### 2. ⭐ Added `xworkflowsave_api` Custom API (*xworkflowsave_api.py*)
+- Passes complete workflow metadata captured by `XWorkflowSave_Extension` web extension to `XWorkflowSave` node via API
+- `XWorkflowSave` node automatically calls this API
+
+### 3. ⭐ Added `XFitView` Web Extension (*XFitView.js*)
+- Automatically executes ComfyUI's native `Fit View` function when opening ComfyUI web interface or loading new workflows
+- Supports 3 modes (default: `never`):
+    - `first` First Time Only (reset after page refresh): Fits only once per session for the same workflow (recommended, resets after ComfyUI page refresh)
+    - `always` Always Fit: Fits view every time a workflow is loaded or switched
+    - `never` Never: Disables auto-fit
+- Change settings via ComfyUI settings page
+    - ComfyUI Web Interface ➡️ Settings (gear icon) ➡️ ♾️ Xz3r0 ➡️ XFitView
+    - Supports Chinese and English localization
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFitView.png" alt="XFitView" width="500">
+
+### 4. 🛠️ Enhanced `XWorkflowSave` Node
+- Added 3 JSON save modes: Auto, Standard, FullWorkflow, Prompt+FullWorkflow (default: `Auto`)
+- `Auto` mode prioritizes `Prompt+FullWorkflow` mode, automatically falls back to `Standard` mode when unavailable to ensure compatibility
+- `Standard` mode uses ComfyUI's standard backend API to get workflow metadata (prompt + standard workflow). Pros: ComfyUI official API support. Cons: Standard workflow metadata is incomplete (`note` and `markdown note` nodes are not saved in metadata ❌)
+- `FullWorkflow` mode uses the specially created web extension `XWorkflowSave_Extension.js` to capture more complete workflow metadata from the frontend. Pros: Data completeness matches ComfyUI's native `Save` and `Save As` workflow functions (`note` and `markdown note` nodes can be saved in metadata ✅). Cons: Depends on web extension and is not officially supported by ComfyUI (may break if ComfyUI changes related web code in the future)
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="Button" width="200">
+
+- `Prompt+FullWorkflow` (Recommended) mode uses ComfyUI's standard backend API to get prompt field metadata, and uses `XWorkflowSave_Extension.js` web extension to capture complete workflow metadata from the frontend. Pros: Most complete workflow metadata of all modes. Cons: Depends on web extension and is not officially supported by ComfyUI
+- Added `Workflow Info` string output port for checking save information
+
+### 5. 🛠️ Enhanced `XMetadataWorkflow` Web Tool
+- Supports JSON with complete workflow data:
+    - ✅ JSON saved by ComfyUI's native `Save` and `Save As` workflow functions (automatically saved in `user\default\workflows` under ComfyUI directory)
+    - ✅ JSON saved by `XWorkflowSave` node's `FullWorkflow` mode
+    - ✅ JSON saved by `XWorkflowSave` node's `Prompt+FullWorkflow` mode (recommended, merges to get the most complete workflow metadata visualization)
+- Supports display of `note` and `markdown note` nodes from `FullWorkflow` metadata
+- Added scrollbars for long content within nodes
+- Added virtual scrolling for extremely long content to improve web browsing performance
+- Added sidebar hide/expand toggle button
+- Added copy node name button `📋` (node window title bar)
+- Added `Ctrl+Left Click` box selection for multiple nodes and move function (double-click blank area or press `ESC` to cancel selection)
+- Added node window edge resizing function
+- Added dots at the beginning and end of node connection lines
+- Adjusted node connection line positions to node window borders
+- Fixed some previously hardcoded text that wasn't localized
+- Optimized and fixed some bugs
+
+### 6. 🛠️ Enhanced `♾️ XFloatingWindow` Floating Window
+- Added window transparency slider (title bar)
+- Added window maximize and restore button `↕️` (title bar)
+- Added window edge resizing and size limiting function
+- Added `Alt+Left Click` to directly drag floating window
+- Optimized and fixed some bugs
+- Supports Chinese and English localization
+
+### Notes:
+- `XMetadataWorkflow` web tool is incompatible with third-party custom nodes that use their own frontend interfaces (the tool will only display content that exists in metadata)
+- New features, nodes, and tools added from `v1.3.0` to `v1.4.0` have not been fully tested, code may have issues, but I need a break (i need a doctor, call me a doctor😇)
 
 ---
 
