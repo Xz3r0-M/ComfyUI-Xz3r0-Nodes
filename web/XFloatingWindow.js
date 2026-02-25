@@ -1,5 +1,5 @@
 /**
- * Xz3r0 Window - ComfyUI 浮动窗口扩展
+ * XFloatingWindow - ComfyUI 浮动窗口扩展
  * ===================================
  *
  * 功能概述:
@@ -20,7 +20,7 @@
  *    - 支持 ComfyUI 设置面板配置
  *
  * 3. 内容加载:
- *    - 通过 iframe 加载 xmetadataworkflow.html
+ *    - 通过 iframe 加载 XMetadataWorkflow.html
  *    - 完全隔离的浏览环境
  *
  * 4. 界面特性:
@@ -39,8 +39,8 @@
  *
  * 文件结构:
  * ---------
- * - xz3r0window.js: 窗口管理逻辑（此文件）
- * - xmetadataworkflow.html: 窗口内加载的网页内容
+ * - XFloatingWindow.js: 窗口管理逻辑（此文件）
+ * - XMetadataWorkflow.html: 窗口内加载的网页内容
  *
  * @author Xz3r0
  * @project ComfyUI-Xz3r0-Nodes
@@ -59,19 +59,19 @@ let menuButton = null;
 
 const UI_TEXT = {
     en: {
-        windowTitle: "♾️ Xz3r0 Windows",
+        windowTitle: "♾️ XFloatingWindow",
         closeBtn: "Close",
         maxBtn: "Maximize",
         restoreBtn: "Restore",
-        menuTooltip: "Xz3r0 Window",
+        menuTooltip: "XFloatingWindow",
         opacityLabel: "Opacity"
     },
     zh: {
-        windowTitle: "♾️ Xz3r0 窗口",
+        windowTitle: "♾️ XFloatingWindow",
         closeBtn: "关闭",
         maxBtn: "最大化",
         restoreBtn: "还原",
-        menuTooltip: "Xz3r0 窗口",
+        menuTooltip: "X浮动窗口",
         opacityLabel: "透明度"
     }
 };
@@ -99,8 +99,8 @@ let windowEnabled = true;
 function updateMenuButtonVisibility() {
     if (!menuButton) return;
     menuButton.element.style.display = windowEnabled ? "" : "none";
-    if (!windowEnabled && window.Xz3r0Window?.instance?.isVisible) {
-        window.Xz3r0Window.instance.hide();
+    if (!windowEnabled && window.XFloatingWindow?.instance?.isVisible) {
+        window.XFloatingWindow.instance.hide();
     }
 }
 
@@ -109,19 +109,19 @@ function updateMenuButtonVisibility() {
  * 在 ComfyUI 初始化时设置窗口按钮和样式
  */
 app.registerExtension({
-    name: "ComfyUI.Xz3r0.xz3r0window",
+    name: "ComfyUI.Xz3r0.XFloatingWindow",
 
     /**
      * 扩展设置配置
      */
     settings: [
         {
-            id: "Xz3r0.Window.Enabled",
-            name: "Enable ♾️ Xz3r0 Floating Window (Button)",
+            id: "Xz3r0.XFloatingWindow.Enabled",
+            name: "Enable ♾️ XFloatingWindow (Button)",
             type: "boolean",
             defaultValue: true,
-            tooltip: "Show floating window button [♾️] in the menu bar",
-            category: ["♾️ Xz3r0", "Window"],
+            tooltip: "Show floating window button [♾️] in the top-menu bar",
+            category: ["♾️ Xz3r0", "XFloatingWindow"],
             onChange: (value) => {
                 if (windowEnabled === value) return;
                 windowEnabled = value;
@@ -333,7 +333,7 @@ app.registerExtension({
             try {
                 const { ComfyButton } = await import("../../scripts/ui/components/button.js");
                 menuButton = new ComfyButton({
-                    action: () => Xz3r0Window.toggle(),
+                    action: () => XFloatingWindow.toggle(),
                     tooltip: t('menuTooltip'),
                     content: "♾️",
                 });
@@ -348,10 +348,10 @@ app.registerExtension({
 });
 
 /**
- * Xz3r0Window 窗口管理对象
+ * XFloatingWindow 窗口管理对象
  * 提供窗口的创建、显示/隐藏、状态管理等功能
  */
-const Xz3r0Window = {
+const XFloatingWindow = {
     /** 当前窗口实例 */
     instance: null,
 
@@ -474,7 +474,7 @@ const Xz3r0Window = {
         content.className = "xz3r0-floating-window-content";
 
         const iframe = document.createElement("iframe");
-        iframe.src = "/extensions/ComfyUI-Xz3r0-Nodes/xmetadataworkflow.html";
+        iframe.src = "/extensions/ComfyUI-Xz3r0-Nodes/XMetadataWorkflow.html";
         content.appendChild(iframe);
 
         windowEl.appendChild(header);
@@ -708,7 +708,7 @@ const Xz3r0Window = {
 
                 if (hasDragStarted) {
                     updatePosition(pendingX, pendingY);
-                    Xz3r0Window.saveState({
+                    XFloatingWindow.saveState({
                         left: windowEl.style.left,
                         top: windowEl.style.top,
                         width: windowEl.style.width,
@@ -729,7 +729,7 @@ const Xz3r0Window = {
                 document.body.style.userSelect = "";
 
                 // 保存状态
-                Xz3r0Window.saveState({
+                XFloatingWindow.saveState({
                     left: windowEl.style.left,
                     top: windowEl.style.top,
                     width: windowEl.style.width,
@@ -777,7 +777,7 @@ const Xz3r0Window = {
 
                 if (hasDragStarted) {
                     updatePosition(pendingX, pendingY);
-                    Xz3r0Window.saveState({
+                    XFloatingWindow.saveState({
                         left: windowEl.style.left,
                         top: windowEl.style.top,
                         width: windowEl.style.width,
@@ -872,7 +872,7 @@ const Xz3r0Window = {
 
                 if (hasDragStarted) {
                     updatePosition(pendingX, pendingY);
-                    Xz3r0Window.saveState({
+                    XFloatingWindow.saveState({
                         left: windowEl.style.left,
                         top: windowEl.style.top,
                         width: windowEl.style.width,
@@ -921,7 +921,7 @@ const Xz3r0Window = {
                     document.body.style.userSelect = "";
 
                     // 保存状态
-                    Xz3r0Window.saveState({
+                    XFloatingWindow.saveState({
                         left: windowEl.style.left,
                         top: windowEl.style.top,
                         width: windowEl.style.width,
@@ -982,7 +982,7 @@ const Xz3r0Window = {
                 document.removeEventListener("pointermove", handleMouseMove);
                 document.removeEventListener("pointerup", handleMouseUp);
                 windowEl.remove();
-                Xz3r0Window.instance = null;
+                XFloatingWindow.instance = null;
             }
         };
 

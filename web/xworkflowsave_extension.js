@@ -1,5 +1,5 @@
 /**
- * XWorkflowSave 前端扩展
+ * XWorkflowSave_Extension 前端扩展
  * ======================
  *
  * 功能概述:

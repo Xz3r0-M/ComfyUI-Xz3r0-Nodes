@@ -3,69 +3,62 @@
 
 ## v1.4.0 主要更新
 
-### 1. ⭐ 新增 `ComfyUI.Xz3r0.XWorkflowSave` (`xworkflowsave_extension.js`) 网页扩展
-- 从ComfyUI网页直接捕获完整工作流元数据
-### 2. ⭐ 新增 `xworkflowsave_api` (自定义API)
-- 将 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展捕获的完整工作流元数据通过API传递给 `XWorkflowSave` 节点使用
-### 3. 🛠️ 增强 `XWorkflowSave` 节点
+### 1. ⭐ 新增 `XWorkflowSave_Extension` 网页扩展 (*XWorkflowSave_Extension.js*)
+- 从ComfyUI网页界面直接捕获完整工作流元数据
+- `XWorkflowSave` 节点会自动调用此网页扩展
+
+### 2. ⭐ 新增 `xworkflowsave_api` 自定义API (*xworkflowsave_api.py*)
+- 将 `XWorkflowSave_Extension` 网页扩展捕获的完整工作流元数据通过API传递给 `XWorkflowSave` 节点使用
+- `XWorkflowSave` 节点会自动调用此API
+
+### 3. ⭐ 新增 `XFitView` 网页扩展 (*XFitView.js*)
+- 打开ComfyUI网页界面或载入新工作流时，自动执行ComfyUI网页界面原生的`适应视图`功能
+- 支持3种模式 (默认为: `never` ):
+    - `first` 仅首次（刷新网页后重置）模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
+    - `always` 每次都适应 模式: 每次加载或切换工作流都适应视图
+    - `never` 从不 模式: 禁用自动适应
+- 通过ComfyUI设置页面更改设置
+    - ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFitView
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFitView.png" alt="XFitView" width="500">
+
+### 4. 🛠️ 增强 `XWorkflowSave` 节点
 - 新增3种JSON保存模式: Auto, Standard, FullWorkflow, Prompt+FullWorkflow (默认为: `Auto` )
 - `Auto` 模式默认会优先使用 `Prompt+FullWorkflow` 模式, 不可用时自动回退到 `Standard` 模式以保证兼容性
 - `Standard` 模式使用ComfyUI标准后端API来获取工作流元数据 (prompt + 标准workflow), 优点: ComfyUI官方API支持, 缺点: 标准workflow工作流元数据不完整 (`note` 和 `markdown note` 节点不保存在元数据中❌)
-- `FullWorkflow` 模式使用专门创建的网页扩展 `xworkflowsave_extension.js` 来捕获前端网页中更为完整的工作流元数据. 优点: 数据完整性与ComfyUI网页原生的保存工作流功能 `Save` 和 `Save As` 所一致 (`note` 和 `markdown note` 节点能够保存在元数据中✅), 缺点: 依赖网页扩展并且非ComfyUI官方原生支持 (如果ComfyUI官方将来改动相关网页代码可能会导致出错)
+- `FullWorkflow` 模式使用专门创建的网页扩展 `XWorkflowSave_Extension.js` 来捕获前端网页中更为完整的工作流元数据. 优点: 数据完整性与ComfyUI网页界面原生的保存工作流功能 `Save` 和 `Save As` 所一致 (`note` 和 `markdown note` 节点能够保存在元数据中✅), 缺点: 依赖网页扩展并且非ComfyUI官方原生支持 (如果ComfyUI官方将来改动相关网页代码可能会导致出错)
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/savetip.png" alt="Button" width="200">
 
-- `Prompt+FullWorkflow` (优先推荐) 模式使用ComfyUI标准后端API来获取prompt字段元数据, 以及使用 `xworkflowsave_extension.js` 网页扩展来捕获前端网页中完整的工作流元数据, 优点: 所有模式中最为完整的工作流元数据, 缺点: 依赖网页扩展并且非ComfyUI官方原生支持
+- `Prompt+FullWorkflow` (优先推荐) 模式使用ComfyUI标准后端API来获取prompt字段元数据, 以及使用 `XWorkflowSave_Extension.js` 网页扩展来捕获前端网页中完整的工作流元数据, 优点: 所有模式中最为完整的工作流元数据, 缺点: 依赖网页扩展并且非ComfyUI官方原生支持
 - 新增 `工作流信息` 字符串输出端口, 可以检查保存信息
 
-### 4. 🛠️ 增强 `XMetadataWorkflow` 网页工具
+### 5. 🛠️ 增强 `XMetadataWorkflow` 网页工具
 - 支持完整工作流数据的JSON:
-    - ✅ ComfyUI网页原生的保存工作流功能 `Save` 和 `Save As` 所保存的JSON (自动保存在ComfyUI目录下 `user\default\workflows`)
-    - ✅ `XWorkflowSave` 节点 `FullWorkflow` 模式保存的JSON
-    - ✅ `XWorkflowSave` 节点 `Prompt+FullWorkflow` 模式保存的JSON (合并得到最为完整的工作流元数据可视化)
+    - ✅ ComfyUI网页界面原生的保存工作流功能 `Save` 和 `Save As` 所保存的JSON (自动保存在ComfyUI目录下 `user\default\workflows`)
+    - ✅ `XWorkflowSave` 节点的 `FullWorkflow` 模式保存的JSON
+    - ✅ `XWorkflowSave` 节点的 `Prompt+FullWorkflow` 模式保存的JSON (推荐, 合并得到最为完整的工作流元数据可视化)
 - 支持 `FullWorkflow` 元数据中的 `note` 和 `markdown note` 节点显示
-- 新增左边栏的隐藏/展开功能按钮
-- 支持 `Ctrl+鼠标左键` 框选多个节点并移动 (双击空白处 或 按 `ESC` 键取消框选)
 - 为节点内的长内容添加滚动条
 - 为节点内的超长内容添加虚拟滚动以提升网页浏览性能
-- 修复一些之前在硬编码中还没有被本地化的文字
-- 修复一些BUG
+- 新增 侧边栏的隐藏/展开功能按钮
+- 新增 复制节点名称功能按钮 `📋` (节点窗口标题栏)
+- 新增 `Ctrl+鼠标左键` 框选多个节点并移动功能 (双击空白处 或 按 `ESC` 键取消框选)
+- 新增节点窗口四周拉伸功能
+- 新增节点连接线首尾的圆点
+- 调整节点连接线位置为节点窗口的边框
+- 修正一些之前在硬编码中还没有被本地化的文字
+- 优化和修复一些BUG
+
+### 6. 🛠️ 增强 `♾️ XFloatingWindow` 浮动窗口
+- 新增 窗口透明度功能滑动条 (标题栏)
+- 新增 窗口最大化和复原按钮 `↕️` (标题栏)
+- 新增 窗口四周拉伸和限制尺寸功能
+- 新增 `Alt+鼠标左键` 可直接拖动浮动窗口
+- 优化和修复一些BUG
 
 ### 注意:
 - `XMetadataWorkflow` 网页工具对于使用自行创建前端界面的第三方自定义节点是不兼容的 (网页工具只会显示存在于元数据中的内容)
-- 从 `v1.3.0` 到 `v1.4.0` 新增的 (代码) 功能和节点以及工具我都只做了非常简单的测试, 代码有问题之后再说吧. 我需要缓一缓😵 (i need a doctor, call me a doctor)
+- 从 `v1.3.0` 到 `v1.4.0` 新增的 (代码) 功能和节点以及工具我没有做完整测试, 代码很可能有问题, 但我需要缓一缓 (i need a doctor, call me a doctor😇)
 
-## v1.4.0 Major Updates
-
-### 1. ⭐ Added `ComfyUI.Xz3r0.XWorkflowSave` (`xworkflowsave_extension.js`) Web Extension
-- Captures complete workflow metadata directly from the ComfyUI web interface
-
-### 2. ⭐ Added `xworkflowsave_api` (Custom API)
-- Transfers complete workflow metadata captured by the `ComfyUI.Xz3r0.XWorkflowSave` web extension to the `XWorkflowSave` node via API
-
-### 3. 🛠️ Enhanced `XWorkflowSave` Node
-- Added 4 JSON save modes: Auto, Standard, FullWorkflow, Prompt+FullWorkflow (default: `Auto`)
-- `Auto` mode prioritizes `Prompt+FullWorkflow` mode by default, automatically falling back to `Standard` mode when unavailable for compatibility
-- `Standard` mode uses ComfyUI's standard backend API to get workflow metadata (prompt + standard workflow). Pros: Official ComfyUI API support. Cons: Standard workflow metadata is incomplete (`note` and `markdown note` nodes are not saved in metadata ❌)
-- `FullWorkflow` mode uses the specially created web extension `xworkflowsave_extension.js` to capture more complete workflow metadata from the frontend. Pros: Data completeness matches ComfyUI's native `Save` and `Save As` workflow functions (`note` and `markdown note` nodes can be saved in metadata ✅). Cons: Depends on web extension and is not officially supported by ComfyUI (may break if ComfyUI changes related web code in the future)
-- `Prompt+FullWorkflow` (Recommended) mode uses ComfyUI's standard backend API to get prompt field metadata, and uses the `xworkflowsave_extension.js` web extension to capture complete workflow metadata from the frontend. Pros: Most complete workflow metadata among all modes. Cons: Depends on web extension and is not officially supported by ComfyUI
-- Added `Workflow Info` string output port for checking save information
-
-### 4. 🛠️ Enhanced `XMetadataWorkflow` Web Tool
-- Supports JSON with complete workflow data:
-    - ✅ JSON saved by ComfyUI's native `Save` and `Save As` workflow functions (automatically saved in `user\default\workflows` under ComfyUI directory)
-    - ✅ JSON saved by `XWorkflowSave` node in `FullWorkflow` mode
-    - ✅ JSON saved by `XWorkflowSave` node in `Prompt+FullWorkflow` mode (merges to get the most complete workflow metadata visualization)
-- Supports display of `note` and `markdown note` nodes from `FullWorkflow` metadata
-- Added left sidebar hide/expand toggle button
-- Supports `Ctrl+Left Click` to box-select multiple nodes and move them (double-click empty space or press `ESC` to cancel selection)
-- Added scrollbars for long content within nodes
-- Added virtual scrolling for extremely long content to improve web browsing performance
-- Fixed some previously hardcoded text that wasn't localized
-- Fixed some bugs
-
-### Notes:
-- `XMetadataWorkflow` web tool is incompatible with third-party custom nodes that create their own frontend interfaces (the tool only displays content that exists in the metadata)
-- From `v1.3.0` to `v1.4.0`, all newly added (code) features, nodes, and tools have only undergone very basic testing. If there are issues with the code, i'll deal with them later. I need a break😵 (i need a doctor, call me a doctor)
 
 ---
 
@@ -80,7 +73,7 @@
 ### 2. ⭐ 新增 `XMetadataWorkflow` (简易的工作流元数据可视化查看工具)
 - 读取文件的 prompt 字段工作流元数据进行可视化查看数据, 可以在缺失节点或不使用ComfyUI的情况下更好的查看工作流中绝大部分节点的参数数据, 有一些节点和数据没有保存在 prompt 字段就不会显示
 - 支持加载多种文件格式: PNG图片, Latent文件 (`XLatentSave`), JSON工作流文件 (`XWorkflowSave` 生成的带有 prompt 字段的JSON)
-- 在ComfyUI页面中点击顶部菜单栏的 ♾️ 按钮打开浮动窗口, 或使用浏览器打开`web\xmetadataworkflow.html`独立使用
+- 在ComfyUI页面中点击顶部菜单栏的 ♾️ 按钮打开浮动窗口, 或使用浏览器打开`web\XMetadataWorkflow.html`独立使用
 - 中英双语
 - 暗黑和明亮界面
 - 这是一个简易且粗糙的网页工具, 使用时可能会遇到很多BUG😜
@@ -107,7 +100,7 @@
 ### 2. ⭐ Added `XMetadataWorkflow` (Simple Workflow Metadata Visualization Tool)
 - Reads the prompt field workflow metadata from files for visual data viewing, allowing better viewing of most node parameter data in workflows when nodes are missing or ComfyUI is not being used; some nodes and data not saved in the prompt field will not be displayed
 - Supports loading multiple file formats: PNG images, Latent files (`XLatentSave`), JSON workflow files (JSON with prompt field generated by `XWorkflowSave`)
-- Click the ♾️ button in the top menu bar on the ComfyUI page to open the floating window, or use a browser to open `web\xmetadataworkflow.html` for standalone use
+- Click the ♾️ button in the top menu bar on the ComfyUI page to open the floating window, or use a browser to open `web\XMetadataWorkflow.html` for standalone use
 - Chinese and English support
 - Dark and light themes
 - This is a simple and rough web tool, you may encounter many BUGs when using it 😜

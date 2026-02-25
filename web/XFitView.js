@@ -1,5 +1,5 @@
 /**
- * Xz3r0 FitView - ComfyUI 自动适应视图扩展
+ * XFitView - ComfyUI 自动适应视图扩展
  * ===========================================
  * 版本: 1.1.0 - 2025-02-25
  *
@@ -41,7 +41,7 @@
  *
  * 文件结构:
  * ---------
- * - xz3r0fitview.js: 扩展主文件（此文件）
+ * - XFitView.js: 扩展主文件（此文件）
  *
  * @author Xz3r0
  * @project ComfyUI-Xz3r0-Nodes
@@ -253,31 +253,31 @@ let hasFittedOnLoad = false;
  * 注册 ComfyUI 扩展
  */
 app.registerExtension({
-    name: "ComfyUI.Xz3r0.xz3r0fitview",
+    name: "ComfyUI.Xz3r0.XFitView",
 
     /**
      * 扩展设置配置
      */
     settings: [
         {
-            id: "Xz3r0.FitView.WorkflowLoadMode",
+            id: "Xz3r0.XFitView.WorkflowLoadMode",
             name: "Workflow Load Mode",
             type: "combo",
             defaultValue: "never",
             tooltip: "Choose when to auto-fit view when loading workflows. 'First time only' resets on page refresh",
-            category: ["♾️ Xz3r0", "FitView", "Workflow"],
+            category: ["♾️ Xz3r0", "XFitView", "Workflow"],
             options: ["first", "always", "never"],
             onChange: (value) => {
                 settings.workflowLoadMode = value;
             }
         },
         {
-            id: "Xz3r0.FitView.Delay",
+            id: "Xz3r0.XFitView.Delay",
             name: "Fit View Delay (ms)",
             type: "number",
             defaultValue: 300,
             tooltip: "Delay before fitting view (milliseconds). Increase if view doesn't fit correctly. Range: 0-2000ms",
-            category: ["♾️ Xz3r0", "FitView", "Delay"],
+            category: ["♾️ Xz3r0", "XFitView", "Delay"],
             attrs: {
                 min: 0,
                 max: 2000,
