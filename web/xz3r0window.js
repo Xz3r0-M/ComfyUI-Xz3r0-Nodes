@@ -13,22 +13,29 @@
  *    - 拖拽移动（标题栏拖动，带阈值防误触）
  *    - 调整大小（四边和四角都可拉伸，类似 Windows 窗口）
  *    - 显示/隐藏切换
- *    - 状态持久化（位置/大小保存到 localStorage）
+ *    - 窗口启用/禁用设置
  *
  * 2. 集成方式:
  *    - 在 ComfyUI 菜单栏添加按钮（新 UI）
+ *    - 支持 ComfyUI 设置面板配置
  *
  * 3. 内容加载:
  *    - 通过 iframe 加载 xmetadataworkflow.html
  *    - 完全隔离的浏览环境
  *
+ * 4. 界面特性:
+ *    - 窗口透明度调节（20%-100%，带滑块控制，保存到 localStorage）
+ *    - 窗口位置限制（防止完全拖出屏幕）
+ *    - 多语言支持（英文/中文）
+ *
  * 技术实现:
  * ---------
  * - 使用 CSS 变量适配 ComfyUI 主题
- * - 使用 localStorage 持久化窗口状态
+ * - 使用 localStorage 保存透明度设置
  * - 使用鼠标事件实现拖拽，带阈值和 RAF 优化
  * - 使用鼠标事件实现四边四角拉伸
  * - 限制窗口位置防止完全拖出屏幕
+ * - 使用 requestAnimationFrame 优化拖拽性能
  *
  * 文件结构:
  * ---------
@@ -41,76 +48,45 @@
 
 import { app } from "../../scripts/app.js";
 
+/**
+ * 菜单按钮引用
+ */
+let menuButton = null;
+
 // ============================================
-// 本地化支持 (i18n)
+// 内部文本本地化 (仅用于窗口内部 DOM 元素)
 // ============================================
 
-/**
- * 翻译字典
- * 英文为默认语言，中文为本地化支持
- */
-const TRANSLATIONS = {
+const UI_TEXT = {
     en: {
-        settingEnableName: "Enable Xz3r0 Floating Window ♾️",
-        settingEnableTooltip: "Show Xz3r0 floating window button in the menu bar",
         windowTitle: "♾️ Xz3r0 Windows",
         closeBtn: "Close",
+        maxBtn: "Maximize",
+        restoreBtn: "Restore",
         menuTooltip: "Xz3r0 Window",
         opacityLabel: "Opacity"
     },
     zh: {
-        settingEnableName: "启用 Xz3r0 浮动窗口 ♾️",
-        settingEnableTooltip: "在菜单栏显示 Xz3r0 浮动窗口按钮",
         windowTitle: "♾️ Xz3r0 窗口",
         closeBtn: "关闭",
+        maxBtn: "最大化",
+        restoreBtn: "还原",
         menuTooltip: "Xz3r0 窗口",
         opacityLabel: "透明度"
     }
 };
 
-/**
- * 获取当前语言设置
- * 优先从 ComfyUI 设置读取，其次从 localStorage 读取
- * @returns {string} 语言代码 (en, zh 等)
- */
-function getCurrentLocale() {
-    // 尝试从 ComfyUI 的 setting store 获取
-    if (window.app?.extensionManager?.setting) {
-        const comfyLocale = window.app.extensionManager.setting.get('Comfy.Locale');
-        if (comfyLocale) {
-            // 处理 zh-TW, zh-CN 等变体
-            const mainLang = comfyLocale.split('-')[0];
-            return TRANSLATIONS[comfyLocale] ? comfyLocale : mainLang;
-        }
-    }
-
-    // 从 localStorage 获取
-    const stored = localStorage.getItem('Comfy.Locale');
-    if (stored) {
-        const mainLang = stored.split('-')[0];
-        return TRANSLATIONS[stored] ? stored : mainLang;
-    }
-
-    // 默认返回英文
-    return 'en';
+function getLocale() {
+    const locale = window.app?.extensionManager?.setting?.get('Comfy.Locale')
+        || localStorage.getItem('Comfy.Locale')
+        || 'en';
+    return locale.split('-')[0];
 }
 
-/**
- * 翻译函数
- * 根据键获取对应语言的文本，如果没有则回退到英文
- * @param {string} key - 翻译键
- * @returns {string} 翻译后的文本
- */
 function t(key) {
-    const locale = getCurrentLocale();
-    // 优先使用当前语言，如果不存在则回退到英文
-    return TRANSLATIONS[locale]?.[key] ?? TRANSLATIONS.en[key] ?? key;
+    const locale = getLocale();
+    return UI_TEXT[locale]?.[key] ?? UI_TEXT.en[key] ?? key;
 }
-
-/**
- * 菜单按钮引用
- */
-let menuButton = null;
 
 /**
  * 窗口启用状态
@@ -141,10 +117,11 @@ app.registerExtension({
     settings: [
         {
             id: "Xz3r0.Window.Enabled",
-            get name() { return t('settingEnableName'); },
+            name: "Enable ♾️ Xz3r0 Floating Window (Button)",
             type: "boolean",
             defaultValue: true,
-            get tooltip() { return t('settingEnableTooltip'); },
+            tooltip: "Show floating window button [♾️] in the menu bar",
+            category: ["♾️ Xz3r0", "Window"],
             onChange: (value) => {
                 if (windowEnabled === value) return;
                 windowEnabled = value;
@@ -379,7 +356,9 @@ const Xz3r0Window = {
     instance: null,
 
     /**
-     * 加载窗口状态（不再使用 localStorage）
+     * 加载窗口位置和大小状态
+     * 当前实现返回 null，窗口始终使用默认居中位置
+     * 注：透明度设置单独使用 localStorage 保存
      * @returns {null} 始终返回 null，使用默认状态
      */
     loadState() {
@@ -387,11 +366,13 @@ const Xz3r0Window = {
     },
 
     /**
-     * 保存窗口状态（不再使用 localStorage）
+     * 保存窗口位置和大小状态
+     * 当前实现为空，不保存窗口位置和大小
+     * 注：透明度设置单独使用 localStorage 保存
      * @param {Object} state - 窗口状态对象
      */
     saveState(state) {
-        // 不再保存到 localStorage
+        // 当前不保存窗口位置和大小
     },
 
     /**
@@ -427,8 +408,8 @@ const Xz3r0Window = {
         windowEl.className = "xz3r0-floating-window";
 
         // 默认尺寸
-        const DEFAULT_WIDTH = 900;
-        const DEFAULT_HEIGHT = 700;
+        const DEFAULT_WIDTH = 512;
+        const DEFAULT_HEIGHT = 512;
 
         // 设置窗口尺寸
         windowEl.style.width = `${DEFAULT_WIDTH}px`;
@@ -473,11 +454,17 @@ const Xz3r0Window = {
         const controls = document.createElement("div");
         controls.className = "xz3r0-floating-window-controls";
 
+        const maxBtn = document.createElement("button");
+        maxBtn.className = "xz3r0-floating-window-btn";
+        maxBtn.innerHTML = "↕️";
+        maxBtn.title = t('maxBtn');
+
         const closeBtn = document.createElement("button");
         closeBtn.className = "xz3r0-floating-window-btn";
         closeBtn.innerHTML = "❌";
         closeBtn.title = t('closeBtn');
 
+        controls.appendChild(maxBtn);
         controls.appendChild(closeBtn);
         header.appendChild(title);
         header.appendChild(opacityControl);
@@ -530,6 +517,68 @@ const Xz3r0Window = {
         let resizeStartLeft, resizeStartTop;
         const RESIZE_MIN_WIDTH = 400;
         const RESIZE_MIN_HEIGHT = 300;
+
+        // 最大化状态变量
+        let isMaximized = false;
+        let preMaximizeState = null;
+
+        /**
+         * 最大化窗口
+         */
+        const maximizeWindow = () => {
+            if (isMaximized) return;
+
+            // 保存当前状态
+            preMaximizeState = {
+                left: windowEl.style.left,
+                top: windowEl.style.top,
+                width: windowEl.style.width,
+                height: windowEl.style.height
+            };
+
+            // 设置最大化尺寸和位置
+            windowEl.style.left = '0px';
+            windowEl.style.top = '0px';
+            windowEl.style.width = `${window.innerWidth}px`;
+            windowEl.style.height = `${window.innerHeight}px`;
+
+            isMaximized = true;
+            maxBtn.innerHTML = "↕️";
+            maxBtn.title = t('restoreBtn');
+            maxBtn.classList.add('maximized');
+        };
+
+        /**
+         * 还原窗口
+         */
+        const restoreWindow = () => {
+            if (!isMaximized) return;
+
+            // 恢复之前的状态
+            if (preMaximizeState) {
+                windowEl.style.left = preMaximizeState.left;
+                windowEl.style.top = preMaximizeState.top;
+                windowEl.style.width = preMaximizeState.width;
+                windowEl.style.height = preMaximizeState.height;
+            }
+
+            isMaximized = false;
+            preMaximizeState = null;
+            maxBtn.innerHTML = "↕️";
+            maxBtn.title = t('maxBtn');
+            maxBtn.classList.remove('maximized');
+        };
+
+        /**
+         * 切换最大化/还原状态
+         */
+        const toggleMaximize = () => {
+            if (isMaximized) {
+                restoreWindow();
+            } else {
+                maximizeWindow();
+            }
+        };
 
         /**
          * 使用 requestAnimationFrame 优化拖拽性能
@@ -939,6 +988,9 @@ const Xz3r0Window = {
 
         // 关闭按钮事件
         closeBtn.addEventListener("click", () => state.hide());
+
+        // 最大化按钮事件
+        maxBtn.addEventListener("click", () => toggleMaximize());
 
         // 透明度调整事件
         opacitySlider.addEventListener("input", (e) => {

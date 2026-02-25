@@ -1,8 +1,8 @@
 <!--
     XMetadataWorkflow - ComfyUI 工作流元数据查看器
     ================================================
-    版本: 1.1.0
-    更新日期: 2026-02-24
+    版本: 1.2.1
+    更新日期: 2026-02-25
 
     功能概述:
     ---------
@@ -13,7 +13,7 @@
     - PNG 图片 (.png) - 包含工作流元数据的生成图片
     - Latent 潜空间文件 (.latent) - 包含 __metadata__ 的潜空间文件
     - JSON 工作流文件 (.json) - 支持三种格式：
-        * XWorkflowSave 生成的格式 (包含 prompt 字段)
+        * XWorkflowSave 生成的格式 (包含 prompt 字段，支持 merge 模式)
         * ComfyUI 网页导出的 API 格式 (直接是 prompt 数据)
         * ComfyUI 网页保存的完整 Workflow 格式 (包含 nodes 和 links 数组)
 
@@ -23,38 +23,63 @@
        - PNG: 从 tEXt/iTXt chunk 读取 prompt/workflow 元数据
        - Latent: 从文件头部 JSON 读取 __metadata__
        - JSON: 智能识别并解析三种工作流格式
+       - Merge 模式: 自动合并 prompt 和 full_workflow 数据，保留执行结果和完整结构
 
     2. 工作流可视化:
        - 自动层级布局算法排列节点
+       - 优先使用保存的节点位置信息（如果可用）
        - 显示节点类型、参数和连接关系
        - 子图自动识别和颜色标记 (ID格式: "子图ID:节点ID")
+       - 选中节点发光效果（基于子图颜色）
+       - 连接点圆点显示（输入在左侧，输出在右侧）
        - 支持缩放、平移、自适应视图
 
     3. 交互功能:
        - 折叠/展开节点参数
-       - 选中节点高亮相关连接（带流动动画效果）
-       - 拖拽调整节点宽度
-       - 节点拖拽重新布局
+       - 单击选中节点，高亮相关连接（带流动动画效果）
+       - 多选节点: Ctrl+点击 或 框选(Ctrl+拖拽)
+       - 节点拖拽重新布局（支持多节点同时拖拽）
+       - 节点大小调整: 8个方向拉伸控制点（角+边）
+       - 画布平移: 鼠标空白处拖拽 或 中键拖拽
+       - 滚轮缩放，以鼠标位置为中心
+       - 复制节点名称: 点击标题栏左侧复制按钮
 
     4. 界面特性:
-       - 支持暗黑/亮色主题切换
-       - 支持中英文语言切换
-       - 文件信息预览面板
-       - 响应式缩放控制
+       - 支持暗黑/亮色主题切换（本地存储记忆）
+       - 支持中英文语言切换（本地存储记忆）
+       - 侧边栏折叠/展开功能（默认展开，不持久化）
+       - 文件信息预览面板（图片预览、Latent标识）
+       - 缩放控制: 按钮、输入框精确设置、适应窗口
+       - 虚拟滚动: 长文本参数使用虚拟滚动优化性能
+       - 长文本操作: 一键复制、下载为文件
+       - Toast 提示: 操作反馈（复制成功、下载开始等）
+
+    5. 特殊节点处理:
+       - XWorkflowSave 节点识别和标记
+       - Note/MarkdownNote 节点特殊显示
+       - Bypass 节点状态显示
 
     数据格式说明:
     -------------
     - 内部统一使用 prompt 格式 (ComfyUI API 格式)
     - 完整 Workflow 格式会自动转换为 Prompt API 格式
-    - 节点位置使用自动排列算法，不依赖保存的位置信息
+    - Merge 模式: 合并 prompt（执行结果）和 full_workflow（完整结构）数据
+    - 节点位置优先使用 workflow 中保存的原始位置
     - 子图通过节点 ID 中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
 
     技术栈:
     -------
     - 纯前端实现，无需后端服务
     - 原生 JavaScript (ES6+)
-    - SVG 绘制连接线
-    - CSS3 动画效果
+    - SVG 绘制连接线和连接点
+    - CSS3 动画效果（流动线条、发光效果）
+    - ResizeObserver 监听节点尺寸变化
+
+    性能优化:
+    ---------
+    - 虚拟滚动: 长文本内容分段渲染
+    - ResizeObserver: 及时清理防止内存泄漏
+    - Object URL 管理: 及时释放预览图片内存
 
     作者: Xz3r0
     项目: ComfyUI-Xz3r0-Nodes
@@ -687,9 +712,9 @@
             align-items: center;
             gap: 6px;
             cursor: default;
+            user-select: none;
+            -webkit-user-select: none;
             border-bottom: 1px solid var(--border-tertiary);
-            user-select: text;
-            -webkit-user-select: text;
         }
 
         .node-header-text {
@@ -1131,7 +1156,8 @@
                 lines: '行',
                 copy: '复制',
                 download: '下载',
-                fileTooLarge: '文件过大，最大支持 100MB'
+                fileTooLarge: '文件过大，最大支持 100MB',
+                copyTitle: '复制节点名称'
             },
             en: {
                 title: 'XMetadataWorkflow',
@@ -1178,7 +1204,8 @@
                 lines: 'lines',
                 copy: 'Copy',
                 download: 'Download',
-                fileTooLarge: 'File too large, maximum 100MB supported'
+                fileTooLarge: 'File too large, maximum 100MB supported',
+                copyTitle: 'Copy Node Name'
             }
         };
 
@@ -1265,7 +1292,7 @@
         // 侧边栏折叠功能
         const sidebar = document.getElementById('sidebar');
         const sidebarToggle = document.getElementById('sidebarToggle');
-        let sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        let sidebarCollapsed = false; // 默认展开，不持久化存储
 
         /**
          * 切换侧边栏显示/隐藏状态
@@ -1281,17 +1308,13 @@
                 sidebarToggle.title = t('hideSidebar');
                 sidebarToggle.setAttribute('data-i18n-title', 'hideSidebar');
             }
-            localStorage.setItem('sidebarCollapsed', sidebarCollapsed);
         }
 
         sidebarToggle.addEventListener('click', toggleSidebar);
 
-        // 初始化侧边栏状态
-        if (sidebarCollapsed) {
-            sidebar.classList.add('collapsed');
-            sidebarToggle.title = t('showSidebar');
-            sidebarToggle.setAttribute('data-i18n-title', 'showSidebar');
-        }
+        // 初始化侧边栏状态（默认展开）
+        sidebarToggle.title = t('hideSidebar');
+        sidebarToggle.setAttribute('data-i18n-title', 'hideSidebar');
 
         function updateLanguage() {
             document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -2638,6 +2661,7 @@
                     const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
+                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
                             <span class="node-header-text">${classType}</span>
                             <div class="header-actions">
                                 <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
@@ -2661,6 +2685,7 @@
 
                     content = `
                         <div class="node-header" data-node-id="${nodeId}">
+                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
                             <span class="node-header-text">${classType}</span>
                             <div class="header-actions">
                                 <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
@@ -2830,7 +2855,8 @@
                     nodeDragStartY = e.clientY;
                     nodeStartX = parseFloat(nodeEl.style.left);
                     nodeStartY = parseFloat(nodeEl.style.top);
-                    // 不阻止默认行为，允许文本选择
+                    // 阻止默认行为，防止文本选择
+                    e.preventDefault();
                     e.stopPropagation();
                 });
 
@@ -2947,6 +2973,15 @@
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const nodeId = btn.dataset.node;
+
+                        // 处理复制标题按钮
+                        if (btn.classList.contains('copy-title-btn')) {
+                            const title = btn.dataset.title;
+                            copyToClipboard(title);
+                            return;
+                        }
+
+                        // 处理折叠/展开按钮
                         nodeStates[nodeId] = nodeStates[nodeId] || {};
                         nodeStates[nodeId].collapsed = !nodeStates[nodeId].collapsed;
                         renderWorkflow();

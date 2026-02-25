@@ -1,0 +1,19 @@
+{
+  "Xz3r0_FitView_WorkflowLoadMode": {
+    "name": "工作流加载模式",
+    "tooltip": "选择加载工作流时的自动适应视图行为",
+    "options": {
+      "first": "仅首次（刷新网页后重置）",
+      "always": "每次都适应",
+      "never": "从不"
+    }
+  },
+  "Xz3r0_FitView_Delay": {
+    "name": "适应视图延迟 (毫秒)",
+    "tooltip": "适应视图前的延迟时间（毫秒）。如果视图适应不正确，请增加此值。范围：0-2000毫秒"
+  },
+  "Xz3r0_Window_Enabled": {
+    "name": "启用 ♾️ Xz3r0 浮动窗口 (按钮)",
+    "tooltip": "在菜单栏显示 [♾️] 浮动窗口按钮"
+  }
+}

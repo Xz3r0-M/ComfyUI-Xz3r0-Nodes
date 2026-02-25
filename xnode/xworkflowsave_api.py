@@ -23,10 +23,10 @@ class WorkflowDataStore:
     支持主动清理（推荐）和自动过期清理（备用）。
     """
 
-    _instance = None
-    _data: dict[str, dict[str, Any]] = {}
-    _timestamps: dict[str, float] = {}
-    _expire_seconds: float = 300  # 5分钟过期（备用机制）
+    _instance = None  # 单例实例
+    _data: dict[str, dict[str, Any]] = {}  # 存储工作流数据的字典
+    _timestamps: dict[str, float] = {}  # 记录数据存储时间戳
+    _expire_seconds: float = 300  # 数据过期时间（秒），5分钟过期（备用机制）
 
     def __new__(cls):
         if cls._instance is None:
@@ -41,6 +41,9 @@ class WorkflowDataStore:
         Args:
             prompt_id: 提示ID，作为存储键
             workflow_data: 工作流数据字典
+
+        Returns:
+            None
         """
         cls._data[prompt_id] = workflow_data
         cls._timestamps[prompt_id] = time.time()
@@ -91,7 +94,15 @@ class WorkflowDataStore:
 
     @classmethod
     def _cleanup_expired(cls) -> None:
-        """清理过期数据（备用机制）"""
+        """
+        清理过期数据（备用机制）
+
+        遍历所有存储的数据，删除超过 _expire_seconds 时间限制的数据。
+        此方法在 retrieve 方法中被自动调用。
+
+        Returns:
+            None
+        """
         current_time = time.time()
         expired_keys = [
             key
