@@ -491,9 +491,9 @@ Latent保存节点，支持自定义文件名和元数据保存
 ---
 
 ### 📊 XMetadataWorkflow
-`🖥️ 浮动窗口（按钮）`
+`🖥️ ♾️ XFloatingWindow` `🌐 web/XMetadataWorkflow.html`
 
-工作流元数据查看器工具，简易的网页类型的工具，用于可视化查看ComfyUI工作流
+独立的工作流元数据查看器工具，简易的网页类型的工具，用于可视化查看ComfyUI工作流元数据
 
 **功能**:
 - 支持多种文件格式：PNG图片、Latent文件、JSON工作流文件
@@ -506,7 +506,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 折叠/展开节点参数
 - 选中节点高亮相关连接
 - 左边栏隐藏/展开功能
-- `Ctrl+鼠标左键` 框选多个节点并移动 (双击空白处 或 按 `ESC` 键取消框选)
+- `Ctrl + Left mouse button` 框选多个节点并移动 (双击空白处 或 按 `ESC` 键取消框选)
 - 节点内长内容滚动条支持
 - 超长内容虚拟滚动优化性能
 
@@ -530,7 +530,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 1. **在ComfyUI中使用（集成）**: 点击ComfyUI页面顶部菜单栏的 ♾️ 按钮，可打开或关闭浮动窗口，已将此网页工具嵌入到该浮动窗口中
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Open" width="500">
 
-2. **浏览器直接打开（独立）**: 直接打开 `web/XMetadataWorkflow.html` 文件，在浏览器中使用
+2. **浏览器直接打开（独立）**: 直接打开本项目中的 `web/XMetadataWorkflow.html` 文件，在浏览器中单独使用
 
 </details>
 
@@ -540,7 +540,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 <summary>🧩 ComfyUI网页界面扩展 👈</summary>
 
 ### 🖥️ ♾️ XFloatingWindow 浮动窗口（顶部菜单栏 按钮）
-`ComfyUI网页界面扩展 - ComfyUI.Xz3r0.XFloatingWindow`
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFloatingWindow`
 
 为ComfyUI网页界面增加可打开的浮动窗口
 
@@ -548,7 +548,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 - `XMetadataWorkflow`（工作流元数据查看器）
 - 窗口透明度调整 (20% - 100%)
 - 窗口最大化按钮
-- `Alt+鼠标左键` 快捷拖动窗口
+- `Alt + Left mouse button` 快捷拖动窗口
 
 **使用按钮**:
 - 在ComfyUI网页界面顶部菜单栏中的 ♾️ 按钮，点击可 打开或关闭 浮动窗口
@@ -557,18 +557,18 @@ Latent保存节点，支持自定义文件名和元数据保存
 **设置选项**:
 - **Enable ♾️ XFloatingWindow (Button)** (启用浮动窗口按钮):
 控制是否在顶部菜单栏显示 ♾️ 按钮
-  - 默认: `启用`
-  - 位置: ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ 窗口 (Window)
+  - 默认: `Enable` (启用)
+  - 位置: ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFloatingWindow
 
 **禁用按钮**:
-- ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ 窗口 (Window) ➡️ 关闭 `Enable ♾️ XFloatingWindow (Button)` 开关
+- ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFloatingWindow ➡️ 关闭 `Enable ♾️ XFloatingWindow (Button)` 开关
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFloatingWindow.png" alt="XFloatingWindow" width="700">
 
 
 ---
 
 ### 💾 XWorkflowSave
-`ComfyUI网页扩展 - ComfyUI.Xz3r0.XWorkflowSave`
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XWorkflowSave`
 
 从ComfyUI网页直接捕获完整工作流元数据，为 `XWorkflowSave` 节点提供 `FullWorkflow` 和 `Prompt+FullWorkflow` 模式所需的数据
 
@@ -594,9 +594,9 @@ Latent保存节点，支持自定义文件名和元数据保存
 ---
 
 ### 🔍 XFitView
-`ComfyUI网页界面扩展 - ComfyUI.Xz3r0.XFitView`
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFitView`
 
-打开ComfyUI网页界面或载入新工作流时，自动执行ComfyUI网页界面原生的`适应视图`功能，确保工作流内容完整显示在画布可视区域内
+打开ComfyUI网页界面或载入新工作流时，自动执行ComfyUI网页界面原生的 *适应视图* 功能，确保工作流内容完整显示在画布可视区域内
 
 **功能**:
 - **页面首次加载适应**: 页面首次加载完成后自动适应视图
@@ -605,10 +605,10 @@ Latent保存节点，支持自定义文件名和元数据保存
 - **防抖控制**: 同一工作流200ms内多次触发只执行一次，不同工作流之间立即触发
 
 **设置选项**:
-- **Workflow Load Mode** (工作流加载模式): 选择何时自动适应视图 (默认为: `never` )
-  - `first` 模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
-  - `always` 模式: 每次加载或切换工作流都适应视图
-  - `never` 模式: 禁用自动适应
+- **Workflow Load Mode** (工作流加载模式) 选择何时自动适应视图 (默认为: `never` 禁用):
+  - `first` (仅首次 / First time only) 模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
+  - `always` (每次都适应 / Every time) 模式: 每次加载或切换工作流都适应视图
+  - `never` (从不 / Never) 模式: 禁用自动适应
 - **Fit View Delay** (适应视图延迟): 延迟时间 0-2000ms 可调，默认 300ms
   - 如果视图适应不正确，可适当调整延迟时间
 
