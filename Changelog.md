@@ -13,10 +13,10 @@
 
 ### 3. ⭐ 新增 `XFitView` 网页扩展 (*XFitView.js*)
 - 打开ComfyUI网页界面或载入新工作流时，自动执行ComfyUI网页界面原生的`适应视图`功能
-- 支持3种模式 (默认为: `never` ):
-    - `first` 仅首次（刷新网页后重置）模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
-    - `always` 每次都适应 模式: 每次加载或切换工作流都适应视图
-    - `never` 从不 模式: 禁用自动适应
+- 支持3种模式 (默认为: `never` 从不):
+    - `first` (仅首次 / First time only) 模式: 同一会话中相同工作流只适应一次（推荐, ComfyUI网页界面刷新后重置）
+    - `always` (每次都适应 / Every time) 模式: 每次加载或切换工作流都适应视图
+    - `never` (从不 / Never) 模式: 禁用自动适应
 - 通过ComfyUI设置页面更改设置
     - ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFitView
     - 支持中英本地化
@@ -42,7 +42,7 @@
 - 为节点内的超长内容添加虚拟滚动以提升网页浏览性能
 - 新增 侧边栏的隐藏/展开功能按钮
 - 新增 复制节点名称功能按钮 `📋` (节点窗口标题栏)
-- 新增 `Ctrl+鼠标左键` 框选多个节点并移动功能 (双击空白处 或 按 `ESC` 键取消框选)
+- 新增 `Ctrl + 鼠标左键` 框选多个节点并移动功能 (双击空白处 或 按 `ESC` 键取消框选)
 - 新增节点窗口四周拉伸功能
 - 新增节点连接线首尾的圆点
 - 调整节点连接线位置为节点窗口的边框
@@ -53,7 +53,7 @@
 - 新增 窗口透明度功能滑动条 (标题栏)
 - 新增 窗口最大化和复原按钮 `↕️` (标题栏)
 - 新增 窗口四周拉伸和限制尺寸功能
-- 新增 `Alt+鼠标左键` 可直接拖动浮动窗口
+- 新增 `Alt + 鼠标左键` 可直接拖动浮动窗口
 - 优化和修复一些BUG
 - 支持中英本地化
 
@@ -73,9 +73,9 @@
 
 ### 3. ⭐ Added `XFitView` Web Extension (*XFitView.js*)
 - Automatically executes ComfyUI's native `Fit View` function when opening ComfyUI web interface or loading new workflows
-- Supports 3 modes (default: `never`):
+- Supports 3 modes (default: `never` Never):
     - `first` First Time Only (reset after page refresh): Fits only once per session for the same workflow (recommended, resets after ComfyUI page refresh)
-    - `always` Always Fit: Fits view every time a workflow is loaded or switched
+    - `always` Every time: Fits view every time a workflow is loaded or switched
     - `never` Never: Disables auto-fit
 - Change settings via ComfyUI settings page
     - ComfyUI Web Interface ➡️ Settings (gear icon) ➡️ ♾️ Xz3r0 ➡️ XFitView
@@ -102,7 +102,7 @@
 - Added virtual scrolling for extremely long content to improve web browsing performance
 - Added sidebar hide/expand toggle button
 - Added copy node name button `📋` (node window title bar)
-- Added `Ctrl+Left Click` box selection for multiple nodes and move function (double-click blank area or press `ESC` to cancel selection)
+- Added `Ctrl + Left mouse button` box selection for multiple nodes and move function (double-click blank area or press `ESC` to cancel selection)
 - Added node window edge resizing function
 - Added dots at the beginning and end of node connection lines
 - Adjusted node connection line positions to node window borders
@@ -113,7 +113,7 @@
 - Added window transparency slider (title bar)
 - Added window maximize and restore button `↕️` (title bar)
 - Added window edge resizing and size limiting function
-- Added `Alt+Left Click` to directly drag floating window
+- Added `Alt + Left mouse button` to directly drag floating window
 - Optimized and fixed some bugs
 - Supports Chinese and English localization
 
