@@ -491,7 +491,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 ---
 
 ### 📊 XMetadataWorkflow
-`🖥️ ♾️ XFloatingWindow` 和 `🌐 web/XMetadataWorkflow.html`
+`🖥️ ♾️ XFloatingWindow` `🌐 web/XMetadataWorkflow.html`
 
 独立的工作流元数据查看器工具，简易的网页类型的工具，用于可视化查看ComfyUI工作流元数据
 
