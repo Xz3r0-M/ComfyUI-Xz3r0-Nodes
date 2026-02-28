@@ -118,8 +118,8 @@
             --text-muted: #ddd;
             --text-dim: #ddd;
             --text-placeholder: #ddd;
-            --text-hint: #ddd;
-            --text-file-placeholder: #ddd;
+            --text-hint: #ffffff;
+            --text-file-placeholder: #ffffff;
 
             --accent: #ff69b4;
             --accent-hover: rgba(123, 104, 238, 0.05);
@@ -422,6 +422,12 @@
         .file-area .file-placeholder .hint {
             font-size: 10px;
             color: var(--text-hint);
+            margin-top: 4px;
+        }
+
+        .file-area .file-placeholder .file-placeholder-hint {
+            font-size: 10px;
+            color: var(--text-file-placeholder);
             margin-top: 4px;
         }
 
@@ -1961,8 +1967,8 @@
             placeholder.innerHTML = `
                 <span class="icon">🧠</span>
                 <span>${t('latentFile')}</span>
-                <span style="font-size: 10px; color: #555; margin-top: 8px;">${t('noPreview')}</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
+                <span class="file-placeholder-hint">${t('noPreview')}</span>
+                <span class="file-placeholder-hint">${t('clickToChange')}</span>
             `;
         }
 
@@ -1971,7 +1977,7 @@
             placeholder.innerHTML = `
                 <span class="icon">📄</span>
                 <span>${t('jsonWorkflow')}</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
+                <span class="file-placeholder-hint">${t('clickToChange')}</span>
             `;
         }
 
