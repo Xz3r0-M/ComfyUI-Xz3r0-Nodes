@@ -114,11 +114,12 @@
 
             --text-primary: #fff;
             --text-secondary: #ddd;
-            --text-tertiary: #aaa;
-            --text-muted: #888;
-            --text-dim: #666;
-            --text-placeholder: #555;
-            --text-hint: #444;
+            --text-tertiary: #ddd;
+            --text-muted: #ddd;
+            --text-dim: #ddd;
+            --text-placeholder: #ddd;
+            --text-hint: #ffffff;
+            --text-file-placeholder: #ffffff;
 
             --accent: #ff69b4;
             --accent-hover: rgba(123, 104, 238, 0.05);
@@ -139,16 +140,16 @@
         [data-theme="light"] {
             --bg-primary: #f5f5f5;
             --bg-secondary: #ffffff;
-            --bg-tertiary: #f0f0f0;
-            --bg-canvas: #e8e8e8;
-            --bg-preview: #f0f0f0;
+            --bg-tertiary: #ffffff;
+            --bg-canvas: #e0e0e0;
+            --bg-preview: #e0e0e0;
             --bg-node: #ffffff;
-            --bg-node-header: #e8e8e8;
-            --bg-param-key: #f0f0f0;
-            --bg-param-value: #f8f8f8;
+            --bg-node-header: #ffffff;
+            --bg-param-key: #e0e0e0;
+            --bg-param-value: #e0e0e0;
             --bg-note: #f8f0f0;
             --bg-btn: #ffffff;
-            --bg-btn-hover: #f0f0f0;
+            --bg-btn-hover: #e0e0e0;
             --bg-latent-badge: #e0e8f0;
 
             --border-primary: #ddd;
@@ -157,12 +158,13 @@
             --border-param: #e0e0e0;
 
             --text-primary: #1a1a1a;
-            --text-secondary: #333;
-            --text-tertiary: #555;
-            --text-muted: #666;
-            --text-dim: #888;
-            --text-placeholder: #999;
-            --text-hint: #aaa;
+            --text-secondary: #1a1a1a;
+            --text-tertiary: #1a1a1a;
+            --text-muted: #1a1a1a;
+            --text-dim: #1a1a1a;
+            --text-placeholder: #1a1a1a;
+            --text-hint: #1a1a1a;
+            --text-file-placeholder: #1a1a1a;
 
             --accent: #ff69b4;
             --accent-hover: rgba(255, 105, 180, 0.1);
@@ -174,7 +176,7 @@
             --shadow-node-hover: rgba(0, 0, 0, 0.15);
             --shadow-selected: rgba(255, 105, 180, 0.4);
 
-            --dot-pattern: #d0d0d0;
+            --dot-pattern: #bbbbbb;
 
             --header-btn-bg: rgba(0, 0, 0, 0.05);
             --header-btn-bg-hover: rgba(0, 0, 0, 0.1);
@@ -391,7 +393,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: var(--text-placeholder);
+            color: var(--text-file-placeholder);
             cursor: pointer;
             padding: 20px;
             width: 100%;
@@ -420,6 +422,12 @@
         .file-area .file-placeholder .hint {
             font-size: 10px;
             color: var(--text-hint);
+            margin-top: 4px;
+        }
+
+        .file-area .file-placeholder .file-placeholder-hint {
+            font-size: 10px;
+            color: var(--text-file-placeholder);
             margin-top: 4px;
         }
 
@@ -1116,13 +1124,13 @@
                 langZh: '中文',
                 langEn: 'English',
                 DroporSelect: '拖放文件到此处 或 点击选择文件',
-                filetip: '支持 .png 和 .latent\n以及 .json (三种格式)',
+                filetip: '支持 PNG 和 Latent 以及 JSON',
                 filename: '文件名',
                 filetype: '类型',
                 filesize: '大小',
                 resolution: '分辨率',
                 modified: '修改日期',
-                nodes: '节点',
+                nodes: '节点计数',
                 zoomOut: '缩小',
                 zoomIn: '放大',
                 zoomReset: '重置到100%',
@@ -1146,7 +1154,7 @@
                 latentFile: 'Latent 潜空间',
                 jsonWorkflow: 'JSON 工作流',
                 noPreview: '无法直接预览',
-                clickToChange: '点击更换文件',
+                clickToChange: '拖放文件到此处 或 点击更换文件',
                 typePng: 'PNG 图片',
                 typeLatent: 'Latent 潜空间',
                 typeJson: 'JSON 工作流',
@@ -1163,14 +1171,14 @@
                 title: 'XMetadataWorkflow',
                 langZh: '中文',
                 langEn: 'English',
-                DroporSelect: 'Drop file here\nor click to select',
-                filetip: 'Supports .png, .latent\nand .json (three formats)',
+                DroporSelect: 'Drop file here or click to select',
+                filetip: 'Supports PNG, Latent and JSON',
                 filename: 'Filename',
                 filetype: 'Type',
                 filesize: 'Size',
                 resolution: 'Resolution',
                 modified: 'Modified',
-                nodes: 'Nodes',
+                nodes: 'Node count',
                 zoomOut: 'Zoom Out',
                 zoomIn: 'Zoom In',
                 zoomReset: 'Reset 100%',
@@ -1194,7 +1202,7 @@
                 latentFile: 'Latent File',
                 jsonWorkflow: 'JSON Workflow',
                 noPreview: 'No preview available',
-                clickToChange: 'Click to change file',
+                clickToChange: 'Drop file here or click to change file',
                 typePng: 'PNG Image',
                 typeLatent: 'Latent File',
                 typeJson: 'JSON Workflow',
@@ -1959,8 +1967,8 @@
             placeholder.innerHTML = `
                 <span class="icon">🧠</span>
                 <span>${t('latentFile')}</span>
-                <span style="font-size: 10px; color: #555; margin-top: 8px;">${t('noPreview')}</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
+                <span class="file-placeholder-hint">${t('noPreview')}</span>
+                <span class="file-placeholder-hint">${t('clickToChange')}</span>
             `;
         }
 
@@ -1969,7 +1977,7 @@
             placeholder.innerHTML = `
                 <span class="icon">📄</span>
                 <span>${t('jsonWorkflow')}</span>
-                <span style="font-size: 10px; color: #444; margin-top: 4px;">${t('clickToChange')}</span>
+                <span class="file-placeholder-hint">${t('clickToChange')}</span>
             `;
         }
 
