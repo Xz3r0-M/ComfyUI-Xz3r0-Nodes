@@ -119,6 +119,7 @@
             --text-dim: #ddd;
             --text-placeholder: #ddd;
             --text-hint: #ddd;
+            --text-file-placeholder: #ddd;
 
             --accent: #ff69b4;
             --accent-hover: rgba(123, 104, 238, 0.05);
@@ -163,6 +164,7 @@
             --text-dim: #1a1a1a;
             --text-placeholder: #1a1a1a;
             --text-hint: #1a1a1a;
+            --text-file-placeholder: #1a1a1a;
 
             --accent: #ff69b4;
             --accent-hover: rgba(255, 105, 180, 0.1);
@@ -391,7 +393,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: var(--text-placeholder);
+            color: var(--text-file-placeholder);
             cursor: pointer;
             padding: 20px;
             width: 100%;
@@ -1116,7 +1118,7 @@
                 langZh: '中文',
                 langEn: 'English',
                 DroporSelect: '拖放文件到此处 或 点击选择文件',
-                filetip: '支持 .png 和 .latent\n以及 .json (三种格式)',
+                filetip: '支持 PNG 和 Latent 以及 JSON',
                 filename: '文件名',
                 filetype: '类型',
                 filesize: '大小',
@@ -1146,7 +1148,7 @@
                 latentFile: 'Latent 潜空间',
                 jsonWorkflow: 'JSON 工作流',
                 noPreview: '无法直接预览',
-                clickToChange: '点击更换文件',
+                clickToChange: '拖放文件到此处 或 点击更换文件',
                 typePng: 'PNG 图片',
                 typeLatent: 'Latent 潜空间',
                 typeJson: 'JSON 工作流',
@@ -1163,8 +1165,8 @@
                 title: 'XMetadataWorkflow',
                 langZh: '中文',
                 langEn: 'English',
-                DroporSelect: 'Drop file here\nor click to select',
-                filetip: 'Supports .png, .latent\nand .json (three formats)',
+                DroporSelect: 'Drop file here or click to select',
+                filetip: 'Supports PNG, Latent and JSON',
                 filename: 'Filename',
                 filetype: 'Type',
                 filesize: 'Size',
@@ -1194,7 +1196,7 @@
                 latentFile: 'Latent File',
                 jsonWorkflow: 'JSON Workflow',
                 noPreview: 'No preview available',
-                clickToChange: 'Click to change file',
+                clickToChange: 'Drop file here or click to change file',
                 typePng: 'PNG Image',
                 typeLatent: 'Latent File',
                 typeJson: 'JSON Workflow',
