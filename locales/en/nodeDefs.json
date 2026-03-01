@@ -121,7 +121,7 @@
     "inputs": {
       "images": {
         "name": "Images",
-        "tooltip": "Input image"
+        "tooltip": "Input images"
       },
       "scale_mode": {
         "name": "Interpolation",

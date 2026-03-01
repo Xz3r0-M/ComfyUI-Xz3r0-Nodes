@@ -149,7 +149,7 @@ class XImageResize:
             "required": {
                 "images": (
                     "IMAGE",
-                    {"tooltip": "Input image"},
+                    {"tooltip": "Input images"},
                 ),
                 "scale_mode": (
                     [
@@ -264,7 +264,7 @@ class XImageResize:
         }
 
     RETURN_TYPES = ("IMAGE", "INT", "INT")
-    RETURN_NAMES = ("IMAGE", "width", "height")
+    RETURN_NAMES = ("images", "width", "height")
     OUTPUT_TOOLTIPS = (
         "Scaled images",
         "Output resolution width",
