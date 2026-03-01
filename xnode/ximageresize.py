@@ -271,7 +271,7 @@ class XImageResize:
         "Output resolution height",
     )
     FUNCTION = "process"
-    CATEGORY = "♾️ Xz3r0/Image-Processing"
+    CATEGORY = "♾️ Xz3r0/File-Processing"
 
     def process(
         self,
