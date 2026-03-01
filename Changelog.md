@@ -1,10 +1,8 @@
 # 更新日志 | Changelog
 
 
-<summary><strong>📜 v1.5.0</strong></summary>
+## 🎉 v1.5.0
 <details>
-
-## 主要更新
 
 ### 1. ⭐ 新增 `XImageResize` 图像缩放节点
 - 节点将在保持图像原始宽高比不变的情况下, 提供4种缩放基准模式进行图像缩放 (默认为: `Long` 长边)
@@ -38,8 +36,6 @@
     呃...但我感觉还是有其他什么东西我也忘了没做🤔
 
 ---
-
-## Major Updates
 
 ### 1. ⭐ Added `XImageResize` Image Resize Node
 - The node provides 4 scaling modes while maintaining the original aspect ratio of the image (default: `Long` long edge)
@@ -75,11 +71,8 @@
 
 ---
 
-
-<summary><strong>📜 v1.4.0</strong></summary>
+## 🎉 v1.4.0
 <details>
-
-## 主要更新
 
 ### 1. ⭐ 新增 `XWorkflowSave_Extension` 网页扩展 (*XWorkflowSave_Extension.js*)
 - 从ComfyUI网页界面直接捕获完整工作流元数据
@@ -140,8 +133,6 @@
 - 从 `v1.3.0` 到 `v1.4.0` 新增的 (代码) 功能和节点以及工具我没有做完整测试, 代码很可能有问题, 但我需要缓一缓 (i need a doctor, call me a doctor😇)
 
 ---
-
-## Major Updates
 
 ### 1. ⭐ Added `XWorkflowSave_Extension` Web Extension (*XWorkflowSave_Extension.js*)
 - Captures complete workflow metadata directly from ComfyUI web interface
@@ -204,10 +195,8 @@
 
 ---
 
-<summary><strong>📜 v1.3.0</strong></summary>
+## 🎉 v1.3.0
 <details>
-
-## 主要更新
 
 ### 1. ⭐ 新增 `XWorkflowSave` (工作流元数据 JSON 文件保存节点)
 - 将ComfyUI工作流元数据保存为JSON文件 (适配 `XMetadataWorkflow`)
@@ -235,8 +224,6 @@
 - 处理文件的节点现在归类在 `File-Processing`
 
 ---
-
-## Major Updates
 
 ### 1. ⭐ Added `XWorkflowSave` (Workflow Metadata JSON File Save Node)
 - Saves ComfyUI workflow metadata as JSON files (compatible with `XMetadataWorkflow`)
@@ -266,10 +253,8 @@
 
 ---
 
-<summary><strong>📜 v1.2.0</strong></summary>
+## 🎉 v1.2.0
 <details>
-
-## 主要更新
 
 ### 1. 🛠️ 增强 `XAudioSave`
 - 将节点原先的音频音量标准化和峰值限制处理方式转为使用 FFmpeg (loudnorm 滤镜), 以提高对多声道(比如5.1和7.1)音频的兼容性, 原先所使用的依赖 `pyloudnorm` 也不再需要了, 目前项目只需要安装 `ffmpeg-python` 这一个依赖以及在本机安装 FFmpeg (太棒了😌)
@@ -287,8 +272,6 @@
 - 呃, 真的规范了吗...?
 
 ---
-
-## Major Updates
 
 ### 1. 🛠️ Enhanced `XAudioSave`
 - Changed the node's audio volume normalization and peak limiting processing to use FFmpeg (loudnorm filter) to improve compatibility with multi-channel audio (e.g., 5.1 and 7.1). The previously used dependency `pyloudnorm` is no longer needed. Now the project only requires installing `ffmpeg-python` as a dependency and having FFmpeg installed locally (Awesome 😌)
@@ -308,10 +291,8 @@
 
 ---
 
-<summary><strong>📜 v1.1.0</strong></summary>
+## 🎉 v1.1.0
 <details>
-
-## 主要更新
 
 - 本次更新节点功能没有变化
 
@@ -322,8 +303,6 @@
 - 放弃项目之前使用的节点自动注册方式改为更偏标准的节点注册方式 (尝试提高兼容性)
 
 ---
-
-## Major Updates
 
 - No changes to node functionality in this update
 
@@ -336,10 +315,8 @@
 
 ---
 
-<summary><strong>📜 v1.0.3</strong></summary>
+## 🎉 v1.0.3
 <details>
-
-## 主要更新
 
 ### 1. ⭐ 新增 `XAudioSave` (音频保存节点)
 - 无损 16位 WAV
@@ -358,8 +335,6 @@
 - FFmpeg对音频流不再转码而是改为直接复制接收到的音频流, 以兼容`XAudioSave`输出的高品质WAV音频合并到视频中
 
 ---
-
-## Major Updates
 
 ### 1. ⭐ Added `XAudioSave` (Audio Save Node)
 - Lossless 16-bit WAV
@@ -380,10 +355,8 @@
 
 ---
 
-<summary><strong>📜 v1.0.2</strong></summary>
+## 🎉 v1.0.2
 <details>
-
-## 主要更新
 
 ### 1. ⭐ 新增 `XStringGroup` (字符串组合节点)
 - 5个多行字符串输入框
@@ -391,8 +364,6 @@
 - 提供字符串的多种输出端口 (带自定义分隔的全部字符串, 选择的字符串, 单独的1-5字符串)
 
 ---
-
-## Major Updates
 
 ### 1. ⭐ Added `XStringGroup` (String Group Node)
 - 5 multi-line string input fields
