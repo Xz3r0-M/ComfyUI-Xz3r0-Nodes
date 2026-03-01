@@ -19,6 +19,7 @@ class XResolution:
         - 验证分辨率合法性（最小 1×1）
         - 支持标准分辨率预设
         - 支持分辨率整除调整（可被指定整数整除）
+        - 支持分辨率偏移调整（适配特殊模型要求）
 
     输入:
         preset: 标准分辨率预设 (STRING)
@@ -27,7 +28,12 @@ class XResolution:
         scale: 缩放倍率 (FLOAT)
         swap: 是否互换宽高 (BOOLEAN)
         divisible: 整除数 (INT)
-        divisible_mode: 取整方式 (STRING: "Disabled", "Nearest", "Up", "Down")
+            使分辨率可被该数整除（设置为 1 时禁用，常用值：8、16、32、64）
+        divisible_mode: 整除模式 (STRING: "Disabled", "Nearest", "Up", "Down")
+        width_offset: 宽度偏移 (INT, 范围 -128 到 128)
+            在最终分辨率上添加的偏移值（正数=增加，负数=减少）
+        height_offset: 高度偏移 (INT, 范围 -128 到 128)
+            在最终分辨率上添加的偏移值（正数=增加，负数=减少）
 
     输出:
         width: 输出宽度
@@ -48,6 +54,12 @@ class XResolution:
 
         preset="1920×1080 (16:9)", divisible=16, divisible_mode="Disabled"
         输出：width=1920, height=1080 (禁用整除调整)
+
+        preset="1920×1080 (16:9)", width_offset=1, height_offset=1
+        输出：width=1921, height=1081 (1920x1080 + 偏移)
+
+        preset="1024×1024 (1:1)", width_offset=-1, height_offset=-1
+        输出：width=1023, height=1023 (1024x1024 - 偏移)
     """
 
     PRESETS = {
@@ -133,6 +145,15 @@ class XResolution:
                     "BOOLEAN",
                     {"default": False, "tooltip": "Swap width and height"},
                 ),
+                "divisible_mode": (
+                    ["Disabled", "Nearest", "Up", "Down"],
+                    {
+                        "default": "Disabled",
+                        "tooltip": "How to adjust resolution to be divisible: "
+                        "Disabled=no adjustment, Nearest=round to nearest "
+                        "multiple, Up=round up, Down=round down",
+                    },
+                ),
                 "divisible": (
                     "INT",
                     {
@@ -141,14 +162,32 @@ class XResolution:
                         "max": 128,
                         "step": 1,
                         "display": "number",
-                        "tooltip": "Make resolution divisible by this number",
+                        "tooltip": "Make resolution divisible by this number "
+                        "(set to 1 to disable, common values: 8, 16, 32, 64)",
                     },
                 ),
-                "divisible_mode": (
-                    ["Disabled", "Nearest", "Up", "Down"],
+                "width_offset": (
+                    "INT",
                     {
-                        "default": "Disabled",
-                        "tooltip": "Rounding mode for divisible adjustment",
+                        "default": 0,
+                        "min": -128,
+                        "max": 128,
+                        "step": 1,
+                        "display": "number",
+                        "tooltip": "Add offset to output width "
+                        "(positive=increase, negative=decrease)",
+                    },
+                ),
+                "height_offset": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": -128,
+                        "max": 128,
+                        "step": 1,
+                        "display": "number",
+                        "tooltip": "Add offset to output height "
+                        "(positive=increase, negative=decrease)",
                     },
                 ),
             }
@@ -172,9 +211,19 @@ class XResolution:
         swap: bool,
         divisible: int,
         divisible_mode: str,
+        width_offset: int,
+        height_offset: int,
     ) -> tuple[int, int]:
         """
         处理分辨率设置
+
+        处理流程:
+            1. 应用预设分辨率
+            2. 应用倍率缩放
+            3. 应用宽高互换
+            4. 应用整除调整
+            5. 应用分辨率偏移
+            6. 确保最小尺寸
 
         Args:
             width: 输入宽度
@@ -183,7 +232,11 @@ class XResolution:
             scale: 缩放倍率
             swap: 是否互换宽高
             divisible: 使分辨率可被该数整除
-            divisible_mode: 取整方式 (Nearest/Up/Down)
+            divisible_mode: 整除模式 (Nearest/Up/Down)
+            width_offset: 宽度偏移值，范围 -128 到 128
+                在最终分辨率上添加的偏移值（正数=增加，负数=减少，0=禁用）
+            height_offset: 高度偏移值，范围 -128 到 128
+                在最终分辨率上添加的偏移值（正数=增加，负数=减少，0=禁用）
 
         Returns:
             (output_width, output_height): 处理后的宽度和高度
@@ -217,6 +270,14 @@ class XResolution:
                 output_height, divisible, divisible_mode
             )
 
+        # 应用分辨率偏移
+        output_width = output_width + width_offset
+        output_height = output_height + height_offset
+
+        # 确保最小尺寸
+        output_width = max(output_width, 1)
+        output_height = max(output_height, 1)
+
         return (output_width, output_height)
 
     @staticmethod
@@ -227,7 +288,7 @@ class XResolution:
         Args:
             value: 原始数值
             divisor: 除数
-            mode: 取整方式 ("Nearest", "Up", "Down")
+            mode: 整除模式 ("Nearest", "Up", "Down")
 
         Returns:
             调整后的数值

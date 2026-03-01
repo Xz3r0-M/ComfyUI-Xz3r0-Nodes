@@ -387,45 +387,63 @@ class XImageSave:
 
     def _tensor_to_pil(self, tensor: torch.Tensor) -> Image.Image:
         """
-        将张量转换为PIL图像
+        将张量转换为 PIL 图像
 
         Args:
             tensor: 图像张量 (H, W, C) 或 (B, H, W, C)
 
         Returns:
-            PIL图像对象
+            PIL 图像对象
+
+        Raises:
+            ValueError: 当张量维度或通道数不支持时
         """
-        # 确保张量在CPU上
+        # 确保张量在 CPU 上
         tensor = tensor.cpu()
 
-        # 处理批次维度：如果是4D张量，取第一个图像
+        # 处理批次维度：如果是 4D 张量，提取第一个图像
         if tensor.dim() == 4:
+            if tensor.shape[0] != 1:
+                raise ValueError(
+                    f"Expected batch size 1 for 4D tensor, "
+                    f"got {tensor.shape[0]}"
+                )
             tensor = tensor[0]
-
-        # 转换为numpy数组并移除多余维度（使用squeeze）
-        if tensor.dim() == 3:
-            numpy_array = tensor.numpy()
-        else:
+        elif tensor.dim() != 3:
             raise ValueError(
-                "Unsupported tensor dimension, expected 3 or 4 dimensions"
+                f"Expected 3D (H,W,C) or 4D (1,H,W,C) tensor, "
+                f"got {tensor.dim()}D tensor"
             )
 
-        # 转换值范围从[0, 1]到[0, 255]，并确保值在有效范围内
+        # 验证通道数
+        channels = tensor.shape[2]
+        if channels not in (1, 3, 4):
+            raise ValueError(
+                f"Expected image channels to be 1 (grayscale), "
+                f"3 (RGB), or 4 (RGBA), got {channels} channels"
+            )
+
+        # 确保张量是连续的
+        if not tensor.is_contiguous():
+            tensor = tensor.contiguous()
+
+        # 转换为 numpy 数组
+        numpy_array = tensor.numpy()
+
+        # 转换值范围从 [0, 1] 到 [0, 255]，并确保值在有效范围内
         numpy_array = np.clip(255.0 * numpy_array, 0, 255).astype(np.uint8)
 
-        # 创建PIL图像
-        if numpy_array.shape[2] == 4:
+        # 创建 PIL 图像
+        if channels == 4:
             # RGBA
             mode = "RGBA"
-        elif numpy_array.shape[2] == 3:
+        elif channels == 3:
             # RGB
             mode = "RGB"
-        elif numpy_array.shape[2] == 1:
+        else:  # channels == 1
             # 灰度图
             mode = "L"
             numpy_array = numpy_array.squeeze(2)
-        else:
-            raise ValueError("Unsupported channel count")
 
         pil_image = Image.fromarray(numpy_array, mode=mode)
 
