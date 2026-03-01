@@ -59,7 +59,7 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "Resolution setting node with standard presets and custom scaling.",
+    "description": "Resolution setting node with standard presets, custom scaling, and divisible adjustment.",
     "inputs": {
       "preset": {
         "name": "Preset",
@@ -80,16 +80,30 @@
       "swap": {
         "name": "Swap",
         "tooltip": "Swap width and height"
+      },
+      "divisible": {
+        "name": "Divisible By",
+        "tooltip": "Make resolution divisible by this number (set to 1 to disable)"
+      },
+      "divisible_mode": {
+        "name": "Rounding Mode",
+        "tooltip": "Select rounding method: Disabled=no adjustment, Nearest=round to nearest multiple, Up=round up, Down=round down",
+        "options": {
+          "Disabled": "Disable divisible adjustment",
+          "Nearest": "Round to nearest multiple (down if remainder≤divisor/2, else up)",
+          "Up": "Round up to next multiple",
+          "Down": "Round down to previous multiple"
+        }
       }
     },
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output resolution width (after preset, scaling, and swap)"
+        "tooltip": "Output resolution width (after preset, scaling, swap, and divisible adjustment)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output resolution height (after preset, scaling, and swap)"
+        "tooltip": "Output resolution height (after preset, scaling, swap, and divisible adjustment)"
       }
     }
   },

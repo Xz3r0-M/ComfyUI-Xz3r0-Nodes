@@ -127,24 +127,48 @@ pip install -r requirements.txt
 ### 📐 XResolution
 `♾️ Xz3r0/Workflow-Processing`
 
-分辨率设置节点，提供标准分辨率预设和自定义功能
+分辨率设置节点，提供标准分辨率预设、自定义缩放和整除调整功能
 
 **功能**:
-- 标准分辨率预设 (16:9, 4:3, 1:1, 16:10, 21:9等)
+- 标准分辨率预设 (16:9, 4:3, 1:1, 16:10, 21:9 等)
 - 倍率缩放功能
 - 宽高互换功能
-- 参数验证 (最小1×1)
+- **整除调整功能** - 使分辨率可被指定整数整除
+- 参数验证 (最小 1×1)
 
 **输入**:
 - `preset` (下拉选择): 预设分辨率
 - `width` (INT): 自定义宽度
 - `height` (INT): 自定义高度
 - `scale` (FLOAT): 缩放倍率
-- `swap_dimensions` (BOOLEAN): 是否交换宽高
+- `swap` (BOOLEAN): 是否交换宽高
+- `divisible` (INT): 整除数 (默认：1，范围 1-128)
+- `divisible_mode` (下拉选择): 取整方式 (默认：Disabled，可选：Disabled, Nearest, Up, Down)
+
+**取整方式说明**:
+- `Disabled` - 禁用整除调整功能 (默认)
+- `Nearest` - 取最接近的倍数 (余数≤除数/2 时向下，否则向上)
+- `Up` - 向上取整到下一个倍数
+- `Down` - 向下取整到上一个倍数
 
 **输出**:
 - `width` (INT): 最终宽度
 - `height` (INT): 最终高度
+
+**使用示例**:
+```
+# 示例 1: 基础使用
+preset="1920×1080 (16:9)", scale=1, swap=False
+输出：width=1920, height=1080
+
+# 示例 2: 启用整除调整 (向上取整到 16 的倍数)
+preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up"
+输出：width=1920, height=1088 (1080→1088)
+
+# 示例 3: 禁用整除调整
+preset="1920×1080 (16:9)", divisible=16, divisible_mode="Disabled"
+输出：width=1920, height=1080 (保持原样)
+```
 
 </details>
 

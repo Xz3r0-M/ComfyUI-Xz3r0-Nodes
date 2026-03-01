@@ -16,8 +16,9 @@ class XResolution:
         - 设置宽度和高度
         - 支持倍率缩放（同时缩放宽和高）
         - 支持宽高互换
-        - 验证分辨率合法性（最小1×1）
+        - 验证分辨率合法性（最小 1×1）
         - 支持标准分辨率预设
+        - 支持分辨率整除调整（可被指定整数整除）
 
     输入:
         preset: 标准分辨率预设 (STRING)
@@ -25,6 +26,8 @@ class XResolution:
         height: 高度 (INT)
         scale: 缩放倍率 (FLOAT)
         swap: 是否互换宽高 (BOOLEAN)
+        divisible: 整除数 (INT)
+        divisible_mode: 取整方式 (STRING: "Disabled", "Nearest", "Up", "Down")
 
     输出:
         width: 输出宽度
@@ -32,13 +35,19 @@ class XResolution:
 
     使用示例:
         width=1280, height=720, scale=2, swap=False
-        输出: width=2560, height=1440
+        输出：width=2560, height=1440
 
         preset="1920×1080 (16:9)", scale=1, swap=False
-        输出: width=1920, height=1080
+        输出：width=1920, height=1080
 
         width=1280, height=720, scale=2, swap=True
-        输出: width=1440, height=2560
+        输出：width=1440, height=2560
+
+        preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up"
+        输出：width=1920, height=1088 (1080 向上取整到 16 的倍数)
+
+        preset="1920×1080 (16:9)", divisible=16, divisible_mode="Disabled"
+        输出：width=1920, height=1080 (禁用整除调整)
     """
 
     PRESETS = {
@@ -124,6 +133,24 @@ class XResolution:
                     "BOOLEAN",
                     {"default": False, "tooltip": "Swap width and height"},
                 ),
+                "divisible": (
+                    "INT",
+                    {
+                        "default": 16,
+                        "min": 1,
+                        "max": 128,
+                        "step": 1,
+                        "display": "number",
+                        "tooltip": "Make resolution divisible by this number",
+                    },
+                ),
+                "divisible_mode": (
+                    ["Disabled", "Nearest", "Up", "Down"],
+                    {
+                        "default": "Disabled",
+                        "tooltip": "Rounding mode for divisible adjustment",
+                    },
+                ),
             }
         }
 
@@ -137,7 +164,14 @@ class XResolution:
     CATEGORY = "♾️ Xz3r0/Workflow-Processing"
 
     def process(
-        self, width: int, height: int, preset: str, scale: float, swap: bool
+        self,
+        width: int,
+        height: int,
+        preset: str,
+        scale: float,
+        swap: bool,
+        divisible: int,
+        divisible_mode: str,
     ) -> tuple[int, int]:
         """
         处理分辨率设置
@@ -148,6 +182,8 @@ class XResolution:
             preset: 标准分辨率预设
             scale: 缩放倍率
             swap: 是否互换宽高
+            divisible: 使分辨率可被该数整除
+            divisible_mode: 取整方式 (Nearest/Up/Down)
 
         Returns:
             (output_width, output_height): 处理后的宽度和高度
@@ -172,7 +208,50 @@ class XResolution:
         if swap:
             output_width, output_height = output_height, output_width
 
+        # 应用整除调整
+        if divisible_mode != "Disabled" and divisible > 1:
+            output_width = self._make_divisible(
+                output_width, divisible, divisible_mode
+            )
+            output_height = self._make_divisible(
+                output_height, divisible, divisible_mode
+            )
+
         return (output_width, output_height)
+
+    @staticmethod
+    def _make_divisible(value: int, divisor: int, mode: str = "Up") -> int:
+        """
+        调整数值使其可被除数整除
+
+        Args:
+            value: 原始数值
+            divisor: 除数
+            mode: 取整方式 ("Nearest", "Up", "Down")
+
+        Returns:
+            调整后的数值
+        """
+        if divisor <= 1:
+            return value
+
+        remainder = value % divisor
+
+        if remainder == 0:
+            return value
+
+        if mode == "Down":
+            # 向下取整
+            return value - remainder
+        elif mode == "Up":
+            # 向上取整
+            return value + (divisor - remainder)
+        else:  # Nearest
+            # 最接近的倍数
+            if remainder <= divisor // 2:
+                return value - remainder
+            else:
+                return value + (divisor - remainder)
 
 
 NODE_CLASS_MAPPINGS = {
