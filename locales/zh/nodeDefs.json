@@ -119,7 +119,7 @@
     "display_name": "XImageResize",
     "description": "全自动图像缩放节点，智能识别横屏/竖屏/正方形，支持多种插值算法，按长边或短边等比缩放。",
     "inputs": {
-      "images": {
+      "IMAGE": {
         "name": "图像",
         "tooltip": "输入图像"
       },

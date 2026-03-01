@@ -147,7 +147,7 @@ class XImageResize:
         """定义节点的输入类型和约束"""
         return {
             "required": {
-                "images": (
+                "IMAGE": (
                     "IMAGE",
                     {"tooltip": "Input image"},
                 ),
@@ -275,7 +275,7 @@ class XImageResize:
 
     def process(
         self,
-        images: torch.Tensor,
+        IMAGE: torch.Tensor,
         scale_mode: str,
         edge_mode: str,
         target_edge: int,
@@ -312,6 +312,7 @@ class XImageResize:
                 H: 图像高度
                 W: 图像宽度
                 C: 通道数（通常为 3 或 4）
+            IMAGE: 输入图像张量
             scale_mode: 插值模式
                 "Nearest-exact": 精确最近邻插值
                 "Bilinear": 双线性插值
@@ -361,11 +362,11 @@ class XImageResize:
             - 百万像素模式直接计算目标尺寸，效率更高
             - 边长模式的百万像素保护在缩放后检查，避免不必要的计算
         """
-        if images is None or len(images) == 0:
+        if IMAGE is None or len(IMAGE) == 0:
             raise ValueError("Input images cannot be empty")
 
         # 创建进度条
-        progress_bar = comfy.utils.ProgressBar(len(images))
+        progress_bar = comfy.utils.ProgressBar(len(IMAGE))
 
         # 预计算不变的参数（优化循环性能）
         max_pixels_limit = (
@@ -376,7 +377,7 @@ class XImageResize:
         output_width = 0
         output_height = 0
 
-        for i, image in enumerate(images):
+        for i, image in enumerate(IMAGE):
             # 处理维度：确保是 (H, W, C)
             if image.dim() == 4:
                 # 4D 张量 (1, H, W, C)，提取第一个

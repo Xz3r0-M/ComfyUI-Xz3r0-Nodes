@@ -119,8 +119,8 @@
     "display_name": "XImageResize",
     "description": "Fully automatic image scaling node with intelligent landscape/portrait/square detection, multiple interpolation methods, and aspect ratio preservation.",
     "inputs": {
-      "images": {
-        "name": "Images",
+      "IMAGE": {
+        "name": "IMAGE",
         "tooltip": "Input image"
       },
       "scale_mode": {
@@ -181,8 +181,8 @@
     },
     "outputs": {
       "0": {
-        "name": "Images",
-        "tooltip": "Scaled images"
+        "name": "IMAGE",
+        "tooltip": "Scaled image"
       },
       "1": {
         "name": "width",
