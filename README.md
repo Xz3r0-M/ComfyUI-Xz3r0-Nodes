@@ -27,11 +27,11 @@ ComfyUI-Xz3r0-Nodes 是一个ComfyUI自定义节点项目，当前主要目标�
 
 ### ✨ 项目节点和工具数量
 
-🎁 自定义节点 （数量总计：`10`）
+🎁 自定义节点 （数量总计：`11`）
 
 - 🛠️ 工具节点 - 数学运算、分辨率设置
 - 📝 数据类节点 - 字符串组合 (支持多行输入和分隔方式)、日期时间标识符字符串
-- 🖼️ 图像处理 - 图像保存 (支持自定义文件名和子文件夹)
+- 🖼️ 图像处理 - 图像缩放 (保持宽高比的多种缩放模式)、图像保存 (支持自定义文件名和子文件夹)
 - 🎬 视频处理 - 视频保存 (H.265编码，自定义质量和速度预设，音频支持)
 - 🎵 音频处理 - 音频保存 (WAV无损格式，LUFS标准化，峰值限制)
 - 🔮 Latent处理 - Latent加载和保存 (支持元数据)
@@ -127,24 +127,67 @@ pip install -r requirements.txt
 ### 📐 XResolution
 `♾️ Xz3r0/Workflow-Processing`
 
-分辨率设置节点，提供标准分辨率预设和自定义功能
+分辨率设置节点，提供标准分辨率预设、自定义缩放和整除调整功能
 
 **功能**:
-- 标准分辨率预设 (16:9, 4:3, 1:1, 16:10, 21:9等)
+- 标准分辨率预设 (16:9, 4:3, 1:1, 16:10, 21:9 等)
 - 倍率缩放功能
 - 宽高互换功能
-- 参数验证 (最小1×1)
+- **整除调整功能** - 使分辨率可被指定整数整除（常用值：8、16、32、64）
+- **分辨率偏移功能** - 在最终分辨率上添加偏移值（范围：-128 到 128）
+- 参数验证 (最小 1×1)
 
 **输入**:
 - `preset` (下拉选择): 预设分辨率
 - `width` (INT): 自定义宽度
 - `height` (INT): 自定义高度
 - `scale` (FLOAT): 缩放倍率
-- `swap_dimensions` (BOOLEAN): 是否交换宽高
+- `swap` (BOOLEAN): 是否交换宽高
+- `divisible` (INT): 整除数（默认：16，范围 1-128）
+- `divisible_mode` (下拉选择): 取整方式（默认：Disabled）
+  - `Disabled`: 禁用整除调整
+  - `Nearest`: 取最接近的倍数
+  - `Up`: 向上取整
+  - `Down`: 向下取整
+- `width_offset` (INT): 宽度偏移（默认：0，范围 -128 到 128）
+- `height_offset` (INT): 高度偏移（默认：0，范围 -128 到 128）
+
+**取整方式说明**:
+- `Disabled` - 禁用整除调整功能（默认）
+- `Nearest` - 取最接近的倍数（余数≤除数/2 时向下，否则向上）
+- `Up` - 向上取整到下一个倍数
+- `Down` - 向下取整到上一个倍数
 
 **输出**:
 - `width` (INT): 最终宽度
 - `height` (INT): 最终高度
+
+**使用示例**:
+```
+# 示例 1: 基础使用
+preset="1920×1080 (16:9)", scale=1, swap=False
+输出：width=1920, height=1080
+
+# 示例 2: 启用整除调整（向上取整到 16 的倍数）
+preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up"
+输出：width=1920, height=1088 (1080→1088)
+
+# 示例 3: 禁用整除调整
+preset="1920×1080 (16:9)", divisible=16, divisible_mode="Disabled"
+输出：width=1920, height=1080 (保持原样)
+
+# 示例 4: 带分辨率偏移（+1）
+preset="1920×1080 (16:9)", width_offset=1, height_offset=1
+输出：width=1921, height=1081
+
+# 示例 5: 带分辨率偏移（-1）
+preset="1024×1024 (1:1)", width_offset=-1, height_offset=-1
+输出：width=1023, height=1023
+
+# 示例 6: 整除调整 + 分辨率偏移
+preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, height_offset=1
+输出：width=1921, height=1089 (1920x1088 + 偏移)
+```
 
 </details>
 
@@ -245,6 +288,102 @@ suffix="_v1"
 
 <details>
 <summary>🖼️ 图像节点 👈</summary>
+
+### 🔎 XImageResize
+`♾️ Xz3r0/File-Processing`
+
+全自动图像缩放节点，支持智能图像缩放功能
+
+**功能**:
+- 自动识别横屏/竖屏/正方形
+- 按长边或短边缩放（可切换）
+- 按百万像素缩放（精确控制输出像素数）
+- 保持原始宽高比，永不变形
+- 支持百万像素上限保护（防止显存溢出）
+- **整除调整功能** - 使分辨率可被指定整数整除
+- **分辨率偏移功能** - 在最终分辨率上添加偏移值
+- 支持批量图像处理（图片序列）
+- 带进度条显示
+- 支持多种插值算法（双线性/双三次/最近邻/区域/Lanczos）
+
+**输入**:
+- `images` (IMAGE): 输入图像张量
+- `scale_mode` (下拉选择): 插值算法
+  - `Nearest-exact`: 精确最近邻插值（速度最快）
+  - `Bilinear`: 双线性插值（速度快，质量中等）
+  - `Area`: 区域插值（适合缩小，质量好）
+  - `Bicubic`: 双三次插值（速度中等，质量高）
+  - `Lanczos`: Lanczos 插值（速度较慢，质量最高）
+- `edge_mode` (下拉选择): 缩放基准
+  - `Long`: 以长边为基准（横屏的宽，竖屏的高）
+  - `Short`: 以短边为基准（横屏的高，竖屏的宽）
+  - `Megapixels`: 以百万像素为基准（忽略 目标边长 `target_edge`）
+  - `Scale Multiplier`: 以缩放倍率为基准（忽略 目标边长 `target_edge`）
+- `target_edge` (INT): 目标边长（范围 64-8192）
+- `megapixels` (FLOAT): 百万像素数（范围 0.1-100）
+- `scale_multiplier` (FLOAT): 缩放倍率（范围 0.1-10）
+- `divisible` (INT): 整除数（默认：16，范围 1-128）
+- `divisible_mode` (下拉选择): 取整方式（默认：Disabled）
+  - `Disabled`: 禁用整除调整
+  - `Nearest`: 取最接近的倍数
+  - `Up`: 向上取整
+  - `Down`: 向下取整
+- `width_offset` (INT): 宽度偏移（范围 -128 到 128）
+- `height_offset` (INT): 高度偏移（范围 -128 到 128）
+
+**输出**:
+- `IMAGE` (IMAGE): 缩放后的图像
+- `width` (INT): 输出分辨率宽度
+- `height` (INT): 输出分辨率高度
+
+**使用示例**:
+```
+# 示例 1: 横屏图片按长边缩放
+输入：1920x1080, edge_mode="Long", target_edge=1280
+输出：1280x720
+
+# 示例 2: 竖屏图片按长边缩放
+输入：1080x1920, edge_mode="Long", target_edge=1280
+输出：720x1280
+
+# 示例 3: 按短边缩放
+输入：1920x1080, edge_mode="Short", target_edge=720
+输出：1280x720
+
+# 示例 4: 百万像素模式（精确控制）
+输入：1920x1080 (2.07MP), edge_mode="Megapixels", megapixels=1.0
+输出：1334x750 (1.0MP)
+
+# 示例 5: 边长模式 + 百万像素保护
+输入：4000x3000, edge_mode="Long", target_edge=1280, megapixels=0.5
+输出：894x671 (0.6MP → 触发保护，缩小到 0.5MP)
+
+# 示例 6: 带整除调整
+输入：1920x1080, target_edge=1280, divisible=16, divisible_mode="Up"
+输出：1280x720
+
+# 示例 7: 带分辨率偏移（+1）
+输入：1920x1080, target_edge=1280, width_offset=1, height_offset=1
+输出：1281x721
+
+# 示例 8: 倍率模式（放大 2 倍）
+输入：1024x1024, edge_mode="Scale Multiplier", scale_multiplier=2.0
+输出：2048x2048
+```
+
+**注意事项**:
+- 节点自动保持原始宽高比，不会导致图像变形
+- `edge_mode="Megapixels"` 或 `"Scale Multiplier"` 时 `target_edge` 参数被忽略
+- `edge_mode="Long/Short"` 时，`megapixels` 作为上限保护（0=禁用）
+- `edge_mode="Scale Multiplier"` 时，使用 `scale_multiplier` 作为缩放倍率
+- 整除调整在百万像素保护之后应用
+- 分辨率偏移在整除调整之后应用
+- 批量处理时，所有图片使用相同的输出尺寸（基于最后一张）
+- `edge_mode="Megapixels"` 时必须设置 `megapixels > 0`
+- `edge_mode="Scale Multiplier"` 时必须设置 `scale_multiplier > 0`
+- 偏移值范围：-128 到 128，确保最终分辨率≥1
+
+---
 
 ### 💾 XImageSave
 `♾️ Xz3r0/File-Processing`
@@ -640,14 +779,15 @@ ComfyUI-Xz3r0-Nodes/
 │   ├── __init__.py
 │   ├── xmath.py         # 数学运算节点
 │   ├── xresolution.py   # 分辨率设置节点
+│   ├── ximageresize.py  # 图像缩放节点
 │   ├── xdatetimestring.py     # 日期时间字符串节点
 │   ├── ximagesave.py    # 图像保存节点
 │   ├── xvideosave.py    # 视频保存节点
 │   ├── xaudiosave.py    # 音频保存节点
-│   ├── xlatentload.py   # Latent加载节点
-│   ├── xlatentsave.py   # Latent保存节点
+│   ├── xlatentload.py   # Latent 加载节点
+│   ├── xlatentsave.py   # Latent 保存节点
 │   ├── xstringgroup.py  # 字符串组合节点
-│   ├── xworkflowsave_api.py  # 工作流保存节点API
+│   ├── xworkflowsave_api.py  # 工作流保存节点 API
 │   └── xworkflowsave.py # 工作流保存节点
 ├── web/                 # 网页扩展目录
 │   ├── XFitView.js   # ComfyUI网页界面自动适应视图扩展

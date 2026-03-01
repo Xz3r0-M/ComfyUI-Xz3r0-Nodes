@@ -22,6 +22,12 @@ from .xnode.xdatetimestring import NODE_CLASS_MAPPINGS as XDATETIMESTRING_CM
 from .xnode.xdatetimestring import (
     NODE_DISPLAY_NAME_MAPPINGS as XDATETIMESTRING_DNM,
 )
+from .xnode.ximageresize import (
+    NODE_CLASS_MAPPINGS as XIMAGERESIZE_CM,
+)
+from .xnode.ximageresize import (
+    NODE_DISPLAY_NAME_MAPPINGS as XIMAGERESIZE_DNM,
+)
 from .xnode.ximagesave import NODE_CLASS_MAPPINGS as XIMAGESAVE_CM
 from .xnode.ximagesave import NODE_DISPLAY_NAME_MAPPINGS as XIMAGESAVE_DNM
 from .xnode.xlatentload import NODE_CLASS_MAPPINGS as XLATENTLOAD_CM

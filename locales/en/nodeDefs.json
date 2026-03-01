@@ -59,7 +59,7 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "Resolution setting node with standard presets and custom scaling.",
+    "description": "Resolution setting node with standard presets, custom scaling, and divisible adjustment.",
     "inputs": {
       "preset": {
         "name": "Preset",
@@ -80,16 +80,117 @@
       "swap": {
         "name": "Swap",
         "tooltip": "Swap width and height"
+      },
+      "divisible_mode": {
+        "name": "Divisible Mode",
+        "tooltip": "How to adjust resolution to be divisible: Disabled=no adjustment, Nearest=round to nearest multiple, Up=round up, Down=round down",
+        "options": {
+          "Disabled": "Disable divisible adjustment",
+          "Nearest": "Round to nearest multiple (down if remainder≤divisor/2, else up)",
+          "Up": "Round up to next multiple",
+          "Down": "Round down to previous multiple"
+        }
+      },
+      "divisible": {
+        "name": "Divisible By",
+        "tooltip": "Make resolution divisible by this number (set to 1 to disable, common values: 8, 16, 32, 64)"
+      },
+      "width_offset": {
+        "name": "Width Offset",
+        "tooltip": "Add offset to output width (positive=increase, negative=decrease, default=0)"
+      },
+      "height_offset": {
+        "name": "Height Offset",
+        "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
       }
     },
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output resolution width (after preset, scaling, and swap)"
+        "tooltip": "Output resolution width (after preset, scaling, swap, and divisible adjustment)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output resolution height (after preset, scaling, and swap)"
+        "tooltip": "Output resolution height (after preset, scaling, swap, and divisible adjustment)"
+      }
+    }
+  },
+  "XImageResize": {
+    "display_name": "XImageResize",
+    "description": "Fully automatic image scaling node with intelligent landscape/portrait/square detection, multiple interpolation methods, and aspect ratio preservation.",
+    "inputs": {
+      "images": {
+        "name": "Images",
+        "tooltip": "Input image"
+      },
+      "scale_mode": {
+        "name": "Interpolation",
+        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality",
+        "options": {
+          "Nearest-exact": "Nearest Exact (fastest, pixel-perfect, ideal for pixel art)",
+          "Bilinear": "Bilinear (fast, medium quality, general purpose)",
+          "Area": "Area (best for downsampling, preserves details)",
+          "Bicubic": "Bicubic (medium speed, high quality, good for upscaling)",
+          "Lanczos": "Lanczos (slow, highest quality, professional use)"
+        }
+      },
+      "edge_mode": {
+        "name": "Scale Mode",
+        "tooltip": "Select scaling mode: Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
+        "options": {
+          "Long": "Long Edge (width for landscape, height for portrait)",
+          "Short": "Short Edge (height for landscape, width for portrait)",
+          "Megapixels": "Megapixels (scale to exact pixel count)",
+          "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
+        }
+      },
+      "target_edge": {
+        "name": "Target Edge",
+        "tooltip": "Target edge length in pixels (ignored in megapixels mode)"
+      },
+      "megapixels": {
+        "name": "Megapixels",
+        "tooltip": "Edge mode=upper limit (0=disabled), Megapixels mode=target (must be >0)"
+      },
+      "scale_multiplier": {
+        "name": "Scale Multiplier",
+        "tooltip": "Scale multiplier (only used in Scale Multiplier mode, range: 0.1-10.0)"
+      },
+      "divisible_mode": {
+        "name": "Divisible Mode",
+        "tooltip": "How to adjust resolution to be divisible: Disabled=no adjustment, Nearest=round to nearest multiple, Up=round up, Down=round down",
+        "options": {
+          "Disabled": "Disable divisible adjustment",
+          "Nearest": "Round to nearest multiple (down if remainder≤divisor/2, else up)",
+          "Up": "Round up to next multiple",
+          "Down": "Round down to previous multiple"
+        }
+      },
+      "divisible": {
+        "name": "Divisible By",
+        "tooltip": "Make resolution divisible by this number (set to 1 to disable, common values: 8, 16, 32, 64)"
+      },
+      "width_offset": {
+        "name": "Width Offset",
+        "tooltip": "Add offset to output width (positive=increase, negative=decrease, default=0)"
+      },
+      "height_offset": {
+        "name": "Height Offset",
+        "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Images",
+        "tooltip": "Scaled images"
+      },
+      "1": {
+        "name": "width",
+        "tooltip": "Output resolution width"
+      },
+      "2": {
+        "name": "height",
+        "tooltip": "Output resolution height"
       }
     }
   },

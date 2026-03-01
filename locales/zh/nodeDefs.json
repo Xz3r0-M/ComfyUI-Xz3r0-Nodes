@@ -59,7 +59,7 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "分辨率设置节点，提供标准预设和自定义缩放功能。",
+    "description": "分辨率设置节点，提供标准预设、自定义缩放和取整功能。",
     "inputs": {
       "preset": {
         "name": "分辨率预设",
@@ -80,16 +80,117 @@
       "swap": {
         "name": "交换宽高",
         "tooltip": "交换宽度和高度"
+      },
+      "divisible_mode": {
+        "name": "整除模式",
+        "tooltip": "如何调整分辨率使其可被整除：Disabled=不调整，Nearest=取最近的倍数，Up=向上取整，Down=向下取整",
+        "options": {
+          "Disabled": "禁用整除调整功能",
+          "Nearest": "取最接近的倍数 (余数≤除数/2 时向下，否则向上)",
+          "Up": "向上取整到下一个倍数",
+          "Down": "向下取整到上一个倍数"
+        }
+      },
+      "divisible": {
+        "name": "整除数",
+        "tooltip": "使分辨率可被该数整除（设置为 1 时禁用，常用值：8、16、32、64）"
+      },
+      "width_offset": {
+        "name": "宽度偏移",
+        "tooltip": "在输出宽度上添加偏移值（正数=增加，负数=减少，默认=0）"
+      },
+      "height_offset": {
+        "name": "高度偏移",
+        "tooltip": "在输出高度上添加偏移值（正数=增加，负数=减少，默认=0）"
       }
     },
     "outputs": {
       "0": {
         "name": "宽度",
-        "tooltip": "输出分辨率宽度（在预设、缩放和交换后）"
+        "tooltip": "输出分辨率宽度（在预设、缩放、交换和取整后）"
       },
       "1": {
         "name": "高度",
-        "tooltip": "输出分辨率高度（在预设、缩放和交换后）"
+        "tooltip": "输出分辨率高度（在预设、缩放、交换和取整后）"
+      }
+    }
+  },
+  "XImageResize": {
+    "display_name": "XImageResize",
+    "description": "全自动图像缩放节点，智能识别横屏/竖屏/正方形，支持多种插值算法，按长边或短边等比缩放。",
+    "inputs": {
+      "images": {
+        "name": "图像",
+        "tooltip": "输入图像"
+      },
+      "scale_mode": {
+        "name": "插值算法",
+        "tooltip": "选择缩放图片的插值算法：Nearest-exact=最快，Bilinear=快&中等质量，Area=适合缩小，Bicubic=中等速度&高质量，Lanczos=慢&最高质量",
+        "options": {
+          "Nearest-exact": "精确最近邻（速度最快，像素级精确，适合像素艺术）",
+          "Bilinear": "双线性插值（速度快，质量中等，通用场景）",
+          "Area": "区域插值（适合缩小，保留细节）",
+          "Bicubic": "双三次插值（速度中等，质量高，适合放大）",
+          "Lanczos": "Lanczos 插值（速度慢，质量最高，专业场景）"
+        }
+      },
+      "edge_mode": {
+        "name": "缩放基准",
+        "tooltip": "选择缩放基准：Long=长边，Short=短边，Megapixels=百万像素，Scale Multiplier=缩放倍率",
+        "options": {
+          "Long": "长边（横屏的宽/竖屏的高）",
+          "Short": "短边（横屏的高/竖屏的宽）",
+          "Megapixels": "百万像素（按目标像素数精确缩放）",
+          "Scale Multiplier": "缩放倍率（按缩放倍率缩放，忽略目标边长）"
+        }
+      },
+      "target_edge": {
+        "name": "目标边长",
+        "tooltip": "目标边长值（长边或短边的目标像素数，百万像素模式下忽略）"
+      },
+      "megapixels": {
+        "name": "百万像素",
+        "tooltip": "边长模式=上限保护 (0=禁用)，百万像素模式=目标像素数 (必须>0)"
+      },
+      "scale_multiplier": {
+        "name": "缩放倍率",
+        "tooltip": "缩放倍率（仅在倍率模式下使用，范围：0.1-10.0）"
+      },
+      "divisible_mode": {
+        "name": "整除模式",
+        "tooltip": "如何调整分辨率使其可被整除：Disabled=不调整，Nearest=取最近的倍数，Up=向上取整，Down=向下取整",
+        "options": {
+          "Disabled": "禁用整除调整功能",
+          "Nearest": "取最接近的倍数 (余数≤除数/2 时向下，否则向上)",
+          "Up": "向上取整到下一个倍数",
+          "Down": "向下取整到上一个倍数"
+        }
+      },
+      "divisible": {
+        "name": "整除数",
+        "tooltip": "使分辨率可被该数整除（设置为 1 时禁用，常用值：8、16、32、64）"
+      },
+      "width_offset": {
+        "name": "宽度偏移",
+        "tooltip": "在输出宽度上添加偏移值（正数=增加，负数=减少，默认=0）"
+      },
+      "height_offset": {
+        "name": "高度偏移",
+        "tooltip": "在输出高度上添加偏移值（正数=增加，负数=减少，默认=0）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "缩放后的图像"
+      },
+      "1": {
+        "name": "宽度",
+        "tooltip": "输出分辨率宽度"
+      },
+      "2": {
+        "name": "高度",
+        "tooltip": "输出分辨率高度"
       }
     }
   },
@@ -103,15 +204,15 @@
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "文件名前缀，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "子文件夹名称 (不支持路径分隔符)，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "compression_level": {
         "name": "压缩级别",
-        "tooltip": "PNG压缩级别(0=无压缩，9=最大压缩)"
+        "tooltip": "PNG 压缩级别 (0=无压缩，9=最大压缩)"
       }
     },
     "outputs": {
@@ -121,7 +222,7 @@
       },
       "1": {
         "name": "保存路径",
-        "tooltip": "保存的文件路径（相对于ComfyUI输出目录）"
+        "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
       }
     }
   },

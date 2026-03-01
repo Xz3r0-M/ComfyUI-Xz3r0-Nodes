@@ -1,7 +1,78 @@
 # 更新日志 | Changelog
+
+
+## 🎉 v1.5.0
+<details>
+
+### 1. ⭐ 新增 `XImageResize` 图像缩放节点
+- 节点将在保持图像原始宽高比不变的情况下, 提供4种缩放基准模式进行图像缩放 (默认为: `Long` 长边)
+    - `edge_mode` (下拉选择): 缩放基准
+        - `Long`: 以长边为基准（横屏的宽，竖屏的高）
+        - `Short`: 以短边为基准（横屏的高，竖屏的宽）
+        - `Megapixels`: 以百万像素为基准（忽略 目标边长 `target_edge` ）
+        - `Scale Multiplier`: 以缩放倍率为基准（忽略 目标边长 `target_edge`）
+- 使用 `Long` 与 `Short` 长边/短边 模式时, 可设置百万像素值进行分辨率限制以保持图像不会超过目标百万像素值. 如果需要图像完全按照长/短边进行缩放, 记得保持设置百万像素目标值 `Megapixels` 为: `0.0`
+- 提供与 ComfyUI 官方节点相同的5种图像缩放的插值算法
+- 图像分辨率的整除限制功能, 以支持一些特殊模型对分辨率的整数要求
+    - `divisible_mode` (下拉选择): 取整方式（默认：`Disabled` ）
+        - `Disabled`: 禁用整除调整
+        - `Nearest`: 取最接近的倍数
+        - `Up`: 向上取整
+        - `Down`: 向下取整
+- 分辨率偏移功能, 可以对最终分辨率的 宽和高 分别进行额外的增减
+
+### 2. 🛠️ 增强 `XResolution` 节点
+- 分辨率的整除限制功能, 以支持一些特殊模型对分辨率的整数要求
+    - `divisible_mode` (下拉选择): 取整方式（默认：`Disabled` ）
+        - `Disabled`: 禁用整除调整
+        - `Nearest`: 取最接近的倍数
+        - `Up`: 向上取整
+        - `Down`: 向下取整
+- 分辨率偏移功能, 可以对最终分辨率的 宽和高 分别进行额外的增减
+
+
+`碎碎念`:
+    图像缩放节点其实在最开始新增分辨率节点的时候我就想要一起做了, 但是当时不知道什么原因我给忘了, 并且这段时间我都没有更新自己的图像相关的工作流, 所以直到现在我才想起来😅
+    呃...但我感觉还是有其他什么东西我也忘了没做🤔
+
 ---
 
-## v1.4.0 主要更新
+### 1. ⭐ Added `XImageResize` Image Resize Node
+- The node provides 4 scaling modes while maintaining the original aspect ratio of the image (default: `Long` long edge)
+    - `edge_mode` (dropdown): Scaling reference
+        - `Long`: Based on long edge (width for landscape, height for portrait)
+        - `Short`: Based on short edge (height for landscape, width for portrait)
+        - `Megapixels`: Based on megapixel count (ignores `target_edge`)
+        - `Scale Multiplier`: Based on scale multiplier (ignores `target_edge`)
+- When using `Long` or `Short` mode, you can set a megapixel value to limit the resolution to prevent the image from exceeding the target megapixel count. If you want the image to scale completely according to the long/short edge, remember to keep the `Megapixels` target value at: `0.0`
+- Provides the same 5 image scaling interpolation algorithms as ComfyUI official nodes
+- Image resolution divisibility constraint feature to support special models' integer requirements for resolution
+    - `divisible_mode` (dropdown): Rounding method (default: `Disabled`)
+        - `Disabled`: Disable divisibility adjustment
+        - `Nearest`: Round to nearest multiple
+        - `Up`: Round up
+        - `Down`: Round down
+- Resolution offset feature, allowing additional adjustments to the final width and height
+
+### 2. 🛠️ Enhanced `XResolution` Node
+- Image resolution divisibility constraint feature to support special models' integer requirements for resolution
+    - `divisible_mode` (dropdown): Rounding method (default: `Disabled`)
+        - `Disabled`: Disable divisibility adjustment
+        - `Nearest`: Round to nearest multiple
+        - `Up`: Round up
+        - `Down`: Round down
+- Resolution offset feature, allowing additional adjustments to the final width and height
+
+
+`mutter`:
+    Actually, I wanted to create the image resize node when I first added the resolution node, but for some reason I forgot about it. And I haven't been updating my image-related workflows during this period, so I only remembered it now😅
+    Uh... but I feel like there might be something else I forgot to do🤔
+</details>
+
+---
+
+## 🎉 v1.4.0
+<details>
 
 ### 1. ⭐ 新增 `XWorkflowSave_Extension` 网页扩展 (*XWorkflowSave_Extension.js*)
 - 从ComfyUI网页界面直接捕获完整工作流元数据
@@ -61,7 +132,7 @@
 - `XMetadataWorkflow` 网页工具对于使用自行创建前端界面的第三方自定义节点是不兼容的 (网页工具只会显示存在于元数据中的内容)
 - 从 `v1.3.0` 到 `v1.4.0` 新增的 (代码) 功能和节点以及工具我没有做完整测试, 代码很可能有问题, 但我需要缓一缓 (i need a doctor, call me a doctor😇)
 
-## v1.4.0 Major Updates
+---
 
 ### 1. ⭐ Added `XWorkflowSave_Extension` Web Extension (*XWorkflowSave_Extension.js*)
 - Captures complete workflow metadata directly from ComfyUI web interface
@@ -120,10 +191,12 @@
 ### Notes:
 - `XMetadataWorkflow` web tool is incompatible with third-party custom nodes that use their own frontend interfaces (the tool will only display content that exists in metadata)
 - New features, nodes, and tools added from `v1.3.0` to `v1.4.0` have not been fully tested, code may have issues, but I need a break (i need a doctor, call me a doctor😇)
+</details>
 
 ---
 
-## v1.3.0 主要更新
+## 🎉 v1.3.0
+<details>
 
 ### 1. ⭐ 新增 `XWorkflowSave` (工作流元数据 JSON 文件保存节点)
 - 将ComfyUI工作流元数据保存为JSON文件 (适配 `XMetadataWorkflow`)
@@ -133,7 +206,7 @@
 
 ### 2. ⭐ 新增 `XMetadataWorkflow` (简易的工作流元数据可视化查看工具)
 - 读取文件的 prompt 字段工作流元数据进行可视化查看数据, 可以在缺失节点或不使用ComfyUI的情况下更好的查看工作流中绝大部分节点的参数数据, 有一些节点和数据没有保存在 prompt 字段就不会显示
-- 支持加载多种文件格式: PNG图片, Latent文件 (`XLatentSave`), JSON工作流文件 (`XWorkflowSave` 生成的带有 prompt 字段的JSON)
+- 支持加载多种文件格式: PNG图像, Latent文件 (`XLatentSave`), JSON工作流文件 (`XWorkflowSave` 生成的带有 prompt 字段的JSON)
 - 在ComfyUI页面中点击顶部菜单栏的 ♾️ 按钮打开浮动窗口, 或使用浏览器打开`web\XMetadataWorkflow.html`独立使用
 - 中英双语
 - 暗黑和明亮界面
@@ -150,7 +223,7 @@
 - 提升工作流体验的节点现在归类在 `Workflow-Processing`
 - 处理文件的节点现在归类在 `File-Processing`
 
-## v1.3.0 Major Updates
+---
 
 ### 1. ⭐ Added `XWorkflowSave` (Workflow Metadata JSON File Save Node)
 - Saves ComfyUI workflow metadata as JSON files (compatible with `XMetadataWorkflow`)
@@ -176,10 +249,12 @@
 ### 5. 🪛 Changed categorization for all nodes
 - Nodes that enhance workflow experience are now categorized under `Workflow-Processing`
 - File processing nodes are now categorized under `File-Processing`
+</details>
 
 ---
 
-## v1.2.0 主要更新
+## 🎉 v1.2.0
+<details>
 
 ### 1. 🛠️ 增强 `XAudioSave`
 - 将节点原先的音频音量标准化和峰值限制处理方式转为使用 FFmpeg (loudnorm 滤镜), 以提高对多声道(比如5.1和7.1)音频的兼容性, 原先所使用的依赖 `pyloudnorm` 也不再需要了, 目前项目只需要安装 `ffmpeg-python` 这一个依赖以及在本机安装 FFmpeg (太棒了😌)
@@ -190,13 +265,13 @@
 - 新增自定义压缩器的压缩比和开关按钮, 当开启时自定义的压缩比值会替代压缩预设所使用的压缩比值
 - LUFS目标值改为: `-14.1`, 峰值限制目标值改为: `-1.1` （增加0.1是因为有些情况下loudnorm 滤镜处理后的音频会有偏差）
 
-    无关紧要的抱怨:
-        不再使用 `pyloudnorm` 是因为我测试发现对多声道音频会报错, 尝试修复无果所以换成了 FFmpeg, 但 FFmpeg 并不是没有问题的, 实际上 loudnorm 滤镜 本身对一些参数有 (莫名其妙的) 硬绑定, 导致无法完全符合我的 (传统音频插件处理流程) 想法, 来来回回好几天尝试不同方案和解决奇怪的BUG, 我在这个节点上花了1亿Tokens, 是的, 就是1亿, 谢谢你 FFmpeg🫠
+`碎碎念`:
+    不再使用 `pyloudnorm` 是因为我测试发现对多声道音频会报错, 尝试修复无果所以换成了 FFmpeg, 但 FFmpeg 并不是没有问题的, 实际上 loudnorm 滤镜 本身对一些参数有 (莫名其妙的) 硬绑定, 导致无法完全符合我的 (传统音频插件处理流程) 想法, 来来回回好几天尝试不同方案和解决奇怪的BUG, 我在这个节点上花了1亿Tokens, 是的, 就是1亿, 谢谢你 FFmpeg🫠
 
 ### 2. 🧬 规范化所有节点的代码
 - 呃, 真的规范了吗...?
 
-## v1.2.0 Major Updates
+---
 
 ### 1. 🛠️ Enhanced `XAudioSave`
 - Changed the node's audio volume normalization and peak limiting processing to use FFmpeg (loudnorm filter) to improve compatibility with multi-channel audio (e.g., 5.1 and 7.1). The previously used dependency `pyloudnorm` is no longer needed. Now the project only requires installing `ffmpeg-python` as a dependency and having FFmpeg installed locally (Awesome 😌)
@@ -207,15 +282,17 @@
 - Added custom compressor ratio and toggle button. When enabled, custom ratio values override the compression preset's ratio
 - LUFS target value changed to `-14.1`, peak limiting target value changed to `-1.1` (because in some cases audio processed by loudnorm filter has deviations)
 
-    Irrelevant complaint:
-        Stopped using `pyloudnorm` because I found it errors with multi-channel audio during testing. Tried to fix it but failed, so switched to FFmpeg. However, FFmpeg is not without issues - actually the loudnorm filter has some (inexplicable) hard bindings on certain parameters, making it impossible to fully match my (traditional audio plugin processing workflow) ideas. Went back and forth for several days trying different solutions and solving weird bugs. I spent 100 million Tokens on this node. Yes, 100 million. Thank you FFmpeg 🫠
+`mutter`:
+    Stopped using `pyloudnorm` because I found it errors with multi-channel audio during testing. Tried to fix it but failed, so switched to FFmpeg. However, FFmpeg is not without issues - actually the loudnorm filter has some (inexplicable) hard bindings on certain parameters, making it impossible to fully match my (traditional audio plugin processing workflow) ideas. Went back and forth for several days trying different solutions and solving weird bugs. I spent 100 million Tokens on this node. Yes, 100 million. Thank you FFmpeg 🫠
 
 ### 2. 🧬 Standardized code for all nodes
 - Uh, did I really standardize it...?
+</details>
 
 ---
 
-## v1.1.0 主要更新
+## 🎉 v1.1.0
+<details>
 
 - 本次更新节点功能没有变化
 
@@ -225,7 +302,7 @@
 ### 2. 🪛 更改节点注册方式
 - 放弃项目之前使用的节点自动注册方式改为更偏标准的节点注册方式 (尝试提高兼容性)
 
-## v1.1.0 Major Updates
+---
 
 - No changes to node functionality in this update
 
@@ -234,10 +311,12 @@
 
 ### 2. 🪛 Changed node registration method
 - Abandoned the previous automatic node registration method in favor of a more standard node registration approach (attempting to improve compatibility)
+</details>
 
 ---
 
-## v1.0.3 主要更新
+## 🎉 v1.0.3
+<details>
 
 ### 1. ⭐ 新增 `XAudioSave` (音频保存节点)
 - 无损 16位 WAV
@@ -255,7 +334,7 @@
 ### 4. 🪛 修改 `XVideoSave`
 - FFmpeg对音频流不再转码而是改为直接复制接收到的音频流, 以兼容`XAudioSave`输出的高品质WAV音频合并到视频中
 
-## v1.0.3 Major Updates
+---
 
 ### 1. ⭐ Added `XAudioSave` (Audio Save Node)
 - Lossless 16-bit WAV
@@ -272,19 +351,22 @@
 
 ### 4. 🪛 Modified `XVideoSave`
 - FFmpeg now directly copies received audio streams instead of transcoding to better support merging high-quality WAV audio from `XAudioSave` into videos
+</details>
 
 ---
 
-## v1.0.2 主要更新
+## 🎉 v1.0.2
+<details>
 
 ### 1. ⭐ 新增 `XStringGroup` (字符串组合节点)
 - 5个多行字符串输入框
 - 支持多种分隔方式的自定义分隔
 - 提供字符串的多种输出端口 (带自定义分隔的全部字符串, 选择的字符串, 单独的1-5字符串)
 
-## v1.0.2 Major Updates
+---
 
 ### 1. ⭐ Added `XStringGroup` (String Group Node)
 - 5 multi-line string input fields
 - Supports custom separators with multiple separator options
 - Provides multiple string output ports (all strings with custom separator, selected string, individual strings 1-5)
+</details>
