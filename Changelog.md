@@ -1,5 +1,15 @@
 # 更新日志 | Changelog
 
+## v1.6.0
+<details>
+
+1. 🛠️ 增强 `XFitView` 网页扩展
+- 适应视图支持子图 (Subgraph) 页面
+- ComfyUI 设置页面已更新工作流和子图分别在 进入/退出 时的适应视图设置选项
+
+</details>
+
+---
 
 ## 🎉 v1.5.0
 <details>

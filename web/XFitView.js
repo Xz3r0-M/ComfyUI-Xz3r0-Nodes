@@ -675,9 +675,9 @@ function fitToView(delay = 100, checkWorkflow = false, isExit = false) {
  * 设置状态
  */
 let settings = {
-    workflowEnterMode: "First",  // "First" | "Always" | "Never" - 主工作流加载时（页面加载、加载新工作流）
-    workflowExitMode: "First",   // "First" | "Always" | "Never" - 从子图退出到主工作流时
-    subgraphEnterMode: "First",  // "First" | "Always" | "Never" - 进入子图时
+    workflowEnterMode: "Never",  // "First" | "Always" | "Never" - 主工作流加载时（页面加载、加载新工作流）
+    workflowExitMode: "Never",   // "First" | "Always" | "Never" - 从子图退出到主工作流时
+    subgraphEnterMode: "Never",  // "First" | "Always" | "Never" - 进入子图时
     subgraphExitMode: "Never",   // "First" | "Always" | "Never" - 退出子图（返回上级）时
     fitDelay: 300
 };
@@ -701,7 +701,7 @@ app.registerExtension({
             id: "Xz3r0.XFitView.WorkflowEnterMode",
             name: "Workflow Enter Mode",
             type: "combo",
-            defaultValue: "First",
+            defaultValue: "Never",
             tooltip: "When to auto-fit view when loading main workflow (page load, load workflow file). 'First' resets on page refresh",
             category: ["♾️ Xz3r0", "XFitView", "WorkflowEnter"],
             options: ["First", "Always", "Never"],
@@ -713,7 +713,7 @@ app.registerExtension({
             id: "Xz3r0.XFitView.WorkflowExitMode",
             name: "Workflow Exit Mode",
             type: "combo",
-            defaultValue: "First",
+            defaultValue: "Never",
             tooltip: "When to auto-fit view when exiting subgraph back to main workflow. 'First' resets on page refresh",
             category: ["♾️ Xz3r0", "XFitView", "WorkflowExit"],
             options: ["First", "Always", "Never"],
@@ -725,7 +725,7 @@ app.registerExtension({
             id: "Xz3r0.XFitView.SubgraphEnterMode",
             name: "Subgraph Enter Mode",
             type: "combo",
-            defaultValue: "First",
+            defaultValue: "Never",
             tooltip: "When to auto-fit view when entering a subgraph. 'First' resets on page refresh",
             category: ["♾️ Xz3r0", "XFitView", "SubgraphEnter"],
             options: ["First", "Always", "Never"],
