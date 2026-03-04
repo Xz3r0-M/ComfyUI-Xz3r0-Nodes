@@ -1,7 +1,16 @@
 {
-  "Xz3r0_XFitView_WorkflowLoadMode": {
-    "name": "Workflow Load Mode",
-    "tooltip": "Choose when to auto-fit view when loading workflows",
+  "Xz3r0_XFitView_WorkflowEnterMode": {
+    "name": "Workflow Enter Mode",
+    "tooltip": "Choose when to auto-fit view when loading main workflow (page load, load workflow file)",
+    "options": {
+      "first": "First time only (resets on page refresh)",
+      "always": "Every time",
+      "never": "Never"
+    }
+  },
+  "Xz3r0_XFitView_WorkflowExitMode": {
+    "name": "Workflow Exit Mode",
+    "tooltip": "Choose when to auto-fit view when exiting subgraph back to main workflow",
     "options": {
       "first": "First time only (resets on page refresh)",
       "always": "Every time",
@@ -19,7 +28,7 @@
   },
   "Xz3r0_XFitView_SubgraphExitMode": {
     "name": "Subgraph Exit Mode",
-    "tooltip": "Choose when to auto-fit view when exiting subgraphs (returning to parent subgraph or main workflow)",
+    "tooltip": "Choose when to auto-fit view when exiting subgraphs (returning to parent subgraph)",
     "options": {
       "first": "First time only (resets on page refresh)",
       "always": "Every time",

@@ -1,7 +1,7 @@
 /**
  * XFitView - ComfyUI 自动适应视图扩展
  * ===========================================
- * 版本: 1.2.0 - 2025-03-04
+ * 版本: 1.3.0 - 2025-03-04
  *
  * 功能概述:
  * ---------
@@ -31,8 +31,10 @@
  *    - 不同工作流之间立即触发
  *
  * 5. 设置选项:
- *    - 工作流加载模式: first/always/never
- *    - 子图适应模式: first/always/never
+ *    - Workflow Enter Mode: 主工作流加载时 (first/always/never)
+ *    - Workflow Exit Mode: 从子图退出到主工作流时 (first/always/never)
+ *    - Subgraph Enter Mode: 进入子图时 (first/always/never)
+ *    - Subgraph Exit Mode: 退出子图时 (first/always/never)
  *    - 适应延迟时间: 0-2000ms可调
  *    - 注册到 Xz3r0 设置分类
  *
@@ -460,20 +462,20 @@ let shouldFitWorkflowOnSubgraphExit = false;
 /**
  * 初始化子图观察器
  * 监听面包屑导航变化以检测子图进入/退出
- * @param {string} enterMode - 进入子图时的适应模式 ("first" | "always" | "never")
- * @param {string} exitMode - 退出子图时的适应模式 ("first" | "always" | "never")
+ * @param {string} subgraphEnterMode - 进入子图时的适应模式 ("first" | "always" | "never")
+ * @param {string} subgraphExitMode - 退出子图时的适应模式 ("first" | "always" | "never")
  * @param {number} delay - 适应延迟（毫秒）
  */
-function initSubgraphObserver(enterMode, exitMode, delay) {
-    if (enterMode === "Never" && exitMode === "Never") {
-        debugLog('Subgraph observer disabled (both modes: Never)');
+function initSubgraphObserver(subgraphEnterMode, subgraphExitMode, delay) {
+    if (subgraphEnterMode === "Never" && subgraphExitMode === "Never" && settings.workflowExitMode === "Never") {
+        debugLog('Subgraph observer disabled (all modes: Never)');
         return;
     }
 
-    debugLog('Initializing subgraph observer with enterMode:', enterMode, 'exitMode:', exitMode, 'delay:', delay);
+    debugLog('Initializing subgraph observer with subgraphEnterMode:', subgraphEnterMode, 'subgraphExitMode:', subgraphExitMode, 'delay:', delay);
 
     // 设置按钮点击监听
-    setupSubgraphButtonListener(enterMode, exitMode, delay);
+    setupSubgraphButtonListener(subgraphEnterMode, subgraphExitMode, delay);
 
     // 如果已存在观察器，先断开
     if (subgraphObserver) {
@@ -503,8 +505,8 @@ function initSubgraphObserver(enterMode, exitMode, delay) {
             lastBreadcrumbLevel = currentLevel;
 
             // 触发子图适应（如果启用）
-            if (enterMode !== "Never") {
-                const checkSubgraph = enterMode === "First";
+            if (subgraphEnterMode !== "Never") {
+                const checkSubgraph = subgraphEnterMode === "First";
                 fitSubgraphToView(delay, checkSubgraph);
             }
         }
@@ -515,9 +517,9 @@ function initSubgraphObserver(enterMode, exitMode, delay) {
             lastSubgraphId = currentSubgraphId;
             lastBreadcrumbLevel = currentLevel;
 
-            // 返回上一级子图时，使用 exitMode 设置（视为退出行为）
-            if (exitMode !== "Never") {
-                const checkSubgraph = exitMode === "First";
+            // 返回上一级子图时，使用 subgraphExitMode 设置（视为子图退出行为）
+            if (subgraphExitMode !== "Never") {
+                const checkSubgraph = subgraphExitMode === "First";
                 fitSubgraphToView(delay, checkSubgraph);
             }
         }
@@ -528,10 +530,10 @@ function initSubgraphObserver(enterMode, exitMode, delay) {
             lastSubgraphId = null;
             lastBreadcrumbLevel = currentLevel;
 
-            // 触发工作流适应（如果启用）
-            if (exitMode !== "Never") {
+            // 触发工作流适应（使用 workflowExitMode 设置）
+            if (settings.workflowExitMode !== "Never") {
                 debugLog('Triggering workflow fit after subgraph exit');
-                const checkWorkflow = exitMode === "First";
+                const checkWorkflow = settings.workflowExitMode === "First";
                 fitToView(delay, checkWorkflow, true);
             }
         }
@@ -596,7 +598,7 @@ function isCanvasEmpty() {
  * @param {boolean} isExit - 是否是退出场景（退出子图后返回）
  */
 function fitToView(delay = 100, checkWorkflow = false, isExit = false) {
-    debugLog('fitToView called:', { delay, checkWorkflow, isExit, enterMode: settings.enterMode });
+    debugLog('fitToView called:', { delay, checkWorkflow, isExit, workflowEnterMode: settings.workflowEnterMode });
 
     // 清除之前的定时器
     if (fitViewTimeout) {
@@ -673,8 +675,10 @@ function fitToView(delay = 100, checkWorkflow = false, isExit = false) {
  * 设置状态
  */
 let settings = {
-    enterMode: "Never",  // "First" | "Always" | "Never" - 进入工作流/子图时
-    exitMode: "Never",   // "First" | "Always" | "Never" - 退出子图/返回上级时
+    workflowEnterMode: "First",  // "First" | "Always" | "Never" - 主工作流加载时（页面加载、加载新工作流）
+    workflowExitMode: "First",   // "First" | "Always" | "Never" - 从子图退出到主工作流时
+    subgraphEnterMode: "First",  // "First" | "Always" | "Never" - 进入子图时
+    subgraphExitMode: "Never",   // "First" | "Always" | "Never" - 退出子图（返回上级）时
     fitDelay: 300
 };
 
@@ -694,27 +698,51 @@ app.registerExtension({
      */
     settings: [
         {
-            id: "Xz3r0.XFitView.EnterMode",
-            name: "Enter Mode",
+            id: "Xz3r0.XFitView.WorkflowEnterMode",
+            name: "Workflow Enter Mode",
             type: "combo",
-            defaultValue: "Never",
-            tooltip: "Choose when to auto-fit view when entering workflow or subgraph. 'First time only' resets on page refresh",
-            category: ["♾️ Xz3r0", "XFitView", "Enter"],
+            defaultValue: "First",
+            tooltip: "When to auto-fit view when loading main workflow (page load, load workflow file). 'First' resets on page refresh",
+            category: ["♾️ Xz3r0", "XFitView", "WorkflowEnter"],
             options: ["First", "Always", "Never"],
             onChange: (value) => {
-                settings.enterMode = value;
+                settings.workflowEnterMode = value;
             }
         },
         {
-            id: "Xz3r0.XFitView.ExitMode",
-            name: "Exit Mode",
+            id: "Xz3r0.XFitView.WorkflowExitMode",
+            name: "Workflow Exit Mode",
             type: "combo",
-            defaultValue: "Never",
-            tooltip: "Choose when to auto-fit view when exiting subgraph or returning to parent. 'First time only' resets on page refresh",
-            category: ["♾️ Xz3r0", "XFitView", "Exit"],
+            defaultValue: "First",
+            tooltip: "When to auto-fit view when exiting subgraph back to main workflow. 'First' resets on page refresh",
+            category: ["♾️ Xz3r0", "XFitView", "WorkflowExit"],
             options: ["First", "Always", "Never"],
             onChange: (value) => {
-                settings.exitMode = value;
+                settings.workflowExitMode = value;
+            }
+        },
+        {
+            id: "Xz3r0.XFitView.SubgraphEnterMode",
+            name: "Subgraph Enter Mode",
+            type: "combo",
+            defaultValue: "First",
+            tooltip: "When to auto-fit view when entering a subgraph. 'First' resets on page refresh",
+            category: ["♾️ Xz3r0", "XFitView", "SubgraphEnter"],
+            options: ["First", "Always", "Never"],
+            onChange: (value) => {
+                settings.subgraphEnterMode = value;
+            }
+        },
+        {
+            id: "Xz3r0.XFitView.SubgraphExitMode",
+            name: "Subgraph Exit Mode",
+            type: "combo",
+            defaultValue: "Never",
+            tooltip: "When to auto-fit view when returning to parent subgraph or main workflow. 'First' resets on page refresh",
+            category: ["♾️ Xz3r0", "XFitView", "SubgraphExit"],
+            options: ["First", "Always", "Never"],
+            onChange: (value) => {
+                settings.subgraphExitMode = value;
             }
         },
         {
@@ -741,12 +769,12 @@ app.registerExtension({
     async setup() {
         // 等待 ComfyUI 完全初始化
         const initFitView = () => {
-            // 页面首次加载时适应视图（使用"进入"模式控制）
-            if (settings.enterMode !== "Never") {
+            // 页面首次加载时适应视图（使用主工作流进入模式控制）
+            if (settings.workflowEnterMode !== "Never") {
                 // "First" 模式下只执行一次，"Always" 模式每次都执行
-                if (settings.enterMode === "Always" || !hasFittedOnLoad) {
+                if (settings.workflowEnterMode === "Always" || !hasFittedOnLoad) {
                     hasFittedOnLoad = true;
-                    fitToView(settings.fitDelay, settings.enterMode === "First");
+                    fitToView(settings.fitDelay, settings.workflowEnterMode === "First");
                 }
             }
         };
@@ -772,8 +800,8 @@ app.registerExtension({
         // 设置工作流加载监听器
         this.setupWorkflowListener();
 
-        // 初始化子图观察器（传入进入和退出模式）
-        initSubgraphObserver(settings.enterMode, settings.exitMode, settings.fitDelay);
+        // 初始化子图观察器（传入子图进入和退出模式）
+        initSubgraphObserver(settings.subgraphEnterMode, settings.subgraphExitMode, settings.fitDelay);
     },
 
     /**
@@ -786,16 +814,16 @@ app.registerExtension({
 
         // 重写 onConfigure 方法
         app.graph.onConfigure = function(config) {
-            debugLog('onConfigure called, enterMode:', settings.enterMode);
+            debugLog('onConfigure called, workflowEnterMode:', settings.workflowEnterMode);
 
             // 调用原始方法
             const result = originalOnConfigure?.apply(this, arguments);
 
-            // 根据"进入"模式决定是否执行适应视图
-            if (settings.enterMode !== "Never") {
+            // 根据主工作流进入模式决定是否执行适应视图
+            if (settings.workflowEnterMode !== "Never") {
                 // 使用延迟确保工作流已完全加载
                 // "First" 模式会检查是否已适应，"Always" 模式每次都适应
-                const checkWorkflow = settings.enterMode === "First";
+                const checkWorkflow = settings.workflowEnterMode === "First";
                 debugLog('Triggering fit from onConfigure, checkWorkflow:', checkWorkflow);
                 fitToView(settings.fitDelay, checkWorkflow);
             } else {
@@ -809,14 +837,14 @@ app.registerExtension({
         const originalLoadGraphData = app.loadGraphData;
         if (originalLoadGraphData) {
             app.loadGraphData = async function() {
-                debugLog('loadGraphData called, enterMode:', settings.enterMode);
+                debugLog('loadGraphData called, workflowEnterMode:', settings.workflowEnterMode);
 
                 // 调用原始方法
                 const result = await originalLoadGraphData.apply(this, arguments);
 
-                // 根据"进入"模式决定是否执行适应视图
-                if (settings.enterMode !== "Never") {
-                    const checkWorkflow = settings.enterMode === "First";
+                // 根据主工作流进入模式决定是否执行适应视图
+                if (settings.workflowEnterMode !== "Never") {
+                    const checkWorkflow = settings.workflowEnterMode === "First";
                     debugLog('Triggering fit from loadGraphData, checkWorkflow:', checkWorkflow);
                     fitToView(settings.fitDelay, checkWorkflow);
                 } else {
