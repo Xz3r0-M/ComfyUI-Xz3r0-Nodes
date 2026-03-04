@@ -213,6 +213,5 @@ __marimo__/
 .vscode/
 tests/
 web/test
-补充.md
-创建.md
 ruff.toml
+记录/
