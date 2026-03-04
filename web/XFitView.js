@@ -223,7 +223,7 @@ function isExitFitted(workflowId) {
 /**
  * 调试模式开关
  */
-const DEBUG = true;
+const DEBUG = false;
 
 /**
  * 调试日志输出
@@ -441,23 +441,8 @@ function setupSubgraphButtonListener(enterMode, exitMode, delay) {
             }, delay + 100);
         }
 
-        // ========== 检查是否是返回按钮（从子图返回主工作流）==========
-        // 返回按钮特征：包含 undo-2 图标或 back-button 类
-        const isBackButton = button?.querySelector('i.icon-\[lucide--undo-2\], i[class*="undo-2"]') ||
-                             button?.classList.contains('back-button');
-
-        if (isBackButton && exitMode !== "Never") {
-            debugLog('Back button clicked, will trigger workflow fit after exit');
-            // 设置标志，表示点击了返回按钮
-            shouldFitWorkflowOnSubgraphExit = true;
-        }
     }, true);
 }
-
-/**
- * 记录退出子图后是否需要触发工作流适应
- */
-let shouldFitWorkflowOnSubgraphExit = false;
 
 /**
  * 初始化子图观察器
