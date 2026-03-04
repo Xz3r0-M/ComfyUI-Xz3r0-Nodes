@@ -8,6 +8,24 @@
       "never": "从不"
     }
   },
+  "Xz3r0_XFitView_SubgraphEnterMode": {
+    "name": "子图进入模式",
+    "tooltip": "选择进入子图时的自动适应视图行为",
+    "options": {
+      "first": "仅首次（刷新网页后重置）",
+      "always": "每次都适应",
+      "never": "从不"
+    }
+  },
+  "Xz3r0_XFitView_SubgraphExitMode": {
+    "name": "子图退出模式",
+    "tooltip": "选择退出子图时的自动适应视图行为（返回到上级子图或主工作流）",
+    "options": {
+      "first": "仅首次（刷新网页后重置）",
+      "always": "每次都适应",
+      "never": "从不"
+    }
+  },
   "Xz3r0_XFitView_Delay": {
     "name": "适应视图延迟 (毫秒)",
     "tooltip": "适应视图前的延迟时间（毫秒）。如果视图适应不正确，请增加此值。范围：0-2000毫秒"
