@@ -83,10 +83,15 @@ pip install -r requirements.txt
 
 <div align="center">
 
+## 节点预览
 <img src="preview/preview.png" alt="Node preview" width="800">
-<img src="preview\XMetadataWorkflow_preview.png" alt="XMetadataWorkflow preview" width="800">
 
+## XMetadataWorkflow 预览
+🌐 在线使用: https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes
+<img src="preview\XMetadataWorkflow_preview.png" alt="XMetadataWorkflow preview" width="800">
 </div>
+
+---
 
 ## 📚 详细说明（推荐查看）
 
