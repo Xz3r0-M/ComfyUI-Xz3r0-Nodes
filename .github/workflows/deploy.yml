@@ -1,0 +1,37 @@
+name: Deploy Single HTML Tool
+
+on:
+  push:
+    branches:
+      - main  # 如果是 master 分支请修改这里
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare files
+        run: |
+          mkdir -p ./public-dist
+
+          # 【核心】只复制这一个特定的 HTML 文件，并重命名为 index.html
+          # 这样访问网址时不需要加文件名
+          cp web/xmetadataworkflow.html ./public-dist/index.html
+
+          # 如果有同名的 css/js 在同一目录，也可以在这里添加，例如：
+          # cp web/xmetadataworkflow.css ./public-dist/
+          # cp web/xmetadataworkflow.js ./public-dist/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './public-dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
