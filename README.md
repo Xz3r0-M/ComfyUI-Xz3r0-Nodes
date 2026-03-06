@@ -325,7 +325,7 @@ suffix="_v1"
   - `Megapixels`: 以百万像素为基准（忽略 目标边长 `target_edge`）
   - `Scale Multiplier`: 以缩放倍率为基准（忽略 目标边长 `target_edge`）
 - `target_edge` (INT): 目标边长（范围 64-8192）
-- `megapixels` (FLOAT): 百万像素数（范围 0.1-100）
+- `megapixels` (FLOAT): 百万像素数（范围 0.1-100，仅在 Megapixels 模式下使用）
 - `scale_multiplier` (FLOAT): 缩放倍率（范围 0.1-10）
 - `divisible` (INT): 整除数（默认：16，范围 1-128）
 - `divisible_mode` (下拉选择): 取整方式（默认：Disabled）
@@ -359,10 +359,6 @@ suffix="_v1"
 输入：1920x1080 (2.07MP), edge_mode="Megapixels", megapixels=1.0
 输出：1334x750 (1.0MP)
 
-# 示例 5: 边长模式 + 百万像素保护
-输入：4000x3000, edge_mode="Long", target_edge=1280, megapixels=0.5
-输出：894x671 (0.6MP → 触发保护，缩小到 0.5MP)
-
 # 示例 6: 带整除调整
 输入：1920x1080, target_edge=1280, divisible=16, divisible_mode="Up"
 输出：1280x720
@@ -379,14 +375,18 @@ suffix="_v1"
 **注意事项**:
 - 节点自动保持原始宽高比，不会导致图像变形
 - `edge_mode="Megapixels"` 或 `"Scale Multiplier"` 时 `target_edge` 参数被忽略
-- `edge_mode="Long/Short"` 时，`megapixels` 作为上限保护（0=禁用）
 - `edge_mode="Scale Multiplier"` 时，使用 `scale_multiplier` 作为缩放倍率
-- 整除调整在百万像素保护之后应用
+- 整除调整在尺寸计算之后应用
 - 分辨率偏移在整除调整之后应用
-- 批量处理时，所有图片使用相同的输出尺寸（基于最后一张）
 - `edge_mode="Megapixels"` 时必须设置 `megapixels > 0`
 - `edge_mode="Scale Multiplier"` 时必须设置 `scale_multiplier > 0`
 - 偏移值范围：-128 到 128，确保最终分辨率≥1
+
+**批处理限制说明**:
+- 批量处理要求所有输入图片具有相同的原始尺寸
+- 如果输入图片尺寸不一致，每张图片会按各自的原始尺寸独立计算目标尺寸，可能导致输出图片尺寸不同
+- 输出图片尺寸不同时，`torch.stack()` 会报错
+- 建议：批处理时确保所有图片尺寸相同，或分批处理不同尺寸的图片
 
 ---
 

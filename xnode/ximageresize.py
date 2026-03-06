@@ -101,23 +101,19 @@ class XImageResize:
         输入：1920x1080, target_edge=1280, divisible=16, divisible_mode="Up"
         输出：1280x720 (720 已是 16 的倍数)
 
-        # 示例 8: 边长模式 + 百万像素保护
-        输入：4000x3000, edge_mode="Long", target_edge=1280, megapixels=0.5
-        输出：894x671 (0.6MP → 触发保护，缩小到 0.5MP)
-
-        # 示例 9: 带分辨率偏移（+1）
+        # 示例 8: 带分辨率偏移（+1）
         输入：1920x1080, target_edge=1280, width_offset=1, height_offset=1
         输出：1281x721 (1280x720 + 偏移)
 
-        # 示例 10: 带分辨率偏移（-1）
+        # 示例 9: 带分辨率偏移（-1）
         输入：1024x1024, target_edge=512, width_offset=-1, height_offset=-1
         输出：511x511 (512x512 - 偏移)
 
-        # 示例 11: 倍率模式（放大 2 倍）
+        # 示例 10: 倍率模式（放大 2 倍）
         输入：1024x1024, edge_mode="Scale Multiplier", scale_multiplier=2.0
         输出：2048x2048
 
-        # 示例 12: 倍率模式（缩小 0.5 倍）
+        # 示例 11: 倍率模式（缩小 0.5 倍）
         输入：1920x1080, edge_mode="Scale Multiplier", scale_multiplier=0.5
         输出：960x540
 
@@ -125,12 +121,10 @@ class XImageResize:
         - 节点自动保持原始宽高比，不会导致图像变形
         - edge_mode="Megapixels" 或 "Scale Multiplier" 时
           target_edge 参数被忽略
-        - edge_mode="Long/Short" 时，megapixels 作为上限保护
         - edge_mode="Scale Multiplier" 时
           使用 scale_multiplier 作为缩放倍率
-        - 整除调整在百万像素保护之后应用
+        - 整除调整在尺寸计算之后应用
         - 分辨率偏移在整除调整之后应用
-        - 批量处理时，所有图片使用相同的输出尺寸（基于最后一张）
         - edge_mode="Megapixels" 时必须设置 megapixels > 0
         - edge_mode="Scale Multiplier" 时必须设置 scale_multiplier > 0
         - 偏移值范围：-128 到 128，确保最终分辨率≥1
@@ -140,6 +134,13 @@ class XImageResize:
             * Area: 适合缩小，质量好，保留细节
             * Bicubic: 速度中等，质量高，适合放大
             * Lanczos: 速度较慢，质量最高，专业场景
+
+    批处理限制说明:
+        - 批量处理要求所有输入图片具有相同的原始尺寸
+        - 如果输入图片尺寸不一致，每张图片会按各自的原始尺寸
+          独立计算目标尺寸，可能导致输出图片尺寸不同
+        - 输出图片尺寸不同时，torch.stack() 会报错
+        - 建议：批处理时确保所有图片尺寸相同，或分批处理不同尺寸的图片
     """
 
     @classmethod
@@ -199,8 +200,8 @@ class XImageResize:
                         "max": 100.0,
                         "step": 0.1,
                         "display": "number",
-                        "tooltip": "Edge mode=upper limit (0=disabled), "
-                        "Megapixels mode=target (must be >0)",
+                        "tooltip": "Only used in Megapixels mode "
+                        "as target value (must be >0)",
                     },
                 ),
                 "scale_multiplier": (
@@ -326,8 +327,7 @@ class XImageResize:
             target_edge: 目标边长（像素），范围 64-8192
                 仅在 edge_mode="long/short" 时使用
             megapixels: 百万像素数，范围 0.1-100
-                edge_mode="megapixels" 时：作为目标像素数（必须>0）
-                edge_mode="long/short" 时：作为上限保护（0=禁用）
+                仅在 edge_mode="Megapixels" 时使用，作为目标像素数（必须>0）
             scale_multiplier: 缩放倍率，范围 0.1-10
                 仅在 edge_mode="Scale" 时使用（必须>0）
             divisible: 整除基数，使输出分辨率可被此数整除
@@ -366,11 +366,6 @@ class XImageResize:
 
         # 创建进度条
         progress_bar = comfy.utils.ProgressBar(len(images))
-
-        # 预计算不变的参数（优化循环性能）
-        max_pixels_limit = (
-            int(megapixels * PIXELS_PER_MEGAPIXEL) if megapixels > 0 else 0
-        )
 
         output_images = []
         output_width = 0
@@ -458,18 +453,6 @@ class XImageResize:
                 # 计算新尺寸（使用四舍五入）
                 new_width = round(width * scale)
                 new_height = round(height * scale)
-
-                # 应用百万像素上限保护（仅边长模式）
-                if max_pixels_limit > 0:
-                    current_pixels = new_width * new_height
-
-                    if current_pixels > max_pixels_limit:
-                        # 超过上限，进一步缩小
-                        adjust_scale = math.sqrt(
-                            max_pixels_limit / current_pixels
-                        )
-                        new_width = round(new_width * adjust_scale)
-                        new_height = round(new_height * adjust_scale)
 
             # 应用取整调整
             if divisible_mode != "Disabled" and divisible > 1:

@@ -150,7 +150,7 @@
       },
       "megapixels": {
         "name": "Megapixels",
-        "tooltip": "Edge mode=upper limit (0=disabled), Megapixels mode=target (must be >0)"
+        "tooltip": "Only used in Megapixels mode as target pixel count (must be >0)"
       },
       "scale_multiplier": {
         "name": "Scale Multiplier",
