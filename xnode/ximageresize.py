@@ -9,32 +9,36 @@ import math
 
 import comfy.utils
 import torch
+from comfy_api.latest import io
 
 # 常量定义
 PIXELS_PER_MEGAPIXEL = 1_000_000  # 每百万像素的像素数
 MAX_MEGAPIXELS = 100.0  # 最大百万像素限制（防止显存溢出）
 
 
-class XImageResize:
+class XImageResize(io.ComfyNode):
     """
     XImageResize 全自动图像缩放节点
 
     提供智能图像缩放功能，自动识别图片方向并按长边/短边缩放。
+    同时支持对遮罩(mask)进行同步缩放处理。
 
     功能:
         - 自动识别横屏/竖屏/正方形
         - 按长边或短边缩放（可切换）
         - 按百万像素缩放（精确控制输出像素数）
         - 保持原始宽高比，永不变形
-        - 支持百万像素上限保护（防止显存溢出）
         - 支持分辨率整除调整（适配模型要求）
         - 支持分辨率偏移调整（适配特殊模型要求）
         - 支持批量图像处理（图片序列）
+        - 支持遮罩同步缩放（使用与图像相同的插值模式）
         - 带进度条显示
         - 支持多种插值算法（双线性/双三次/最近邻/区域）
 
     输入:
         images: 输入图像张量 (IMAGE)
+        mask: 输入遮罩张量 (MASK, 可选)
+            如果提供，将与图像使用相同的参数进行缩放
         scale_mode: 缩放模式 (STRING)
             - "Nearest-exact": 精确最近邻插值（速度最快）
             - "Bilinear": 双线性插值（速度快，质量中等）
@@ -51,8 +55,7 @@ class XImageResize:
         target_edge: 目标边长 (INT, 范围 64-8192)
             仅在 edge_mode="long/short" 时使用
         megapixels: 百万像素 (FLOAT, 范围 0.1-100)
-            edge_mode="megapixels" 时：作为目标像素数
-            edge_mode="long/short" 时：作为上限保护（0=禁用）
+            仅在 edge_mode="Megapixels" 时使用，作为目标像素数
         scale_multiplier: 缩放倍率 (FLOAT, 范围 0.1-10)
             仅在 edge_mode="Scale" 时使用
         divisible: 整除数 (INT, 范围 1-128)
@@ -66,11 +69,18 @@ class XImageResize:
             在最终分辨率上添加的偏移值（正数=增加，负数=减少）
         height_offset: 高度偏移 (INT, 范围 -128 到 128)
             在最终分辨率上添加的偏移值（正数=增加，负数=减少）
+        merge_mask: 合并遮罩到 Alpha 通道 (BOOLEAN)
+            - False: 输出 RGB 图像 (3 通道)
+            - True: 如果提供了 mask，输出 RGBA 图像 (4 通道)
+              mask 作为 alpha 通道合并到图像中
 
     输出:
-        IMAGE: 缩放后的图像张量
-        INT: 输出分辨率宽度
-        INT: 输出分辨率高度
+        Processed_Images: 缩放后的图像张量
+            - merge_mask=False 或未提供 mask: (B, H, W, 3) RGB
+            - merge_mask=True 且提供了 mask: (B, H, W, 4) RGBA
+        Processed_Mask: 缩放后的遮罩张量（如果输入了 mask，否则 None）
+        width: 输出分辨率宽度
+        height: 输出分辨率高度
 
     使用示例:
         # 示例 1: 横屏图片按长边缩放
@@ -144,149 +154,215 @@ class XImageResize:
     """
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
+    def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "images": (
-                    "IMAGE",
-                    {"tooltip": "Input images"},
+        return io.Schema(
+            node_id="XImageResize",
+            display_name="XImageResize",
+            description="Automatic image resize "
+            "with intelligent edge detection, "
+            "megapixels mode, and divisible adjustment support",
+            category="♾️ Xz3r0/File-Processing",
+            inputs=[
+                io.Image.Input(
+                    "images",
+                    tooltip="Input images",
                 ),
-                "scale_mode": (
-                    [
+                io.Mask.Input(
+                    "mask",
+                    optional=True,
+                    tooltip="Input mask (optional, will be resized "
+                    "with same settings as images)",
+                ),
+                io.Combo.Input(
+                    "scale_mode",
+                    options=[
                         "Nearest-exact",
                         "Bilinear",
                         "Area",
                         "Bicubic",
                         "Lanczos",
                     ],
-                    {
-                        "default": "Bilinear",
-                        "tooltip": "Select interpolation algorithm: "
-                        "Nearest-exact=fastest, "
-                        "Bilinear=fast & medium quality, "
-                        "Area=best for downsampling, "
-                        "Bicubic=medium speed & high quality, "
-                        "Lanczos=slow & highest quality",
-                    },
+                    default="Bilinear",
+                    tooltip="Select interpolation algorithm: "
+                    "Nearest-exact=fastest, "
+                    "Bilinear=fast & medium quality, "
+                    "Area=best for downsampling, "
+                    "Bicubic=medium speed & high quality, "
+                    "Lanczos=slow & highest quality",
                 ),
-                "edge_mode": (
-                    ["Long", "Short", "Megapixels", "Scale Multiplier"],
-                    {
-                        "default": "Long",
-                        "tooltip": "Select scaling mode: Long=long edge, "
-                        "Short=short edge, "
-                        "Megapixels=target pixels, "
-                        "Scale Multiplier=scale by multiplier",
-                    },
+                io.Combo.Input(
+                    "edge_mode",
+                    options=[
+                        "Long",
+                        "Short",
+                        "Megapixels",
+                        "Scale Multiplier",
+                    ],
+                    default="Long",
+                    tooltip="Select scaling mode: Long=long edge, "
+                    "Short=short edge, "
+                    "Megapixels=target pixels, "
+                    "Scale Multiplier=scale by multiplier",
                 ),
-                "target_edge": (
-                    "INT",
-                    {
-                        "default": 1280,
-                        "min": 64,
-                        "max": 8192,
-                        "step": 64,
-                        "display": "number",
-                        "tooltip": "Target edge length in pixels "
-                        "(ignored in megapixels mode)",
-                    },
+                io.Int.Input(
+                    "target_edge",
+                    default=1280,
+                    min=64,
+                    max=8192,
+                    step=64,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Target edge length in pixels "
+                    "(ignored in megapixels mode)",
                 ),
-                "megapixels": (
-                    "FLOAT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 100.0,
-                        "step": 0.1,
-                        "display": "number",
-                        "tooltip": "Only used in Megapixels mode "
-                        "as target value (must be >0)",
-                    },
+                io.Float.Input(
+                    "megapixels",
+                    default=1.0,
+                    min=0.1,
+                    max=100.0,
+                    step=0.1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Only used in Megapixels mode "
+                    "as target value (must be >0)",
                 ),
-                "scale_multiplier": (
-                    "FLOAT",
-                    {
-                        "default": 1.0,
-                        "min": 0.1,
-                        "max": 10.0,
-                        "step": 0.1,
-                        "display": "number",
-                        "tooltip": "Scale multiplier "
-                        "(only used in Scale Multiplier mode)",
-                    },
+                io.Float.Input(
+                    "scale_multiplier",
+                    default=1.0,
+                    min=0.1,
+                    max=10.0,
+                    step=0.1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Scale multiplier "
+                    "(only used in Scale Multiplier mode)",
                 ),
-                "divisible_mode": (
-                    ["Disabled", "Nearest", "Up", "Down"],
-                    {
-                        "default": "Disabled",
-                        "tooltip": "How to adjust resolution to be divisible: "
-                        "Disabled=no adjustment, Nearest=round to nearest "
-                        "multiple, Up=round up, Down=round down",
-                    },
+                io.Combo.Input(
+                    "divisible_mode",
+                    options=["Disabled", "Nearest", "Up", "Down"],
+                    default="Disabled",
+                    tooltip="How to adjust resolution to be divisible: "
+                    "Disabled=no adjustment, Nearest=round to nearest "
+                    "multiple, Up=round up, Down=round down",
                 ),
-                "divisible": (
-                    "INT",
-                    {
-                        "default": 16,
-                        "min": 1,
-                        "max": 128,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Make resolution divisible by this number "
-                        "(set to 1 to disable, common values: 8, 16, 32, 64)",
-                    },
+                io.Int.Input(
+                    "divisible",
+                    default=16,
+                    min=1,
+                    max=128,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Make resolution divisible by this number "
+                    "(set to 1 to disable, common values: 8, 16, 32, 64)",
                 ),
-                "width_offset": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": -128,
-                        "max": 128,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Add offset to output width "
-                        "(positive=increase, negative=decrease, default=0)",
-                    },
+                io.Int.Input(
+                    "width_offset",
+                    default=0,
+                    min=-128,
+                    max=128,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Add offset to output width "
+                    "(positive=increase, negative=decrease, default=0)",
                 ),
-                "height_offset": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": -128,
-                        "max": 128,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Add offset to output height "
-                        "(positive=increase, negative=decrease, default=0)",
-                    },
+                io.Int.Input(
+                    "height_offset",
+                    default=0,
+                    min=-128,
+                    max=128,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Add offset to output height "
+                    "(positive=increase, negative=decrease, default=0)",
                 ),
-            }
-        }
+                io.Boolean.Input(
+                    "merge_mask",
+                    default=False,
+                    label_on="True",
+                    label_off="False",
+                    tooltip="If enabled and mask is provided, "
+                    "merge mask into processed image alpha channel "
+                    "(output RGBA). If disabled or no mask, "
+                    "output RGB only",
+                ),
+            ],
+            outputs=[
+                io.Image.Output(
+                    "Processed_Images",
+                    tooltip="Scaled images",
+                ),
+                io.Mask.Output(
+                    "Processed_Mask",
+                    tooltip="Scaled mask (if input mask provided, "
+                    "otherwise None)",
+                ),
+                io.Int.Output(
+                    "width",
+                    tooltip="Output resolution width",
+                ),
+                io.Int.Output(
+                    "height",
+                    tooltip="Output resolution height",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "INT", "INT")
-    RETURN_NAMES = ("images", "width", "height")
-    OUTPUT_TOOLTIPS = (
-        "Scaled images",
-        "Output resolution width",
-        "Output resolution height",
-    )
-    FUNCTION = "process"
-    CATEGORY = "♾️ Xz3r0/File-Processing"
-
-    def process(
-        self,
+    @classmethod
+    def validate_inputs(
+        cls,
         images: torch.Tensor,
         scale_mode: str,
         edge_mode: str,
         target_edge: int,
         megapixels: float,
         scale_multiplier: float,
-        divisible: int,
         divisible_mode: str,
+        divisible: int,
         width_offset: int,
         height_offset: int,
-    ) -> tuple[torch.Tensor, int, int]:
+        merge_mask: bool,
+        mask: torch.Tensor | None = None,
+    ) -> bool | str:
+        """
+        验证输入参数的有效性
+
+        Args:
+            images: 输入图像张量
+            scale_mode: 插值模式
+            edge_mode: 缩放模式
+            target_edge: 目标边长
+            megapixels: 百万像素数
+            scale_multiplier: 缩放倍率
+            divisible_mode: 整除模式
+            divisible: 整除数
+            width_offset: 宽度偏移
+            height_offset: 高度偏移
+
+        Returns:
+            True if valid, or error message string if invalid
+        """
+        if edge_mode == "Megapixels" and megapixels <= 0:
+            return "Megapixels mode requires megapixels > 0"
+
+        if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
+            return "Scale Multiplier mode requires scale_multiplier > 0"
+
+        return True
+
+    @classmethod
+    def execute(
+        cls,
+        images: torch.Tensor,
+        scale_mode: str,
+        edge_mode: str,
+        target_edge: int,
+        megapixels: float,
+        scale_multiplier: float,
+        divisible_mode: str,
+        divisible: int,
+        width_offset: int,
+        height_offset: int,
+        merge_mask: bool = False,
+        mask: torch.Tensor | None = None,
+    ) -> io.NodeOutput:
         """
         处理图像缩放
 
@@ -295,17 +371,16 @@ class XImageResize:
             2. 遍历批次中的每张图像
             3. 检测图像方向（横屏/竖屏/正方形）
             4. 根据 edge_mode 选择缩放策略:
-               - "long": 以长边为基准计算缩放比例
-               - "short": 以短边为基准计算缩放比例
+               - "Long": 以长边为基准计算缩放比例
+               - "Short": 以短边为基准计算缩放比例
                - "Megapixels": 以百万像素为目标直接计算
                - "Scale Multiplier": 以缩放倍率直接计算
-            5. 应用百万像素保护（仅边长模式）
-            6. 应用整除调整
-            7. 应用分辨率偏移
-            8. 使用 comfy.utils.common_upscale 执行缩放
+            5. 应用整除调整
+            6. 应用分辨率偏移
+            7. 使用 comfy.utils.common_upscale 执行缩放
                - 支持所有插值模式（包括 lanczos）
                - 自动处理张量维度转换
-            9. 返回处理后的图像和尺寸信息
+            8. 返回处理后的图像和尺寸信息
 
         Args:
             images: 输入图像张量，形状为 (B, H, W, C)
@@ -343,31 +418,39 @@ class XImageResize:
                 在最终分辨率上添加的偏移值（正数=增加，负数=减少，0=禁用）
 
         Returns:
-            tuple: 包含以下元素的元组
+            NodeOutput: 包含以下元素的输出
                 scaled_images (torch.Tensor):
                     缩放后的图像张量 (B, H_out, W_out, C)
+                scaled_mask (torch.Tensor | None):
+                    缩放后的遮罩张量 (B, H_out, W_out) 或 None
                 output_width (int): 输出图像宽度
                 output_height (int): 输出图像高度
-
-        Raises:
-            ValueError:
-                - 当输入图像为空时
-                - 当 edge_mode="megapixels" 但 megapixels <= 0 时
 
         性能说明:
             - 使用 comfy.utils.common_upscale 进行缩放，支持所有插值模式
             - lanczos 模式使用 PIL 实现，质量最高但速度较慢
             - 批量处理时自动显示进度条
             - 百万像素模式直接计算目标尺寸，效率更高
-            - 边长模式的百万像素保护在缩放后检查，避免不必要的计算
         """
+        # 验证输入图像
         if images is None or len(images) == 0:
             raise ValueError("Input images cannot be empty")
+
+        # 验证 mask 尺寸与 images 匹配
+        if mask is not None:
+            # 统一转换为 (B, H, W) 格式
+            mask = mask.reshape((-1, mask.shape[-2], mask.shape[-1]))
+            if mask.shape[0] != images.shape[0]:
+                raise ValueError(
+                    f"Mask batch size {mask.shape[0]} does not match "
+                    f"images batch size {images.shape[0]}"
+                )
 
         # 创建进度条
         progress_bar = comfy.utils.ProgressBar(len(images))
 
         output_images = []
+        output_masks = [] if mask is not None else None
         output_width = 0
         output_height = 0
 
@@ -405,12 +488,6 @@ class XImageResize:
             # 根据模式计算缩放比例
             if edge_mode == "Megapixels":
                 # 百万像素模式：直接按目标像素数缩放
-                if megapixels <= 0:
-                    raise ValueError(
-                        f"Megapixels mode requires megapixels > 0, "
-                        f"got {megapixels}"
-                    )
-
                 # 限制最大百万像素值为 100（防止显存溢出）
                 target_mp = min(megapixels, MAX_MEGAPIXELS)
                 if target_mp < megapixels:
@@ -431,12 +508,6 @@ class XImageResize:
                 new_height = round(height * scale)
             elif edge_mode == "Scale Multiplier":
                 # 倍率模式：按缩放倍率缩放
-                if scale_multiplier <= 0:
-                    raise ValueError(
-                        f"Scale Multiplier mode requires "
-                        f"scale_multiplier > 0, got {scale_multiplier}"
-                    )
-
                 # 计算新尺寸（使用四舍五入）
                 new_width = round(width * scale_multiplier)
                 new_height = round(height * scale_multiplier)
@@ -456,10 +527,10 @@ class XImageResize:
 
             # 应用取整调整
             if divisible_mode != "Disabled" and divisible > 1:
-                new_width = self._make_divisible(
+                new_width = cls._make_divisible(
                     new_width, divisible, divisible_mode
                 )
-                new_height = self._make_divisible(
+                new_height = cls._make_divisible(
                     new_height, divisible, divisible_mode
                 )
 
@@ -495,13 +566,56 @@ class XImageResize:
             output_width = new_width
             output_height = new_height
 
+            # 处理 mask 缩放（使用与图像相同的参数）
+            if mask is not None:
+                mask_item = mask[i]
+                # mask 已经是 (H, W) 格式
+                # 添加通道维度：(H, W) -> (H, W, 1)
+                mask_with_channel = mask_item.unsqueeze(-1)
+                # 添加批次维度并转换格式：
+                # (H, W, 1) -> (1, H, W, 1) -> (1, 1, H, W)
+                mask_batch = mask_with_channel.unsqueeze(0).movedim(-1, 1)
+                if not mask_batch.is_contiguous():
+                    mask_batch = mask_batch.contiguous()
+                # 使用相同的插值模式进行缩放
+                scaled_mask_batch = comfy.utils.common_upscale(
+                    mask_batch,
+                    new_width,
+                    new_height,
+                    upscale_method=scale_mode_lower,
+                    crop="disabled",
+                )
+                # 恢复格式：(1, 1, H, W) -> (1, H, W, 1) -> (H, W)
+                scaled_mask = (
+                    scaled_mask_batch.movedim(1, -1).squeeze(0).squeeze(-1)
+                )
+                # 限制 mask 值在 [0, 1] 范围内
+                scaled_mask = torch.clamp(scaled_mask, 0.0, 1.0)
+                output_masks.append(scaled_mask)
+
             # 更新进度
             progress_bar.update_absolute(i + 1)
 
         # 堆叠回批次 (B, H, W, C)
         output_tensor = torch.stack(output_images)
 
-        return (output_tensor, output_width, output_height)
+        # 堆叠 mask 回批次 (B, H, W)
+        if output_masks is not None:
+            output_mask_tensor = torch.stack(output_masks)
+        else:
+            output_mask_tensor = None
+
+        # 如果启用 merge_mask 且有 mask，合并到图像 alpha 通道
+        if merge_mask and output_mask_tensor is not None:
+            # 将 mask 作为 alpha 通道合并:
+            # (B, H, W, 3) + (B, H, W, 1) -> (B, H, W, 4)
+            output_tensor = torch.cat(
+                [output_tensor, output_mask_tensor.unsqueeze(-1)], dim=-1
+            )
+
+        return io.NodeOutput(
+            output_tensor, output_mask_tensor, output_width, output_height
+        )
 
     @staticmethod
     def _make_divisible(value: int, divisor: int, mode: str = "Up") -> int:
@@ -536,11 +650,3 @@ class XImageResize:
                 return value - remainder
             else:
                 return value + (divisor - remainder)
-
-
-NODE_CLASS_MAPPINGS = {
-    "XImageResize": XImageResize,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XImageResize": "XImageResize",
-}

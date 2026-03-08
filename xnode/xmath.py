@@ -7,8 +7,10 @@ This module contains mathematical calculation related nodes.
 
 import math
 
+from comfy_api.latest import io
 
-class XMath:
+
+class XMath(io.ComfyNode):
     """
     XMath 数学计算节点
 
@@ -41,68 +43,62 @@ class XMath:
         同样的逻辑适用于 use_input_b、input_b 和 basic_b
 
     Usage example:
-        input_a=10, input_b=3.2, use_input_a=True, "
+        input_a=10, input_b=3.2, use_input_a=True,
         use_input_b=True, operation="Multiplication (×)"
         Output: int_result=32, float_result=32.0
     """
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
+    def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
-        return {
-            "optional": {
-                "input_a": (
-                    "INT,FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -1e10,
-                        "max": 1e10,
-                        "display": "number",
-                        "tooltip": (
-                            "input value A (accepts both INT and FLOAT, "
-                            "takes priority when use_input_a is enabled)"
-                        ),
-                    },
+        return io.Schema(
+            node_id="XMath",
+            display_name="XMath",
+            description="数学计算节点，支持多种运算方式和双输出格式",
+            category="♾️ Xz3r0/Workflow-Processing",
+            inputs=[
+                # 可选输入 - 接收其他节点的输出
+                io.MultiType.Input(
+                    "input_a",
+                    types=[io.Int, io.Float],
+                    tooltip=(
+                        "input value A (accepts both INT and FLOAT, "
+                        "takes priority when use_input_a is enabled)"
+                    ),
+                    optional=True,
                 ),
-                "input_b": (
-                    "INT,FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -1e10,
-                        "max": 1e10,
-                        "display": "number",
-                        "tooltip": (
-                            "input value B (accepts both INT and FLOAT, "
-                            "takes priority when use_input_b is enabled)"
-                        ),
-                    },
+                io.MultiType.Input(
+                    "input_b",
+                    types=[io.Int, io.Float],
+                    tooltip=(
+                        "input value B (accepts both INT and FLOAT, "
+                        "takes priority when use_input_b is enabled)"
+                    ),
+                    optional=True,
                 ),
-            },
-            "required": {
-                "basic_a": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -1e10,
-                        "max": 1e10,
-                        "step": 0.1,
-                        "display": "number",
-                        "tooltip": ("basic value A (FLOAT)"),
-                    },
+                # 基础输入 - 手动设置的默认值
+                io.Float.Input(
+                    "basic_a",
+                    default=0.0,
+                    min=-1e10,
+                    max=1e10,
+                    step=0.1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="basic value A (FLOAT)",
                 ),
-                "basic_b": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -1e10,
-                        "max": 1e10,
-                        "step": 0.1,
-                        "display": "number",
-                        "tooltip": ("basic value B (FLOAT)"),
-                    },
+                io.Float.Input(
+                    "basic_b",
+                    default=0.0,
+                    min=-1e10,
+                    max=1e10,
+                    step=0.1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="basic value B (FLOAT)",
                 ),
-                "operation": (
-                    [
+                # 运算类型选择
+                io.Combo.Input(
+                    "operation",
+                    options=[
                         "Addition (+)",
                         "Subtraction (-)",
                         "Multiplication (×)",
@@ -112,86 +108,86 @@ class XMath:
                         "Maximum",
                         "Minimum",
                     ],
-                    {
-                        "default": "Addition (+)",
-                        "tooltip": "Mathematical operation type",
-                    },
+                    default="Addition (+)",
+                    tooltip="Mathematical operation type",
                 ),
-                "use_input_a": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "use input value A (input_a takes "
-                            "precedence when enabled, fallbacks "
-                            "to basic_a if not connected to "
-                            "other node)"
-                        ),
-                    },
+                # 控制开关
+                io.Boolean.Input(
+                    "use_input_a",
+                    default=True,
+                    tooltip=(
+                        "use input value A (input_a takes "
+                        "precedence when enabled, fallbacks "
+                        "to basic_a if not connected to "
+                        "other node)"
+                    ),
                 ),
-                "use_input_b": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "use input value B (input_b takes "
-                            "precedence when enabled, fallbacks "
-                            "to basic_b if not connected to "
-                            "other node)"
-                        ),
-                    },
+                io.Boolean.Input(
+                    "use_input_b",
+                    default=True,
+                    tooltip=(
+                        "use input value B (input_b takes "
+                        "precedence when enabled, fallbacks "
+                        "to basic_b if not connected to "
+                        "other node)"
+                    ),
                 ),
-                "swap_ab": (
-                    "BOOLEAN",
-                    {"default": False, "tooltip": "swap a and b values"},
+                io.Boolean.Input(
+                    "swap_ab",
+                    default=False,
+                    tooltip="swap a and b values",
                 ),
-            },
-        }
+            ],
+            outputs=[
+                io.Int.Output(
+                    "int_result",
+                    tooltip=(
+                        "Integer result (truncated decimal part towards zero)"
+                    ),
+                ),
+                io.Float.Output(
+                    "float_result",
+                    tooltip="Float result (exact value with decimal)",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("INT", "FLOAT")
-    RETURN_NAMES = ("int_result", "float_result")
-    OUTPUT_TOOLTIPS = (
-        "Integer result (truncated decimal part towards zero)",
-        "Float result (exact value with decimal)",
-    )
-    FUNCTION = "calculate"
-    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
-
-    def calculate(
-        self,
-        operation: str,
-        basic_a: float = 0.0,
-        basic_b: float = 0.0,
+    @classmethod
+    def execute(
+        cls,
         input_a: float | None = None,
         input_b: float | None = None,
+        basic_a: float = 0.0,
+        basic_b: float = 0.0,
+        operation: str = "Addition (+)",
         use_input_a: bool = True,
         use_input_b: bool = True,
         swap_ab: bool = False,
-    ) -> tuple[int, float]:
+    ) -> io.NodeOutput:
         """
         执行数学计算
 
         Args:
-            operation: 计算方式 (下拉菜单选择)
-            basic_a: 基础第一个数值 (FLOAT)
-            basic_b: 基础第二个数值 (FLOAT)
             input_a: 接收的第一个数值 (INT/FLOAT, 可选)
             input_b: 接收的第二个数值 (INT/FLOAT, 可选)
+            basic_a: 基础第一个数值 (FLOAT)
+            basic_b: 基础第二个数值 (FLOAT)
+            operation: 计算方式 (下拉菜单选择)
             use_input_a: 是否优先使用 input_a (BOOLEAN, 默认True)
             use_input_b: 是否优先使用 input_b (BOOLEAN, 默认True)
             swap_ab: 是否交换 a 和 b 的值 (BOOLEAN, 默认False)
 
         Returns:
-            (int_result, float_result): 整数结果(截断)和浮点数结果(精确)
+            NodeOutput: 包含整数结果(截断)和浮点数结果(精确)
         """
         # 运算映射表
         operations = {
             "Addition (+)": lambda x, y: x + y,
             "Subtraction (-)": lambda x, y: x - y,
             "Multiplication (×)": lambda x, y: x * y,
-            "Division (÷)": self._safe_divide,
-            "Power (**)": self._safe_power,
-            "Modulo (%)": self._safe_modulo,
+            "Division (÷)": cls._safe_divide,
+            "Power (**)": cls._safe_power,
+            "Modulo (%)": cls._safe_modulo,
             "Maximum": max,
             "Minimum": min,
         }
@@ -236,10 +232,16 @@ class XMath:
                         sign_positive = True
                     elif b > 0 and int(b) % 2 == 0:
                         sign_positive = True
-                return (0, float("inf") if sign_positive else float("-inf"))
+                return io.NodeOutput(
+                    0,
+                    float("inf") if sign_positive else float("-inf"),
+                )
             else:
                 # 其他运算，简单判断
-                return (0, float("inf") if (a > 0 or b > 0) else float("-inf"))
+                return io.NodeOutput(
+                    0,
+                    float("inf") if (a > 0 or b > 0) else float("-inf"),
+                )
         except ValueError as e:
             raise ValueError(f"Calculation error: {str(e)}") from e
 
@@ -250,9 +252,10 @@ class XMath:
             raise ValueError("Cannot convert infinite result to integer")
 
         # 返回双格式结果
-        return (int(result), float(result))
+        return io.NodeOutput(int(result), float(result))
 
-    def _safe_divide(self, a: float, b: float) -> float:
+    @classmethod
+    def _safe_divide(cls, a: float, b: float) -> float:
         """
         安全除法，处理除零情况
 
@@ -272,7 +275,8 @@ class XMath:
                 return float("-inf")  # 负数/0
         return a / b
 
-    def _safe_modulo(self, a: float, b: float) -> float:
+    @classmethod
+    def _safe_modulo(cls, a: float, b: float) -> float:
         """
         安全取模，处理除零情况
 
@@ -290,7 +294,8 @@ class XMath:
             raise ValueError("Division by zero in modulo operation")
         return a % b
 
-    def _safe_power(self, a: float, b: float) -> float:
+    @classmethod
+    def _safe_power(cls, a: float, b: float) -> float:
         """
         安全幂运算，处理边界情况
 
@@ -318,11 +323,3 @@ class XMath:
             return a**b
         except OverflowError:
             return float("inf") if a > 0 else float("-inf")
-
-
-NODE_CLASS_MAPPINGS = {
-    "XMath": XMath,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XMath": "XMath",
-}

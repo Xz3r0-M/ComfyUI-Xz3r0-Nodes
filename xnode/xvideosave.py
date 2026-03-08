@@ -1,6 +1,6 @@
 """
-视频保存节点模块
-================
+视频保存节点模块 (V3 API)
+========================
 
 这个模块包含视频保存相关的节点。
 """
@@ -21,9 +21,10 @@ from comfy_api.latest import Input, io, ui
 
 class XVideoSave(io.ComfyNode):
     """
-    XVideoSave 视频保存节点
+    XVideoSave 视频保存节点 (V3)
 
-    提供视频保存功能，使用H.265/HEVC编码，支持自定义文件名、子文件夹、日期时间标识符和安全防护。
+    提供视频保存功能，使用H.265/HEVC编码，支持自定义文件名、
+    子文件夹、日期时间标识符和安全防护。
 
     功能:
         - 保存视频到ComfyUI默认输出目录
@@ -65,6 +66,7 @@ class XVideoSave(io.ComfyNode):
                 "with H.265/HEVC encoding. Audio streams are copied "
                 "without re-encoding to preserve original quality."
             ),
+            is_output_node=True,
             inputs=[
                 io.Video.Input("video", tooltip="The video to save."),
                 io.String.Input(
@@ -119,7 +121,6 @@ class XVideoSave(io.ComfyNode):
                     ),
                 ),
             ],
-            is_output_node=True,
         )
 
     @classmethod
@@ -139,7 +140,8 @@ class XVideoSave(io.ComfyNode):
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
             crf: 质量参数(0=无损, 63=最差质量)
-            preset: 编码预设(ultrafast到veryslow，平衡编码速度和压缩效率)
+            preset: 编码预设(ultrafast到veryslow，
+                平衡编码速度和压缩效率)
 
         Returns:
             io.NodeOutput: 包含视频预览的输出
@@ -362,7 +364,8 @@ class XVideoSave(io.ComfyNode):
         """
         清理路径，防止遍历攻击并禁用多级目录
 
-        将所有危险字符和路径分隔符替换为下划线，确保只允许单级文件夹名称
+        将所有危险字符和路径分隔符替换为下划线，
+        确保只允许单级文件夹名称
 
         Args:
             path: 原始路径或文件夹名称
@@ -508,11 +511,3 @@ class XVideoSave(io.ComfyNode):
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
-
-
-NODE_CLASS_MAPPINGS = {
-    "XVideoSave": XVideoSave,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XVideoSave": "XVideoSave",
-}

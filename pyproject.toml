@@ -1,6 +1,6 @@
 [project]
 name = "xz3r0-nodes"
-description = "Custom ComfyUI nodes: XMath, XResolution, XImageResize, XImageSave, XLatentLoad, XLatentSave, XVideoSave, XAudioSave, XStringGroup, XWorkflowSave, XMetadataWorkflow(Extension), XDateTimeString, XFitView(Extension)"
+description = "Custom ComfyUI nodes: XMath, XResolution, XStringGroup, XDateTimeString, XImageResize, XImageSave, XLatentLoad, XLatentSave, XVideoSave, XAudioSave, XWorkflowSave. Custom ComfyUI extension: XMetadataWorkflow, XFitView"
 version = "1.5.0"
 license = { file = "LICENSE" }
 

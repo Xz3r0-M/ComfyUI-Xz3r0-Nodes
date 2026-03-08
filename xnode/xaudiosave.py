@@ -1,6 +1,6 @@
 """
-音频保存节点模块
-================
+音频保存节点模块 (V3 API)
+========================
 
 这个模块包含音频保存相关的节点。
 """
@@ -20,17 +20,19 @@ import ffmpeg
 import folder_paths
 import numpy as np
 import torch
+from comfy_api.latest import io
 from scipy.io import wavfile
 from torchaudio.transforms import Resample
 
 NULL_DEVICE = "NUL" if os.name == "nt" else "/dev/null"
 
 
-class XAudioSave:
+class XAudioSave(io.ComfyNode):
     """
-    XAudioSave 音频保存节点
+    XAudioSave 音频保存节点 (V3)
 
-    提供音频保存功能，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、音量标准化和峰值限制。
+    提供音频保存功能，使用WAV无损格式，支持自定义文件名、
+    子文件夹、日期时间标识符、音量标准化和峰值限制。
 
     功能:
         - 保存音频到ComfyUI默认输出目录
@@ -98,8 +100,6 @@ class XAudioSave:
         save_path="output/Audio/MyAudio_20260114.wav"
     """
 
-    OUTPUT_NODE = True
-
     SAMPLE_RATES = {
         "44100": 44100,
         "48000": 48000,
@@ -108,153 +108,128 @@ class XAudioSave:
     }
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
-        """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "audio": ("AUDIO", {"tooltip": "Input audio tensor"}),
-                "filename_prefix": (
-                    "STRING",
-                    {
-                        "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": (
-                            "Filename prefix, supports datetime placeholders: "
-                            "%Y%, %m%, %d%, %H%, %M%, %S%"
-                        ),
-                    },
+    def define_schema(cls):
+        """定义节点的输入输出模式"""
+        return io.Schema(
+            node_id="XAudioSave",
+            display_name="XAudioSave",
+            description="Save audio with LUFS normalization, compression, "
+            "and peak limiting using WAV lossless format",
+            category="♾️ Xz3r0/File-Processing",
+            is_output_node=True,
+            inputs=[
+                io.Audio.Input(
+                    "audio",
+                    tooltip="Input audio tensor",
                 ),
-                "subfolder": (
-                    "STRING",
-                    {
-                        "default": "Audio",
-                        "tooltip": (
-                            "Subfolder name (no path separators allowed), "
-                            "supports datetime placeholders: "
-                            "%Y%, %m%, %d%, %H%, %M%, %S%"
-                        ),
-                    },
+                io.String.Input(
+                    "filename_prefix",
+                    default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                    tooltip="Filename prefix, supports datetime "
+                    "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
                 ),
-                "sample_rate": (
-                    list(cls.SAMPLE_RATES.keys()),
-                    {
-                        "default": "48000",
-                        "tooltip": (
-                            "Target sample rate for the output audio file"
-                        ),
-                    },
+                io.String.Input(
+                    "subfolder",
+                    default="Audio",
+                    tooltip="Subfolder name (no path separators "
+                    "allowed), supports datetime "
+                    "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
                 ),
-                "target_lufs": (
-                    "FLOAT",
-                    {
-                        "default": -14.1,
-                        "min": -70.0,
-                        "max": 0.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Target LUFS value for loudness normalization. "
-                            "Lower values make audio quieter. "
-                            "Default -14.1, Set to -70 to disable."
-                        ),
-                    },
+                io.Combo.Input(
+                    "sample_rate",
+                    options=list(cls.SAMPLE_RATES.keys()),
+                    default="48000",
+                    tooltip="Target sample rate for the output audio file",
                 ),
-                "enable_peak_limiter": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "Enable True Peak limiting "
-                            "(Broadcast standard, 8x oversampling). "
-                            "When disabled, skips peak limiting."
-                        ),
-                    },
+                io.Float.Input(
+                    "target_lufs",
+                    default=-14.1,
+                    min=-70.0,
+                    max=0.0,
+                    step=0.1,
+                    tooltip="Target LUFS value for loudness normalization. "
+                    "Lower values make audio quieter. "
+                    "Default -14.1, Set to -70 to disable.",
                 ),
-                "peak_limit": (
-                    "FLOAT",
-                    {
-                        "default": -1.1,
-                        "min": -6.0,
-                        "max": 0.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Peak limiting value in dB. "
-                            "Only used when enable_peak_limiter is enabled. "
-                            "Default -1.1, Values below 0 dB prevent clipping."
-                        ),
-                    },
+                io.Boolean.Input(
+                    "enable_peak_limiter",
+                    default=True,
+                    tooltip="Enable True Peak limiting "
+                    "(Broadcast standard, 8x oversampling). "
+                    "When disabled, skips peak limiting.",
                 ),
-                "enable_compression": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": (
-                            "Enable dynamic range compression using "
-                            "acompressor filter. "
-                            "When disabled, skips compression and "
-                            "proceeds directly to LUFS normalization."
-                        ),
-                    },
+                io.Float.Input(
+                    "peak_limit",
+                    default=-1.1,
+                    min=-6.0,
+                    max=0.0,
+                    step=0.1,
+                    tooltip="Peak limiting value in dB. "
+                    "Only used when enable_peak_limiter is enabled. "
+                    "Default -1.1, Values below 0 dB prevent clipping.",
                 ),
-                "compression_mode": (
-                    ["Fast", "Balanced", "Slow"],
-                    {
-                        "default": "Balanced",
-                        "tooltip": (
-                            "Compression preset mode. "
-                            "Threshold is automatically calculated based "
-                            "on audio LUFS and target LUFS. "
-                            "Fast: Fast response for voice/podcasts, "
-                            "ratio=3:1. "
-                            "Balanced: Balanced for general use, "
-                            "ratio=2:1. "
-                            "Slow: Smooth for mastering/broadcast, "
-                            "ratio=1.5:1."
-                        ),
-                    },
+                io.Boolean.Input(
+                    "enable_compression",
+                    default=False,
+                    tooltip="Enable dynamic range compression using "
+                    "acompressor filter. "
+                    "When disabled, skips compression and "
+                    "proceeds directly to LUFS normalization.",
                 ),
-                "use_custom_ratio": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": (
-                            "Enable custom compression ratio to "
-                            "override preset value. "
-                            "When disabled, uses the preset's "
-                            "default ratio."
-                        ),
-                    },
+                io.Combo.Input(
+                    "compression_mode",
+                    options=["Fast", "Balanced", "Slow"],
+                    default="Balanced",
+                    tooltip="Compression preset mode. "
+                    "Threshold is automatically calculated based "
+                    "on audio LUFS and target LUFS. "
+                    "Fast: Fast response for voice/podcasts, "
+                    "ratio=3:1. "
+                    "Balanced: Balanced for general use, "
+                    "ratio=2:1. "
+                    "Slow: Smooth for mastering/broadcast, "
+                    "ratio=1.5:1.",
                 ),
-                "custom_ratio": (
-                    "FLOAT",
-                    {
-                        "default": 2.0,
-                        "min": 1.0,
-                        "max": 20.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Custom compression ratio (1.0 to 20.0). "
-                            "Only used when use_custom_ratio is enabled. "
-                            "Lower values = lighter compression, higher "
-                            "values = stronger compression. "
-                            "Set ratio to 1.0 to disable compression "
-                            "(pass-through mode)."
-                        ),
-                    },
+                io.Boolean.Input(
+                    "use_custom_ratio",
+                    default=False,
+                    tooltip="Enable custom compression ratio to "
+                    "override preset value. "
+                    "When disabled, uses the preset's "
+                    "default ratio.",
                 ),
-            }
-        }
+                io.Float.Input(
+                    "custom_ratio",
+                    default=2.0,
+                    min=1.0,
+                    max=20.0,
+                    step=0.1,
+                    tooltip="Custom compression ratio (1.0 to 20.0). "
+                    "Only used when use_custom_ratio is enabled. "
+                    "Lower values = lighter compression, higher "
+                    "values = stronger compression. "
+                    "Set ratio to 1.0 to disable compression "
+                    "(pass-through mode).",
+                ),
+            ],
+            outputs=[
+                io.Audio.Output(
+                    "processed_audio",
+                    tooltip="Audio after resampling, loudness "
+                    "normalization, and peak limiting "
+                    "(32-bit float format)",
+                ),
+                io.String.Output(
+                    "save_path",
+                    tooltip="Saved file path relative to ComfyUI "
+                    "output directory",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("AUDIO", "STRING")
-    RETURN_NAMES = ("processed_audio", "save_path")
-    OUTPUT_TOOLTIPS = (
-        "Audio after resampling, loudness normalization, and peak limiting "
-        "(32-bit float format)",
-        "Saved file path relative to ComfyUI output directory",
-    )
-    FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/File-Processing"
-
-    def save(
-        self,
+    @classmethod
+    def execute(
+        cls,
         audio: dict,
         filename_prefix: str,
         subfolder: str,
@@ -266,7 +241,7 @@ class XAudioSave:
         compression_mode: str,
         use_custom_ratio: bool,
         custom_ratio: float,
-    ) -> tuple[dict, str]:
+    ) -> io.NodeOutput:
         """
         保存音频到ComfyUI输出目录
 
@@ -284,21 +259,21 @@ class XAudioSave:
             custom_ratio: 自定义压缩比
 
         Returns:
-            (processed_audio, save_path): 处理后的音频和保存的相对路径
+            NodeOutput: 包含处理后的音频和保存的相对路径
             - processed_audio: 32-bit float 格式的音频
             - save_path: 保存的 WAV 文件相对路径 (32-bit float)
         """
         # 获取ComfyUI默认输出目录
-        output_dir = self._get_output_directory()
+        output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(
+        safe_filename_prefix = cls._sanitize_path(filename_prefix)
+        safe_filename_prefix = cls._replace_datetime_placeholders(
             safe_filename_prefix
         )
 
-        safe_subfolder = self._sanitize_path(subfolder)
-        safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = cls._sanitize_path(subfolder)
+        safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
 
         # 创建完整保存路径
         save_dir = output_dir
@@ -319,7 +294,7 @@ class XAudioSave:
             waveform = waveform.unsqueeze(0)
 
         # 获取目标采样率
-        target_sr = self.SAMPLE_RATES[sample_rate]
+        target_sr = cls.SAMPLE_RATES[sample_rate]
 
         # 定义处理步骤数
         # 步骤1: 重采样, 步骤2: 文件名生成, 步骤3-10: 音频处理各阶段
@@ -328,12 +303,12 @@ class XAudioSave:
 
         # 重采样音频(如果需要)
         if original_sr != target_sr:
-            waveform = self._resample_audio(waveform, original_sr, target_sr)
+            waveform = cls._resample_audio(waveform, original_sr, target_sr)
         progress_bar.update_absolute(1)
 
         # 生成文件名(添加序列号)
         base_filename = safe_filename_prefix
-        final_filename = self._get_unique_filename(
+        final_filename = cls._get_unique_filename(
             save_dir, base_filename, ".wav"
         )
         progress_bar.update_absolute(2)
@@ -344,7 +319,7 @@ class XAudioSave:
         # 处理LUFS标准化和峰值限制
         final_lufs = target_lufs if target_lufs > -70 else None
         if final_lufs is not None:
-            waveform = self._normalize_audio(
+            waveform = cls._normalize_audio(
                 waveform,
                 target_sr,
                 final_lufs,
@@ -360,7 +335,7 @@ class XAudioSave:
             )
         else:
             # 没有LUFS标准化时，保存为32-bit float WAV格式
-            self._save_wav_32bit_float(waveform, save_path, target_sr)
+            cls._save_wav_32bit_float(waveform, save_path, target_sr)
             progress_bar.update_absolute(total_steps)
 
         # 记录相对路径
@@ -372,10 +347,11 @@ class XAudioSave:
             "sample_rate": target_sr,
         }
 
-        return (processed_audio, relative_path)
+        return io.NodeOutput(processed_audio, relative_path)
 
+    @classmethod
     def _resample_audio(
-        self, waveform: torch.Tensor, original_sr: int, target_sr: int
+        cls, waveform: torch.Tensor, original_sr: int, target_sr: int
     ) -> torch.Tensor:
         """
         重采样音频
@@ -391,8 +367,9 @@ class XAudioSave:
         resampler = Resample(orig_freq=original_sr, new_freq=target_sr)
         return resampler(waveform)
 
+    @classmethod
     def _normalize_audio(
-        self,
+        cls,
         waveform: torch.Tensor,
         sample_rate: int,
         target_lufs: float,
@@ -488,8 +465,6 @@ class XAudioSave:
                 f"[XAudioSave] Peak limiter {peak_limiter_str} "
                 f"(target: {tp_value} dB)"
             )
-
-            # print("[XAudioSave] Measuring initial audio statistics")
 
             stdout, stderr = (
                 ffmpeg.input(current_input_path)
@@ -620,11 +595,6 @@ class XAudioSave:
             if progress_bar:
                 progress_bar.update_absolute(current_step + 3)
 
-            # print(
-            #     "[XAudioSave] ===== Applying LUFS normalization "
-            #     "(Two-pass mode) ====="
-            # )
-
             loudnorm_tp = tp_value if enable_peak_limiter else 0
 
             rough_lufs_filter = (
@@ -715,11 +685,6 @@ class XAudioSave:
                 .run(capture_stdout=True, capture_stderr=True)
             )
 
-            # print(
-            #     "[XAudioSave] ===== Measuring audio "
-            #     "after LUFS normalization ====="
-            # )
-
             _, stderr_after = (
                 ffmpeg.input(str(lufs_path))
                 .filter(
@@ -756,8 +721,6 @@ class XAudioSave:
             if progress_bar:
                 progress_bar.update_absolute(current_step + 5)
 
-            # print("[XAudioSave] ===== Final audio verification =====")
-
             _, verify_stderr = (
                 ffmpeg.input(str(lufs_path))
                 .filter("ebur128", peak="true")
@@ -780,11 +743,6 @@ class XAudioSave:
                 progress_bar.update_absolute(current_step + 6)
 
             shutil.copy2(lufs_path, final_save_path)
-            # final_size = os.path.getsize(final_save_path)
-            # print(
-            #     f"[XAudioSave] Copied to: {final_save_path} "
-            #     f"({final_size} bytes)"
-            # )
 
             sample_rate_out, audio_data_out = wavfile.read(
                 lufs_path, mmap=True
@@ -835,7 +793,24 @@ class XAudioSave:
             print(f"[XAudioSave] Exception type: {type(e).__name__}")
             print(f"[XAudioSave] Exception message: {e}")
             print("[XAudioSave] Traceback:")
-            print(traceback.format_exc())
+            # 对traceback进行路径脱敏处理
+            tb_str = traceback.format_exc()
+            # 获取系统临时目录并脱敏
+            temp_dir = tempfile.gettempdir()
+            tb_str = tb_str.replace(temp_dir, "[TEMP_DIR]")
+            # 替换常见的Windows临时路径格式
+            tb_str = re.sub(
+                r'[A-Za-z]:\\[^\\]*\\Temp\\[^\\\s\'"\]\)]*',
+                "[TEMP_PATH]",
+                tb_str,
+            )
+            # 对ComfyUI输出目录进行脱敏
+            output_dir_str = str(final_save_path.parent.parent)
+            tb_str = tb_str.replace(output_dir_str, "[OUTPUT_DIR]")
+            # 对Python安装路径进行脱敏
+            python_dir = os.path.dirname(os.__file__)
+            tb_str = tb_str.replace(python_dir, "[PYTHON_DIR]")
+            print(tb_str)
             print(
                 "[XAudioSave] ===== ♾️Warning: Using original audio "
                 "without processing♾️ ====="
@@ -849,8 +824,9 @@ class XAudioSave:
                     except OSError:
                         pass
 
+    @classmethod
     def _save_wav_32bit_float(
-        self, waveform: torch.Tensor, path: Path, sample_rate: int
+        cls, waveform: torch.Tensor, path: Path, sample_rate: int
     ):
         """
         保存为32-bit float WAV文件（使用FFmpeg）
@@ -898,7 +874,8 @@ class XAudioSave:
                 except OSError:
                     pass
 
-    def _get_output_directory(self) -> Path:
+    @classmethod
+    def _get_output_directory(cls) -> Path:
         """
         获取ComfyUI默认输出目录
 
@@ -907,7 +884,8 @@ class XAudioSave:
         """
         return Path(folder_paths.get_output_directory())
 
-    def _sanitize_path(self, path: str) -> str:
+    @classmethod
+    def _sanitize_path(cls, path: str) -> str:
         """
         清理路径，防止遍历攻击并禁用多级目录
 
@@ -971,7 +949,8 @@ class XAudioSave:
 
         return safe_path
 
-    def _replace_datetime_placeholders(self, text: str) -> str:
+    @classmethod
+    def _replace_datetime_placeholders(cls, text: str) -> str:
         """
         替换日期时间标识符
 
@@ -1009,8 +988,9 @@ class XAudioSave:
 
         return result
 
+    @classmethod
     def _get_unique_filename(
-        self,
+        cls,
         directory: Path,
         filename: str,
         extension: str,
@@ -1047,11 +1027,3 @@ class XAudioSave:
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
-
-
-NODE_CLASS_MAPPINGS = {
-    "XAudioSave": XAudioSave,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XAudioSave": "XAudioSave",
-}

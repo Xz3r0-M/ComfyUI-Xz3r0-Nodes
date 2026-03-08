@@ -11,20 +11,18 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
+from comfy_api.latest import io
 
-# 尝试导入ComfyUI依赖模块(用于实际运行环境)
 try:
     import comfy.utils
     import folder_paths
 
     COMFYUI_AVAILABLE = True
 except ImportError:
-    # 测试环境下这些模块可能不可用
     COMFYUI_AVAILABLE = False
 
 
-class XLatentSave:
-    OUTPUT_NODE = True
+class XLatentSave(io.ComfyNode):
     """
     XLatentSave Latent保存节点
 
@@ -45,8 +43,6 @@ class XLatentSave:
         latent: Latent张量 (LATENT)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
-        prompt: 工作流提示词(隐藏参数,自动注入)
-        extra_pnginfo: 额外元数据(隐藏参数,自动注入)
 
     输出:
         latent: 原始Latent(透传)
@@ -64,56 +60,65 @@ class XLatentSave:
     """
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
+    def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "latent": (
-                    "LATENT",
-                    {"tooltip": "Input latent tensor to save"},
+        return io.Schema(
+            node_id="XLatentSave",
+            display_name="XLatentSave",
+            description=(
+                "Save latent to ComfyUI output directory with custom "
+                "filename, subfolder, and datetime placeholders"
+            ),
+            category="♾️ Xz3r0/File-Processing",
+            is_output_node=True,
+            inputs=[
+                io.Latent.Input(
+                    "latent",
+                    tooltip="Input latent tensor to save",
                 ),
-                "filename_prefix": (
-                    "STRING",
-                    {
-                        "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": (
-                            "Filename prefix, supports datetime "
-                            "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-                        ),
-                    },
+                io.String.Input(
+                    "filename_prefix",
+                    default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                    tooltip=(
+                        "Filename prefix, supports datetime "
+                        "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+                    ),
                 ),
-                "subfolder": (
-                    "STRING",
-                    {
-                        "default": "Latents",
-                        "tooltip": (
-                            "Subfolder name (no path separators allowed), "
-                            "supports datetime placeholders: %Y%, %m%, "
-                            "%d%, %H%, %M%, %S%"
-                        ),
-                    },
+                io.String.Input(
+                    "subfolder",
+                    default="Latents",
+                    tooltip=(
+                        "Subfolder name (no path separators allowed), "
+                        "supports datetime placeholders: %Y%, %m%, "
+                        "%d%, %H%, %M%, %S%"
+                    ),
                 ),
-            },
-            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
-        }
+            ],
+            outputs=[
+                io.Latent.Output(
+                    "latent",
+                    tooltip="Original input latent (passed through)",
+                ),
+                io.String.Output(
+                    "save_path",
+                    tooltip=(
+                        "Saved file path relative to ComfyUI output directory"
+                    ),
+                ),
+            ],
+            hidden=[
+                io.Hidden.prompt,
+                io.Hidden.extra_pnginfo,
+            ],
+        )
 
-    RETURN_TYPES = ("LATENT", "STRING")
-    RETURN_NAMES = ("latent", "save_path")
-    OUTPUT_TOOLTIPS = (
-        "Original input latent (passed through)",
-        "Saved file path relative to ComfyUI output directory",
-    )
-    FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/File-Processing"
-
-    def save(
-        self,
+    @classmethod
+    def execute(
+        cls,
         latent: dict,
         filename_prefix: str,
         subfolder: str = "Latents",
-        prompt=None,
-        extra_pnginfo=None,
-    ) -> tuple[dict, str]:
+    ) -> io.NodeOutput:
         """
         保存Latent到ComfyUI输出目录
 
@@ -121,11 +126,12 @@ class XLatentSave:
             latent: Latent字典,包含"samples"键
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
-            prompt: 工作流提示词(元数据)
-            extra_pnginfo: 额外的元数据
 
         Returns:
-            (latent, save_path): 原始Latent和保存的相对路径
+            NodeOutput: 包含原始Latent和保存的相对路径
+
+        Raises:
+            RuntimeError: 当ComfyUI环境不可用时
         """
         # 检查ComfyUI环境是否可用
         if not COMFYUI_AVAILABLE:
@@ -133,17 +139,43 @@ class XLatentSave:
                 "ComfyUI environment not available, cannot save latent files"
             )
 
+        # 验证latent结构
+        if not isinstance(latent, dict):
+            raise ValueError(
+                f"Expected latent to be dict, got {type(latent).__name__}"
+            )
+        if "samples" not in latent:
+            raise ValueError("Latent missing required 'samples' key")
+        samples = latent["samples"]
+        if not isinstance(samples, torch.Tensor):
+            raise ValueError(
+                f"Latent samples must be torch.Tensor, "
+                f"got {type(samples).__name__}"
+            )
+        # 支持4D图像latent [B,C,H,W] 和 5D视频latent [B,C,T,H,W]
+        if samples.dim() == 4:
+            # 图像 latent: [B, C, H, W]
+            pass
+        elif samples.dim() == 5:
+            # 视频 latent: [B, C, T, H, W]
+            pass
+        else:
+            raise ValueError(
+                f"Latent samples must be 4D [B,C,H,W] (image) "
+                f"or 5D [B,C,T,H,W] (video), got {samples.dim()}D"
+            )
+
         # 获取ComfyUI默认输出目录
-        output_dir = self._get_output_directory()
+        output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(
+        safe_filename_prefix = cls._sanitize_path(filename_prefix)
+        safe_filename_prefix = cls._replace_datetime_placeholders(
             safe_filename_prefix
         )
 
-        safe_subfolder = self._sanitize_path(subfolder)
-        safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = cls._sanitize_path(subfolder)
+        safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
 
         # 创建完整保存路径
         save_dir = output_dir
@@ -157,12 +189,14 @@ class XLatentSave:
         base_filename = safe_filename_prefix
 
         # 检测同名文件并添加序列号(从00001开始)
-        final_filename = self._get_unique_filename(
+        final_filename = cls._get_unique_filename(
             save_dir, base_filename, ".latent"
         )
 
         # 生成元数据
-        metadata = self._generate_metadata(prompt, extra_pnginfo)
+        metadata = cls._generate_metadata(
+            cls.hidden.prompt, cls.hidden.extra_pnginfo
+        )
 
         # 保存Latent
         save_path = save_dir / final_filename
@@ -174,15 +208,21 @@ class XLatentSave:
             "latent_format_version_0": torch.tensor([]),
         }
 
+        # 保存可选键（如noise_mask, batch_index, type等）
+        for key in ["noise_mask", "batch_index", "type"]:
+            if key in latent:
+                output[key] = latent[key]
+
         # 使用comfy.utils保存latent(支持元数据)
         comfy.utils.save_torch_file(output, str(save_path), metadata=metadata)
 
         # 记录相对路径
         relative_path = str(save_path.relative_to(output_dir))
 
-        return (latent, relative_path)
+        return io.NodeOutput(latent, relative_path)
 
-    def _generate_metadata(self, prompt, extra_pnginfo):
+    @classmethod
+    def _generate_metadata(cls, prompt, extra_pnginfo):
         """
         生成元数据
 
@@ -211,7 +251,8 @@ class XLatentSave:
 
         return metadata
 
-    def _get_output_directory(self) -> Path:
+    @classmethod
+    def _get_output_directory(cls) -> Path:
         """
         获取ComfyUI默认输出目录
 
@@ -224,11 +265,13 @@ class XLatentSave:
             # 测试环境使用临时目录
             return Path("test_output")
 
-    def _sanitize_path(self, path: str) -> str:
+    @classmethod
+    def _sanitize_path(cls, path: str) -> str:
         """
         清理路径,防止遍历攻击并禁用多级目录
 
-        将所有危险字符和路径分隔符替换为下划线,确保只允许单级文件夹名称
+        将所有危险字符和路径分隔符替换为下划线,
+        确保只允许单级文件夹名称
 
         Args:
             path: 原始路径或文件夹名称
@@ -288,7 +331,8 @@ class XLatentSave:
 
         return safe_path
 
-    def _replace_datetime_placeholders(self, text: str) -> str:
+    @classmethod
+    def _replace_datetime_placeholders(cls, text: str) -> str:
         """
         替换日期时间标识符
 
@@ -334,8 +378,9 @@ class XLatentSave:
 
         return result
 
+    @classmethod
     def _get_unique_filename(
-        self,
+        cls,
         directory: Path,
         filename: str,
         extension: str,
@@ -372,11 +417,3 @@ class XLatentSave:
                 return candidate
 
         raise FileExistsError("Unable to generate unique filename")
-
-
-NODE_CLASS_MAPPINGS = {
-    "XLatentSave": XLatentSave,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XLatentSave": "XLatentSave",
-}

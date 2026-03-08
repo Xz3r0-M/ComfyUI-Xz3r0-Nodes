@@ -1,15 +1,114 @@
 # 更新日志 | Changelog
 
-## v1.6.0
+## 🎉 v1.6.0
 <details>
 
-1. 🛠️ 增强 `XFitView` 网页扩展
-- 适应视图支持子图 (Subgraph) 页面
-- ComfyUI 设置页面已更新工作流和子图分别在 进入/退出 时的适应视图设置选项
-
-2. 🪛 调整 `XImageResize` 图像缩放节点
+1. 🛠️ 增强和调整 `XImageResize` 图像缩放节点
 - 移除 长/短边 模式的百万像素限制保护功能
-    - 经过再次思考, 我认为这个限制保护功能在节点已有百万像素模式的情况下有些多余
+    - 经过再次思考, 我认为这个限制保护功能在节点已经有了 `Megapixels` 百万像素缩放模式的情况下有些多余
+- 将百万像素输入值范围改为 `0.1-100` (默认为: 1.0)
+- 将输出端口的名称改为 `Processed_Images` (处理后的图像)
+- 新增遮罩缩放处理, 以及遮罩对应的输入端口 `mask` 和 输出端口 `Processed_Mask`
+- 新增开关按钮 `merge_mask` (合并遮罩到处理后的图片中)
+    - 用于将处理后的遮罩 (如果存在) 合并到处理后的图像中 (Alpha 通道)
+
+2. 🪛 调整 `XWorkflowSave` 工作流元数据JSON保存节点
+- 移除 `FullWorkflow` 保存模式
+    - 经过再次思考, 我认为这个模式在节点已经有了数据更加完整的 `Prompt+FullWorkflow` 保存模式的情况下有些多余
+- 将 `Standard` 保存模式名称改为 `Native` (原生)
+    - 原生模式所保存 JSON 的元数据 (Prompt + Workflow 字段) 与官方的保存图片节点所保存到图片中的元数据一致 (`XImageSave` 和 `XLatentSave` 节点保存的元数据也是一致的)
+
+3. 🛠️ 增强 `XMetadataWorkflow` 工作流元数据可视化查看网页工具
+- 将原来工具内部解析多种不同文件和不同元数据格式的单一实现方式, 改为独立分开的元数据解析模式
+    - 将元数据解析模式分开可以大幅降低以后的维护难度, 但也会降低对使用者的易用性, 因为不再是原来那样全自动了.
+- 新增位于网页工具视图顶部的元数据解析模式选择按钮 (默认为: `Native` 原生模式)
+    - `📋 Native` 原生 模式, 仅基于元数据中的 Workflow 字段数据进行解析
+    - `🔗 Native (Merged)` 原生合并 模式, 基于元数据中的 Prompt 和 Workflow 双字段进行合并解析
+    - `🔗 P+FW` Prompt 和 Full Workflow 模式, 基于元数据中的 Prompt 和 Full Workflow 双字段进行合并解析
+        - 这个模式专门用于解析 `XWorkflowSave` 节点保存模式 `Prompt+FullWorkflow` 的 JSON
+- 新增 `💾 Convert XWorkflowSave JSON` 转换 JSON 功能, 用于转换 `XWorkflowSave` 所保存的 JSON 数据可以被 ComfyUI 网页界面加载的格式
+    - 节点保存的 JSON 数据有着嵌套所以无法被 ComfyUI 网页界面直接加载, 数据的嵌套是为了可以让网页工具在解析时可以分清楚数据中哪个部分属于 Prompt 字段以及哪个部分属于 (Full)Workflow, 这个转换功能会删除数据中的嵌套
+    - 需要注意, 使用转换功能删除嵌套后的 JSON 就只能使用 `Native` 原生模式解析了
+- 新增 🔄️ 重置网页按钮
+    - 按钮位于网页工具视图右上角
+
+4. 🛠️ 增强 `XFitView` 网页扩展
+- 适应视图支持子图 (Subgraph) 页面
+    - ComfyUI 设置页面中已新增工作流和子图分别在 进入/退出 时的适应视图设置选项
+
+5. 🛠️ 增强 `XLatentSave` 和 `XLatentLoad` Latnet处理节点
+- 代码内部添加 Latent 基础验证功能, 以验证获取或加载的 Latent 是否符合 ComfyUI 规范
+    - Latent 基础验证：
+        - 类型验证 - 必须是字典 (dict)
+        - 键验证 - 必须包含 "samples" 键
+        - 张量验证 - samples 必须是 torch.Tensor
+        - 维度验证 - samples 必须是 4D [B,C,H,W] 或 5D [B,C,T,H,W]
+    - 兼容：图像、音频、3D、视频、Inpaint、批量处理等所有 ComfyUI 标准 4D 或 5D 的 Latent 类型
+- `XLatentSave` 和 `XLatentLoad` 在获取 Latent 并处理时, 不会验证 Latent 可能带有的额外可选键是否符合规范, 例如:
+    - noise_mask
+    - batch_index
+    - type
+- 额外的可选键并不是必须数据, 无论是基础数据还是可选数据都是上游生成 Latent 的节点负责的, 如果生成的 Latent 不符合规范, 这属于是上游节点的问题, 并不是 `XLatentSave` 和 `XLatentLoad` 的责任
+
+6. 🛠️ 所有节点迁移至V3 API
+    - 这不会影响节点原本的功能
+        - 除非迁移的过程中搞错了什么
+    - 所有节点经过了简单的测试 (我希望没有问题)
+
+---
+
+1. 🛠️ Enhanced and Adjusted `XImageResize` Image Resize Node
+- Removed megapixel limit protection for Long/Short edge modes
+    - After reconsideration, this protection feature seems redundant since the node already has a `Megapixels` scaling mode
+- Changed megapixel input range to `0.1-100` (default: 1.0)
+- Renamed output port to `Processed_Images`
+- Added mask scaling processing, with corresponding `mask` input port and `Processed_Mask` output port
+- Added `merge_mask` toggle button (merge mask into processed image)
+    - Used to merge the processed mask (If it exists) into the processed image (Alpha channel)
+
+2. 🪛 Adjusted `XWorkflowSave` Workflow Metadata JSON Save Node
+- Removed `FullWorkflow` save mode
+    - After reconsideration, this mode seems redundant since the node already has the more complete `Prompt+FullWorkflow` save mode
+- Renamed `Standard` save mode to `Native`
+    - The metadata (Prompt + Workflow fields) saved in Native mode is consistent with official ComfyUI save image nodes (`XImageSave` and `XLatentSave` nodes also save consistent metadata)
+
+3. 🛠️ Enhanced `XMetadataWorkflow` Workflow Metadata Visualization Web Tool
+- Changed from single implementation parsing multiple file types and metadata formats to separate metadata parsing modes
+    - Separating metadata parsing modes significantly reduces future maintenance difficulty, but reduces ease of use as it's no longer fully automatic
+- Added metadata parsing mode selection buttons at the top of the web tool view (default: `Native` mode)
+    - `📋 Native` mode: Parses based only on Workflow field data in metadata
+    - `🔗 Native (Merged)` mode: Merges and parses based on both Prompt and Workflow fields in metadata
+    - `🔗 P+FW` Prompt and Full Workflow mode: Merges and parses based on both Prompt and Full Workflow fields in metadata
+        - This mode is specifically for parsing JSON saved with `XWorkflowSave` node's `Prompt+FullWorkflow` mode
+- Added `💾 Convert XWorkflowSave JSON` conversion feature to convert `XWorkflowSave` saved JSON data to a format loadable by ComfyUI web interface
+    - The JSON data saved by the node has nesting that prevents direct loading by ComfyUI web interface. The nesting allows the web tool to distinguish which part belongs to Prompt field and which to (Full)Workflow. This conversion feature removes the nesting
+    - Note: JSON converted with this feature can only be parsed using `Native` mode
+- Added 🔄️ Reset web page button
+    - Button located at top-right corner of web tool view
+
+4. 🛠️ Enhanced `XFitView` Web Extension
+- Fit view now supports Subgraph pages
+    - ComfyUI settings page now has separate fit view options for workflow and subgraph when entering/exiting
+
+5. 🛠️ Enhanced `XLatentSave` and `XLatentLoad` Latent Processing Nodes
+- Added internal Latent basic validation to verify if obtained or loaded Latent conforms to ComfyUI specifications
+    - Latent basic validation:
+        - Type validation - must be a dictionary (dict)
+        - Key validation - must contain "samples" key
+        - Tensor validation - samples must be torch.Tensor
+        - Dimension validation - samples must be 4D [B,C,H,W] or 5D [B,C,T,H,W]
+    - Compatible with all ComfyUI standard 4D or 5D Latent types: image, audio, 3D, video, Inpaint, batch processing, etc.
+- `XLatentSave` and `XLatentLoad` do not validate optional extra keys that Latent may contain, such as:
+    - noise_mask
+    - batch_index
+    - type
+- Optional extra keys are not required data. Both basic and optional data are the responsibility of upstream nodes that generate the Latent. If generated Latent doesn't conform to specifications, this is an upstream node issue, not `XLatentSave` and `XLatentLoad`'s responsibility
+
+6. 🛠️ All Nodes Migrated to V3 API
+    - This will not affect original node functionality
+        - Unless something went wrong during migration
+    - All nodes have undergone basic testing (hopefully no issues)
+
 
 </details>
 

@@ -177,18 +177,30 @@
       "height_offset": {
         "name": "Height Offset",
         "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
+      },
+      "mask": {
+        "name": "Mask",
+        "tooltip": "Input mask (optional, will be resized with same settings as images)"
+      },
+      "merge_mask": {
+        "name": "Merge Mask to Image",
+        "tooltip": "If enabled and mask is provided, merge mask into processed image alpha channel (output RGBA). If disabled or no mask, output RGB only"
       }
     },
     "outputs": {
       "0": {
-        "name": "Images",
-        "tooltip": "Scaled images"
+        "name": "Processed Images",
+        "tooltip": "Scaled images. If merge_mask=True and mask provided, outputs RGBA (4 channels); otherwise outputs RGB (3 channels)"
       },
       "1": {
+        "name": "Processed Mask",
+        "tooltip": "Scaled mask (if input mask provided, otherwise None)"
+      },
+      "2": {
         "name": "width",
         "tooltip": "Output resolution width"
       },
-      "2": {
+      "3": {
         "name": "height",
         "tooltip": "Output resolution height"
       }
@@ -200,7 +212,7 @@
     "inputs": {
       "images": {
         "name": "Images",
-        "tooltip": "Input image tensor (B, H, W, C)"
+        "tooltip": "Input image"
       },
       "filename_prefix": {
         "name": "Filename Prefix",
@@ -503,7 +515,7 @@
   },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "Saves ComfyUI workflow as JSON file, supporting four save modes (Auto auto-detect, Standard mode, FullWorkflow mode, Prompt+FullWorkflow combined mode), custom filename, subfolder, and datetime placeholders.",
+    "description": "Saves ComfyUI workflow as JSON file, supporting three save modes (Auto auto-detect, Native mode, Prompt+FullWorkflow combined mode), custom filename, subfolder, and datetime placeholders.",
     "inputs": {
       "anything": {
         "name": "Any Input",
@@ -511,11 +523,10 @@
       },
       "save_mode": {
         "name": "Save Mode",
-        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow, fallback to Standard if frontend extension not loaded), Standard (use extra_pnginfo to save prompt+workflow), FullWorkflow (save full workflow only, requires frontend API data), Prompt+FullWorkflow (save prompt + full workflow, requires frontend API data)",
+        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow, fallback to Native if frontend extension not loaded), Native (use extra_pnginfo to save native workflow format, compatible with ComfyUI web), Prompt+FullWorkflow (save prompt + full workflow, requires frontend API data)",
         "options": {
           "Auto": "Auto",
-          "Standard": "Standard",
-          "FullWorkflow": "FullWorkflow",
+          "Native": "Native",
           "Prompt+FullWorkflow": "Prompt+FullWorkflow"
         }
       },
