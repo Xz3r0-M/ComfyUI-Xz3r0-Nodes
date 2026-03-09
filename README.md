@@ -722,15 +722,6 @@ Latent保存节点，支持自定义文件名和元数据保存
 | Native (Merged) 原生合并 | ComfyUI 官方节点保存的图片、`XImageSave` 节点保存的图片、`XLatentSave` 节点保存的Latent、`XWorkflowSave` 节点`Native` 模式保存的 JSON |
 | P+FW | `XWorkflowSave` 节点 `Prompt+FullWorkflow` 模式保存的 JSON |
 
-**支持的文件**:
-- PNG 图片 (包含工作流元数据的生成图片)
-- Latent 潜空间文件 (.latent)
-- JSON 工作流文件:
-  - ✅ ComfyUI 网页界面原生的 `Save` 和 `Save As` 所保存的 JSON (默认保存在 `user\default\workflows`)
-  - ✅ `XWorkflowSave` 节点的 `Native` 模式保存的 JSON
-  - ✅ `XWorkflowSave` 节点的 `Prompt+FullWorkflow` 模式保存的 JSON (推荐, 最完整的元数据)
-  - ⚠️ ComfyUI 页界面导出功能的 JSON 文件 (缺少部分元数据，会导致缺失节点或参数)
-
 **技术说明**:
 - 优先使用完整工作流数据 (如果 JSON 中包含)
 - 子图通过节点ID中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
