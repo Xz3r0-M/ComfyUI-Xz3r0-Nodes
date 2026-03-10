@@ -27,7 +27,7 @@ ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标
 
 ### ✨ 当前项目节点和工具数量
 
-🎁 自定义节点 （数量总计：`11`）
+🎁 自定义节点 （数量总计：`13`）
 
 🧩 网页扩展与工具 （数量总计：`4`）
 
@@ -181,6 +181,51 @@ preset="1024×1024 (1:1)", width_offset=-1, height_offset=-1
 preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, height_offset=1
 输出：width=1921, height=1089 (1920x1088 + 偏移)
 ```
+</details>
+
+### XAnyToString - 🔤 任意数据转字符串
+<details>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+任意数据转字符串节点，用来把上游传来的各种数据转换成字符串，
+同时保留原始数据继续往下传。
+
+**这个节点是做什么的**:
+- 有些节点只接受字符串，但上游给你的可能是数字、布尔值，
+  或者其他类型的数据
+- 这个节点会帮你把那些数据直接转成字符串，方便接到保存文本、
+  拼接文本、写入 Markdown 等节点上
+- 同时它还会把原始数据原样透传出去，这样你不需要为了转换字符串
+  而中断原本的数据流
+
+**功能**:
+- 接收任意类型输入
+- 使用 Python 的 `str()` 规则转换为字符串
+- 同时输出原始输入数据
+- 适合在工作流里做“数据转文本”的中转
+
+**输入**:
+- `anything` (ANY): 任意输入数据
+
+**输出**:
+- `anything` (ANY): 原始输入数据，原样透传
+- `string` (STRING): 转换后的字符串结果
+
+**使用示例**:
+```
+输入:
+anything = 123
+
+输出:
+anything = 123
+string = "123"
+```
+
+**适合什么时候用**:
+- 把数字转成字符串后拿去保存到文本文件
+- 把上游节点结果转成字符串后接到 `XStringGroup`
+- 把任意数据转成字符串后接到 `XMarkdownSave`
 </details>
 
 ### XStringGroup - 🔗 字符串组合
@@ -577,6 +622,89 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 维度验证：samples 必须是 4D [B,C,H,W] 或 5D [B,C,T,H,W]
 - 兼容：图像、音频、3D、视频、Inpaint、批量处理等所有 ComfyUI 标准4D或5D的 Latent 类型
 - 注意：节点不验证 Latent 可能带有的额外可选键（如 noise_mask、batch_index、type），这些由上游生成 Latent 的节点负责
+</details>
+
+### XMarkdownSave - 📝 Markdown 保存
+<details>
+
+`♾️ Xz3r0/File-Processing`
+
+Markdown 保存节点，用来把头部、正文、尾部文本组合成一个
+`.md` 文件保存到 ComfyUI 输出目录中。
+
+**这个节点是做什么的**:
+- 适合把提示词、说明文字、工作流结果、元数据摘要之类的内容
+  保存成 Markdown 文档
+- 你既可以直接在节点里手动输入文字，也可以从上游节点接收字符串
+- 头部、正文、尾部之间可以控制是否自动插入换行，避免自己手动数空行
+
+**功能**:
+- 保存 Markdown 文件到 ComfyUI 默认输出目录
+- 头部、正文、尾部都支持“输入端口优先，文本框回退”
+- 支持正文前后插入换行分隔
+- 支持自定义文件名和子文件夹
+- 支持日期时间标识符 `%Y% %m% %d% %H% %M% %S%`
+- 自动检测同名文件并追加序列号，避免覆盖旧文件
+- 路径安全防护，避免非法路径写入
+- 输出最终保存内容和相对保存路径
+
+**输入**:
+- `filename_prefix` (STRING): 文件名前缀
+- `subfolder` (STRING): 子文件夹名称，默认 `Markdown`
+- `header_input` (STRING, 可选): 头部字符串输入端口，连接时优先
+  使用它
+- `header_text` (STRING, 多行): 头部文本框内容，未连接
+  `header_input` 时使用
+- `before_main_separator` (下拉选择): 头部和正文之间的分隔方式
+  - `none`: 不插入分隔内容
+  - `newline`: 插入换行
+- `before_main_newline_count` (INT): 正文前的换行次数
+- `main_text_input` (STRING, 可选): 正文字符串输入端口，连接时优先
+  使用它
+- `text_content` (STRING, 多行): 正文文本框内容，未连接
+  `main_text_input` 时使用
+- `after_main_separator` (下拉选择): 正文和尾部之间的分隔方式
+  - `none`: 不插入分隔内容
+  - `newline`: 插入换行
+- `after_main_newline_count` (INT): 正文后的换行次数
+- `footer_input` (STRING, 可选): 尾部字符串输入端口，连接时优先
+  使用它
+- `footer_text` (STRING, 多行): 尾部文本框内容，未连接
+  `footer_input` 时使用
+
+**优先级逻辑**:
+- 头部: 如果连接了 `header_input`，就使用输入端口内容；
+  否则使用 `header_text`
+- 正文: 如果连接了 `main_text_input`，就使用输入端口内容；
+  否则使用 `text_content`
+- 尾部: 如果连接了 `footer_input`，就使用输入端口内容；
+  否则使用 `footer_text`
+
+**输出**:
+- `content` (STRING): 最终写入 Markdown 文件的完整内容
+- `save_path` (STRING): 保存后的相对路径
+
+**使用示例**:
+```
+filename_prefix = "PromptNotes_%Y%-%m%-%d%"
+subfolder = "Markdown"
+header_text = "# 本次生成记录"
+before_main_separator = "newline"
+before_main_newline_count = 2
+text_content = "这里是正文内容"
+after_main_separator = "newline"
+after_main_newline_count = 2
+footer_text = "---\n保存完成"
+
+输出:
+content = "# 本次生成记录\n\n这里是正文内容\n\n---\n保存完成"
+save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
+```
+
+**适合什么时候用**:
+- 保存提示词记录、参数说明、生成备注
+- 把 `XAnyToString` 转出来的字符串写成 Markdown 文件
+- 把多个字符串节点整理后输出成可阅读的文档
 </details>
 
 ### XWorkflowSave - 📄 JSON工作流元数据保存
