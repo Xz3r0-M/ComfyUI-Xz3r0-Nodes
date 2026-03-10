@@ -18,7 +18,7 @@ from typing_extensions import override
 # ================================
 # 这个导入会触发 API 路由的注册
 # 必须在导入节点模块之前完成
-from .xnode import xworkflowsave_api
+from .api import xworkflowsave_api
 
 # ================================
 # 导入所有节点类

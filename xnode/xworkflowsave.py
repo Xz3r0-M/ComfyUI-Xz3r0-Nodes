@@ -20,7 +20,7 @@ from pathlib import Path
 import folder_paths
 from comfy_api.latest import io, ui
 
-from .xworkflowsave_api import workflow_store
+from ..api.xworkflowsave_api import workflow_store
 
 
 class XWorkflowSave(io.ComfyNode):

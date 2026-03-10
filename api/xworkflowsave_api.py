@@ -73,10 +73,10 @@ class WorkflowDataStore:
     支持主动清理（推荐）和自动过期清理（备用）。
     """
 
-    _instance = None  # 单例实例
-    _data: dict[str, dict[str, Any]] = {}  # 存储工作流数据的字典
-    _timestamps: dict[str, float] = {}  # 记录数据存储时间戳
-    _expire_seconds: float = 300  # 数据过期时间（秒），5分钟过期（备用机制）
+    _instance = None
+    _data: dict[str, dict[str, Any]] = {}
+    _timestamps: dict[str, float] = {}
+    _expire_seconds: float = 300
 
     def __new__(cls):
         if cls._instance is None:
@@ -91,9 +91,6 @@ class WorkflowDataStore:
         Args:
             prompt_id: 提示ID，作为存储键
             workflow_data: 工作流数据字典
-
-        Returns:
-            None
         """
         cls._data[prompt_id] = workflow_data
         cls._timestamps[prompt_id] = time.time()
@@ -116,11 +113,8 @@ class WorkflowDataStore:
 
         if prompt_id in cls._data:
             data = cls._data[prompt_id]
-
-            # 默认在读取后立即清理，释放内存
             if auto_cleanup:
                 cls.cleanup(prompt_id)
-
             return data
         return None
 
@@ -133,10 +127,9 @@ class WorkflowDataStore:
             prompt_id: 要清理的提示ID
 
         Returns:
-            是否成功清理（True表示数据存在并已清理）
+            是否成功清理
         """
         if prompt_id in cls._data:
-            # 删除数据释放内存
             del cls._data[prompt_id]
             cls._timestamps.pop(prompt_id, None)
             return True
@@ -146,12 +139,6 @@ class WorkflowDataStore:
     def _cleanup_expired(cls) -> None:
         """
         清理过期数据（备用机制）
-
-        遍历所有存储的数据，删除超过 _expire_seconds 时间限制的数据。
-        此方法在 retrieve 方法中被自动调用。
-
-        Returns:
-            None
         """
         current_time = time.time()
         expired_keys = [
@@ -175,7 +162,6 @@ class WorkflowDataStore:
         total_size = 0
 
         for _, value in cls._data.items():
-            # 估算数据大小（粗略计算）
             try:
                 size = len(json.dumps(value))
                 total_size += size
@@ -189,29 +175,13 @@ class WorkflowDataStore:
         }
 
 
-# 全局数据存储实例
 workflow_store = WorkflowDataStore()
-
-
-# ================================
-# API 路由定义
-# ================================
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xworkflowsave/capture")
 async def capture_workflow(request: web.Request) -> web.Response:
     """
     接收前端捕获的工作流数据
-
-    Request Body:
-        {
-            "prompt_id": "uuid-string",
-            "workflow": { ... },
-            "mode": "full" | "auto"
-        }
-
-    Returns:
-        {"status": "success"} 或错误信息
     """
     try:
         data = await request.json()
@@ -229,7 +199,6 @@ async def capture_workflow(request: web.Request) -> web.Response:
                 status=400,
             )
 
-        # 存储数据
         workflow_store.store(
             prompt_id,
             {
@@ -240,7 +209,6 @@ async def capture_workflow(request: web.Request) -> web.Response:
         )
 
         log_info(f"Stored workflow data for prompt_id: {prompt_id}")
-
         return web.json_response({"status": "success"})
 
     except json.JSONDecodeError:
@@ -257,14 +225,6 @@ async def capture_workflow(request: web.Request) -> web.Response:
 async def cleanup_workflow(request: web.Request) -> web.Response:
     """
     主动清理工作流数据
-
-    Request Body:
-        {
-            "prompt_id": "uuid-string"
-        }
-
-    Returns:
-        {"status": "success", "cleaned": true/false}
     """
     try:
         data = await request.json()
@@ -276,7 +236,6 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
             )
 
         cleaned = workflow_store.cleanup(prompt_id)
-
         return web.json_response({"status": "success", "cleaned": cleaned})
 
     except json.JSONDecodeError:
@@ -293,9 +252,6 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
 async def get_status(request: web.Request) -> web.Response:
     """
     获取存储状态（调试用）
-
-    Returns:
-        当前存储的数据键列表和内存使用情况
     """
     memory_info = workflow_store.get_memory_usage()
 
@@ -311,49 +267,22 @@ async def get_status(request: web.Request) -> web.Response:
     )
 
 
-# ================================
-# 执行事件监听自动清理
-# ================================
-
-
 def register_execution_cleanup() -> None:
     """
     注册执行事件监听，自动清理工作流数据
-
-    监听 execution_success 和 execution_error 事件，
-    在任务执行完成或失败时自动清理对应的内存数据。
-    此功能完全静默运行，不影响用户体验。
-
-    工作流程:
-        1. 拦截原始的 send_sync 方法
-        2. 检查事件类型是否为执行完成事件
-        3. 如果是，提取 prompt_id 并清理对应数据
-        4. 调用原始方法继续正常流程
-
-    Returns:
-        None
     """
-    # 保存原始方法引用
     original_send_sync = server.PromptServer.instance.send_sync
 
     def patched_send_sync(event: str, data: dict, sid: str = None) -> None:
         """
         包装后的 send_sync 方法
-
-        Args:
-            event: 事件名称
-            data: 事件数据
-            sid: 会话ID
         """
-        # 调用原始方法（必须先调用，确保事件正常发送）
         original_send_sync(event, data, sid)
 
-        # 监听执行完成事件（成功或失败）
         if event in ("execution_success", "execution_error"):
             if isinstance(data, dict):
                 prompt_id = data.get("prompt_id")
                 if prompt_id:
-                    # 尝试清理对应的数据
                     cleaned = workflow_store.cleanup(prompt_id)
                     if cleaned:
                         log_debug(
@@ -361,10 +290,8 @@ def register_execution_cleanup() -> None:
                             f"(event: {event})"
                         )
 
-    # 替换为包装后的方法
     server.PromptServer.instance.send_sync = patched_send_sync
     log_debug("Execution cleanup listener registered")
 
 
-# 注册执行事件监听（模块加载时自动执行）
 register_execution_cleanup()
