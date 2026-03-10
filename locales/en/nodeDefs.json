@@ -394,6 +394,78 @@
       }
     }
   },
+  "XMarkdownSave": {
+    "display_name": "XMarkdownSave",
+    "description": "Markdown saving node with header/main/footer string input priority, multiline textbox fallback, explicit separators before and after the main content, newline count validation, custom filename, subfolder, and datetime placeholders.",
+    "inputs": {
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "header_input": {
+        "name": "Header Input",
+        "tooltip": "Optional header string input port. When connected, this input takes priority over header_text."
+      },
+      "header_text": {
+        "name": "Header Text",
+        "tooltip": "Additional multiline text prepended before the main content. Do not rely on trailing blank lines; use the separator controls below for stable newlines."
+      },
+      "before_main_separator": {
+        "name": "Before Main Separator",
+        "tooltip": "Separator inserted between header_text and the main content. none = no separator, newline = insert newline characters.",
+        "options": {
+          "none": "None",
+          "newline": "Newline"
+        }
+      },
+      "before_main_newline_count": {
+        "name": "Before Main Newline Count",
+        "tooltip": "Only used when Before Main Separator is newline. Must be greater than or equal to 1."
+      },
+      "main_text_input": {
+        "name": "Main Text Input",
+        "tooltip": "Optional main content string input port. When connected, this input takes priority over text_content."
+      },
+      "text_content": {
+        "name": "Text Content",
+        "tooltip": "Fallback multiline textbox content used only when main_text_input is not connected."
+      },
+      "after_main_separator": {
+        "name": "After Main Separator",
+        "tooltip": "Separator inserted between the main content and footer_text. none = no separator, newline = insert newline characters.",
+        "options": {
+          "none": "None",
+          "newline": "Newline"
+        }
+      },
+      "after_main_newline_count": {
+        "name": "After Main Newline Count",
+        "tooltip": "Only used when After Main Separator is newline. Must be greater than or equal to 1."
+      },
+      "footer_input": {
+        "name": "Footer Input",
+        "tooltip": "Optional footer string input port. When connected, this input takes priority over footer_text."
+      },
+      "footer_text": {
+        "name": "Footer Text",
+        "tooltip": "Additional multiline text appended after the main content. Do not rely on leading blank lines; use the separator controls above for stable newlines."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "content",
+        "tooltip": "Final complete string written into the markdown file, available for downstream nodes."
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
   "XStringGroup": {
     "display_name": "XStringGroup",
     "description": "Groups 5 multiline string inputs with customizable separation methods between them.",
@@ -571,6 +643,26 @@
       "0": {
         "name": "Datetime String",
         "tooltip": "Formatted datetime string"
+      }
+    }
+  },
+  "XAnyToString": {
+    "display_name": "XAnyToString",
+    "description": "Converts any input data to a string while passing the original input through to downstream nodes.",
+    "inputs": {
+      "anything": {
+        "name": "Any Input",
+        "tooltip": "Any input type that will be converted to a string using Python str()"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Any Output",
+        "tooltip": "Original input data passed through for downstream nodes"
+      },
+      "1": {
+        "name": "String",
+        "tooltip": "String converted from the input using str()"
       }
     }
   }

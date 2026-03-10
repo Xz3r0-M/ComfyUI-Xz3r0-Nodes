@@ -6,7 +6,7 @@
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 
-**如果这个项目对你有帮助，请给个星标⭐支持一下！**
+**如果这个项目对您有帮助，请给个星标⭐支持一下！**
 
 [📜 点击查看更新日志 | Click to view the changelog 📜](Changelog.md)
 </div>
@@ -21,41 +21,15 @@ ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标
 
 - 🌍 多语言界面 - 节点目前支持 🇨🇳 `中文` 🇬🇧 `English` 界面
     - ComfyUI 会根据您的UI页面设置所选择的语言来调用节点的语言文件，节点名称、参数描述和提示信息都会按照语言文件自动翻译
-    - 如果节点没有支持您使用的 UI 界面语言会默认显示节点代码的文字而不是回退到英文语言(* 这可能是 ComfyUI 的 BUG)
+    - 如果节点没有支持您使用的 UI 界面语言, 节点界面将会直接显示节点内部代码中的英文文本 (这些英文文本与经过翻译和规范修正后的英文本地化不一样)
     - 如果您想为项目贡献新的语言支持，请参考项目中 `locales/en/nodeDefs.json` 的格式创建新的语言文件，并提交 Pull Request🤝
 - 🚫 安全处理 - 节点中可输入的文件名和路径已做防遍历攻击处理，请使用文字，不要使用日期时间标识符以外的特殊符号！
 
-### ✨ 项目节点和工具数量
+### ✨ 当前项目节点和工具数量
 
 🎁 自定义节点 （数量总计：`11`）
 
-- 🛠️ 工具节点
-  - 数学运算
-  - 分辨率设置
-- 📝 数据类节点
-  - 字符串组合 (支持多行输入和分隔方式)
-  - 日期时间标识符字符串
-- 🖼️ 图像处理
-  - 图像缩放 (保持宽高比的多种缩放模式)
-  - 图像保存 (支持自定义文件名和子文件夹)
-- 🎬 视频处理
-  - 视频保存 (H.265 编码，自定义质量和速度预设，音频支持)
-- 🎵 音频处理
-  - 音频保存 (WAV 无损格式，LUFS 标准化，峰值限制)
-- 🔮 Latent 处理
-  - Latent 加载
-  - Latent 保存 (支持元数据)
-- ⌨️ 工作流节点
-  - 工作流元数据保存
-
-
-🧩 网页扩展工具 （数量总计：`3`）
-
-- ⌨️ 工作流工具
-  - XMetadataWorkflow 工作流元数据可视化查看工具
-  - XWorkflowSave 网页扩展（捕获完整工作流元数据）
-- 🔍 视图工具
-  - XFitView（工作流和子图页面自动适应视图）
+🧩 网页扩展与工具 （数量总计：`4`）
 
 ---
 
@@ -107,11 +81,9 @@ pip install -r requirements.txt
 
 ---
 
-## 📚 节点详细说明（推荐查看）
-
-<details>
-
-### 🔢 XMath
+## 🎁 节点的详细说明（推荐查看）
+`xnode`
+### XMath - 🔢 数学运算
 <details>
 
 `♾️ Xz3r0/Workflow-Processing`
@@ -143,7 +115,7 @@ pip install -r requirements.txt
 - `float_result` (FLOAT): 浮点数结果 (精确值)
 </details>
 
-### 📐 XResolution
+### XResolution - 📐 分辨率设置
 <details>
 
 `♾️ Xz3r0/Workflow-Processing`
@@ -211,7 +183,7 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 ```
 </details>
 
-### 🔗 XStringGroup
+### XStringGroup - 🔗 字符串组合
 <details>
 
 `♾️ Xz3r0/Workflow-Processing`
@@ -262,7 +234,7 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 - 工作流中的文本处理和组合
 </details>
 
-### 📅 XDateTimeString
+### XDateTimeString - 📅 日期时间标识符字符串
 <details>
 
 `♾️ Xz3r0/Workflow-Processing`
@@ -301,7 +273,7 @@ suffix="_v1"
 ```
 </details>
 
-### 🔎 XImageResize
+### XImageResize - 🔎 图像缩放
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -406,7 +378,7 @@ suffix="_v1"
 - 建议：批处理时确保所有图片尺寸相同，或分批处理不同尺寸的图片
 </details>
 
-### 💾 XImageSave
+### XImageSave - 🖼️ 图像保存
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -437,7 +409,7 @@ suffix="_v1"
 - `save_path` (STRING): 保存的相对路径
 </details>
 
-### 🎬 XVideoSave
+### XVideoSave - 🎬 视频保存
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -474,7 +446,7 @@ suffix="_v1"
 - 容器格式: MKV
 </details>
 
-### 🎵 XAudioSave
+### XAudioSave - 🎵 音频保存
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -530,7 +502,7 @@ suffix="_v1"
 - `save_path` (STRING): 保存的相对路径
 </details>
 
-### 📥 XLatentLoad
+### XLatentLoad - 📥 Latent 加载
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -567,7 +539,7 @@ Latent 加载节点，支持从输入端口或文件加载 Latent
 - 注意：节点不验证 Latent 可能带有的额外可选键（如 noise_mask、batch_index、type），这些由上游生成 Latent 的节点负责
 </details>
 
-### 📤 XLatentSave
+### XLatentSave - 📤 Latent 保存
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -607,7 +579,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 注意：节点不验证 Latent 可能带有的额外可选键（如 noise_mask、batch_index、type），这些由上游生成 Latent 的节点负责
 </details>
 
-### 📄 XWorkflowSave
+### XWorkflowSave - 📄 JSON工作流元数据保存
 <details>
 
 `♾️ Xz3r0/File-Processing`
@@ -654,12 +626,11 @@ Latent保存节点，支持自定义文件名和元数据保存
 - `workflow_info` (STRING): 工作流保存信息，显示保存模式和状态
 </details>
 
-</details>
+---
 
-## 🧩 网页扩展详细说明（推荐查看）
-<details>
-
-### 🖥️ ♾️ XFloatingWindow
+## 🧩 网页扩展的详细说明（推荐查看）
+`web`
+### XFloatingWindow - 🖥️ 浮动窗口
 <details>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFloatingWindow`
@@ -687,12 +658,12 @@ Latent保存节点，支持自定义文件名和元数据保存
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFloatingWindow.png" alt="XFloatingWindow" width="700">
 </details>
 
-### 📊 XMetadataWorkflow
+### XMetadataWorkflow - 📊 工作流元数据可视化查看
 <details>
 
-`🖥️ ♾️ XFloatingWindow` `🌐 web/XMetadataWorkflow.html`
+`🖥️ XFloatingWindow` `🌐 web/XMetadataWorkflow.html`
 
-独立的工作流元数据查看器工具，简易的网页类型的工具，用于可视化查看 ComfyUI 工作流元数据
+简易且独立的工作流元数据的可视化查看网页工具，将多种包含有工作流元数据的文件在网页视图中以 ComfyUI 相似的节点界面风格进行展示
 
 **功能**:
 - 支持多种文件格式：PNG 图片、Latent 文件、JSON 工作流文件
@@ -700,8 +671,8 @@ Latent保存节点，支持自定义文件名和元数据保存
   - `📋 Native` 原生模式 - 仅基于元数据中的 Workflow 字段数据进行解析
   - `🔗 Native (Merged)` 原生合并模式 - 基于元数据中的 Prompt 和 Workflow 双字段进行合并解析
   - `🔗 P+FW` Prompt 和 Full Workflow 模式 - 基于元数据中的 Prompt 和 Full Workflow 双字段进行合并解析（专门用于解析 `XWorkflowSave` 节点保存模式 `Prompt+FullWorkflow` 的 JSON）
-- 💾 Convert XWorkflowSave JSON 转换功能 - 用于转换 `XWorkflowSave` 所保存的 JSON 数据为可被 ComfyUI 网页界面加载的格式
-- 🔄️ 重置网页按钮 - 位于网页工具视图右上角，用于快速重置工具状态
+- `💾 Convert XWorkflowSave JSON` 转换功能 - 用于转换 `XWorkflowSave` 所保存的 JSON 数据为可被 ComfyUI 网页界面加载的格式
+- `🔄️` 重置网页按钮 - 位于网页工具视图右上角，用于快速重置工具状态
 - 支持显示 `note` 和 `markdown note` 节点内容
 - 基于加载文件的元数据, 自动选择简单的自动层级布局算法或元数据中节点位置信息来排列节点
 - 显示节点参数和连接关系
@@ -727,16 +698,20 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 子图通过节点ID中的 ":" 识别 (如 "18:8" 表示子图18中的节点8)
 - 节点位置使用简单的自动排列算法
 - 对于使用自行创建前端界面的第三方自定义节点可能不兼容 (只显示存在于元数据中的内容)
-- Convert XWorkflowSave JSON 转换功能说明: `XWorkflowSave` 节点保存的 JSON 数据有着嵌套结构所以无法被 ComfyUI 网页界面直接加载，数据的嵌套是为了让网页工具在解析时可以分清楚数据中哪个部分属于 Prompt 字段以及哪个部分属于 (Full)Workflow。使用转换功能删除嵌套后的 JSON 可以被 ComfyUI 网页界面加载, 但是只能使用 `Native` 原生模式解析了
+- `💾 Convert XWorkflowSave JSON` 转换功能说明:
+  - `XWorkflowSave` 节点保存的 JSON 数据有着嵌套结构所以无法被 ComfyUI 网页界面直接加载，数据的嵌套是为了让网页工具在解析时可以分清楚数据中哪个部分属于 Prompt 字段以及哪个部分属于 (Full)Workflow。
+  - 使用转换功能删除嵌套后的 JSON 可以被 ComfyUI 网页界面加载, 但是只能使用 `Native` 原生模式解析了
 
-**两种使用方式**:
+**三种使用方式**:
 1. 在 ComfyUI 中使用（集成）: 点击 ComfyUI 页面顶部菜单栏的 ♾️ 按钮，可打开或关闭浮动窗口，已将此网页工具嵌入到该浮动窗口中
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Open" width="500">
 
-2. 浏览器直接打开（独立）: 直接打开本项目中的 `web/XMetadataWorkflow.html` 文件，在浏览器中单独使用
+2. 在线使用: https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes
+
+3. 浏览器直接打开（独立）: 直接打开本项目中的 `web/XMetadataWorkflow.html` 文件，在浏览器中单独使用
 </details>
 
-### 💾 XWorkflowSave Extension
+### XWorkflowSave Extension - 📋 捕获完整工作流元数据
 <details>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XWorkflowSave`
@@ -750,7 +725,7 @@ Latent保存节点，支持自定义文件名和元数据保存
 
 **工作流程**:
 1. 网页扩展 (`ComfyUI.Xz3r0.XWorkflowSave`) 在 ComfyUI 前端捕获完整工作流数据
-2. 自定义API (`xworkflowsave_api`) 接收并缓存来自网页扩展的数据
+2. 自定义 API (`xworkflowsave_api`) 接收并缓存来自网页扩展的数据
 3. `XWorkflowSave` 节点调用 API 获取数据并保存为 JSON 文件
 
 **使用方式**:
@@ -763,12 +738,12 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 扩展加载后会在浏览器控制台输出日志信息
 </details>
 
-### 🔍 XFitView
+### XFitView - 🔍 工作流和子图页面自动适应视图
 <details>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFitView`
 
-打开 ComfyUI 网页界面或载入新工作流时，自动执行 ComfyUI 网页界面原生的 *适应视图* 功能，确保工作流内容完整显示在画布可视区域内。支持主工作流和子图(Subgraph)页面的自动适应。
+打开 ComfyUI 网页界面或载入新工作流时，自动执行 ComfyUI 网页界面原生的 *适应视图* 功能，确保工作流内容完整显示在画布可视区域内。支持主工作流和子图 (Subgraph) 页面的自动适应。
 
 **功能**:
 - 页面首次加载适应: 页面首次加载完成后自动适应视图
@@ -810,78 +785,24 @@ Latent保存节点，支持自定义文件名和元数据保存
 - 通过触发 ComfyUI 页面右下角的原生 Fit View 按钮实现适应视图功能
 </details>
 
-</details>
-
 ---
 
-## 📁 项目结构
-<details>
+## 📞 项目链接
 
-```
-ComfyUI-Xz3r0-Nodes/
-├── .github/             # GitHub Actions
-│   └── workflows/
-│       ├── deploy.yml   # XMetadataWorkflow 网页工具 github 在线部署文件
-│       └── publish.yml
-├── __init__.py          # 主入口
-├── xnode/               # 节点目录
-│   ├── __init__.py
-│   ├── xmath.py         # 数学运算节点
-│   ├── xresolution.py   # 分辨率设置节点
-│   ├── ximageresize.py  # 图像缩放节点
-│   ├── xdatetimestring.py     # 日期时间字符串节点
-│   ├── ximagesave.py    # 图像保存节点
-│   ├── xvideosave.py    # 视频保存节点
-│   ├── xaudiosave.py    # 音频保存节点
-│   ├── xlatentload.py   # Latent 加载节点
-│   ├── xlatentsave.py   # Latent 保存节点
-│   ├── xstringgroup.py  # 字符串组合节点
-│   ├── xworkflowsave_api.py  # 工作流保存节点 API
-│   └── xworkflowsave.py # 工作流保存节点
-├── web/                 # 网页扩展目录
-│   ├── XFitView.js   # ComfyUI 网页界面自动适应视图扩展
-│   ├── XFloatingWindow.js   # ComfyUI 浮动窗口扩展
-│   ├── XWorkflowSave_Extension.js  # XWorkflowSave 的网页扩展
-│   └── XMetadataWorkflow.html  # 工作流元数据可视化查看器
-├── locales/             # ComfyUI 标准本地化支持
-│   ├── en/              # 英文
-│   │   ├── nodeDefs.json   # 节点本地化文件
-│   │   └── settings.json   # 网页扩展本地化文件
-│   └── zh/              # 中文
-│       ├── nodeDefs.json   # 节点本地化文件
-│       └── settings.json   # 网页扩展本地化文件
-├── preview/             # 预览图片
-│   ├── preview.png
-│   └── XMetadataWorkflow_preview.png
-├── .gitignore           # Git 忽略文件
-├── Changelog.md         # 更新日志
-├── LICENSE              # MIT 许可证
-├── pyproject.toml       # Comfy Registry 配置文件
-├── requirements.txt     # Python 依赖清单
-└── README.md            # 项目文档
-```
-
-</details>
-
----
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+- **Github 项目主页**: [https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes)
+- **问题反馈**: [GitHub Issues](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/issues)
+- **Comfy Registry 主页**: [Comfy Registry](https://registry.comfy.org/zh/publishers/xz3r0/nodes/xz3r0-nodes)
 
 ---
 
 ## 🙏 致谢
 
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) - 强大的基于节点的图像生成 UI
-- [jtydhr88](https://github.com/jtydhr88/comfyui-custom-node-skills) - 提供的 Skills
+- [FFmpeg](https://www.ffmpeg.org/download.html) - 音频/视频处理
+- [jtydhr88](https://github.com/jtydhr88/comfyui-custom-node-skills) - 开发 Skills
 
 ---
 
-## 📞 项目链接
+## 📄 许可证
 
-- **项目主页**: [https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes)
-- **问题反馈**: [GitHub Issues](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/issues)
-- **Comfy Registry 主页**: [Comfy Registry](https://registry.comfy.org/zh/publishers/xz3r0/nodes/xz3r0-nodes)
-
----
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件

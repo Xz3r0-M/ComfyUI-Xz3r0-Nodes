@@ -25,6 +25,7 @@ from .xnode import xworkflowsave_api
 # ================================
 from .xnode.xmath import XMath
 from .xnode.xdatetimestring import XDateTimeString
+from .xnode.xanytostring import XAnyToString
 from .xnode.xstringgroup import XStringGroup
 from .xnode.xresolution import XResolution
 from .xnode.xlatentload import XLatentLoad
@@ -33,6 +34,7 @@ from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
 from .xnode.xvideosave import XVideoSave
 from .xnode.xaudiosave import XAudioSave
+from .xnode.xmarkdownsave import XMarkdownSave
 from .xnode.xworkflowsave import XWorkflowSave
 
 # ================================
@@ -98,6 +100,7 @@ def check_dependencies(
 ALL_NODES: list = [
     XMath,
     XDateTimeString,
+    XAnyToString,
     XStringGroup,
     XResolution,
     XLatentLoad,
@@ -106,6 +109,7 @@ ALL_NODES: list = [
     XImageSave,
     XVideoSave,
     XAudioSave,
+    XMarkdownSave,
     XWorkflowSave,
 ]
 

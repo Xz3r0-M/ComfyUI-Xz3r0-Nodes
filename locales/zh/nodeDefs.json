@@ -394,6 +394,78 @@
       }
     }
   },
+  "XMarkdownSave": {
+    "display_name": "XMarkdownSave",
+    "description": "Markdown 保存节点，支持头部/正文/尾部字符串输入端口优先、多行文本框回退、正文前后分隔控制、换行次数校验、自定义文件名、子文件夹和日期时间标识符。",
+    "inputs": {
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "子文件夹",
+        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "header_input": {
+        "name": "头部输入",
+        "tooltip": "可选头部字符串输入端口。连接时优先使用此输入；未连接时回退到头部文本框。"
+      },
+      "header_text": {
+        "name": "头部文本",
+        "tooltip": "追加在正文前面的多行文本。不要依赖文本框尾部空行，请使用下面的正文前分隔控制稳定插入换行。"
+      },
+      "before_main_separator": {
+        "name": "正文前分隔",
+        "tooltip": "头部文本与核心正文之间的分隔方式。none=无分隔，newline=插入换行。",
+        "options": {
+          "none": "无分隔",
+          "newline": "换行"
+        }
+      },
+      "before_main_newline_count": {
+        "name": "正文前换行次数",
+        "tooltip": "仅在正文前分隔选择 newline 时生效。换行次数必须大于等于 1。"
+      },
+      "main_text_input": {
+        "name": "正文输入",
+        "tooltip": "可选正文字符串输入端口。连接时优先使用此输入；未连接时回退到正文文本框。"
+      },
+      "text_content": {
+        "name": "正文文本",
+        "tooltip": "多行正文文本框。仅在字符串输入端口未连接时使用。"
+      },
+      "after_main_separator": {
+        "name": "正文后分隔",
+        "tooltip": "核心正文与尾部文本之间的分隔方式。none=无分隔，newline=插入换行。",
+        "options": {
+          "none": "无分隔",
+          "newline": "换行"
+        }
+      },
+      "after_main_newline_count": {
+        "name": "正文后换行次数",
+        "tooltip": "仅在正文后分隔选择 newline 时生效。换行次数必须大于等于 1。"
+      },
+      "footer_input": {
+        "name": "尾部输入",
+        "tooltip": "可选尾部字符串输入端口。连接时优先使用此输入；未连接时回退到尾部文本框。"
+      },
+      "footer_text": {
+        "name": "尾部文本",
+        "tooltip": "追加在正文后面的多行文本。不要依赖文本框开头空行，请使用上面的正文后分隔控制稳定插入换行。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "保存内容",
+        "tooltip": "最终实际写入 Markdown 文件的完整字符串，可继续传递给下游节点。"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
+      }
+    }
+  },
   "XStringGroup": {
     "display_name": "XStringGroup",
     "description": "组合5个多行字符串输入，可在它们之间选择不同的分隔方式。",
@@ -571,6 +643,26 @@
       "0": {
         "name": "日期时间字符串",
         "tooltip": "格式化后的日期时间字符串"
+      }
+    }
+  },
+  "XAnyToString": {
+    "display_name": "XAnyToString",
+    "description": "将任意输入数据转换为字符串，同时保留原始输入透传给下游节点。",
+    "inputs": {
+      "anything": {
+        "name": "任意输入",
+        "tooltip": "任意输入类型，将使用 Python str() 转换为字符串"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "任意输出",
+        "tooltip": "原始输入数据透传，可继续连接下游节点"
+      },
+      "1": {
+        "name": "字符串",
+        "tooltip": "使用 str() 从输入转换得到的字符串"
       }
     }
   }
