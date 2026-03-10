@@ -735,8 +735,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 | 模式 | 说明 | 优点 | 缺点 |
 |-----|------|------|------|
 | `Auto` (默认) | 自动模式，优先使用 `Prompt+FullWorkflow`，不可用时回退到 `Native` | 智能选择最佳模式 | 依赖网页扩展 |
-| `Native` | 使用 ComfyUI 官方后端 API 获取原生工作流格式（与官方 SaveImage 节点保存的元数据一致） | 使用官方后端 API，ComfyUI 网页界面支持加载该模式的 JSON✅ | `note` 和 `markdown note` 节点不保存在元数据中❌ |
-| `Prompt+FullWorkflow` (推荐) | 结合标准 API 的 prompt 字段和网页扩展的完整 workflow 数据 | 所有模式中最完整的工作流元数据 | 依赖网页扩展，非官方原生支持, ComfyUI 不支持加载该模式的 JSON |
+| `Native` | 使用 ComfyUI 官方后端 API 获取原生工作流格式（与官方 SaveImage 节点保存的元数据一致） | 使用官方后端 API | 缺少一些节点的元数据 |
+| `Prompt+FullWorkflow` (推荐) | 结合标准 API 的 prompt 字段和网页扩展的完整 workflow 数据 | 所有模式中最完整的工作流元数据 | 依赖网页扩展，非官方原生支持 |
 
 **注意**: `Prompt+FullWorkflow` 模式依赖 `ComfyUI.Xz3r0.XWorkflowSave` 网页扩展和 `xworkflowsave_api` 自定义 API
 
