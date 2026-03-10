@@ -23,18 +23,18 @@ from .xnode import xworkflowsave_api
 # ================================
 # 导入所有节点类
 # ================================
-from .xnode.xmath import XMath
-from .xnode.xdatetimestring import XDateTimeString
 from .xnode.xanytostring import XAnyToString
-from .xnode.xstringgroup import XStringGroup
+from .xnode.xdatetimestring import XDateTimeString
+from .xnode.xmath import XMath
 from .xnode.xresolution import XResolution
-from .xnode.xlatentload import XLatentLoad
-from .xnode.xlatentsave import XLatentSave
+from .xnode.xstringgroup import XStringGroup
+from .xnode.xaudiosave import XAudioSave
 from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
-from .xnode.xvideosave import XVideoSave
-from .xnode.xaudiosave import XAudioSave
+from .xnode.xlatentload import XLatentLoad
+from .xnode.xlatentsave import XLatentSave
 from .xnode.xmarkdownsave import XMarkdownSave
+from .xnode.xvideosave import XVideoSave
 from .xnode.xworkflowsave import XWorkflowSave
 
 # ================================
@@ -98,18 +98,18 @@ def check_dependencies(
 # ================================
 
 ALL_NODES: list = [
-    XMath,
-    XDateTimeString,
     XAnyToString,
-    XStringGroup,
+    XDateTimeString,
+    XMath,
     XResolution,
-    XLatentLoad,
-    XLatentSave,
+    XStringGroup,
+    XAudioSave,
     XImageResize,
     XImageSave,
-    XVideoSave,
-    XAudioSave,
+    XLatentLoad,
+    XLatentSave,
     XMarkdownSave,
+    XVideoSave,
     XWorkflowSave,
 ]
 

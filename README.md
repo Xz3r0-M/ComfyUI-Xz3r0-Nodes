@@ -83,6 +83,92 @@ pip install -r requirements.txt
 
 ## 🎁 节点的详细说明（推荐查看）
 `xnode`
+
+`Workflow-Processing`
+### XAnyToString - 🔤 任意数据转字符串
+<details>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+任意数据转字符串节点，用来把上游传来的各种数据转换成字符串，
+同时保留原始数据继续往下传。
+
+**这个节点是做什么的**:
+- 有些节点只接受字符串，但上游给你的可能是数字、布尔值，
+  或者其他类型的数据
+- 这个节点会帮你把那些数据直接转成字符串，方便接到保存文本、
+  拼接文本、写入 Markdown 等节点上
+- 同时它还会把原始数据原样透传出去，这样你不需要为了转换字符串
+  而中断原本的数据流
+
+**功能**:
+- 接收任意类型输入
+- 使用 Python 的 `str()` 规则转换为字符串
+- 同时输出原始输入数据
+- 适合在工作流里做“数据转文本”的中转
+
+**输入**:
+- `anything` (ANY): 任意输入数据
+
+**输出**:
+- `anything` (ANY): 原始输入数据，原样透传
+- `string` (STRING): 转换后的字符串结果
+
+**使用示例**:
+```
+输入:
+anything = 123
+
+输出:
+anything = 123
+string = "123"
+```
+
+**适合什么时候用**:
+- 把数字转成字符串后拿去保存到文本文件
+- 把上游节点结果转成字符串后接到 `XStringGroup`
+- 把任意数据转成字符串后接到 `XMarkdownSave`
+</details>
+
+### XDateTimeString - 📅 日期时间标识符字符串
+<details>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+日期时间字符串节点，生成包含日期时间标识符的格式化字符串
+
+**功能**:
+- 支持自定义格式模板
+- 支持多种日期时间占位符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 支持添加前缀和后缀
+- 实时生成当前日期时间字符串
+- 用于链接给本身不支持日期标识符的节点作为文件名
+
+**支持的占位符**:
+- `%Y%` - 四位年份 (如: 2026)
+- `%m%` - 两位月份 (01-12)
+- `%d%` - 两位日期 (01-31)
+- `%H%` - 两位小时 (00-23)
+- `%M%` - 两位分钟 (00-59)
+- `%S%` - 两位秒数 (00-59)
+
+**输入**:
+- `prefix` (STRING): 前缀字符串，添加到日期时间之前
+- `format_template` (STRING): 格式模板 (默认: `%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `suffix` (STRING): 后缀字符串，添加到日期时间之后
+
+**输出**:
+- `datetime_string` (STRING): 格式化后的日期时间字符串
+
+**使用示例**:
+```
+prefix="Image_",
+format_template="%Y%-%m%-%d%_%H%-%M%-%S%",
+suffix="_v1"
+输出: "Image_2026-02-21_14-30-52_v1"
+```
+</details>
+
 ### XMath - 🔢 数学运算
 <details>
 
@@ -183,51 +269,6 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 ```
 </details>
 
-### XAnyToString - 🔤 任意数据转字符串
-<details>
-
-`♾️ Xz3r0/Workflow-Processing`
-
-任意数据转字符串节点，用来把上游传来的各种数据转换成字符串，
-同时保留原始数据继续往下传。
-
-**这个节点是做什么的**:
-- 有些节点只接受字符串，但上游给你的可能是数字、布尔值，
-  或者其他类型的数据
-- 这个节点会帮你把那些数据直接转成字符串，方便接到保存文本、
-  拼接文本、写入 Markdown 等节点上
-- 同时它还会把原始数据原样透传出去，这样你不需要为了转换字符串
-  而中断原本的数据流
-
-**功能**:
-- 接收任意类型输入
-- 使用 Python 的 `str()` 规则转换为字符串
-- 同时输出原始输入数据
-- 适合在工作流里做“数据转文本”的中转
-
-**输入**:
-- `anything` (ANY): 任意输入数据
-
-**输出**:
-- `anything` (ANY): 原始输入数据，原样透传
-- `string` (STRING): 转换后的字符串结果
-
-**使用示例**:
-```
-输入:
-anything = 123
-
-输出:
-anything = 123
-string = "123"
-```
-
-**适合什么时候用**:
-- 把数字转成字符串后拿去保存到文本文件
-- 把上游节点结果转成字符串后接到 `XStringGroup`
-- 把任意数据转成字符串后接到 `XMarkdownSave`
-</details>
-
 ### XStringGroup - 🔗 字符串组合
 <details>
 
@@ -279,43 +320,63 @@ string = "123"
 - 工作流中的文本处理和组合
 </details>
 
-### XDateTimeString - 📅 日期时间标识符字符串
+---
+`File-Processing`
+
+### XAudioSave - 🎵 音频保存
 <details>
 
-`♾️ Xz3r0/Workflow-Processing`
+`♾️ Xz3r0/File-Processing`
 
-日期时间字符串节点，生成包含日期时间标识符的格式化字符串
+音频保存节点，使用 WAV 无损格式保存音频，支持压缩和 LUFS 标准化以及峰值限制
 
 **功能**:
-- 支持自定义格式模板
-- 支持多种日期时间占位符 (%Y%, %m%, %d%, %H%, %M%, %S%)
-- 支持添加前缀和后缀
-- 实时生成当前日期时间字符串
-- 用于链接给本身不支持日期标识符的节点作为文件名
+- 保存音频到 ComfyUI 默认输出目录
+- WAV 无损格式 (PCM 32-bit float)
+- 支持多种采样率 (44.1kHz, 48kHz, 96kHz, 192kHz)
+- 可以使用压缩器 (acompressor 滤镜，三种预设：快速/平衡/缓慢)
+- 支持自定义压缩比 (1.0-20.0)
+- LUFS 音量标准化 (默认-14.1 LUFS，可设置为-70禁用)
+- 可以使用峰值限制 (True Peak)
+- 支持自定义文件名和子文件夹
+- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 路径安全防护 (防止路径遍历攻击)
+- 自动添加序列号防止覆盖(从00001开始)
 
-**支持的占位符**:
-- `%Y%` - 四位年份 (如: 2026)
-- `%m%` - 两位月份 (01-12)
-- `%d%` - 两位日期 (01-31)
-- `%H%` - 两位小时 (00-23)
-- `%M%` - 两位分钟 (00-59)
-- `%S%` - 两位秒数 (00-59)
+**处理流程**:
+1. 使用 FFmpeg 的压缩器 acompressor 滤镜 (如果启用) :
+   - 选择预设模式 (快速/平衡/缓慢)
+   - 可选使用自定义压缩比覆盖预设值
+   - 对音频进行动态范围压缩
+2. 使用 loudnorm 滤镜 双阶段处理进行 LUFS 标准化和限制峰值 (如果启用)
+3. 最终测量音频信息验证结果
+
+**压缩预设参数说明**:
+- 阈值自适应计算: `threshold = actual_lufs + (actual_lufs - target_lufs) * 0.3 + base_offset`
+- 快速: 适合语音/播客，base_offset=6dB, ratio=3:1, attack=10ms, release=50ms
+- 平衡: 通用/音乐，base_offset=4dB, ratio=2:1, attack=20ms, release=250ms
+- 缓慢: 适合母带/广播，base_offset=2dB, ratio=1.5:1, attack=50ms, release=500ms
+- 如果您不了解音频处理，简单来说，压缩器会让符合条件即超过音量阈值 (`threshold`) 的声音降低. 选择快速预设时压缩器遇到符合的声音会反应迅速但工作时间短，适合处理音频中极短出现的声音 (比如:鼓的敲击声和双手的拍打声) 可以让其听起来不再那么尖锐. 相反的，选择缓慢预设时压缩器遇到符合条件的声音反应会较慢但工作时间更长所以更适合处理持续时间更长的声音 (比如悠长的人声) 可以让其听起来更加紧凑. 为了简化节点，对于阈值使用公式根据音频的响度 (LUFS) 以及压缩预设的偏移量 (`base_offset`) 来自动设置阈值
+- 压缩比 (`ratio`) 是压缩器降低声音的幅度 (比例)，压缩比越高声音被降低得越多，预设带有压缩比，可以自定义
+**峰值限制说明**:
+- 使用 True Peak 方式 (广播标准，8x过采样，精度高) 限制音量峰值来尽可能避免削波失真
 
 **输入**:
-- `prefix` (STRING): 前缀字符串，添加到日期时间之前
-- `format_template` (STRING): 格式模板 (默认: `%Y%-%m%-%d%_%H%-%M%-%S%`)
-- `suffix` (STRING): 后缀字符串，添加到日期时间之后
+- `audio` (AUDIO): 音频对象 (包含波形和采样率)
+- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `subfolder` (STRING): 子文件夹名称 (默认：`Audio`)
+- `sample_rate` (STRING): 采样率 (默认：`48000`，可选：44100, 48000, 96000, 192000)
+- `target_lufs` (FLOAT): 目标LUFS值 (默认：`-14.1`，范围-70.0到0.0，-70禁用)
+- `enable_peak_limiter` (BOOLEAN): 是否启用峰值限制 (默认：True)
+- `peak_limit` (FLOAT): 峰值限制值 (默认：`-1.1`，范围-6.0到0.0)
+- `enable_compression` (BOOLEAN): 是否启用压缩 (默认：False)
+- `compression_mode` (STRING): 压缩预设模式 (默认：`Balanced`，可选：Fast, Balanced, Slow)
+- `use_custom_ratio` (BOOLEAN): 是否使用自定义压缩比 (默认：False)
+- `custom_ratio` (FLOAT): 自定义压缩比 (默认：`2.0`，范围1.0到20.0)
 
 **输出**:
-- `datetime_string` (STRING): 格式化后的日期时间字符串
-
-**使用示例**:
-```
-prefix="Image_",
-format_template="%Y%-%m%-%d%_%H%-%M%-%S%",
-suffix="_v1"
-输出: "Image_2026-02-21_14-30-52_v1"
-```
+- `processed_audio` (AUDIO): 处理后的音频 (重采样、压缩、LUFS标准化、峰值限制)
+- `save_path` (STRING): 保存的相对路径
 </details>
 
 ### XImageResize - 🔎 图像缩放
@@ -451,99 +512,6 @@ suffix="_v1"
 
 **输出**:
 - `images` (IMAGE): 原始图像 (透传)
-- `save_path` (STRING): 保存的相对路径
-</details>
-
-### XVideoSave - 🎬 视频保存
-<details>
-
-`♾️ Xz3r0/File-Processing`
-
-视频保存节点，使用 FFmpeg 将图像序列保存为视频
-
-**功能**:
-- 使用 FFmpeg 将视频对象保存为 MKV 格式视频
-- H.265/HEVC 编码，yuv444p10le 像素格式
-- FPS 从视频对象自动获取 (由官方的 CreateVideo 创建视频节点设置)
-- 音频支持 (自动从视频对象获取)
-- 自定义 CRF (质量参数 0-40，0为无损)
-- 编码预设选择 (ultrafast 到 veryslow，平衡编码速度和压缩效率)
-- 支持自定义文件名和子文件夹
-- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
-- 路径安全防护 (防止路径遍历攻击)
-- 自动添加序列号防止覆盖(从00001开始)
-
-**输入**:
-- `video` (VIDEO): 视频对象 (包含图像序列、音频和帧率)
-- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
-- `subfolder` (STRING): 子文件夹名称 (默认：`Videos`)
-- `crf` (FLOAT): 质量参数 (默认：`0.0`，范围0-40，0为无损，40为最差质量)
-- `preset` (STRING): 编码预设 (默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
-
-**输出**:
-- 视频预览 (显示保存的视频)
-
-**FFmpeg参数**:
-- vcodec: libx265 (H.265/HEVC 编码)
-- pix_fmt: yuv444p10le (10位YUV 4:4:4 采样)
-- crf: 可配置 (0=无损，40=最差质量)
-- preset: 可配置 (ultrafast 到 veryslow)
-- 容器格式: MKV
-</details>
-
-### XAudioSave - 🎵 音频保存
-<details>
-
-`♾️ Xz3r0/File-Processing`
-
-音频保存节点，使用 WAV 无损格式保存音频，支持压缩和 LUFS 标准化以及峰值限制
-
-**功能**:
-- 保存音频到 ComfyUI 默认输出目录
-- WAV 无损格式 (PCM 32-bit float)
-- 支持多种采样率 (44.1kHz, 48kHz, 96kHz, 192kHz)
-- 可以使用压缩器 (acompressor 滤镜，三种预设：快速/平衡/缓慢)
-- 支持自定义压缩比 (1.0-20.0)
-- LUFS 音量标准化 (默认-14.1 LUFS，可设置为-70禁用)
-- 可以使用峰值限制 (True Peak)
-- 支持自定义文件名和子文件夹
-- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
-- 路径安全防护 (防止路径遍历攻击)
-- 自动添加序列号防止覆盖(从00001开始)
-
-**处理流程**:
-1. 使用 FFmpeg 的压缩器 acompressor 滤镜 (如果启用) :
-   - 选择预设模式 (快速/平衡/缓慢)
-   - 可选使用自定义压缩比覆盖预设值
-   - 对音频进行动态范围压缩
-2. 使用 loudnorm 滤镜 双阶段处理进行 LUFS 标准化和限制峰值 (如果启用)
-3. 最终测量音频信息验证结果
-
-**压缩预设参数说明**:
-- 阈值自适应计算: `threshold = actual_lufs + (actual_lufs - target_lufs) * 0.3 + base_offset`
-- 快速: 适合语音/播客，base_offset=6dB, ratio=3:1, attack=10ms, release=50ms
-- 平衡: 通用/音乐，base_offset=4dB, ratio=2:1, attack=20ms, release=250ms
-- 缓慢: 适合母带/广播，base_offset=2dB, ratio=1.5:1, attack=50ms, release=500ms
-- 如果您不了解音频处理，简单来说，压缩器会让符合条件即超过音量阈值 (`threshold`) 的声音降低. 选择快速预设时压缩器遇到符合的声音会反应迅速但工作时间短，适合处理音频中极短出现的声音 (比如:鼓的敲击声和双手的拍打声) 可以让其听起来不再那么尖锐. 相反的，选择缓慢预设时压缩器遇到符合条件的声音反应会较慢但工作时间更长所以更适合处理持续时间更长的声音 (比如悠长的人声) 可以让其听起来更加紧凑. 为了简化节点，对于阈值使用公式根据音频的响度 (LUFS) 以及压缩预设的偏移量 (`base_offset`) 来自动设置阈值
-- 压缩比 (`ratio`) 是压缩器降低声音的幅度 (比例)，压缩比越高声音被降低得越多，预设带有压缩比，可以自定义
-**峰值限制说明**:
-- 使用 True Peak 方式 (广播标准，8x过采样，精度高) 限制音量峰值来尽可能避免削波失真
-
-**输入**:
-- `audio` (AUDIO): 音频对象 (包含波形和采样率)
-- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
-- `subfolder` (STRING): 子文件夹名称 (默认：`Audio`)
-- `sample_rate` (STRING): 采样率 (默认：`48000`，可选：44100, 48000, 96000, 192000)
-- `target_lufs` (FLOAT): 目标LUFS值 (默认：`-14.1`，范围-70.0到0.0，-70禁用)
-- `enable_peak_limiter` (BOOLEAN): 是否启用峰值限制 (默认：True)
-- `peak_limit` (FLOAT): 峰值限制值 (默认：`-1.1`，范围-6.0到0.0)
-- `enable_compression` (BOOLEAN): 是否启用压缩 (默认：False)
-- `compression_mode` (STRING): 压缩预设模式 (默认：`Balanced`，可选：Fast, Balanced, Slow)
-- `use_custom_ratio` (BOOLEAN): 是否使用自定义压缩比 (默认：False)
-- `custom_ratio` (FLOAT): 自定义压缩比 (默认：`2.0`，范围1.0到20.0)
-
-**输出**:
-- `processed_audio` (AUDIO): 处理后的音频 (重采样、压缩、LUFS标准化、峰值限制)
 - `save_path` (STRING): 保存的相对路径
 </details>
 
@@ -705,6 +673,43 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - 保存提示词记录、参数说明、生成备注
 - 把 `XAnyToString` 转出来的字符串写成 Markdown 文件
 - 把多个字符串节点整理后输出成可阅读的文档
+</details>
+
+### XVideoSave - 🎬 视频保存
+<details>
+
+`♾️ Xz3r0/File-Processing`
+
+视频保存节点，使用 FFmpeg 将图像序列保存为视频
+
+**功能**:
+- 使用 FFmpeg 将视频对象保存为 MKV 格式视频
+- H.265/HEVC 编码，yuv444p10le 像素格式
+- FPS 从视频对象自动获取 (由官方的 CreateVideo 创建视频节点设置)
+- 音频支持 (自动从视频对象获取)
+- 自定义 CRF (质量参数 0-40，0为无损)
+- 编码预设选择 (ultrafast 到 veryslow，平衡编码速度和压缩效率)
+- 支持自定义文件名和子文件夹
+- 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
+- 路径安全防护 (防止路径遍历攻击)
+- 自动添加序列号防止覆盖(从00001开始)
+
+**输入**:
+- `video` (VIDEO): 视频对象 (包含图像序列、音频和帧率)
+- `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
+- `subfolder` (STRING): 子文件夹名称 (默认：`Videos`)
+- `crf` (FLOAT): 质量参数 (默认：`0.0`，范围0-40，0为无损，40为最差质量)
+- `preset` (STRING): 编码预设 (默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
+
+**输出**:
+- 视频预览 (显示保存的视频)
+
+**FFmpeg参数**:
+- vcodec: libx265 (H.265/HEVC 编码)
+- pix_fmt: yuv444p10le (10位YUV 4:4:4 采样)
+- crf: 可配置 (0=无损，40=最差质量)
+- preset: 可配置 (ultrafast 到 veryslow)
+- 容器格式: MKV
 </details>
 
 ### XWorkflowSave - 📄 JSON工作流元数据保存
