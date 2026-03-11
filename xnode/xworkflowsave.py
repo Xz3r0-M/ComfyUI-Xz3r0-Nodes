@@ -13,14 +13,27 @@
 """
 
 import json
-import re
-from datetime import datetime
 from pathlib import Path
 
 import folder_paths
 from comfy_api.latest import io, ui
 
 from ..api.xworkflowsave_api import workflow_store
+try:
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
 
 
 class XWorkflowSave(io.ComfyNode):
@@ -63,6 +76,9 @@ class XWorkflowSave(io.ComfyNode):
         并通过 /xz3r0/xworkflowsave/capture API 发送到后端存储。
         节点执行时通过 unique_id 从存储中获取数据。
     """
+    OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    WRITE_WORKFLOW_ERROR = "Unable to write workflow file"
+    RELATIVE_PATH_ERROR = "Unable to build relative save path"
 
     @classmethod
     def define_schema(cls):
@@ -171,35 +187,43 @@ class XWorkflowSave(io.ComfyNode):
         output_dir = Path(folder_paths.get_output_directory())
 
         # Process datetime placeholders and security filtering
-        safe_filename_prefix = cls._sanitize_path(filename_prefix)
-        safe_filename_prefix = cls._replace_datetime_placeholders(
+        safe_filename_prefix = sanitize_path_component(filename_prefix)
+        safe_filename_prefix = replace_datetime_tokens(
             safe_filename_prefix
         )
 
-        safe_subfolder = cls._sanitize_path(subfolder)
-        safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = sanitize_path_component(subfolder)
+        safe_subfolder = replace_datetime_tokens(safe_subfolder)
 
         # Create full save path
-        save_dir = output_dir
-        if safe_subfolder:
-            save_dir = save_dir / safe_subfolder
+        save_dir = resolve_output_subpath(output_dir, safe_subfolder)
 
         # Create directory (only single level supported)
-        save_dir.mkdir(exist_ok=True)
+        try:
+            save_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
 
         # Generate filename (detect duplicates and add sequence number)
-        base_filename = safe_filename_prefix
-        final_filename = cls._get_unique_filename(
-            save_dir, base_filename, ".json"
+        final_filename = ensure_unique_filename(
+            save_dir,
+            safe_filename_prefix,
+            ".json",
         )
-        save_path = save_dir / final_filename
+        save_path = resolve_output_subpath(
+            output_dir,
+            Path(safe_subfolder) / final_filename,
+        )
 
         # Prepare data according to save mode
         workflow_data = cls._prepare_workflow_data(save_mode)
 
         # Save file
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(workflow_data, f, indent=2, ensure_ascii=False)
+        try:
+            with open(save_path, "w", encoding="utf-8") as file:
+                json.dump(workflow_data, file, indent=2, ensure_ascii=False)
+        except OSError as exc:
+            raise RuntimeError(cls.WRITE_WORKFLOW_ERROR) from exc
 
         # Generate status message
         status_msg = cls._generate_status_message(
@@ -208,9 +232,9 @@ class XWorkflowSave(io.ComfyNode):
 
         # Generate workflow_info output content
         # Build relative path (based on ComfyUI output directory)
-        relative_path = Path(final_filename)
-        if safe_subfolder:
-            relative_path = Path(safe_subfolder) / final_filename
+        relative_path = cls._build_relative_save_path(
+            save_path, output_dir
+        )
         workflow_info = cls._generate_workflow_info(
             final_filename, workflow_data, save_mode, relative_path
         )
@@ -584,113 +608,22 @@ class XWorkflowSave(io.ComfyNode):
         return analysis
 
     @classmethod
-    def _sanitize_path(cls, path_str: str) -> str:
+    def _build_relative_save_path(
+        cls,
+        save_path: Path,
+        output_dir: Path,
+    ) -> Path:
         """
-        Sanitize path string to prevent path traversal attacks
-
-        Removes path separators and other dangerous characters.
-        Only allows alphanumeric, hyphen, underscore, percent, and dot.
+        基于当前实例输出目录构建相对保存路径。
 
         Args:
-            path_str: Original path string
+            save_path: 实际保存文件路径
+            output_dir: ComfyUI 输出根目录
 
         Returns:
-            str: Sanitized safe path string
+            Path: 相对输出目录的保存路径
         """
-        if not path_str:
-            return ""
-
-        # Remove path separators and null bytes
-        dangerous_chars = [
-            "\\",  # Windows separator
-            "/",  # Unix separator
-            "\x00",  # Null byte
-            "..",  # Parent directory
-        ]
-
-        result = path_str
-        for char in dangerous_chars:
-            result = result.replace(char, "")
-
-        # Only allow safe characters
-        result = re.sub(r"[^a-zA-Z0-9_\-%.]", "", result)
-
-        return result
-
-    @classmethod
-    def _replace_datetime_placeholders(cls, text: str) -> str:
-        """
-        Replace datetime placeholders in text
-
-        Supported placeholders:
-        - %Y%: Four-digit year (e.g., 2024)
-        - %m%: Two-digit month (01-12)
-        - %d%: Two-digit day (01-31)
-        - %H%: Two-digit hour (00-23)
-        - %M%: Two-digit minute (00-59)
-        - %S%: Two-digit second (00-59)
-
-        Args:
-            text: Text containing placeholders
-
-        Returns:
-            str: Text with placeholders replaced
-        """
-        now = datetime.now()
-
-        placeholders = {
-            "%Y%": now.strftime("%Y"),
-            "%m%": now.strftime("%m"),
-            "%d%": now.strftime("%d"),
-            "%H%": now.strftime("%H"),
-            "%M%": now.strftime("%M"),
-            "%S%": now.strftime("%S"),
-        }
-
-        result = text
-        for placeholder, value in placeholders.items():
-            result = result.replace(placeholder, value)
-
-        return result
-
-    @classmethod
-    def _get_unique_filename(
-        cls, directory: Path, base_name: str, extension: str
-    ) -> str:
-        """
-        Generate unique filename (auto-add sequence number if duplicate)
-
-        Sequence number starts from 00001 and increments.
-
-        Args:
-            directory: Target directory
-            base_name: Base filename (without extension)
-            extension: File extension (including dot)
-
-        Returns:
-            str: Unique filename
-        """
-        # First try base name
-        filename = f"{base_name}{extension}"
-        filepath = directory / filename
-
-        if not filepath.exists():
-            return filename
-
-        # If exists, add sequence number
-        counter = 1
-        while True:
-            filename = f"{base_name}_{counter:05d}{extension}"
-            filepath = directory / filename
-
-            if not filepath.exists():
-                return filename
-
-            counter += 1
-
-            # Safety limit
-            if counter > 99999:
-                import time
-
-                timestamp = int(time.time())
-                return f"{base_name}_{timestamp}{extension}"
+        try:
+            return Path(save_path).relative_to(output_dir)
+        except ValueError as exc:
+            raise RuntimeError(cls.RELATIVE_PATH_ERROR) from exc

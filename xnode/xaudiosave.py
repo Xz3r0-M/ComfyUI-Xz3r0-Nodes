@@ -12,17 +12,38 @@ import shutil
 import tempfile
 import time
 import traceback
-from datetime import datetime
 from pathlib import Path
 
 import comfy.utils
 import ffmpeg
-import folder_paths
 import numpy as np
 import torch
 from comfy_api.latest import io
 from scipy.io import wavfile
 from torchaudio.transforms import Resample
+
+try:
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+
+try:
+    import folder_paths
+
+    COMFYUI_AVAILABLE = True
+except ImportError:
+    COMFYUI_AVAILABLE = False
 
 NULL_DEVICE = "NUL" if os.name == "nt" else "/dev/null"
 
@@ -106,6 +127,9 @@ class XAudioSave(io.ComfyNode):
         "96000": 96000,
         "192000": 192000,
     }
+    OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    INVALID_SAVE_PATH_ERROR = "Invalid save path"
+    RELATIVE_PATH_ERROR = "Unable to build relative save path"
 
     @classmethod
     def define_schema(cls):
@@ -267,21 +291,24 @@ class XAudioSave(io.ComfyNode):
         output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = cls._sanitize_path(filename_prefix)
-        safe_filename_prefix = cls._replace_datetime_placeholders(
+        safe_filename_prefix = sanitize_path_component(filename_prefix)
+        safe_filename_prefix = replace_datetime_tokens(
             safe_filename_prefix
         )
 
-        safe_subfolder = cls._sanitize_path(subfolder)
-        safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = sanitize_path_component(subfolder)
+        safe_subfolder = replace_datetime_tokens(safe_subfolder)
 
-        # 创建完整保存路径
-        save_dir = output_dir
-        if safe_subfolder:
-            save_dir = save_dir / safe_subfolder
+        try:
+            save_dir = resolve_output_subpath(output_dir, safe_subfolder)
+        except ValueError as exc:
+            raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
         # 创建目录(仅支持单级目录)
-        save_dir.mkdir(exist_ok=True)
+        try:
+            save_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
 
         # 获取音频数据
         waveform = audio["waveform"]
@@ -308,13 +335,18 @@ class XAudioSave(io.ComfyNode):
 
         # 生成文件名(添加序列号)
         base_filename = safe_filename_prefix
-        final_filename = cls._get_unique_filename(
+        final_filename = ensure_unique_filename(
             save_dir, base_filename, ".wav"
         )
         progress_bar.update_absolute(2)
 
-        # 保存路径
-        save_path = save_dir / final_filename
+        try:
+            save_path = resolve_output_subpath(
+                output_dir,
+                Path(safe_subfolder) / final_filename,
+            )
+        except ValueError as exc:
+            raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
         # 处理LUFS标准化和峰值限制
         final_lufs = target_lufs if target_lufs > -70 else None
@@ -339,7 +371,7 @@ class XAudioSave(io.ComfyNode):
             progress_bar.update_absolute(total_steps)
 
         # 记录相对路径
-        relative_path = str(save_path.relative_to(output_dir))
+        relative_path = cls._build_relative_save_path(save_path, output_dir)
 
         # 构建 ComfyUI 音频字典格式 (需要 batch 维度)
         processed_audio = {
@@ -882,148 +914,21 @@ class XAudioSave(io.ComfyNode):
         Returns:
             输出目录路径
         """
-        return Path(folder_paths.get_output_directory())
+        if COMFYUI_AVAILABLE:
+            return Path(folder_paths.get_output_directory())
+
+        return Path("test_output")
 
     @classmethod
-    def _sanitize_path(cls, path: str) -> str:
-        """
-        清理路径，防止遍历攻击并禁用多级目录
-
-        将所有危险字符和路径分隔符替换为下划线，确保只允许单级文件夹名称
-
-        Args:
-            path: 原始路径或文件夹名称
-
-        Returns:
-            安全的文件夹名称
-        """
-        if not path:
-            return ""
-
-        # 危险字符列表
-        dangerous_chars = [
-            "\\",
-            "/",
-            "..",
-            ".",
-            "|",
-            ":",
-            "*",
-            "?",
-            '"',
-            "<",
-            ">",
-            "\n",
-            "\r",
-            "\t",
-            "\x00",
-            "\x0b",
-            "\x0c",
-        ]
-
-        # 路径遍历模式
-        path_traversal_patterns = [
-            r"\.\./+",
-            r"\.\.\\+",
-            r"~",
-            r"^\.",
-            r"\.$",
-            r"^/",
-            r"^\\",
-        ]
-
-        # 替换危险字符
-        safe_path = path
-        for char in dangerous_chars:
-            safe_path = safe_path.replace(char, "_")
-
-        # 替换路径遍历模式
-        for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, "_", safe_path)
-
-        # 清理连续的下划线
-        safe_path = re.sub(r"_+", "_", safe_path)
-
-        # 移除首尾下划线
-        safe_path = safe_path.strip("_")
-
-        return safe_path
-
-    @classmethod
-    def _replace_datetime_placeholders(cls, text: str) -> str:
-        """
-        替换日期时间标识符
-
-        支持的标识符:
-        - %Y%: 年份(4位)
-        - %m%: 月份(01-12)
-        - %d%: 日期(01-31)
-        - %H%: 小时(00-23)
-        - %M%: 分钟(00-59)
-        - %S%: 秒(00-59)
-
-        Args:
-            text: 包含日期时间标识符的文本
-
-        Returns:
-            替换后的文本
-        """
-        if not text:
-            return ""
-
-        now = datetime.now()
-
-        replacements = {
-            "%Y%": now.strftime("%Y"),
-            "%m%": now.strftime("%m"),
-            "%d%": now.strftime("%d"),
-            "%H%": now.strftime("%H"),
-            "%M%": now.strftime("%M"),
-            "%S%": now.strftime("%S"),
-        }
-
-        result = text
-        for placeholder, value in replacements.items():
-            result = result.replace(placeholder, value)
-
-        return result
-
-    @classmethod
-    def _get_unique_filename(
+    def _build_relative_save_path(
         cls,
-        directory: Path,
-        filename: str,
-        extension: str,
-        max_attempts: int = 100000,
+        save_path: Path,
+        output_dir: Path,
     ) -> str:
         """
-        获取唯一的文件名，避免覆盖
-
-        如果文件名不存在则直接使用，存在则添加序列号
-
-        Args:
-            directory: 目录路径
-            filename: 基础文件名
-            extension: 文件扩展名
-            max_attempts: 最大尝试次数，防止无限循环
-
-        Returns:
-            唯一的文件名
-
-        Raises:
-            FileExistsError: 无法生成唯一文件名时抛出
+        基于当前实例输出目录构建相对保存路径。
         """
-        base_name = filename
-
-        for counter in range(max_attempts):
-            if counter == 0:
-                candidate = f"{base_name}{extension}"
-            else:
-                candidate = f"{base_name}_{counter:05d}{extension}"
-
-            candidate_path = directory / candidate
-
-            if not candidate_path.exists():
-                return candidate
-
-        raise FileExistsError("Unable to generate unique filename")
+        try:
+            return str(Path(save_path).relative_to(output_dir))
+        except ValueError as exc:
+            raise RuntimeError(cls.RELATIVE_PATH_ERROR) from exc

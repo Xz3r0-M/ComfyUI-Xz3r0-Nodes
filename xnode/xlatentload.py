@@ -5,12 +5,23 @@ Latent加载节点模块
 这个模块包含Latent加载相关的节点。
 """
 
-import os
 from pathlib import Path
 
 import safetensors.torch
 import torch
 from comfy_api.latest import io
+
+try:
+    from ..xz3r0_utils import (
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
 
 try:
     import folder_paths
@@ -50,6 +61,13 @@ class XLatentLoad(io.ComfyNode):
         2. 如果输入端口为None，则从下拉菜单选择的文件加载Latent
         3. 如果输入端口为None且文件不存在，弹出警告
     """
+    NO_LATENT_SELECTED_ERROR = (
+        "No latent provided via input port or file selection"
+    )
+    INVALID_LATENT_FILE_PATH_ERROR = "Invalid latent file path"
+    LATENT_FILE_NOT_FOUND_ERROR = "Selected latent file does not exist"
+    LATENT_LOAD_FAILED_ERROR = "Unable to load latent file"
+    INVALID_LATENT_FILE_CONTENT_ERROR = "Invalid latent file content"
 
     @classmethod
     def _get_latent_files(cls, directory: Path) -> list[str]:
@@ -71,9 +89,7 @@ class XLatentLoad(io.ComfyNode):
         for latent_file in directory.rglob("*.latent"):
             # 获取相对于输出目录的路径
             relative_path = latent_file.relative_to(directory)
-
-            # 使用正斜杠作为路径分隔符（跨平台兼容）
-            latent_files.append(str(relative_path).replace(os.sep, "/"))
+            latent_files.append(relative_path.as_posix())
 
         return latent_files
 
@@ -187,13 +203,14 @@ class XLatentLoad(io.ComfyNode):
                 output_dir = Path(folder_paths.get_output_directory())
             else:
                 output_dir = Path.cwd()
-            file_path = output_dir / latent_file
+            file_path = cls._resolve_safe_latent_file_path(
+                output_dir,
+                latent_file,
+            )
 
             # 检查文件是否存在
             if not file_path.exists():
-                raise RuntimeError(
-                    "No latent provided via input port or file selection"
-                )
+                raise RuntimeError(cls.LATENT_FILE_NOT_FOUND_ERROR)
 
             # 加载Latent文件
             try:
@@ -204,7 +221,7 @@ class XLatentLoad(io.ComfyNode):
                 # 验证文件包含必需的latent_tensor键
                 if "latent_tensor" not in latent_data:
                     raise RuntimeError(
-                        "Invalid latent file: missing 'latent_tensor' key"
+                        cls.INVALID_LATENT_FILE_CONTENT_ERROR
                     )
 
                 # 检查Latent格式版本并应用乘数
@@ -245,14 +262,60 @@ class XLatentLoad(io.ComfyNode):
 
                 return io.NodeOutput(result)
 
-            except Exception as e:
-                # 使用相对路径，避免泄露绝对路径
-                file_name = Path(latent_file).name
-                raise RuntimeError(
-                    f"Failed to load latent file '{file_name}': {e}"
-                ) from e
+            except RuntimeError:
+                raise
+            except (OSError, ValueError) as exc:
+                raise RuntimeError(cls.LATENT_LOAD_FAILED_ERROR) from exc
 
         # 优先级3: 两者都无效，弹出警告
-        raise RuntimeError(
-            "No latent provided via input port or file selection"
-        )
+        raise RuntimeError(cls.NO_LATENT_SELECTED_ERROR)
+
+    @classmethod
+    def _resolve_safe_latent_file_path(
+        cls,
+        output_dir: Path,
+        latent_file: str,
+    ) -> Path:
+        """
+        将输入文件路径清理并限制在输出目录内。
+        """
+        raw_path = Path(latent_file)
+        if raw_path.is_absolute():
+            raise RuntimeError(cls.INVALID_LATENT_FILE_PATH_ERROR)
+
+        # 先拒绝显式父级跳转，再做路径片段清理。
+        if ".." in raw_path.parts:
+            raise RuntimeError(cls.INVALID_LATENT_FILE_PATH_ERROR)
+
+        safe_parts: list[str] = []
+        parts = [part for part in raw_path.parts if part not in ("", ".")]
+        if not parts:
+            raise RuntimeError(cls.INVALID_LATENT_FILE_PATH_ERROR)
+
+        for index, part in enumerate(parts):
+            is_last = index == len(parts) - 1
+
+            if is_last:
+                file_part = Path(part)
+                suffix = file_part.suffix
+                stem = file_part.stem if suffix else part
+                safe_stem = sanitize_path_component(stem)
+                if suffix == ".latent":
+                    safe_part = f"{safe_stem}{suffix}"
+                else:
+                    safe_suffix = sanitize_path_component(suffix)
+                    safe_part = f"{safe_stem}{safe_suffix}"
+            else:
+                safe_part = sanitize_path_component(part)
+
+            if safe_part:
+                safe_parts.append(safe_part)
+
+        if not safe_parts:
+            raise RuntimeError(cls.INVALID_LATENT_FILE_PATH_ERROR)
+
+        safe_relative_path = Path(*safe_parts)
+        try:
+            return resolve_output_subpath(output_dir, safe_relative_path)
+        except ValueError as exc:
+            raise RuntimeError(cls.INVALID_LATENT_FILE_PATH_ERROR) from exc

@@ -9,7 +9,28 @@ from pathlib import Path
 
 from comfy_api.latest import io
 
-from .xlatentsave import XLatentSave
+try:
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+
+try:
+    import folder_paths
+
+    COMFYUI_AVAILABLE = True
+except ImportError:
+    COMFYUI_AVAILABLE = False
 
 
 class XMarkdownSave(io.ComfyNode):
@@ -54,6 +75,9 @@ class XMarkdownSave(io.ComfyNode):
         "none",
         "newline",
     ]
+    OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    WRITE_MARKDOWN_ERROR = "Unable to write markdown file"
+    RELATIVE_PATH_ERROR = "Unable to build relative save path"
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -235,31 +259,33 @@ class XMarkdownSave(io.ComfyNode):
         Returns:
             NodeOutput: 包含最终保存内容和保存相对路径
         """
-        output_dir = XLatentSave._get_output_directory()
+        output_dir = cls._get_output_directory()
 
-        safe_filename_prefix = XLatentSave._sanitize_path(filename_prefix)
-        safe_filename_prefix = XLatentSave._replace_datetime_placeholders(
+        safe_filename_prefix = sanitize_path_component(filename_prefix)
+        safe_filename_prefix = replace_datetime_tokens(
             safe_filename_prefix
         )
 
-        safe_subfolder = XLatentSave._sanitize_path(subfolder)
-        safe_subfolder = XLatentSave._replace_datetime_placeholders(
-            safe_subfolder
+        safe_subfolder = sanitize_path_component(subfolder)
+        safe_subfolder = replace_datetime_tokens(safe_subfolder)
+
+        save_dir = resolve_output_subpath(output_dir, safe_subfolder)
+        try:
+            save_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
+
+        header_value = (
+            header_input if header_input is not None else header_text
         )
-
-        save_dir = output_dir
-        if safe_subfolder:
-            save_dir = save_dir / safe_subfolder
-
-        save_dir.mkdir(exist_ok=True)
-
-        header_value = header_input if header_input is not None else header_text
         main_text = (
             main_text_input
             if main_text_input is not None
             else text_content
         )
-        footer_value = footer_input if footer_input is not None else footer_text
+        footer_value = (
+            footer_input if footer_input is not None else footer_text
+        )
         before_separator = cls._build_separator(
             before_main_separator,
             before_main_newline_count,
@@ -275,17 +301,23 @@ class XMarkdownSave(io.ComfyNode):
             f"{after_separator}{footer_value}"
         )
 
-        final_filename = XLatentSave._get_unique_filename(
+        final_filename = ensure_unique_filename(
             save_dir,
             safe_filename_prefix,
             ".md",
         )
-        save_path = save_dir / final_filename
+        save_path = resolve_output_subpath(
+            output_dir,
+            Path(safe_subfolder) / final_filename,
+        )
 
-        with open(save_path, "w", encoding="utf-8") as file:
-            file.write(final_content)
+        try:
+            with open(save_path, "w", encoding="utf-8") as file:
+                file.write(final_content)
+        except OSError as exc:
+            raise RuntimeError(cls.WRITE_MARKDOWN_ERROR) from exc
 
-        relative_path = str(Path(save_path).relative_to(output_dir))
+        relative_path = cls._build_relative_save_path(save_path, output_dir)
 
         return io.NodeOutput(final_content, relative_path)
 
@@ -309,9 +341,40 @@ class XMarkdownSave(io.ComfyNode):
         return "\n" * newline_count
 
     @classmethod
-    def _validate_newline_count(cls, newline_count: int, field_name: str) -> None:
+    def _validate_newline_count(
+        cls,
+        newline_count: int,
+        field_name: str,
+    ) -> None:
         """
         验证换行次数必须大于等于 1
         """
         if newline_count < 1:
             raise ValueError(f"{field_name} must be >= 1")
+
+    @classmethod
+    def _get_output_directory(cls) -> Path:
+        """
+        获取 ComfyUI 默认输出目录
+
+        Returns:
+            输出目录路径
+        """
+        if COMFYUI_AVAILABLE:
+            return Path(folder_paths.get_output_directory())
+
+        return Path("test_output")
+
+    @classmethod
+    def _build_relative_save_path(
+        cls,
+        save_path: Path,
+        output_dir: Path,
+    ) -> str:
+        """
+        基于当前实例输出目录构建相对保存路径。
+        """
+        try:
+            return str(Path(save_path).relative_to(output_dir))
+        except ValueError as exc:
+            raise RuntimeError(cls.RELATIVE_PATH_ERROR) from exc

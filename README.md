@@ -763,6 +763,54 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 
 ## 🧩 网页扩展的详细说明（推荐查看）
 `web`
+
+### XFitView - 🔍 工作流和子图页面自动适应视图
+<details>
+
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFitView`
+
+打开 ComfyUI 网页界面或载入新工作流时，自动执行 ComfyUI 网页界面原生的 *适应视图* 功能，确保工作流内容完整显示在画布可视区域内。支持主工作流和子图 (Subgraph) 页面的自动适应。
+
+**功能**:
+- 页面首次加载适应: 页面首次加载完成后自动适应视图
+- 工作流加载适应: 监听工作流加载事件，新工作流载入后自动适应视图
+- 子图页面适应: 进入或退出子图页面时自动适应视图，支持嵌套子图
+- 智能去重机制: 基于工作流/子图特征生成唯一标识
+- 防抖控制: 同一工作流/子图 200ms 内多次触发只执行一次，不同工作流之间立即触发
+
+**设置选项**:
+- Workflow Enter Mode (工作流进入模式): 主工作流加载时（页面加载、加载工作流文件）
+  - `First` (仅首次): 同一会话中相同工作流只适应一次（推荐, 页面刷新后重置）
+  - `Always` (每次都适应): 每次加载都适应视图
+  - `Never` (从不): 禁用自动适应（默认）
+- Workflow Exit Mode (工作流退出模式): 从子图退出到主工作流时
+  - `First` (仅首次): 同一会话中只适应一次
+  - `Always` (每次都适应): 每次退出都适应视图
+  - `Never` (从不): 禁用自动适应（默认）
+- Subgraph Enter Mode (子图进入模式): 进入子图时
+  - `First` (仅首次): 同一会话中相同子图只适应一次
+  - `Always` (每次都适应): 每次进入都适应视图
+  - `Never` (从不): 禁用自动适应（默认）
+- Subgraph Exit Mode (子图退出模式): 退出子图（返回上级子图或主工作流）时
+  - `First` (仅首次): 同一会话中只适应一次
+  - `Always` (每次都适应): 每次退出都适应视图
+  - `Never` (从不): 禁用自动适应（默认）
+- Fit View Delay (适应视图延迟): 延迟时间 0-2000ms 可调，默认 300ms
+  - 如果视图适应不正确，可适当调整延迟时间
+
+**设置位置**:
+- ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFitView
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFitView.png" alt="XFitView" width="700">
+
+**工作原理**:
+- 使用 ComfyUI 扩展 API 注册扩展
+- 监听 `app.graph.onConfigure` 和 `app.loadGraphData` 事件检测工作流变化
+- 使用 `MutationObserver` 监听面包屑导航变化检测子图进入/退出
+- 基于节点类型、连接拓扑生成工作流/子图唯一标识
+- 使用 cyrb53 哈希算法生成 64 位哈希值，显著降低冲突概率
+- 通过触发 ComfyUI 页面右下角的原生 Fit View 按钮实现适应视图功能
+</details>
+
 ### XFloatingWindow - 🖥️ 浮动窗口
 <details>
 
@@ -869,53 +917,6 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 **注意事项**:
 - 此扩展和 API 非 ComfyUI 官方原生支持，如果 ComfyUI 官方将来改动相关代码可能会导致出错
 - 扩展加载后会在浏览器控制台输出日志信息
-</details>
-
-### XFitView - 🔍 工作流和子图页面自动适应视图
-<details>
-
-`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFitView`
-
-打开 ComfyUI 网页界面或载入新工作流时，自动执行 ComfyUI 网页界面原生的 *适应视图* 功能，确保工作流内容完整显示在画布可视区域内。支持主工作流和子图 (Subgraph) 页面的自动适应。
-
-**功能**:
-- 页面首次加载适应: 页面首次加载完成后自动适应视图
-- 工作流加载适应: 监听工作流加载事件，新工作流载入后自动适应视图
-- 子图页面适应: 进入或退出子图页面时自动适应视图，支持嵌套子图
-- 智能去重机制: 基于工作流/子图特征生成唯一标识
-- 防抖控制: 同一工作流/子图 200ms 内多次触发只执行一次，不同工作流之间立即触发
-
-**设置选项**:
-- Workflow Enter Mode (工作流进入模式): 主工作流加载时（页面加载、加载工作流文件）
-  - `First` (仅首次): 同一会话中相同工作流只适应一次（推荐, 页面刷新后重置）
-  - `Always` (每次都适应): 每次加载都适应视图
-  - `Never` (从不): 禁用自动适应（默认）
-- Workflow Exit Mode (工作流退出模式): 从子图退出到主工作流时
-  - `First` (仅首次): 同一会话中只适应一次
-  - `Always` (每次都适应): 每次退出都适应视图
-  - `Never` (从不): 禁用自动适应（默认）
-- Subgraph Enter Mode (子图进入模式): 进入子图时
-  - `First` (仅首次): 同一会话中相同子图只适应一次
-  - `Always` (每次都适应): 每次进入都适应视图
-  - `Never` (从不): 禁用自动适应（默认）
-- Subgraph Exit Mode (子图退出模式): 退出子图（返回上级子图或主工作流）时
-  - `First` (仅首次): 同一会话中只适应一次
-  - `Always` (每次都适应): 每次退出都适应视图
-  - `Never` (从不): 禁用自动适应（默认）
-- Fit View Delay (适应视图延迟): 延迟时间 0-2000ms 可调，默认 300ms
-  - 如果视图适应不正确，可适当调整延迟时间
-
-**设置位置**:
-- ComfyUI 网页界面 ➡️ 设置(齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFitView
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFitView.png" alt="XFitView" width="700">
-
-**工作原理**:
-- 使用 ComfyUI 扩展 API 注册扩展
-- 监听 `app.graph.onConfigure` 和 `app.loadGraphData` 事件检测工作流变化
-- 使用 `MutationObserver` 监听面包屑导航变化检测子图进入/退出
-- 基于节点类型、连接拓扑生成工作流/子图唯一标识
-- 使用 cyrb53 哈希算法生成 64 位哈希值，显著降低冲突概率
-- 通过触发 ComfyUI 页面右下角的原生 Fit View 按钮实现适应视图功能
 </details>
 
 ---

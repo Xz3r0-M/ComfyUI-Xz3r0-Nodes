@@ -6,12 +6,26 @@ Latent保存节点模块
 """
 
 import json
-import re
-from datetime import datetime
 from pathlib import Path
 
 import torch
 from comfy_api.latest import io
+
+try:
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
 
 try:
     import comfy.utils
@@ -58,6 +72,9 @@ class XLatentSave(io.ComfyNode):
         - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
         - 元数据以SafeTensors格式嵌入latent文件
     """
+    OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    WRITE_LATENT_ERROR = "Unable to write latent file"
+    RELATIVE_PATH_ERROR = "Unable to build relative save path"
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -169,28 +186,31 @@ class XLatentSave(io.ComfyNode):
         output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = cls._sanitize_path(filename_prefix)
-        safe_filename_prefix = cls._replace_datetime_placeholders(
+        safe_filename_prefix = sanitize_path_component(filename_prefix)
+        safe_filename_prefix = replace_datetime_tokens(
             safe_filename_prefix
         )
 
-        safe_subfolder = cls._sanitize_path(subfolder)
-        safe_subfolder = cls._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = sanitize_path_component(subfolder)
+        safe_subfolder = replace_datetime_tokens(safe_subfolder)
 
         # 创建完整保存路径
-        save_dir = output_dir
-        if safe_subfolder:
-            save_dir = save_dir / safe_subfolder
+        save_dir = resolve_output_subpath(output_dir, safe_subfolder)
 
         # 创建目录(仅支持单级目录)
-        save_dir.mkdir(exist_ok=True)
+        try:
+            save_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
 
         # 生成文件名
         base_filename = safe_filename_prefix
 
         # 检测同名文件并添加序列号(从00001开始)
-        final_filename = cls._get_unique_filename(
-            save_dir, base_filename, ".latent"
+        final_filename = ensure_unique_filename(
+            save_dir,
+            base_filename,
+            ".latent",
         )
 
         # 生成元数据
@@ -199,7 +219,10 @@ class XLatentSave(io.ComfyNode):
         )
 
         # 保存Latent
-        save_path = save_dir / final_filename
+        save_path = resolve_output_subpath(
+            output_dir,
+            Path(safe_subfolder) / final_filename,
+        )
 
         # 准备latent数据
         latent_tensor = latent["samples"].contiguous()
@@ -214,10 +237,17 @@ class XLatentSave(io.ComfyNode):
                 output[key] = latent[key]
 
         # 使用comfy.utils保存latent(支持元数据)
-        comfy.utils.save_torch_file(output, str(save_path), metadata=metadata)
+        try:
+            comfy.utils.save_torch_file(
+                output,
+                str(save_path),
+                metadata=metadata,
+            )
+        except OSError as exc:
+            raise RuntimeError(cls.WRITE_LATENT_ERROR) from exc
 
         # 记录相对路径
-        relative_path = str(save_path.relative_to(output_dir))
+        relative_path = cls._build_relative_save_path(save_path, output_dir)
 
         return io.NodeOutput(latent, relative_path)
 
@@ -266,154 +296,15 @@ class XLatentSave(io.ComfyNode):
             return Path("test_output")
 
     @classmethod
-    def _sanitize_path(cls, path: str) -> str:
-        """
-        清理路径,防止遍历攻击并禁用多级目录
-
-        将所有危险字符和路径分隔符替换为下划线,
-        确保只允许单级文件夹名称
-
-        Args:
-            path: 原始路径或文件夹名称
-
-        Returns:
-            安全的文件夹名称
-        """
-        if not path:
-            return ""
-
-        # 危险字符列表
-        dangerous_chars = [
-            "\\",
-            "/",
-            "..",
-            ".",
-            "|",
-            ":",
-            "*",
-            "?",
-            '"',
-            "<",
-            ">",
-            "\n",
-            "\r",
-            "\t",
-            "\x00",
-            "\x0b",
-            "\x0c",
-        ]
-
-        # 路径遍历模式
-        path_traversal_patterns = [
-            r"\.\./+",
-            r"\.\.\\+",
-            r"~",
-            r"^\.",
-            r"\.$",
-            r"^/",
-            r"^\\",
-        ]
-
-        # 替换危险字符
-        safe_path = path
-        for char in dangerous_chars:
-            safe_path = safe_path.replace(char, "_")
-
-        # 替换路径遍历模式
-        for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, "_", safe_path)
-
-        # 清理连续的下划线
-        safe_path = re.sub(r"_+", "_", safe_path)
-
-        # 移除首尾下划线
-        safe_path = safe_path.strip("_")
-
-        return safe_path
-
-    @classmethod
-    def _replace_datetime_placeholders(cls, text: str) -> str:
-        """
-        替换日期时间标识符
-
-        支持的标识符:
-        - %Y%: 年份(4位)
-        - %m%: 月份(01-12)
-        - %d%: 日期(01-31)
-        - %H%: 小时(00-23)
-        - %M%: 分钟(00-59)
-        - %S%: 秒(00-59)
-
-        Args:
-            text: 包含日期时间标识符的文本
-
-        Returns:
-            替换后的文本
-        """
-        if not text:
-            return ""
-
-        now = datetime.now()
-
-        # 使用正则表达式替换,确保完整匹配 %Y%, %m% 等格式
-        def replace_match(match):
-            placeholder = match.group()
-            if placeholder == "%Y%":
-                return now.strftime("%Y")
-            elif placeholder == "%m%":
-                return now.strftime("%m")
-            elif placeholder == "%d%":
-                return now.strftime("%d")
-            elif placeholder == "%H%":
-                return now.strftime("%H")
-            elif placeholder == "%M%":
-                return now.strftime("%M")
-            elif placeholder == "%S%":
-                return now.strftime("%S")
-            return placeholder
-
-        # 匹配 %X% 格式(X为Y,m,d,H,M,S)
-        pattern = r"%(Y|m|d|H|M|S)%"
-        result = re.sub(pattern, replace_match, text)
-
-        return result
-
-    @classmethod
-    def _get_unique_filename(
+    def _build_relative_save_path(
         cls,
-        directory: Path,
-        filename: str,
-        extension: str,
-        max_attempts: int = 100000,
+        save_path: Path,
+        output_dir: Path,
     ) -> str:
         """
-        获取唯一的文件名，避免覆盖
-
-        如果文件名不存在则直接使用，存在则添加序列号
-
-        Args:
-            directory: 目录路径
-            filename: 基础文件名
-            extension: 文件扩展名
-            max_attempts: 最大尝试次数，防止无限循环
-
-        Returns:
-            唯一的文件名
-
-        Raises:
-            FileExistsError: 无法生成唯一文件名时抛出
+        基于当前实例输出目录构建相对保存路径。
         """
-        base_name = filename
-
-        for counter in range(max_attempts):
-            if counter == 0:
-                candidate = f"{base_name}{extension}"
-            else:
-                candidate = f"{base_name}_{counter:05d}{extension}"
-
-            candidate_path = directory / candidate
-
-            if not candidate_path.exists():
-                return candidate
-
-        raise FileExistsError("Unable to generate unique filename")
+        try:
+            return str(Path(save_path).relative_to(output_dir))
+        except ValueError as exc:
+            raise RuntimeError(cls.RELATIVE_PATH_ERROR) from exc
