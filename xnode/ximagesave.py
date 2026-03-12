@@ -159,6 +159,15 @@ class XImageSave(io.ComfyNode):
         Returns:
             NodeOutput: 包含原始图像和保存的相对路径
         """
+        if images is None or len(images) == 0:
+            raise ValueError("Input images cannot be empty")
+
+        if images.dim() != 4:
+            raise ValueError(
+                "Expected image tensor shape (B,H,W,C), "
+                f"got {images.dim()}D tensor"
+            )
+
         # 从隐藏参数获取元数据
         prompt = cls.hidden.prompt if hasattr(cls.hidden, "prompt") else None
         extra_pnginfo = (
@@ -322,8 +331,8 @@ class XImageSave(io.ComfyNode):
         Raises:
             ValueError: 当张量维度或通道数不支持时
         """
-        # 确保张量在 CPU 上
-        tensor = tensor.cpu()
+        # 先断开梯度图再转到 CPU，避免 numpy 转换报错。
+        tensor = tensor.detach().cpu()
 
         # 处理批次维度：如果是 4D 张量，提取第一个图像
         if tensor.dim() == 4:

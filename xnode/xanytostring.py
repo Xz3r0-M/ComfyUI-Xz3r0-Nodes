@@ -77,5 +77,8 @@ class XAnyToString(io.ComfyNode):
         Returns:
             NodeOutput: 包含原始输入和转换后的字符串
         """
-        string_value = str(anything)
+        try:
+            string_value = str(anything)
+        except Exception as exc:
+            raise ValueError("Failed to convert input to string") from exc
         return io.NodeOutput(anything, string_value)

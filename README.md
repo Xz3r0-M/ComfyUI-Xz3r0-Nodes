@@ -394,14 +394,11 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 - 整除调整功能 - 使分辨率可被指定整数整除
 - 分辨率偏移功能 - 在最终分辨率上添加偏移值
 - 支持批量图像处理（图片序列）
-- 支持遮罩同步缩放 - 遮罩使用与图像相同的插值模式进行缩放
-- 支持遮罩合并 - 可将处理后的遮罩合并到图像的 Alpha 通道
 - 带进度条显示
 - 支持多种插值算法（双线性/双三次/最近邻/区域/Lanczos）
 
 **输入**:
 - `images` (IMAGE): 输入图像张量
-- `mask` (MASK, 可选): 输入遮罩张量，如果提供将与图像使用相同参数进行缩放
 - `scale_mode` (下拉选择): 插值算法
   - `Nearest-exact`: 精确最近邻插值（速度最快）
   - `Bilinear`: 双线性插值（速度快，质量中等）
@@ -424,15 +421,9 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
   - `Down`: 向下取整
 - `width_offset` (INT): 宽度偏移（范围 -128 到 128）
 - `height_offset` (INT): 高度偏移（范围 -128 到 128）
-- `merge_mask` (BOOLEAN): 合并遮罩到 Alpha 通道
-  - `False`: 输出 RGB 图像（3 通道）
-  - `True`: 如果提供了 mask，输出 RGBA 图像（4 通道），mask 作为 alpha 通道合并到图像中
 
 **输出**:
 - `Processed_Images` (IMAGE): 缩放后的图像
-  - `merge_mask=False` 或未提供 mask: RGB 图像（3 通道）
-  - `merge_mask=True` 且提供了 mask: RGBA 图像（4 通道）
-- `Processed_Mask` (MASK): 缩放后的遮罩（如果输入了 mask，否则为 None）
 - `width` (INT): 输出分辨率宽度
 - `height` (INT): 输出分辨率高度
 
@@ -476,12 +467,10 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 - `edge_mode="Megapixels"` 时必须设置 `megapixels > 0`
 - `edge_mode="Scale Multiplier"` 时必须设置 `scale_multiplier > 0`
 - 偏移值范围：-128 到 128，确保最终分辨率 ≥ 1
+- 节点只处理图像缩放；如需处理遮罩，请使用官方的遮罩分离/合并相关节点组合工作流
 
 **批处理限制说明**:
-- 批量处理要求所有输入图片具有相同的原始尺寸
-- 如果输入图片尺寸不一致，每张图片会按各自的原始尺寸独立计算目标尺寸，可能导致输出图片尺寸不同
-- 输出图片尺寸不同时，`torch.stack()` 会报错
-- 建议：批处理时确保所有图片尺寸相同，或分批处理不同尺寸的图片
+- 批处理按整批统一目标尺寸计算和缩放（与官方缩放节点风格一致）
 </details>
 
 ### XImageSave - 🖼️ 图像保存
@@ -912,7 +901,7 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 **使用方式**:
 - 扩展和 API 会自动加载，无需手动操作
 - 在 `XWorkflowSave` 节点选择 `Prompt+FullWorkflow` 模式时自动使用
-- 如果扩展未加载或 API 不可用，`Auto` 模式会自动回退到 `Native` 模式
+  - 如果扩展未加载或 API 不可用，`XWorkflowSave` 节点的 `Auto` 模式会自动回退到 `Native` 模式
 
 **注意事项**:
 - 此扩展和 API 非 ComfyUI 官方原生支持，如果 ComfyUI 官方将来改动相关代码可能会导致出错

@@ -73,6 +73,7 @@ class XLatentSave(io.ComfyNode):
         - 元数据以SafeTensors格式嵌入latent文件
     """
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    UNIQUE_FILENAME_ERROR = "Unable to generate unique latent filename"
     WRITE_LATENT_ERROR = "Unable to write latent file"
     RELATIVE_PATH_ERROR = "Unable to build relative save path"
 
@@ -207,11 +208,14 @@ class XLatentSave(io.ComfyNode):
         base_filename = safe_filename_prefix
 
         # 检测同名文件并添加序列号(从00001开始)
-        final_filename = ensure_unique_filename(
-            save_dir,
-            base_filename,
-            ".latent",
-        )
+        try:
+            final_filename = ensure_unique_filename(
+                save_dir,
+                base_filename,
+                ".latent",
+            )
+        except FileExistsError as exc:
+            raise RuntimeError(cls.UNIQUE_FILENAME_ERROR) from exc
 
         # 生成元数据
         metadata = cls._generate_metadata(

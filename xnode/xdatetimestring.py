@@ -35,7 +35,7 @@ class XDateTimeString(io.ComfyNode):
         prefix="Image_",
         format_template="%Y%-%m%-%d%_%H%-%M%-%S%",
         suffix="_v1"
-        Output: "Image_20260114_143052_v1"
+        Output: "Image_2026-01-14_143052_v1"
 
     支持的占位符:
         %Y% - 四位年份 (如: 2026)

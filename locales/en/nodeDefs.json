@@ -411,30 +411,18 @@
       "height_offset": {
         "name": "Height Offset",
         "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
-      },
-      "mask": {
-        "name": "Mask",
-        "tooltip": "Input mask (optional, will be resized with same settings as images)"
-      },
-      "merge_mask": {
-        "name": "Merge Mask to Image",
-        "tooltip": "If enabled and mask is provided, merge mask into processed image alpha channel (output RGBA). If disabled or no mask, output RGB only"
       }
     },
     "outputs": {
       "0": {
         "name": "Processed Images",
-        "tooltip": "Scaled images. If merge_mask=True and mask provided, outputs RGBA (4 channels); otherwise outputs RGB (3 channels)"
+        "tooltip": "Scaled images (batch is resized with one unified target size)"
       },
       "1": {
-        "name": "Processed Mask",
-        "tooltip": "Scaled mask (if input mask provided, otherwise None)"
-      },
-      "2": {
         "name": "width",
         "tooltip": "Output resolution width"
       },
-      "3": {
+      "2": {
         "name": "height",
         "tooltip": "Output resolution height"
       }

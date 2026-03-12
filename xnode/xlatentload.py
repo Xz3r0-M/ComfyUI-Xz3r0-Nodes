@@ -5,11 +5,13 @@ Latent加载节点模块
 这个模块包含Latent加载相关的节点。
 """
 
+import os
 from pathlib import Path
 
 import safetensors.torch
 import torch
 from comfy_api.latest import io
+from safetensors import SafetensorError
 
 try:
     from ..xz3r0_utils import (
@@ -85,11 +87,18 @@ class XLatentLoad(io.ComfyNode):
         if not directory.exists():
             return latent_files
 
-        # 递归查找.latent文件
-        for latent_file in directory.rglob("*.latent"):
-            # 获取相对于输出目录的路径
-            relative_path = latent_file.relative_to(directory)
-            latent_files.append(relative_path.as_posix())
+        # 递归查找.latent文件，目录无权限时跳过。
+        for root, _, files in os.walk(
+            directory,
+            onerror=lambda _err: None,
+        ):
+            root_path = Path(root)
+            for filename in files:
+                if not filename.endswith(".latent"):
+                    continue
+                latent_file = root_path / filename
+                relative_path = latent_file.relative_to(directory)
+                latent_files.append(relative_path.as_posix())
 
         return latent_files
 
@@ -264,7 +273,7 @@ class XLatentLoad(io.ComfyNode):
 
             except RuntimeError:
                 raise
-            except (OSError, ValueError) as exc:
+            except (OSError, SafetensorError, ValueError) as exc:
                 raise RuntimeError(cls.LATENT_LOAD_FAILED_ERROR) from exc
 
         # 优先级3: 两者都无效，弹出警告

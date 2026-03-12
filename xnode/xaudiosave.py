@@ -11,7 +11,6 @@ import re
 import shutil
 import tempfile
 import time
-import traceback
 from pathlib import Path
 
 import comfy.utils
@@ -130,6 +129,10 @@ class XAudioSave(io.ComfyNode):
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
     INVALID_SAVE_PATH_ERROR = "Invalid save path"
     RELATIVE_PATH_ERROR = "Unable to build relative save path"
+    AUDIO_TENSOR_PREPARE_ERROR = "Unable to prepare audio tensor for saving"
+    AUDIO_NORMALIZE_ERROR = "Audio normalization failed"
+    AUDIO_SAVE_ERROR = "Audio file saving failed"
+    FILE_SAVE_VALIDATION_ERROR = "Saved audio file validation failed"
 
     @classmethod
     def define_schema(cls):
@@ -370,6 +373,8 @@ class XAudioSave(io.ComfyNode):
             cls._save_wav_32bit_float(waveform, save_path, target_sr)
             progress_bar.update_absolute(total_steps)
 
+        cls._validate_saved_file(save_path)
+
         # 记录相对路径
         relative_path = cls._build_relative_save_path(save_path, output_dir)
 
@@ -436,7 +441,7 @@ class XAudioSave(io.ComfyNode):
             标准化后的音频波形
         """
         files_to_cleanup = []
-        audio_np = waveform.numpy()
+        audio_np = cls._prepare_waveform_for_io(waveform)
 
         try:
             print("[XAudioSave] ===== ♾️Starting audio processing♾️ =====")
@@ -515,11 +520,10 @@ class XAudioSave(io.ComfyNode):
                 try:
                     stats_json = json.loads(json_match.group(0))
                 except json.JSONDecodeError:
-                    pass
+                    raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from None
 
             if stats_json is None:
-                print("[XAudioSave] Warning: Could not parse loudnorm stats")
-                return waveform
+                raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
 
             # 步骤4: 初始测量完成
             if progress_bar:
@@ -674,14 +678,10 @@ class XAudioSave(io.ComfyNode):
                 try:
                     stats_rough = json.loads(json_match_rough.group(0))
                 except json.JSONDecodeError:
-                    pass
+                    raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from None
 
             if stats_rough is None:
-                print(
-                    "[XAudioSave] Warning: Could not parse "
-                    "loudnorm stats after rough normalization"
-                )
-                stats_rough = stats_json
+                raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
 
             # 步骤6: 粗略标准化完成
             if progress_bar:
@@ -736,18 +736,20 @@ class XAudioSave(io.ComfyNode):
                 try:
                     stats_after = json.loads(json_match_after.group(0))
                 except json.JSONDecodeError:
-                    pass
+                    raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from None
 
-            if stats_after:
-                after_i = str(stats_after["input_i"])
-                after_lra = str(stats_after["input_lra"])
-                after_tp = str(stats_after["input_tp"])
-                after_thresh = str(stats_after["input_thresh"])
-                print(
-                    f"[XAudioSave] Finished LUFS - I: {after_i}, "
-                    f"LRA: {after_lra}, TP: {after_tp}, "
-                    f"Thresh: {after_thresh}"
-                )
+            if stats_after is None:
+                raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
+
+            after_i = str(stats_after["input_i"])
+            after_lra = str(stats_after["input_lra"])
+            after_tp = str(stats_after["input_tp"])
+            after_thresh = str(stats_after["input_thresh"])
+            print(
+                f"[XAudioSave] Finished LUFS - I: {after_i}, "
+                f"LRA: {after_lra}, TP: {after_tp}, "
+                f"Thresh: {after_thresh}"
+            )
 
             # 步骤7: 精确标准化完成
             if progress_bar:
@@ -805,49 +807,8 @@ class XAudioSave(io.ComfyNode):
 
             print("[XAudioSave] ===== ♾️Audio processing completed♾️ =====")
             return waveform_processed
-        except ffmpeg.Error as e:
-            print("[XAudioSave] ERROR: FFmpeg processing failed")
-            print(f"[XAudioSave] Error details: {e}")
-            if e.stderr:
-                print(
-                    f"[XAudioSave] FFmpeg stderr: {e.stderr.decode('utf-8')}"
-                )
-            if e.stdout:
-                print(
-                    f"[XAudioSave] FFmpeg stdout: {e.stdout.decode('utf-8')}"
-                )
-            print("[XAudioSave] Using original audio without processing.")
-            return waveform
-        except Exception as e:
-            print(
-                "[XAudioSave] ERROR: Unexpected error during audio processing"
-            )
-            print(f"[XAudioSave] Exception type: {type(e).__name__}")
-            print(f"[XAudioSave] Exception message: {e}")
-            print("[XAudioSave] Traceback:")
-            # 对traceback进行路径脱敏处理
-            tb_str = traceback.format_exc()
-            # 获取系统临时目录并脱敏
-            temp_dir = tempfile.gettempdir()
-            tb_str = tb_str.replace(temp_dir, "[TEMP_DIR]")
-            # 替换常见的Windows临时路径格式
-            tb_str = re.sub(
-                r'[A-Za-z]:\\[^\\]*\\Temp\\[^\\\s\'"\]\)]*',
-                "[TEMP_PATH]",
-                tb_str,
-            )
-            # 对ComfyUI输出目录进行脱敏
-            output_dir_str = str(final_save_path.parent.parent)
-            tb_str = tb_str.replace(output_dir_str, "[OUTPUT_DIR]")
-            # 对Python安装路径进行脱敏
-            python_dir = os.path.dirname(os.__file__)
-            tb_str = tb_str.replace(python_dir, "[PYTHON_DIR]")
-            print(tb_str)
-            print(
-                "[XAudioSave] ===== ♾️Warning: Using original audio "
-                "without processing♾️ ====="
-            )
-            return waveform
+        except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
+            raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from exc
         finally:
             for path in files_to_cleanup:
                 if os.path.exists(path):
@@ -868,14 +829,14 @@ class XAudioSave(io.ComfyNode):
             path: 保存路径
             sample_rate: 采样率
         """
+        audio_np = cls._prepare_waveform_for_io(waveform)
+
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
             raise RuntimeError(
                 "FFmpeg executable not found. "
                 "Please install FFmpeg and add it to your system PATH."
             )
-
-        audio_np = waveform.numpy()
 
         with tempfile.NamedTemporaryFile(
             suffix=".wav", delete=False
@@ -899,12 +860,41 @@ class XAudioSave(io.ComfyNode):
                 .overwrite_output()
                 .run(capture_stdout=True, capture_stderr=True)
             )
+        except (ffmpeg.Error, OSError, ValueError) as exc:
+            raise RuntimeError(cls.AUDIO_SAVE_ERROR) from exc
         finally:
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except OSError:
                     pass
+
+    @classmethod
+    def _prepare_waveform_for_io(cls, waveform: torch.Tensor) -> np.ndarray:
+        """
+        将音频张量转换为适合磁盘读写的 NumPy 格式。
+        """
+        try:
+            prepared = waveform.detach()
+            prepared = prepared.to(device="cpu", dtype=torch.float32)
+            prepared = prepared.contiguous()
+            return prepared.numpy()
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise RuntimeError(cls.AUDIO_TENSOR_PREPARE_ERROR) from exc
+
+    @classmethod
+    def _validate_saved_file(cls, save_path: Path) -> None:
+        """
+        验证保存结果，确保文件已落盘且不是空文件。
+        """
+        try:
+            if not save_path.exists():
+                raise RuntimeError(cls.FILE_SAVE_VALIDATION_ERROR)
+
+            if save_path.stat().st_size <= 0:
+                raise RuntimeError(cls.FILE_SAVE_VALIDATION_ERROR)
+        except OSError as exc:
+            raise RuntimeError(cls.FILE_SAVE_VALIDATION_ERROR) from exc
 
     @classmethod
     def _get_output_directory(cls) -> Path:

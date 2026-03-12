@@ -19,14 +19,12 @@
 - 字符串内容和文件保存路径的输出端口
 - 支持日期标识符的文件名和子文件夹名
 
-### 3. 🛠️ 增强和调整 `XImageResize` 图像缩放节点
+### 3. 🪛 调整 `XImageResize` 图像缩放节点
 - 移除 长/短边 模式的百万像素限制保护功能
     - 经过再次思考, 我认为这个限制保护功能在节点已经有了 `Megapixels` 百万像素缩放模式的情况下有些多余
 - 将百万像素输入值范围改为 `0.1-100` (默认为: 1.0)
 - 将输出端口的名称改为 `Processed_Images` (处理后的图像)
-- 新增遮罩缩放处理, 以及遮罩对应的输入端口 `mask` 和 输出端口 `Processed_Mask`
-- 新增开关按钮 `merge_mask` (合并遮罩到处理后的图片中)
-    - 用于将处理后的遮罩 (如果存在) 合并到处理后的图像中 (Alpha 通道)
+- 节点遵循官方缩放节点风格, 批处理时整批统一目标尺寸缩放
 
 ### 4. 🪛 调整 `XWorkflowSave` 工作流元数据 JSON 保存节点
 - 移除 `FullWorkflow` 保存模式
@@ -104,11 +102,11 @@
       scaling mode
 - Changed the megapixel input range to `0.1-100` (default: `1.0`)
 - Renamed the output port to `Processed_Images`
-- Added mask resizing support, along with the corresponding input port
-  `mask` and output port `Processed_Mask`
-- Added toggle button `merge_mask`
-    - Used to merge the processed mask (if present) into the processed image
-      through the Alpha channel
+- Aligned with official image scaling behavior by using one unified target
+  size for the whole batch
+- Narrowed the node responsibility to image-only scaling
+    - For mask scaling and image+mask merge, users should compose official
+      mask split/join nodes in the workflow
 
 ### 4. 🪛 Adjusted `XWorkflowSave` Workflow Metadata JSON Save Node
 - Removed `FullWorkflow` save mode
