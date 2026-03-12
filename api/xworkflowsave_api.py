@@ -22,6 +22,8 @@ from aiohttp import web
 # 日志级别：0=关闭, 1=信息, 2=详细调试
 # 开发者直接修改此变量控制日志输出
 LOG_LEVEL: int = 0
+INTERNAL_ERROR_MESSAGE = "Internal server error"
+_EXECUTION_CLEANUP_REGISTERED = False
 
 
 def log_info(message: str) -> None:
@@ -216,8 +218,10 @@ async def capture_workflow(request: web.Request) -> web.Response:
             {"status": "error", "message": "Invalid JSON"}, status=400
         )
     except Exception as e:
+        log_error(f"capture_workflow failed: {type(e).__name__}: {e}")
         return web.json_response(
-            {"status": "error", "message": str(e)}, status=500
+            {"status": "error", "message": INTERNAL_ERROR_MESSAGE},
+            status=500,
         )
 
 
@@ -243,8 +247,10 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
             {"status": "error", "message": "Invalid JSON"}, status=400
         )
     except Exception as e:
+        log_error(f"cleanup_workflow failed: {type(e).__name__}: {e}")
         return web.json_response(
-            {"status": "error", "message": str(e)}, status=500
+            {"status": "error", "message": INTERNAL_ERROR_MESSAGE},
+            status=500,
         )
 
 
@@ -256,21 +262,35 @@ async def get_status(request: web.Request) -> web.Response:
     memory_info = workflow_store.get_memory_usage()
 
     return web.json_response(
-        {
-            "stored_prompts": list(workflow_store._data.keys()),
-            "count": memory_info["entries"],
-            "memory_usage": {
-                "estimated_bytes": memory_info["estimated_bytes"],
-                "estimated_mb": memory_info["estimated_mb"],
-            },
-        }
+        _build_status_payload(memory_info)
     )
+
+
+def _build_status_payload(memory_info: dict) -> dict:
+    """
+    构建状态接口返回数据。
+    """
+    status_data = {
+        "count": memory_info["entries"],
+        "memory_usage": {
+            "estimated_bytes": memory_info["estimated_bytes"],
+            "estimated_mb": memory_info["estimated_mb"],
+        },
+    }
+    if LOG_LEVEL >= 2:
+        status_data["stored_prompts"] = list(workflow_store._data.keys())
+    return status_data
 
 
 def register_execution_cleanup() -> None:
     """
     注册执行事件监听，自动清理工作流数据
     """
+    global _EXECUTION_CLEANUP_REGISTERED
+    if _EXECUTION_CLEANUP_REGISTERED:
+        log_debug("Execution cleanup listener already registered")
+        return
+
     original_send_sync = server.PromptServer.instance.send_sync
 
     def patched_send_sync(event: str, data: dict, sid: str = None) -> None:
@@ -289,8 +309,14 @@ def register_execution_cleanup() -> None:
                             f"Auto-cleaned data for prompt_id: {prompt_id} "
                             f"(event: {event})"
                         )
+                    else:
+                        log_debug(
+                            f"Auto-clean skipped for prompt_id: {prompt_id} "
+                            f"(event: {event})"
+                        )
 
     server.PromptServer.instance.send_sync = patched_send_sync
+    _EXECUTION_CLEANUP_REGISTERED = True
     log_debug("Execution cleanup listener registered")
 
 

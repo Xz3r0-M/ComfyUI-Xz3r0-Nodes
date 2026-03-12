@@ -70,6 +70,47 @@ class XStringGroup(io.ComfyNode):
     }
 
     @classmethod
+    def _resolve_separation_method(cls, method_name: str) -> str:
+        """
+        将前端分隔选项解析为实际分隔符。
+
+        这里主动校验输入，避免工作流数据异常时直接抛出底层
+        KeyError，让前端拿到更稳定、可理解的英文错误。
+        """
+        separator = cls.SEPARATION_METHOD_MAP.get(method_name)
+        if separator is None:
+            raise ValueError(
+                f"Invalid separation method: {method_name}"
+            )
+        return separator
+
+    @classmethod
+    def _resolve_selected_string(
+        cls,
+        select_string: str,
+        strings: list[str],
+    ) -> str:
+        """
+        解析用户选择的字符串编号。
+
+        这里统一拦截非法编号，避免出现 ValueError 或 IndexError
+        这类不友好的底层异常文本。
+        """
+        try:
+            selected_index = int(select_string) - 1
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid select_string value: {select_string}"
+            ) from exc
+
+        if selected_index < 0 or selected_index >= len(strings):
+            raise ValueError(
+                f"Invalid select_string value: {select_string}"
+            )
+
+        return strings[selected_index]
+
+    @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
         return io.Schema(
@@ -227,10 +268,10 @@ class XStringGroup(io.ComfyNode):
         Returns:
             NodeOutput: 包含组合字符串、选中字符串和所有原始字符串
         """
-        sm_1_2 = cls.SEPARATION_METHOD_MAP[separation_method_1_2]
-        sm_2_3 = cls.SEPARATION_METHOD_MAP[separation_method_2_3]
-        sm_3_4 = cls.SEPARATION_METHOD_MAP[separation_method_3_4]
-        sm_4_5 = cls.SEPARATION_METHOD_MAP[separation_method_4_5]
+        sm_1_2 = cls._resolve_separation_method(separation_method_1_2)
+        sm_2_3 = cls._resolve_separation_method(separation_method_2_3)
+        sm_3_4 = cls._resolve_separation_method(separation_method_3_4)
+        sm_4_5 = cls._resolve_separation_method(separation_method_4_5)
 
         grouped_string = (
             string_1
@@ -245,7 +286,10 @@ class XStringGroup(io.ComfyNode):
         )
 
         strings = [string_1, string_2, string_3, string_4, string_5]
-        selected_string = strings[int(select_string) - 1]
+        selected_string = cls._resolve_selected_string(
+            select_string,
+            strings,
+        )
 
         return io.NodeOutput(
             grouped_string,

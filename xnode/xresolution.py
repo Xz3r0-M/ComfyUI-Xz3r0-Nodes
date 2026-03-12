@@ -189,12 +189,14 @@ class XResolution(io.ComfyNode):
                 io.Int.Output(
                     "width",
                     tooltip="Output resolution width "
-                    "(after preset, scaling, and swap)",
+                    "(after preset, scaling, swap, divisible adjustment, "
+                    "and offset)",
                 ),
                 io.Int.Output(
                     "height",
                     tooltip="Output resolution height "
-                    "(after preset, scaling, and swap)",
+                    "(after preset, scaling, swap, divisible adjustment, "
+                    "and offset)",
                 ),
             ],
         )

@@ -18,7 +18,11 @@ from pathlib import Path
 import folder_paths
 from comfy_api.latest import io, ui
 
-from ..api.xworkflowsave_api import workflow_store
+try:
+    from ..api.xworkflowsave_api import workflow_store
+except ImportError:
+    from api.xworkflowsave_api import workflow_store
+
 try:
     from ..xz3r0_utils import (
         ensure_unique_filename,
@@ -216,7 +220,7 @@ class XWorkflowSave(io.ComfyNode):
         )
 
         # Prepare data according to save mode
-        workflow_data = cls._prepare_workflow_data(save_mode)
+        workflow_data, actual_mode = cls._prepare_workflow_data(save_mode)
 
         # Save file
         try:
@@ -227,7 +231,10 @@ class XWorkflowSave(io.ComfyNode):
 
         # Generate status message
         status_msg = cls._generate_status_message(
-            final_filename, workflow_data, save_mode
+            final_filename,
+            workflow_data,
+            save_mode,
+            actual_mode,
         )
 
         # Generate workflow_info output content
@@ -236,7 +243,11 @@ class XWorkflowSave(io.ComfyNode):
             save_path, output_dir
         )
         workflow_info = cls._generate_workflow_info(
-            final_filename, workflow_data, save_mode, relative_path
+            final_filename,
+            workflow_data,
+            save_mode,
+            actual_mode,
+            relative_path,
         )
 
         # Return save results and pass-through data
@@ -247,7 +258,7 @@ class XWorkflowSave(io.ComfyNode):
         )
 
     @classmethod
-    def _prepare_workflow_data(cls, save_mode: str) -> dict:
+    def _prepare_workflow_data(cls, save_mode: str) -> tuple[dict, str]:
         """
         Prepare workflow data according to save mode
 
@@ -255,62 +266,100 @@ class XWorkflowSave(io.ComfyNode):
             save_mode: Save mode ("Auto", "Native", "Prompt+FullWorkflow")
 
         Returns:
-            dict: Prepared workflow data
+            tuple[dict, str]:
+                工作流数据和实际执行模式
         """
-        workflow_data = {}
         prompt = cls.hidden.prompt
         extra_pnginfo = cls.hidden.extra_pnginfo
         unique_id = cls.hidden.unique_id
 
         # Try to get full workflow data from API storage
-        full_workflow_data = None
-        if unique_id:
-            # Use unique_id as prompt_id to retrieve data from storage
-            stored_data = workflow_store.retrieve(unique_id)
-            if stored_data:
-                full_workflow_data = stored_data.get("workflow")
+        full_workflow_data = cls._get_full_workflow_data(unique_id)
 
         if save_mode == "Native":
-            # Native mode: save prompt and workflow
-            # (same as official SaveImage)
-            # This format is compatible with ComfyUI web interface
-            if prompt is not None:
-                workflow_data["prompt"] = prompt
-            if extra_pnginfo is not None and "workflow" in extra_pnginfo:
-                workflow_data["workflow"] = extra_pnginfo["workflow"]
+            return cls._build_native_data(prompt, extra_pnginfo), "Native"
 
-        elif save_mode == "Prompt+FullWorkflow":
-            # Merge mode: prompt + full_workflow
-            if prompt is not None:
-                workflow_data["prompt"] = prompt
-            if full_workflow_data:
-                workflow_data["full_workflow"] = full_workflow_data
-            else:
-                raise ValueError(
-                    "Prompt+FullWorkflow mode requires full workflow "
-                    "data from frontend API. Please ensure the "
-                    "frontend extension is loaded and the node is "
-                    "triggered via Queue Prompt."
-                )
+        if save_mode == "Prompt+FullWorkflow":
+            workflow_data = cls._build_prompt_full_data(
+                prompt,
+                full_workflow_data,
+            )
+            return workflow_data, "Prompt+FullWorkflow"
 
-        else:  # Auto mode
-            # Auto mode: prefer Prompt+FullWorkflow,
-            # fallback to Native if frontend unavailable
-            if full_workflow_data:
-                workflow_data["full_workflow"] = full_workflow_data
-            elif extra_pnginfo is not None and "workflow" in extra_pnginfo:
-                # Fallback to Native format (same as official SaveImage)
-                if prompt is not None:
-                    workflow_data["prompt"] = prompt
-                workflow_data["workflow"] = extra_pnginfo["workflow"]
-            else:
-                workflow_data = {}
+        # Auto mode: simple selector, no third data format
+        if cls._is_prompt_full_available(full_workflow_data):
+            workflow_data = cls._build_prompt_full_data(
+                prompt,
+                full_workflow_data,
+            )
+            return workflow_data, "Prompt+FullWorkflow"
+        return cls._build_native_data(prompt, extra_pnginfo), "Native"
 
+    @classmethod
+    def _build_native_data(cls, prompt, extra_pnginfo) -> dict:
+        """
+        构建 Native 模式输出数据。
+        """
+        workflow_data = {}
+        if prompt is not None:
+            workflow_data["prompt"] = prompt
+        if extra_pnginfo is not None and "workflow" in extra_pnginfo:
+            workflow_data["workflow"] = extra_pnginfo["workflow"]
         return workflow_data
 
     @classmethod
+    def _build_prompt_full_data(
+        cls,
+        prompt,
+        full_workflow_data,
+    ) -> dict:
+        """
+        构建 Prompt+FullWorkflow 模式输出数据。
+        """
+        if not cls._is_prompt_full_available(full_workflow_data):
+            raise ValueError(
+                "Prompt+FullWorkflow mode requires full workflow "
+                "data from frontend API. Please ensure the "
+                "frontend extension is loaded and the node is "
+                "triggered via Queue Prompt."
+            )
+
+        workflow_data = {"full_workflow": full_workflow_data}
+        if prompt is not None:
+            workflow_data["prompt"] = prompt
+        return workflow_data
+
+    @classmethod
+    def _get_full_workflow_data(cls, unique_id) -> dict | None:
+        """
+        从缓存读取完整工作流数据。
+        """
+        if not unique_id:
+            return None
+        stored_data = workflow_store.retrieve(unique_id)
+        if not isinstance(stored_data, dict):
+            return None
+        workflow = stored_data.get("workflow")
+        if isinstance(workflow, dict):
+            return workflow
+        return None
+
+    @classmethod
+    def _is_prompt_full_available(cls, full_workflow_data) -> bool:
+        """
+        判断 Prompt+FullWorkflow 数据是否可用。
+        """
+        if not isinstance(full_workflow_data, dict):
+            return False
+        return bool(full_workflow_data)
+
+    @classmethod
     def _generate_status_message(
-        cls, filename: str, workflow_data: dict, save_mode: str
+        cls,
+        filename: str,
+        workflow_data: dict,
+        save_mode: str,
+        actual_mode: str,
     ) -> str:
         """
         Generate save status message
@@ -318,33 +367,24 @@ class XWorkflowSave(io.ComfyNode):
         Args:
             filename: Saved filename
             workflow_data: Saved workflow data
-            save_mode: Used save mode
+            save_mode: Selected save mode
+            actual_mode: Actually used mode
 
         Returns:
             str: Status message string
         """
-        # Analyze data completeness
         analysis = cls._analyze_workflow(workflow_data)
+        metadata_level = cls._get_metadata_level(analysis)
+        data_keys = cls._format_data_keys(workflow_data)
+        graph_line = cls._format_graph_line(workflow_data, analysis)
 
         status_lines = [
             f"Saved: {filename}",
-            f"Mode: {save_mode}",
+            f"Mode: {save_mode} -> {actual_mode}",
+            f"Data Keys: {data_keys}",
+            graph_line,
+            f"Metadata: {metadata_level}",
         ]
-
-        if analysis["node_count"] > 0:
-            status_lines.extend(
-                [
-                    f"Nodes: {analysis['node_count']}",
-                    f"Complete: {analysis['is_complete']}",
-                ]
-            )
-
-        if "prompt" in workflow_data:
-            status_lines.append("Has prompt: Yes")
-        if "workflow" in workflow_data:
-            status_lines.append("Has workflow: Yes")
-        if "full_workflow" in workflow_data:
-            status_lines.append("Has full_workflow: Yes")
 
         return "\n".join(status_lines)
 
@@ -354,6 +394,7 @@ class XWorkflowSave(io.ComfyNode):
         filename: str,
         workflow_data: dict,
         save_mode: str,
+        actual_mode: str,
         relative_path: Path,
     ) -> str:
         """
@@ -366,194 +407,83 @@ class XWorkflowSave(io.ComfyNode):
         Args:
             filename: Saved filename
             workflow_data: Saved workflow data
-            save_mode: Used save mode
+            save_mode: Selected save mode
+            actual_mode: Actually used mode
             relative_path: Relative save path (based on ComfyUI output dir)
 
         Returns:
             str: Workflow info string
         """
-        # Use forward slashes for cross-platform consistency
         posix_path = relative_path.as_posix()
+        analysis = cls._analyze_workflow(workflow_data)
+        metadata_level = cls._get_metadata_level(analysis)
+        data_keys = cls._format_data_keys(workflow_data)
+        graph_line = cls._format_graph_line(workflow_data, analysis)
+        has_localized_name = "Yes" if analysis["has_localized_name"] else "No"
+        has_widget = "Yes" if analysis["has_widget"] else "No"
 
         info_lines = [
-            "=" * 50,
-            "Workflow Save Info",
-            "=" * 50,
-            "",
-            f"Filename: {filename}",
-            f"Save Path: [output_dir]/{posix_path}",
-            f"Save Mode: {save_mode}",
-            "",
+            f"Saved: {filename}",
+            f"Path: [output_dir]/{posix_path}",
+            f"Mode: {save_mode} -> {actual_mode}",
+            f"Data Keys: {data_keys}",
+            graph_line,
+            f"Metadata: {metadata_level}",
+            (
+                "Flags: "
+                f"localized_name={has_localized_name}, "
+                f"widget={has_widget}"
+            ),
         ]
-
-        # Analyze data
-        analysis = cls._analyze_workflow(workflow_data)
-
-        # Data overview
-        info_lines.extend(
-            [
-                "-" * 50,
-                "Data Overview:",
-                f"  Node Count: {analysis['node_count']}",
-                f"  Complete Metadata: "
-                f"{'Yes' if analysis['is_complete'] else 'No'}",
-            ]
-        )
-
-        if analysis["has_localized_name"]:
-            info_lines.append("  - Contains localized_name")
-        if analysis["has_widget"]:
-            info_lines.append("  - Contains widget info")
-
-        # Add mode-specific information
-        info_lines.extend(["", "-" * 50, "Data Content:"])
-
-        if save_mode == "Native":
-            # Native mode: display native format info
-            info_lines.append(
-                "Mode Description: Using ComfyUI "
-                "native workflow format (compatible with web)"
-            )
-            info_lines.append("")
-            info_lines.append("Data Composition:")
-
-            if "prompt" in workflow_data:
-                prompt_data = workflow_data["prompt"]
-                if isinstance(prompt_data, dict):
-                    info_lines.append(
-                        f"  - prompt: Contains {len(prompt_data)} nodes"
-                    )
-                else:
-                    info_lines.append("  - prompt: Included")
-            else:
-                info_lines.append("  - prompt: None")
-
-            if "workflow" in workflow_data:
-                wf_data = workflow_data["workflow"]
-                if isinstance(wf_data, dict):
-                    nodes = wf_data.get("nodes", [])
-                    info_lines.append(
-                        f"  - workflow: Contains {len(nodes)} nodes"
-                    )
-                else:
-                    info_lines.append("  - workflow: Included")
-            else:
-                info_lines.append("  - workflow: None")
-
-        elif save_mode == "Prompt+FullWorkflow":
-            # Prompt+FullWorkflow mode: display prompt + full_workflow info
-            info_lines.append(
-                "Mode Description: Prompt+FullWorkflow mode "
-                "(prompt + full_workflow)"
-            )
-            info_lines.append("")
-            info_lines.append("Data Composition:")
-
-            if "prompt" in workflow_data:
-                prompt_data = workflow_data["prompt"]
-                if isinstance(prompt_data, dict):
-                    info_lines.append(
-                        f"  - prompt: Contains {len(prompt_data)} nodes"
-                    )
-                else:
-                    info_lines.append("  - prompt: Included")
-            else:
-                info_lines.append("  - prompt: None")
-
-            if "full_workflow" in workflow_data:
-                full_wf = workflow_data["full_workflow"]
-                if isinstance(full_wf, dict):
-                    nodes = full_wf.get("nodes", [])
-                    links = full_wf.get("links", [])
-                    info_lines.append(
-                        f"  - full_workflow: {len(nodes)} nodes, "
-                        f"{len(links)} links"
-                    )
-                else:
-                    info_lines.append("  - full_workflow: Included")
-            else:
-                info_lines.append("  - full_workflow: None")
-
-        else:  # Auto mode
-            # Auto mode: display auto-detect results
-            info_lines.append(
-                "Mode Description: Auto-detect and select best data source"
-            )
-            info_lines.append("")
-
-            # Determine which data was actually used
-            has_full_workflow = "full_workflow" in workflow_data
-            has_workflow = "workflow" in workflow_data
-            has_prompt = "prompt" in workflow_data
-
-            if has_full_workflow:
-                info_lines.append("Actually Used: Prompt+FullWorkflow data")
-                full_wf = workflow_data.get("full_workflow", {})
-                nodes = full_wf.get("nodes", [])
-                links = full_wf.get("links", [])
-                info_lines.append(f"  - FullWorkflow Nodes: {len(nodes)}")
-                info_lines.append(f"  - FullWorkflow Links: {len(links)}")
-                if has_prompt:
-                    prompt_data = workflow_data.get("prompt", {})
-                    if isinstance(prompt_data, dict):
-                        info_lines.append(
-                            f"  - Prompt nodes: {len(prompt_data)}"
-                        )
-            elif has_workflow:
-                info_lines.append("Actually Used: Standard data")
-                wf_data = workflow_data.get("workflow", {})
-                if isinstance(wf_data, dict):
-                    nodes = wf_data.get("nodes", [])
-                    info_lines.append(f"  - Workflow nodes: {len(nodes)}")
-                if has_prompt:
-                    prompt_data = workflow_data.get("prompt", {})
-                    if isinstance(prompt_data, dict):
-                        info_lines.append(
-                            f"  - Prompt nodes: {len(prompt_data)}"
-                        )
-            else:
-                info_lines.append("Actually Used: No valid data recognized")
-
-        # Add tips
-        info_lines.extend(
-            [
-                "",
-                "=" * 50,
-                "Tips:",
-            ]
-        )
-
-        if save_mode == "Standard":
-            info_lines.append("- Standard mode uses ComfyUI built-in data")
-            info_lines.append("- No frontend extension required")
-            info_lines.append("- Some metadata may be simplified")
-        elif save_mode == "Prompt+FullWorkflow":
-            info_lines.append(
-                "- Prompt+FullWorkflow provides most complete data"
-            )
-            info_lines.append(
-                "- Requires frontend extension for full_workflow"
-            )
-            info_lines.append("- Recommended for backup and sharing workflows")
-        else:
-            info_lines.append(
-                "- Auto mode intelligently selects best available data"
-            )
-            info_lines.append(
-                "- Prefers Prompt+FullWorkflow when frontend is ready"
-            )
-            info_lines.append(
-                "- Falls back to Standard if frontend unavailable"
-            )
-
-        info_lines.extend(
-            [
-                "",
-                "=" * 50,
-            ]
-        )
-
         return "\n".join(info_lines)
+
+    @classmethod
+    def _format_data_keys(cls, workflow_data: dict) -> str:
+        """
+        按固定顺序输出存在的数据键，便于快速阅读。
+        """
+        ordered_keys = ["prompt", "workflow", "full_workflow"]
+        keys = [key for key in ordered_keys if key in workflow_data]
+        if not keys:
+            return "none"
+        return "/".join(keys)
+
+    @classmethod
+    def _format_graph_line(cls, workflow_data: dict, analysis: dict) -> str:
+        """
+        统一图规模展示，links 仅在 full_workflow 可用时统计。
+        """
+        nodes = analysis["node_count"]
+        links = cls._get_link_count(workflow_data)
+        if links is None:
+            return f"Graph: nodes={nodes}, links=N/A"
+        return f"Graph: nodes={nodes}, links={links}"
+
+    @classmethod
+    def _get_link_count(cls, workflow_data: dict) -> int | None:
+        """
+        获取 full_workflow 中的链接数量，不可用时返回 None。
+        """
+        full_workflow = workflow_data.get("full_workflow")
+        if not isinstance(full_workflow, dict):
+            return None
+        links = full_workflow.get("links")
+        if isinstance(links, list):
+            return len(links)
+        return 0
+
+    @classmethod
+    def _get_metadata_level(cls, analysis: dict) -> str:
+        """
+        根据元数据标记输出 Full/Partial/Basic 等级。
+        """
+        has_localized_name = analysis["has_localized_name"]
+        has_widget = analysis["has_widget"]
+        if has_localized_name and has_widget:
+            return "Full"
+        if has_localized_name or has_widget:
+            return "Partial"
+        return "Basic"
 
     @classmethod
     def _analyze_workflow(cls, workflow_data: dict) -> dict:
@@ -601,7 +531,6 @@ class XWorkflowSave(io.ComfyNode):
                     if widgets_values:
                         analysis["has_widget"] = True
 
-            # Determine completeness
             if analysis["has_localized_name"] and analysis["has_widget"]:
                 analysis["is_complete"] = True
 

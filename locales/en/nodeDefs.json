@@ -103,7 +103,7 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "Resolution setting node with standard presets, custom scaling, and divisible adjustment.",
+    "description": "Resolution setting node with standard presets, custom scaling, divisible adjustment, and offset support.",
     "inputs": {
       "preset": {
         "name": "Preset",
@@ -151,11 +151,11 @@
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output resolution width (after preset, scaling, swap, and divisible adjustment)"
+        "tooltip": "Output resolution width (after preset, scaling, swap, divisible adjustment, and offset)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output resolution height (after preset, scaling, swap, and divisible adjustment)"
+        "tooltip": "Output resolution height (after preset, scaling, swap, divisible adjustment, and offset)"
       }
     }
   },
@@ -598,7 +598,7 @@
       },
       "crf": {
         "name": "Video CRF",
-        "tooltip": "Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."
+        "tooltip": "Integer quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."
       },
       "preset": {
         "name": "Encoding Preset",

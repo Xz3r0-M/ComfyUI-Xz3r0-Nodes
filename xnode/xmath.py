@@ -20,9 +20,9 @@ class XMath(io.ComfyNode):
         - 加法 (+): a + b
         - 减法 (-): a - b
         - 乘法 (×): a × b
-        - 除法 (÷): a ÷ b (处理除零错误)
+        - 除法 (÷): a ÷ b
         - 幂运算 (**): a 的 b 次方
-        - 取模 (%): a % b (处理除零错误)
+        - 取模 (%): a % b
         - 最大值: max(a, b)
         - 最小值: min(a, b)
 
@@ -214,42 +214,25 @@ class XMath(io.ComfyNode):
         if swap_ab:
             a, b = b, a
 
-        # 执行计算
+        # 执行计算，非法输入统一转换为明确英文错误
         try:
             result = calc_func(a, b)
         except ZeroDivisionError:
             raise ValueError("Division by zero") from None
         except OverflowError:
-            # 根据运算类型和操作数符号确定溢出结果
-            if operation in ["Multiplication (×)", "Power (**)"]:
-                # 乘法：同号为正，异号为负
-                # 幂运算：偶指数为正，奇指数同底数符号
-                sign_positive = False
-                if operation == "Multiplication (×)":
-                    sign_positive = (a > 0 and b > 0) or (a < 0 and b < 0)
-                else:  # Power
-                    if a > 0:
-                        sign_positive = True
-                    elif b > 0 and int(b) % 2 == 0:
-                        sign_positive = True
-                return io.NodeOutput(
-                    0,
-                    float("inf") if sign_positive else float("-inf"),
-                )
-            else:
-                # 其他运算，简单判断
-                return io.NodeOutput(
-                    0,
-                    float("inf") if (a > 0 or b > 0) else float("-inf"),
-                )
+            raise ValueError("Calculation overflow") from None
         except ValueError as e:
-            raise ValueError(f"Calculation error: {str(e)}") from e
+            raise ValueError(f"Calculation error: {str(e)}") from None
+
+        # 先拦住复数等非常规结果，避免后续数学函数直接抛出原始异常
+        if isinstance(result, complex):
+            raise ValueError("Complex results are not supported")
 
         # 验证结果有效性
         if math.isnan(result):
-            raise ValueError("Calculation resulted in NaN")
+            raise ValueError("Calculation result is NaN")
         if not math.isfinite(result):
-            raise ValueError("Cannot convert infinite result to integer")
+            raise ValueError("Calculation result is infinite")
 
         # 返回双格式结果
         return io.NodeOutput(int(result), float(result))
@@ -257,22 +240,20 @@ class XMath(io.ComfyNode):
     @classmethod
     def _safe_divide(cls, a: float, b: float) -> float:
         """
-        安全除法，处理除零情况
+        安全除法，遇到除零时直接报错
 
         Args:
             a: 被除数
             b: 除数
 
         Returns:
-            除法结果，特殊情况下返回inf或0
+            除法结果
+
+        Raises:
+            ValueError: 当除数为零时
         """
         if b == 0:
-            if a == 0:
-                return 0.0  # 0/0 情况，返回0
-            elif a > 0:
-                return float("inf")  # 正数/0
-            else:
-                return float("-inf")  # 负数/0
+            raise ValueError("Division by zero")
         return a / b
 
     @classmethod
@@ -297,7 +278,7 @@ class XMath(io.ComfyNode):
     @classmethod
     def _safe_power(cls, a: float, b: float) -> float:
         """
-        安全幂运算，处理边界情况
+        安全幂运算，明确拒绝会产生复数或溢出的输入
 
         Args:
             a: 底数
@@ -311,15 +292,17 @@ class XMath(io.ComfyNode):
         """
         if a == 0 and b < 0:
             raise ValueError("0 raised to negative power is undefined")
-        # 检查负底数的指数是否为整数（考虑浮点数精度）
+
+        # 负底数只允许整数指数，否则结果会落入复数域。
         if a < 0:
-            # 使用 math.isclose 检查是否接近整数，避免浮点数精度问题
-            if not (math.isclose(b, round(b), rel_tol=1e-9, abs_tol=1e-9)):
+            if not float(b).is_integer():
                 raise ValueError(
                     "Negative base with non-integer exponent "
                     "produces complex result"
                 )
+            b = int(b)
+
         try:
             return a**b
         except OverflowError:
-            return float("inf") if a > 0 else float("-inf")
+            raise ValueError("Power operation overflow") from None

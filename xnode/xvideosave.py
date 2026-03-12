@@ -63,7 +63,7 @@ class XVideoSave(io.ComfyNode):
         video: 视频对象(fps已集成其中)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
-        crf: 质量参数 0-63 (FLOAT)
+        crf: 质量参数 0-40 (INT)
         preset: 编码预设 (STRING, 可选: ultrafast,
             superfast, veryfast, faster, fast, medium, slow,
             slower, veryslow)
@@ -76,6 +76,7 @@ class XVideoSave(io.ComfyNode):
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
     WRITE_VIDEO_ERROR = "Unable to write video file"
     RELATIVE_PATH_ERROR = "Unable to build relative save path"
+    INVALID_CRF_ERROR = "crf must be an integer between 0 and 40"
 
     @classmethod
     def define_schema(cls):
@@ -110,14 +111,14 @@ class XVideoSave(io.ComfyNode):
                         "%H%, %M%, %S%"
                     ),
                 ),
-                io.Float.Input(
+                io.Int.Input(
                     "crf",
-                    default=0.0,
+                    default=0,
                     min=0,
-                    max=40.0,
+                    max=40,
                     step=1,
                     tooltip=(
-                        "Quality parameter (0=lossless, 40=worst "
+                        "Integer quality parameter (0=lossless, 40=worst "
                         "quality). Higher CRF means lower quality "
                         "with smaller file size."
                     ),
@@ -152,7 +153,7 @@ class XVideoSave(io.ComfyNode):
         video: Input.Video,
         filename_prefix: str,
         subfolder: str,
-        crf: float,
+        crf: int,
         preset: str,
     ) -> io.NodeOutput:
         """
@@ -162,13 +163,15 @@ class XVideoSave(io.ComfyNode):
             video: 视频对象(fps已由CreateVideo节点集成)
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
-            crf: 质量参数(0=无损, 63=最差质量)
+            crf: 整数质量参数(0=无损, 40=最差质量)
             preset: 编码预设(ultrafast到veryslow，
                 平衡编码速度和压缩效率)
 
         Returns:
             io.NodeOutput: 包含视频预览的输出
         """
+        normalized_crf = cls._normalize_crf(crf)
+
         # 获取视频组件
         components = video.get_components()
         images = components.images
@@ -221,7 +224,7 @@ class XVideoSave(io.ComfyNode):
                 width=width,
                 height=height,
                 fps=fps,
-                crf=crf,
+                crf=normalized_crf,
                 preset=preset,
             )
 
@@ -230,8 +233,6 @@ class XVideoSave(io.ComfyNode):
                     temp_video_path=temp_video_path,
                     temp_audio_path=temp_audio_path,
                     save_path=save_path,
-                    crf=crf,
-                    preset=preset,
                 )
             else:
                 try:
@@ -286,10 +287,16 @@ class XVideoSave(io.ComfyNode):
         elif waveform.dtype == torch.int32:
             waveform = waveform.float() / (2**31)
 
-        waveform_int16 = (
-            (waveform * (2**15 - 1)).clamp(-(2**15), 2**15 - 1).short()
-        )
-        audio_data = waveform_int16.numpy().T
+        try:
+            waveform_int16 = (
+                (waveform * (2**15 - 1))
+                .clamp(-(2**15), 2**15 - 1)
+                .to(device=torch.device("cpu"), dtype=torch.int16)
+                .contiguous()
+            )
+            audio_data = waveform_int16.numpy().T
+        except (RuntimeError, TypeError, ValueError):
+            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
 
         with tempfile.NamedTemporaryFile(
             suffix=".wav", delete=False
@@ -315,9 +322,9 @@ class XVideoSave(io.ComfyNode):
             audio_input.stdin.write(audio_data.tobytes())
             audio_input.stdin.close()
             if audio_input.wait() != 0:
-                raise RuntimeError("FFmpeg audio encoding failed")
+                raise RuntimeError(cls.WRITE_VIDEO_ERROR)
             return temp_audio_path
-        except (ffmpeg.Error, OSError):
+        except (ffmpeg.Error, OSError, RuntimeError):
             if os.path.exists(temp_audio_path):
                 try:
                     os.unlink(temp_audio_path)
@@ -326,13 +333,51 @@ class XVideoSave(io.ComfyNode):
             raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
 
     @classmethod
+    def validate_inputs(
+        cls,
+        video,
+        filename_prefix,
+        subfolder,
+        crf,
+        preset,
+    ):
+        """
+        在执行前校验 CRF，防止外部节点传入非法值。
+        """
+        try:
+            cls._normalize_crf(crf)
+        except ValueError as exc:
+            return str(exc)
+        return True
+
+    @classmethod
+    def _normalize_crf(cls, crf_value) -> int:
+        """
+        将输入 CRF 归一化为整数并校验合法范围。
+        """
+        if isinstance(crf_value, bool):
+            raise ValueError(cls.INVALID_CRF_ERROR)
+
+        if isinstance(crf_value, int):
+            normalized = crf_value
+        elif isinstance(crf_value, float) and crf_value.is_integer():
+            normalized = int(crf_value)
+        else:
+            raise ValueError(cls.INVALID_CRF_ERROR)
+
+        if normalized < 0 or normalized > 40:
+            raise ValueError(cls.INVALID_CRF_ERROR)
+
+        return normalized
+
+    @classmethod
     def _encode_video_frames(
         cls,
         images: torch.Tensor,
         width: int,
         height: int,
         fps: float,
-        crf: float,
+        crf: int,
         preset: str,
     ) -> str:
         """
@@ -356,7 +401,7 @@ class XVideoSave(io.ComfyNode):
                     temp_video_path,
                     vcodec="libx265",
                     pix_fmt="yuv444p10le",
-                    crf=int(crf),
+                    crf=crf,
                     preset=preset,
                     movflags="faststart",
                     **{"loglevel": "quiet"},
@@ -378,9 +423,9 @@ class XVideoSave(io.ComfyNode):
             process.stdin.close()
 
             if process.wait() != 0:
-                raise RuntimeError("FFmpeg video encoding failed")
+                raise RuntimeError(cls.WRITE_VIDEO_ERROR)
             return temp_video_path
-        except (ffmpeg.Error, OSError):
+        except (ffmpeg.Error, OSError, RuntimeError):
             if os.path.exists(temp_video_path):
                 try:
                     os.unlink(temp_video_path)
@@ -394,8 +439,6 @@ class XVideoSave(io.ComfyNode):
         temp_video_path: str,
         temp_audio_path: str,
         save_path: Path,
-        crf: float,
-        preset: str,
     ) -> None:
         """
         合并临时视频和临时音频到最终输出文件。
