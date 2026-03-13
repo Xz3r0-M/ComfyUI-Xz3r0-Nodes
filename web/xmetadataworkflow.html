@@ -1,8 +1,6 @@
 <!--
     XMetadataWorkflow - ComfyUI 工作流元数据查看器
     ================================================
-    版本: 1.2.2
-    更新日期: 2026-02-25
 
     功能概述:
     ---------
@@ -208,7 +206,9 @@
             display: flex;
             flex-direction: column;
             height: 100%;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-gutter: stable;
             transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
         }
 
@@ -465,9 +465,203 @@
             font-weight: 500;
         }
 
+        /* 转换按钮样式 */
+        .convert-section {
+            padding: 15px;
+            border-top: 1px solid var(--border-primary);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .convert-btn {
+            padding: 10px 15px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .convert-btn:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-tertiary);
+        }
+
+        .convert-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .convert-btn.active {
+            background: var(--bg-tertiary);
+            border-color: var(--accent);
+            color: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        .convert-status {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-align: center;
+            min-height: 16px;
+        }
+
         .main-container {
             display: flex;
             height: 100vh;
+        }
+
+        /* 顶边栏浮动样式 */
+        .canvas-wrapper-with-topbar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .topbar-float {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-top: none;
+            border-radius: 0 0 12px 12px;
+            padding: 12px 26px 16px 26px;
+            height: 130px;
+            box-sizing: border-box;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .topbar-float.collapsed {
+            opacity: 0;
+            transform: translateX(-50%) translateY(-100%);
+            pointer-events: none;
+        }
+
+        .topbar-float-title {
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            height: 16px;
+            line-height: 16px;
+            overflow: hidden;
+        }
+
+        .topbar-float-content {
+            display: flex;
+            gap: 12px;
+            height: 74px;
+        }
+
+        .topbar-mode-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 8px 12px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            width: 130px;
+            flex: 0 0 130px;
+            height: 74px;
+            box-sizing: border-box;
+        }
+
+        .topbar-mode-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-tertiary);
+        }
+
+        .topbar-mode-btn.active {
+            background: var(--bg-tertiary);
+            border-color: var(--accent);
+            color: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        .topbar-mode-btn-main {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .topbar-mode-btn .mode-icon {
+            font-size: 14px;
+        }
+
+        .topbar-mode-btn .mode-title {
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .topbar-mode-btn .mode-desc {
+            font-size: 10px;
+            opacity: 0.8;
+            color: var(--text-muted);
+        }
+
+        /* 顶边栏折叠按钮 */
+        .topbar-float-toggle {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999;
+            width: 48px;
+            height: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 10px;
+            transition: all 0.3s ease;
+            margin-top: 0;
+        }
+
+        .topbar-float-toggle:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .topbar-float-toggle .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+
+        /* 当顶边栏显示时，折叠按钮位置固定 */
+        .topbar-float:not(.collapsed) ~ .topbar-float-toggle {
+            top: 130px;
+        }
+
+        /* 当顶边栏折叠时，箭头旋转 */
+        .topbar-float.collapsed ~ .topbar-float-toggle .toggle-icon {
+            transform: rotate(180deg);
         }
 
         .canvas-container {
@@ -926,6 +1120,32 @@
             border-color: var(--accent);
         }
 
+        /* 重置按钮样式 */
+        .reset-btn {
+            position: fixed;
+            top: 10px;
+            right: 20px;
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--border-secondary);
+            background: var(--bg-btn);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            z-index: 100;
+            transition: all 0.2s;
+        }
+
+        .reset-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-btn-hover);
+        }
+
         /* 虚拟滚动样式 */
         .long-text-wrapper {
             border: 1px solid var(--border-secondary);
@@ -1038,6 +1258,102 @@
             90% { opacity: 1; transform: translateX(-50%) translateY(0); }
             100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
         }
+
+        /* 模态弹窗样式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            padding: 24px 32px;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            transform: scale(0.9) translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal-container {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .modal-icon.error {
+            color: #ff6b6b;
+        }
+
+        .modal-icon.warning {
+            color: #ffd93d;
+        }
+
+        .modal-icon.info {
+            color: #6bcf7f;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .modal-message {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            text-align: center;
+            margin-bottom: 20px;
+            white-space: pre-line;
+        }
+
+        .modal-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 24px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .modal-btn:hover {
+            background: #ff1493;
+            transform: translateY(-1px);
+        }
+
+        .modal-btn:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
@@ -1080,6 +1396,13 @@
                     </div>
                 </div>
             </div>
+            <div class="convert-section" id="convertSection">
+                <button class="convert-btn" id="convertBtn" disabled data-i18n-title="convertWorkflowTitle">
+                    <span>💾</span>
+                    <span data-i18n="convertWorkflow">转换 XWorkflowSave 的JSON</span>
+                </button>
+                <div class="convert-status" id="convertStatus"></div>
+            </div>
             <div class="language-switch" id="languageSwitch">
                 <button class="lang-btn" data-lang="zh" data-i18n="langZh">中文</button>
                 <button class="lang-btn" data-lang="en" data-i18n="langEn">EN</button>
@@ -1092,12 +1415,43 @@
         <button class="sidebar-toggle" id="sidebarToggle" title="隐藏侧边栏" data-i18n-title="hideSidebar">
             <span class="toggle-icon">◀</span>
         </button>
-        <div class="canvas-container" id="canvasContainer">
-            <div id="canvas-wrapper">
-                <svg class="svg-connections" id="connections"></svg>
-                <div id="canvas"></div>
+        <div class="canvas-wrapper-with-topbar">
+            <div class="topbar-float" id="topbar">
+                <div class="topbar-float-title" data-i18n="parseModeLabel">解析模式</div>
+                <div class="topbar-float-content">
+                    <button class="topbar-mode-btn active" data-mode="native" data-i18n-title="nativeModeTitle">
+                        <div class="topbar-mode-btn-main">
+                            <span class="mode-icon">📋</span>
+                            <span class="mode-title" data-i18n="nativeMode">原生</span>
+                        </div>
+                        <span class="mode-desc" data-i18n="nativeModeDesc">Workflow格式</span>
+                    </button>
+                    <button class="topbar-mode-btn" data-mode="merged" data-i18n-title="mergedModeTitle">
+                        <div class="topbar-mode-btn-main">
+                            <span class="mode-icon">🔗</span>
+                            <span class="mode-title" data-i18n="mergedMode">原生(合并)</span>
+                        </div>
+                        <span class="mode-desc" data-i18n="mergedModeDesc">Prompt+Workflow</span>
+                    </button>
+                    <button class="topbar-mode-btn" data-mode="prompt_fw" data-i18n-title="promptfwModeTitle">
+                        <div class="topbar-mode-btn-main">
+                            <span class="mode-icon">🔗</span>
+                            <span class="mode-title" data-i18n="promptfwMode">P+FW</span>
+                        </div>
+                        <span class="mode-desc" data-i18n="promptfwModeDesc">Prompt+FullWorkflow</span>
+                    </button>
+                </div>
             </div>
-            <div class="selection-box" id="selectionBox"></div>
+            <button class="topbar-float-toggle" id="topbarToggle" title="隐藏顶边栏" data-i18n-title="hideTopbar">
+                <span class="toggle-icon">▲</span>
+            </button>
+            <div class="canvas-container" id="canvasContainer">
+                <div id="canvas-wrapper">
+                    <svg class="svg-connections" id="connections"></svg>
+                    <div id="canvas"></div>
+                </div>
+                <div class="selection-box" id="selectionBox"></div>
+            </div>
         </div>
     </div>
 
@@ -1109,6 +1463,8 @@
         <button class="zoom-btn" id="zoomReset" title="重置到100%" data-i18n-title="zoomReset">🔁</button>
         <button class="zoom-btn" id="zoomFit" title="适应窗口" data-i18n-title="zoomFit">☑️</button>
     </div>
+
+    <button class="reset-btn" id="resetBtn" title="重置网页" data-i18n-title="resetPage">🔄</button>
 
     <script>
         const SUBGRAPH_COLORS = [
@@ -1165,7 +1521,42 @@
                 copy: '复制',
                 download: '下载',
                 fileTooLarge: '文件过大，最大支持 100MB',
-                copyTitle: '复制节点名称'
+                copyTitle: '复制节点名称',
+                parseModeLabel: '解析模式',
+                nativeMode: '原生',
+                nativeModeDesc: 'Workflow格式',
+                nativeModeTitle: '原生模式 - 解析 Workflow 格式（nodes+links）',
+                mergedMode: '原生(合并)',
+                mergedModeDesc: 'Prompt+Workflow',
+                mergedModeTitle: '合并模式 - 合并 Prompt 和 Workflow（官方SaveImage格式）',
+                promptfwMode: 'P+FW',
+                promptfwModeDesc: 'Prompt+FullWorkflow (XWorkflowSave)',
+                promptfwModeTitle: 'Prompt+FullWorkflow 模式 (XWorkflowSave 节点)',
+                noNativeWorkflow: '未找到 Workflow 格式数据（需要 nodes 和 links）',
+                noPromptField: '未找到 prompt 字段',
+                noWorkflowData: '未找到工作流数据（需要 prompt 和 workflow 字段）',
+                noFullWorkflowData: '未找到工作流数据（需要 prompt 和 full_workflow 字段）',
+                parseModeChanged: '解析模式已切换为',
+                hideTopbar: '隐藏顶边栏',
+                showTopbar: '显示顶边栏',
+                modalErrorTitle: '解析失败',
+                modalWarningTitle: '警告',
+                modalInfoTitle: '提示',
+                modalOkBtn: '确定',
+                convertWorkflow: '转换 XWorkflowSave 的 JSON',
+                convertWorkflowTitle: '将 XWorkflowSave 格式的 JSON 转换为标准格式并下载',
+                convertSuccess: '转换成功！已下载',
+                convertNoData: '没有可转换的数据',
+                convertNoWrapped: '当前不是包装格式，无需转换',
+                convertError: '转换失败',
+                convertAvailable: '检测到可转换格式',
+                convertWorkflowField: 'workflow 字段',
+                convertFullWorkflowField: 'full_workflow 字段',
+                fieldPrompt: 'prompt',
+                fieldWorkflow: 'workflow',
+                fieldFullWorkflow: 'full_workflow',
+                resetPage: '重置网页 - 清空所有内容并恢复到初始状态',
+                pageReset: '网页已重置'
             },
             en: {
                 title: 'XMetadataWorkflow',
@@ -1213,11 +1604,60 @@
                 copy: 'Copy',
                 download: 'Download',
                 fileTooLarge: 'File too large, maximum 100MB supported',
-                copyTitle: 'Copy Node Name'
+                copyTitle: 'Copy Node Name',
+                parseModeLabel: 'Parse Mode',
+                nativeMode: 'Native',
+                nativeModeDesc: 'Workflow Format',
+                nativeModeTitle: 'Native Mode - Parse Workflow format (nodes+links)',
+                mergedMode: 'Native(Merged)',
+                mergedModeDesc: 'Prompt+Workflow',
+                mergedModeTitle: 'Merged Mode - Merge Prompt and Workflow (official SaveImage format)',
+                promptfwMode: 'P+FW',
+                promptfwModeDesc: 'Prompt+FullWorkflow (XWorkflowSave)',
+                promptfwModeTitle: 'Prompt+FullWorkflow Mode (XWorkflowSave Node)',
+                noNativeWorkflow: 'No Workflow format data found (requires nodes and links)',
+                noPromptField: 'No prompt field found',
+                noWorkflowData: 'No workflow data found (requires prompt and workflow fields)',
+                noFullWorkflowData: 'No workflow data found (requires prompt and full_workflow fields)',
+                parseModeChanged: 'Parse mode changed to',
+                hideTopbar: 'Hide Topbar',
+                showTopbar: 'Show Topbar',
+                modalErrorTitle: 'Parse Failed',
+                modalWarningTitle: 'Warning',
+                modalInfoTitle: 'Information',
+                modalOkBtn: 'OK',
+                convertWorkflow: 'Convert XWorkflowSave JSON',
+                convertWorkflowTitle: 'Convert XWorkflowSave format JSON to standard format and download',
+                convertSuccess: 'Conversion successful! Downloaded',
+                convertNoData: 'No data to convert',
+                convertNoWrapped: 'Not a wrapped format, no conversion needed',
+                convertError: 'Conversion failed',
+                convertAvailable: 'Convertible format detected',
+                convertWorkflowField: 'workflow field',
+                convertFullWorkflowField: 'full_workflow field',
+                fieldPrompt: 'prompt',
+                fieldWorkflow: 'workflow',
+                fieldFullWorkflow: 'full_workflow',
+                resetPage: 'Reset Page - Clear all content and restore to initial state',
+                pageReset: 'Page has been reset'
             }
         };
 
-        let currentLang = localStorage.getItem('lang') || 'en';
+        /**
+         * 从 localStorage 读取受限枚举值
+         * 防止缓存污染导致启动报错
+         * @param {string} key - 存储键名
+         * @param {string[]} allowedValues - 白名单
+         * @param {string} fallback - 回退值
+         * @returns {string} 安全值
+         */
+        function getSafeStoredValue(key, allowedValues, fallback) {
+            const raw = localStorage.getItem(key);
+            if (!raw) return fallback;
+            return allowedValues.includes(raw) ? raw : fallback;
+        }
+
+        let currentLang = getSafeStoredValue('lang', ['zh', 'en'], 'en');
 
         /**
          * 国际化翻译函数
@@ -1225,7 +1665,8 @@
          * @returns {string} 翻译后的文本，如果没有找到则返回键名
          */
         function t(key) {
-            return i18n[currentLang][key] || key;
+            const langPack = i18n[currentLang] || i18n.en || {};
+            return langPack[key] || key;
         }
 
         /**
@@ -1254,6 +1695,12 @@
         let selectedNodeIds = new Set(); // 多选节点集合
         let currentFileType = null; // 存储当前文件类型，用于语言切换时更新预览
         let currentPreviewUrl = null; // 当前预览图片的 Object URL，用于内存释放
+        // 故意选择：解析模式不进行持久化，每次打开工具都默认使用原生模式
+        // 这是为了避免用户忘记切换模式而导致解析失败
+        let currentParseMode = 'native'; // 当前解析模式，固定为原生模式
+        let lastLoadedFile = null; // 上次加载的文件，用于切换模式时重新解析
+        let originalJsonData = null; // 存储原始JSON数据，用于转换功能
+        let currentFileName = null; // 当前文件名，用于转换后的下载
 
         const canvasContainer = document.getElementById('canvasContainer');
         const canvasWrapper = document.getElementById('canvas-wrapper');
@@ -1272,21 +1719,38 @@
             });
         });
 
-        document.querySelector(`.lang-btn[data-lang="${currentLang}"]`).classList.add('active');
+        const activeLangBtn = document.querySelector(
+            `.lang-btn[data-lang="${currentLang}"]`
+        );
+        if (activeLangBtn) {
+            activeLangBtn.classList.add('active');
+        }
         updateLanguage();
 
-        let currentTheme = localStorage.getItem('theme') || 'dark';
+        let currentTheme = getSafeStoredValue(
+            'theme',
+            ['dark', 'light'],
+            'dark'
+        );
 
         /**
          * 设置页面主题（亮色/暗色）
          * @param {string} theme - 主题名称 'dark' 或 'light'
          */
         function setTheme(theme) {
+            if (!['dark', 'light'].includes(theme)) {
+                theme = 'dark';
+            }
             currentTheme = theme;
             document.documentElement.setAttribute('data-theme', theme);
             localStorage.setItem('theme', theme);
             document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector(`.theme-btn[data-theme="${theme}"]`).classList.add('active');
+            const activeThemeBtn = document.querySelector(
+                `.theme-btn[data-theme="${theme}"]`
+            );
+            if (activeThemeBtn) {
+                activeThemeBtn.classList.add('active');
+            }
         }
 
         document.querySelectorAll('.theme-btn').forEach(btn => {
@@ -1296,6 +1760,102 @@
         });
 
         setTheme(currentTheme);
+
+        // 解析模式切换功能
+        // 注意：解析模式不进行持久化，这是故意的设计选择
+        function setParseMode(mode) {
+            currentParseMode = mode;
+            // 故意不保存到 localStorage，每次打开工具都重置为原生模式
+            document.querySelectorAll('.topbar-mode-btn').forEach(b => b.classList.remove('active'));
+            const activeModeBtn = document.querySelector(
+                `.topbar-mode-btn[data-mode="${mode}"]`
+            );
+            if (activeModeBtn) {
+                activeModeBtn.classList.add('active');
+            }
+
+            // 清空视图和重置状态，避免切换到错误的解析模式还保留内容让使用者困惑
+            clearWorkflowView();
+
+            // 如果有已加载的文件，重新解析
+            if (lastLoadedFile) {
+                handleFile(lastLoadedFile, false);
+            }
+        }
+
+        /**
+         * 清空工作流视图和重置相关状态
+         * 用于模式切换时重置界面，避免显示错误的内容
+         */
+        function clearWorkflowView() {
+            // 清空画布和连接线
+            canvas.innerHTML = '';
+            connectionsSvg.innerHTML = '';
+
+            // 重置工作流数据
+            workflowData = null;
+
+            // 清空选中状态
+            selectedNodeIds.clear();
+            multiDragNodePositions.clear();
+
+            // 重置缩放和平移
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            updateTransform();
+            zoomLevel.value = '100';
+
+            // 更新节点计数显示
+            document.getElementById('infoNodeCount').textContent = '0';
+        }
+
+        document.querySelectorAll('.topbar-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                setParseMode(btn.dataset.mode);
+            });
+        });
+
+        // 初始化解析模式
+        const defaultModeBtn = document.querySelector(
+            `.topbar-mode-btn[data-mode="${currentParseMode}"]`
+        );
+        if (defaultModeBtn) {
+            defaultModeBtn.classList.add('active');
+        }
+
+        // 顶边栏折叠功能
+        const topbar = document.getElementById('topbar');
+        const topbarToggle = document.getElementById('topbarToggle');
+        let topbarCollapsed = false;
+
+        /**
+         * 切换顶边栏显示/隐藏状态
+         */
+        function toggleTopbar() {
+            topbarCollapsed = !topbarCollapsed;
+            if (topbarCollapsed) {
+                topbar.classList.add('collapsed');
+                topbarToggle.title = t('showTopbar');
+                topbarToggle.setAttribute('data-i18n-title', 'showTopbar');
+            } else {
+                topbar.classList.remove('collapsed');
+                topbarToggle.title = t('hideTopbar');
+                topbarToggle.setAttribute('data-i18n-title', 'hideTopbar');
+            }
+        }
+
+        topbarToggle.addEventListener('click', toggleTopbar);
+
+        // 初始化顶边栏状态
+        topbarToggle.title = t('hideTopbar');
+        topbarToggle.setAttribute('data-i18n-title', 'hideTopbar');
+
+        // 阻止顶边栏按钮点击事件冒泡到画布
+        document.querySelectorAll('.topbar-mode-btn').forEach(btn => {
+            btn.addEventListener('mousedown', (e) => e.stopPropagation());
+        });
+        topbarToggle.addEventListener('mousedown', (e) => e.stopPropagation());
 
         // 侧边栏折叠功能
         const sidebar = document.getElementById('sidebar');
@@ -1333,6 +1893,9 @@
                 const key = el.getAttribute('data-i18n-title');
                 el.title = t(key);
             });
+
+            // 更新转换按钮状态文本
+            updateConvertButton();
 
             // 更新文件信息区域的类型显示
             if (currentFileType) {
@@ -1383,6 +1946,9 @@
             if (file) handleFile(file);
         });
 
+        // 转换按钮事件监听
+        document.getElementById('convertBtn').addEventListener('click', convertAndDownloadWorkflow);
+
         document.getElementById('zoomIn').addEventListener('click', () => {
             setZoom(scale * 1.2, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
         });
@@ -1395,6 +1961,53 @@
         document.getElementById('zoomFit').addEventListener('click', () => {
             fitToView();
         });
+
+        // 重置按钮事件监听
+        document.getElementById('resetBtn').addEventListener('click', resetPage);
+
+        /**
+         * 重置网页到初始状态
+         * 清空所有内容，包括工作流数据、文件信息、视图状态等
+         * 相当于刷新页面(F5)的效果，但保持主题和语言设置
+         */
+        function resetPage() {
+            // 清空工作流视图
+            clearWorkflowView();
+
+            // 重置文件相关状态
+            lastLoadedFile = null;
+            currentFileName = '';
+            originalJsonData = null;
+            currentFileType = null;
+
+            // 重置文件输入框，允许重新选择相同文件
+            fileInput.value = '';
+
+            // 重置文件信息区域
+            document.getElementById('infoFilename').textContent = '-';
+            document.getElementById('infoType').textContent = '-';
+            document.getElementById('infoSize').textContent = '-';
+            document.getElementById('infoResolution').textContent = '-';
+            document.getElementById('infoModified').textContent = '-';
+            document.getElementById('infoNodeCount').textContent = '-';
+
+            // 重置文件预览区域为初始状态
+            const placeholder = document.getElementById('filePlaceholder');
+            placeholder.innerHTML = `
+                <span class="icon">📁</span>
+                <span data-i18n="DroporSelect">${t('DroporSelect')}</span>
+                <span class="hint" data-i18n="filetip">${t('filetip')}</span>
+            `;
+
+            // 重置转换按钮状态
+            updateConvertButton();
+
+            // 重置解析模式为原生模式
+            setParseMode('native');
+
+            // 显示重置成功的提示
+            showToast(t('pageReset'), 'info');
+        }
 
         zoomLevel.addEventListener('change', () => {
             const newScale = Math.max(0.1, Math.min(5, parseInt(zoomLevel.value) / 100));
@@ -1465,6 +2078,8 @@
 
         // 拖动标记，用于防止拖动后触发点击事件
         let justFinishedDrag = false;
+        const NODE_DRAG_THRESHOLD = 3; // 单节点拖动阈值（像素）
+        let activeNodeDrag = null;
 
         // 节点拉伸状态变量
         let isResizing = false;
@@ -1590,6 +2205,31 @@
                 return; // 拉伸时阻止其他操作
             }
 
+            // 单节点拖动（全局单实例监听，避免重复注册）
+            if (activeNodeDrag && activeNodeDrag.isDragging) {
+                const dx = e.clientX - activeNodeDrag.startX;
+                const dy = e.clientY - activeNodeDrag.startY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (!activeNodeDrag.hasDragStarted && distance > NODE_DRAG_THRESHOLD) {
+                    activeNodeDrag.hasDragStarted = true;
+                    activeNodeDrag.headerEl.classList.add('dragging');
+                    document.body.style.userSelect = 'none';
+                    document.body.style.webkitUserSelect = 'none';
+                }
+
+                if (activeNodeDrag.hasDragStarted) {
+                    const scaledDx = dx / scale;
+                    const scaledDy = dy / scale;
+                    activeNodeDrag.nodeEl.style.left =
+                        (activeNodeDrag.nodeStartX + scaledDx) + 'px';
+                    activeNodeDrag.nodeEl.style.top =
+                        (activeNodeDrag.nodeStartY + scaledDy) + 'px';
+                    updateConnectionPaths();
+                    updateConnectionHighlight();
+                }
+            }
+
             if (isPanning) {
                 panX = e.clientX - panStartX;
                 panY = e.clientY - panStartY;
@@ -1677,6 +2317,34 @@
                 setTimeout(() => {
                     justFinishedDrag = false;
                 }, 50);
+            }
+
+            // 结束单节点拖动
+            if (activeNodeDrag && activeNodeDrag.isDragging) {
+                activeNodeDrag.headerEl.classList.remove('dragging');
+                document.body.style.userSelect = '';
+                document.body.style.webkitUserSelect = '';
+
+                if (activeNodeDrag.hasDragStarted) {
+                    const newX = parseFloat(activeNodeDrag.nodeEl.style.left);
+                    const newY = parseFloat(activeNodeDrag.nodeEl.style.top);
+                    if (!workflowData.nodePositions) {
+                        workflowData.nodePositions = {};
+                    }
+                    workflowData.nodePositions[activeNodeDrag.nodeId] = {
+                        x: newX,
+                        y: newY
+                    };
+
+                    justFinishedDrag = true;
+                    setTimeout(() => {
+                        justFinishedDrag = false;
+                    }, 50);
+                }
+
+                activeNodeDrag.isDragging = false;
+                activeNodeDrag.hasDragStarted = false;
+                activeNodeDrag = null;
             }
 
             // 结束框选
@@ -1793,32 +2461,80 @@
         function updateTransform() {
             canvasWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
             zoomLevel.value = Math.round(scale * 100);
-            updateConnectionPaths();
+            // 只有在有工作流数据时才更新连接线
+            if (workflowData && workflowData.connections) {
+                updateConnectionPaths();
+            }
         }
 
         /**
          * 处理用户选择的文件
-         * 流程：检查文件大小 -> 读取文件 -> 提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
+         * 流程：检查文件大小 -> 读取文件 -> 根据当前解析模式提取元数据 -> 解析工作流 -> 渲染 -> 自适应视图
          * @param {File} file - 用户选择的文件对象
+         * @param {boolean} saveReference - 是否保存文件引用用于模式切换时重新解析
          */
-        async function handleFile(file) {
+        async function handleFile(file, saveReference = true) {
             // 文件大小限制：100MB
             const MAX_FILE_SIZE = 100 * 1024 * 1024;
             if (file.size > MAX_FILE_SIZE) {
-                alert(t('fileTooLarge'));
+                showModal(t('fileTooLarge'), 'warning');
                 return;
             }
+
+            // 保存文件引用，用于切换解析模式时重新解析
+            if (saveReference) {
+                lastLoadedFile = file;
+            }
+
+            // 保存文件名
+            currentFileName = file.name;
 
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
 
+            // 如果是JSON文件，保存原始数据用于转换功能
+            const ext = file.name.toLowerCase().split('.').pop();
+            if (ext === 'json') {
+                try {
+                    const textDecoder = new TextDecoder('utf-8');
+                    originalJsonData = JSON.parse(textDecoder.decode(uint8Array));
+                } catch (e) {
+                    originalJsonData = null;
+                }
+            } else {
+                originalJsonData = null;
+            }
+
+            // 检查并更新转换按钮状态
+            updateConvertButton();
+
+            // 先清空视图和重置状态，避免新文件解析失败时仍显示旧文件内容
+            clearWorkflowView();
+
+            // 更新文件信息（显示新文件的基本信息）
+            updateFileInfo(file, uint8Array);
+
             try {
-                const metadata = await readMetadataFromFile(uint8Array, file.name);
-                if (!metadata) {
-                    return;
+                // 根据当前解析模式选择对应的元数据提取函数
+                let metadata = null;
+                switch (currentParseMode) {
+                    case 'native':
+                        metadata = await readMetadataNative(uint8Array, file.name);
+                        break;
+                    case 'merged':
+                        metadata = await readMetadataMerged(uint8Array, file.name);
+                        break;
+                    case 'prompt_fw':
+                        metadata = await readMetadataPromptFW(uint8Array, file.name);
+                        break;
+                    default:
+                        metadata = await readMetadataNative(uint8Array, file.name);
                 }
 
-                updateFileInfo(file, uint8Array);
+                if (!metadata) {
+                    // 解析失败，视图已清空，文件信息已更新，直接返回
+                    return;
+                }
 
                 // 解析工作流数据
                 workflowData = parseWorkflow(metadata);
@@ -1836,6 +2552,131 @@
                 document.getElementById('infoNodeCount').textContent = Object.keys(workflowData.nodes).length;
             } catch (error) {
                 console.error(error);
+            }
+        }
+
+        /**
+         * 检查JSON数据是否包含可转换的包装格式
+         * @param {Object} json - 解析后的JSON对象
+         * @returns {Object|null} - { hasPrompt: boolean, hasWorkflow: boolean, hasFullWorkflow: boolean } 或 null
+         */
+        function detectConvertibleFormat(json) {
+            if (!json || typeof json !== 'object') return null;
+
+            const hasPrompt = json.prompt && typeof json.prompt === 'object';
+            const hasWorkflow = json.workflow &&
+                json.workflow.nodes &&
+                Array.isArray(json.workflow.nodes);
+            const hasFullWorkflow = json.full_workflow &&
+                json.full_workflow.nodes &&
+                Array.isArray(json.full_workflow.nodes);
+
+            // 只要有 prompt 或 workflow/full_workflow 就可以转换
+            if (hasPrompt || hasWorkflow || hasFullWorkflow) {
+                return {
+                    hasPrompt,
+                    hasWorkflow,
+                    hasFullWorkflow
+                };
+            }
+
+            return null;
+        }
+
+        /**
+         * 更新转换按钮的状态和显示
+         */
+        function updateConvertButton() {
+            const convertBtn = document.getElementById('convertBtn');
+            const convertStatus = document.getElementById('convertStatus');
+
+            if (!originalJsonData) {
+                convertBtn.disabled = true;
+                convertStatus.textContent = '';
+                return;
+            }
+
+            const convertible = detectConvertibleFormat(originalJsonData);
+
+            if (convertible) {
+                convertBtn.disabled = false;
+                const parts = [];
+                if (convertible.hasPrompt) parts.push(t('fieldPrompt'));
+                if (convertible.hasWorkflow) parts.push(t('fieldWorkflow'));
+                if (convertible.hasFullWorkflow) parts.push(t('fieldFullWorkflow'));
+                convertStatus.textContent = `${t('convertAvailable')}: ${parts.join(' + ')}`;
+            } else {
+                convertBtn.disabled = true;
+                convertStatus.textContent = t('convertNoWrapped');
+            }
+        }
+
+        /**
+         * 转换工作流JSON并下载
+         * 将 prompt 和 workflow 的内容合并到根级
+         */
+        function convertAndDownloadWorkflow() {
+            if (!originalJsonData) {
+                showToast(t('convertNoData'), 'error');
+                return;
+            }
+
+            // 检查是否有可转换的包装格式
+            const hasPrompt = originalJsonData.prompt &&
+                typeof originalJsonData.prompt === 'object';
+            const hasWorkflow = originalJsonData.workflow &&
+                originalJsonData.workflow.nodes &&
+                Array.isArray(originalJsonData.workflow.nodes);
+            const hasFullWorkflow = originalJsonData.full_workflow &&
+                originalJsonData.full_workflow.nodes &&
+                Array.isArray(originalJsonData.full_workflow.nodes);
+
+            if (!hasPrompt && !hasWorkflow && !hasFullWorkflow) {
+                showToast(t('convertNoWrapped'), 'info');
+                return;
+            }
+
+            try {
+                // 创建新的对象，将内容合并到根级
+                const convertedData = {};
+
+                // 先添加 prompt 的内容（如果有）
+                if (hasPrompt) {
+                    Object.assign(convertedData, originalJsonData.prompt);
+                }
+
+                // 再添加 workflow 或 full_workflow 的内容（如果有）
+                // workflow 的内容会覆盖 prompt 中同名的键
+                if (hasWorkflow) {
+                    Object.assign(convertedData, originalJsonData.workflow);
+                } else if (hasFullWorkflow) {
+                    Object.assign(convertedData, originalJsonData.full_workflow);
+                }
+
+                // 生成文件名
+                const baseName = currentFileName
+                    ? currentFileName.replace(/\.json$/i, '')
+                    : 'workflow';
+                const newFileName = `${baseName}_converted.json`;
+
+                // 创建下载
+                const blob = new Blob(
+                    [JSON.stringify(convertedData, null, 2)],
+                    { type: 'application/json' }
+                );
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = newFileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showToast(`${t('convertSuccess')}: ${newFileName}`, 'success');
+            } catch (e) {
+                console.error('Conversion error:', e);
+                showToast(t('convertError'), 'error');
             }
         }
 
@@ -1992,13 +2833,499 @@
          * - prompt: ComfyUI API 格式的工作流数据
          * - workflow: 完整的 Workflow 格式（包含节点位置等信息，可能为 null）
          */
-        async function readMetadataFromFile(data, filename) {
-            if (filename.toLowerCase().endsWith('.latent')) {
-                return readLatentMetadata(data);
-            } else if (filename.toLowerCase().endsWith('.json')) {
-                return readJsonMetadata(data);
+
+        /**
+         * ============================================================
+         * 原生模式解析函数 - 解析 ComfyUI 官方标准格式
+         * ============================================================
+         * 适用于所有文件类型（PNG、Latent、JSON）
+         * 统一按照 ComfyUI 官方格式解析 prompt 和 workflow
+         */
+
+        /**
+         * ============================================================
+         * 原生模式解析函数 - 处理 Workflow 格式
+         * ============================================================
+         * 将 workflow（nodes + links）转换为 prompt 格式
+         * 适用于 ComfyUI 网页保存/导出的 JSON 文件
+         */
+
+        /**
+         * 原生模式：从文件中读取 workflow 并转换为 prompt
+         * 只处理 nodes + links 格式，不处理 prompt + workflow 格式
+         * @param {Uint8Array} data - 文件数据
+         * @param {string} filename - 文件名
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readMetadataNative(data, filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+
+            if (ext === 'latent') {
+                return readLatentMetadataNative(data);
+            } else if (ext === 'json') {
+                return readJsonMetadataNative(data);
             } else {
-                return readPngMetadata(data);
+                return readPngMetadataNative(data);
+            }
+        }
+
+        /**
+         * 原生模式：从 PNG 文件中读取 workflow 元数据
+         * 只读取 workflow 字段（nodes + links），转换为 prompt
+         * @param {Uint8Array} data - PNG 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readPngMetadataNative(data) {
+            try {
+                const metadata = extractPngMetadata(data);
+                let workflowData = metadata.workflow || null;
+
+                // 解析 workflow 字符串为对象
+                if (workflowData && typeof workflowData === 'string') {
+                    try {
+                        workflowData = JSON.parse(workflowData);
+                    } catch (e) {
+                        console.error('Native mode: Failed to parse workflow JSON', e);
+                    }
+                }
+
+                // 检查是否为有效的 workflow 格式
+                if (workflowData && workflowData.nodes && Array.isArray(workflowData.nodes)) {
+                    const prompt = convertWorkflowToPrompt(workflowData);
+                    return { prompt: prompt, workflow: workflowData };
+                }
+
+                showModal(t('noNativeWorkflow'), 'error');
+                return null;
+            } catch (e) {
+                console.error('Native mode PNG read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * 原生模式：从 Latent 文件中读取 workflow 元数据
+         * 只读取 __metadata__ 中的 workflow，转换为 prompt
+         * @param {Uint8Array} data - Latent 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readLatentMetadataNative(data) {
+            try {
+                if (data.length < 8) return null;
+
+                const headerSize = Number(
+                    new BigUint64Array(data.slice(0, 8).buffer)[0]
+                );
+
+                if (headerSize < 0 || headerSize > data.length - 8) {
+                    return null;
+                }
+
+                const textDecoder = new TextDecoder('utf-8');
+                const headerJson = textDecoder.decode(
+                    data.slice(8, 8 + headerSize)
+                );
+
+                const header = JSON.parse(headerJson);
+
+                if (header.__metadata__) {
+                    const metadata = header.__metadata__;
+                    let workflowData = null;
+
+                    // 原生模式只使用 workflow 字段
+                    if (metadata.workflow) {
+                        try {
+                            workflowData = JSON.parse(metadata.workflow);
+                        } catch {
+                            workflowData = metadata.workflow;
+                        }
+                    }
+
+                    // 检查是否为有效的 workflow 格式
+                    if (workflowData && workflowData.nodes && Array.isArray(workflowData.nodes)) {
+                        const prompt = convertWorkflowToPrompt(workflowData);
+                        return { prompt: prompt, workflow: workflowData };
+                    }
+                }
+
+                showModal(t('noNativeWorkflow'), 'error');
+                return null;
+            } catch (e) {
+                console.error('Native mode Latent read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * 原生模式：从 JSON 文件中读取 workflow 元数据
+         * 只处理 nodes + links 格式，转换为 prompt
+         * 支持两种格式：
+         * 1. 纯 workflow 格式：{ nodes: [...], links: [...] }
+         * 2. 包含 workflow 字段的格式：{ prompt: {...}, workflow: { nodes: [...], links: [...] } }
+         * @param {Uint8Array} data - JSON 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readJsonMetadataNative(data) {
+            try {
+                const textDecoder = new TextDecoder('utf-8');
+                const text = textDecoder.decode(data);
+                const json = JSON.parse(text);
+
+                let workflowData = null;
+
+                // 原生模式只处理 workflow 格式（nodes + links）
+                // 检查格式1：纯 workflow 格式
+                if (json.nodes && Array.isArray(json.nodes) &&
+                    json.links && Array.isArray(json.links)) {
+                    workflowData = json;
+                }
+                // 检查格式2：包含 workflow 字段的格式
+                else if (json.workflow && json.workflow.nodes &&
+                         Array.isArray(json.workflow.nodes) &&
+                         json.workflow.links &&
+                         Array.isArray(json.workflow.links)) {
+                    workflowData = json.workflow;
+                }
+
+                if (workflowData) {
+                    const prompt = convertWorkflowToPrompt(workflowData);
+                    return { prompt: prompt, workflow: workflowData };
+                }
+
+                showModal(t('noNativeWorkflow'), 'error');
+                return null;
+            } catch (e) {
+                console.error('Native mode JSON read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * ============================================================
+         * 合并模式解析函数 - 合并 Prompt 和 Workflow
+         * ============================================================
+         * 处理同时包含 prompt 和 workflow 的文件（如官方 SaveImage 保存的 PNG）
+         * 以 workflow 为基础结构，用 prompt 中的数据补充
+         */
+
+        /**
+         * 合并模式：从文件中读取并合并 prompt 和 workflow
+         * @param {Uint8Array} data - 文件数据
+         * @param {string} filename - 文件名
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readMetadataMerged(data, filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+
+            if (ext === 'latent') {
+                return readLatentMetadataMerged(data);
+            } else if (ext === 'json') {
+                return readJsonMetadataMerged(data);
+            } else {
+                return readPngMetadataMerged(data);
+            }
+        }
+
+        /**
+         * 合并模式：从 PNG 文件中读取并合并数据
+         * @param {Uint8Array} data - PNG 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readPngMetadataMerged(data) {
+            try {
+                const metadata = extractPngMetadata(data);
+                let promptData = metadata.prompt || null;
+                let workflowData = metadata.workflow || null;
+
+                // 解析字符串为对象
+                if (promptData && typeof promptData === 'string') {
+                    try {
+                        promptData = JSON.parse(promptData);
+                    } catch (e) {
+                        console.error('Merged mode: Failed to parse prompt JSON', e);
+                    }
+                }
+                if (workflowData && typeof workflowData === 'string') {
+                    try {
+                        workflowData = JSON.parse(workflowData);
+                    } catch (e) {
+                        console.error('Merged mode: Failed to parse workflow JSON', e);
+                    }
+                }
+
+                // 合并模式需要同时有 prompt 和 workflow
+                if (!promptData) {
+                    showModal(t('noPromptField'), 'error');
+                    return null;
+                }
+
+                if (!workflowData || !workflowData.nodes) {
+                    showModal(t('noWorkflowData'), 'error');
+                    return null;
+                }
+
+                const mergedPrompt = mergePromptAndWorkflow(promptData, workflowData);
+                return { prompt: mergedPrompt, workflow: workflowData };
+            } catch (e) {
+                console.error('Merged mode PNG read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * 合并模式：从 Latent 文件中读取并合并数据
+         * @param {Uint8Array} data - Latent 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readLatentMetadataMerged(data) {
+            try {
+                if (data.length < 8) return null;
+
+                const headerSize = Number(
+                    new BigUint64Array(data.slice(0, 8).buffer)[0]
+                );
+
+                if (headerSize < 0 || headerSize > data.length - 8) {
+                    return null;
+                }
+
+                const textDecoder = new TextDecoder('utf-8');
+                const headerJson = textDecoder.decode(
+                    data.slice(8, 8 + headerSize)
+                );
+
+                const header = JSON.parse(headerJson);
+
+                if (header.__metadata__) {
+                    const metadata = header.__metadata__;
+                    let promptData = null;
+                    let workflowData = null;
+
+                    if (metadata.prompt) {
+                        try {
+                            promptData = JSON.parse(metadata.prompt);
+                        } catch {
+                            promptData = metadata.prompt;
+                        }
+                    }
+
+                    if (metadata.workflow) {
+                        try {
+                            workflowData = JSON.parse(metadata.workflow);
+                        } catch {
+                            workflowData = metadata.workflow;
+                        }
+                    }
+
+                    // 合并模式需要同时有 prompt 和 workflow
+                    if (!promptData) {
+                        showModal(t('noPromptField'), 'error');
+                        return null;
+                    }
+
+                    if (!workflowData || !workflowData.nodes) {
+                        showModal(t('noWorkflowData'), 'error');
+                        return null;
+                    }
+
+                    const mergedPrompt = mergePromptAndWorkflow(promptData, workflowData);
+                    return { prompt: mergedPrompt, workflow: workflowData };
+                }
+
+                showModal(t('noWorkflowData'), 'error');
+                return null;
+            } catch (e) {
+                console.error('Merged mode Latent read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * 合并模式：从 JSON 文件中读取并合并数据
+         * @param {Uint8Array} data - JSON 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readJsonMetadataMerged(data) {
+            try {
+                const textDecoder = new TextDecoder('utf-8');
+                const text = textDecoder.decode(data);
+                const json = JSON.parse(text);
+
+                // 需要同时有 prompt 和 workflow 字段
+                if (!json.prompt) {
+                    showModal(t('noPromptField'), 'error');
+                    return null;
+                }
+
+                if (!json.workflow) {
+                    showModal(t('noWorkflowData'), 'error');
+                    return null;
+                }
+
+                const promptData = typeof json.prompt === 'string' ?
+                    JSON.parse(json.prompt) : json.prompt;
+                const workflowData = typeof json.workflow === 'string' ?
+                    JSON.parse(json.workflow) : json.workflow;
+
+                const mergedPrompt = mergePromptAndWorkflow(promptData, workflowData);
+                return { prompt: mergedPrompt, workflow: workflowData };
+            } catch (e) {
+                console.error('Merged mode JSON read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * ============================================================
+         * P+FW 模式解析函数 - 合并 Prompt 和 FullWorkflow
+         * ============================================================
+         * 以 full_workflow 为基础结构，用 prompt 中的执行结果补充
+         */
+
+        /**
+         * P+FW 模式：从文件中读取并合并元数据
+         * @param {Uint8Array} data - 文件数据
+         * @param {string} filename - 文件名
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readMetadataPromptFW(data, filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+
+            if (ext === 'latent') {
+                return readLatentMetadataPromptFW(data);
+            } else if (ext === 'json') {
+                return readJsonMetadataPromptFW(data);
+            } else {
+                return readPngMetadataPromptFW(data);
+            }
+        }
+
+        /**
+         * P+FW 模式：从 PNG 文件中读取并合并数据
+         * @param {Uint8Array} data - PNG 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readPngMetadataPromptFW(data) {
+            try {
+                const metadata = extractPngMetadata(data);
+                let promptData = metadata.prompt || null;
+                let workflowData = metadata.full_workflow || null;
+
+                if (promptData && typeof promptData === 'string') {
+                    promptData = JSON.parse(promptData);
+                }
+                if (workflowData && typeof workflowData === 'string') {
+                    workflowData = JSON.parse(workflowData);
+                }
+
+                if (!promptData) {
+                    showModal(t('noPromptField'), 'error');
+                    return null;
+                }
+
+                if (!workflowData) {
+                    showModal(t('noFullWorkflowData'), 'error');
+                    return null;
+                }
+
+                const mergedPrompt = mergePromptAndWorkflow(promptData, workflowData);
+                return { prompt: mergedPrompt, workflow: workflowData };
+            } catch (e) {
+                console.error('P+FW mode PNG read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * P+FW 模式：从 Latent 文件中读取并合并数据
+         * @param {Uint8Array} data - Latent 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readLatentMetadataPromptFW(data) {
+            try {
+                if (data.length < 8) return null;
+
+                const headerSize = Number(
+                    new BigUint64Array(data.slice(0, 8).buffer)[0]
+                );
+
+                if (headerSize < 0 || headerSize > data.length - 8) {
+                    return null;
+                }
+
+                const textDecoder = new TextDecoder('utf-8');
+                const headerJson = textDecoder.decode(
+                    data.slice(8, 8 + headerSize)
+                );
+
+                const header = JSON.parse(headerJson);
+
+                if (header.__metadata__) {
+                    const metadata = header.__metadata__;
+                    let promptData = null;
+                    let workflowData = null;
+
+                    if (metadata.prompt) {
+                        promptData = JSON.parse(metadata.prompt);
+                    }
+                    if (metadata.full_workflow) {
+                        workflowData = JSON.parse(metadata.full_workflow);
+                    }
+
+                    if (!promptData) {
+                        showModal(t('noPromptField'), 'error');
+                        return null;
+                    }
+
+                    if (!workflowData) {
+                        showModal(t('noFullWorkflowData'), 'error');
+                        return null;
+                    }
+
+                    const mergedPrompt = mergePromptAndWorkflow(promptData, workflowData);
+                    return { prompt: mergedPrompt, workflow: workflowData };
+                }
+
+                showModal(t('noFullWorkflowData'), 'error');
+                return null;
+            } catch (e) {
+                console.error('P+FW mode Latent read error:', e);
+                return null;
+            }
+        }
+
+        /**
+         * P+FW 模式：从 JSON 文件中读取并合并数据
+         * @param {Uint8Array} data - JSON 文件数据
+         * @returns {Object|null} - { prompt: {...}, workflow: {...} }
+         */
+        async function readJsonMetadataPromptFW(data) {
+            try {
+                const textDecoder = new TextDecoder('utf-8');
+                const text = textDecoder.decode(data);
+                const json = JSON.parse(text);
+
+                // 需要同时有 prompt 和 full_workflow 字段
+                if (!json.prompt) {
+                    showModal(t('noPromptField'), 'error');
+                    return null;
+                }
+
+                if (!json.full_workflow) {
+                    showModal(t('noFullWorkflowData'), 'error');
+                    return null;
+                }
+
+                const promptData = typeof json.prompt === 'string' ?
+                    JSON.parse(json.prompt) : json.prompt;
+                const workflowData = typeof json.full_workflow === 'string' ?
+                    JSON.parse(json.full_workflow) : json.full_workflow;
+
+                const mergedPrompt = mergePromptAndWorkflow(promptData, workflowData);
+                return { prompt: mergedPrompt, workflow: workflowData };
+            } catch (e) {
+                console.error('P+FW mode JSON read error:', e);
+                return null;
             }
         }
 
@@ -2138,191 +3465,136 @@
         }
 
         /**
-         * 读取 JSON 文件的元数据
-         * 处理逻辑：
-         * - 支持包含 prompt 字段的 JSON (如 XWorkflowSave 生成的)
-         * - 支持 ComfyUI 官方网页导出的 API 格式 JSON (直接是 prompt 数据)
-         * - 支持 ComfyUI 网页保存的完整 Workflow 格式 JSON (包含 nodes 数组)
-         * - 返回格式: { prompt: {...}, workflow: {...} }
+         * 安全解码字节数组为字符串
+         * @param {Uint8Array} bytes - 源字节
+         * @param {string} [encoding='utf-8'] - 编码名
+         * @returns {string} 解码结果
          */
-        async function readJsonMetadata(data) {
+        function decodeBytes(bytes, encoding = 'utf-8') {
             try {
-                const textDecoder = new TextDecoder('utf-8');
-                const text = textDecoder.decode(data);
-                const json = JSON.parse(text);
-
-                // 情况1: 包含 prompt 字段的 JSON (XWorkflowSave)
-                // 可能同时包含 workflow 字段或 full_workflow 字段 (merge 模式)
-                if (json.prompt) {
-                    // 检查是否有 full_workflow (merge 模式)
-                    // full_workflow 包含更完整的数据，需要与 prompt 合并
-                    if (json.full_workflow && json.full_workflow.nodes) {
-                        // 合并 prompt 和 full_workflow 的数据
-                        const mergedPrompt = mergePromptAndWorkflow(
-                            json.prompt,
-                            json.full_workflow
-                        );
-                        return {
-                            prompt: mergedPrompt,
-                            workflow: json.full_workflow
-                        };
-                    }
-                    // 否则使用标准的 workflow 字段
-                    return {
-                        prompt: json.prompt,
-                        workflow: json.workflow || null
-                    };
-                }
-
-                // 情况2: ComfyUI 官方网页导出的 API 格式 JSON
-                // 特征: 直接是节点映射表，键是数字字符串，值包含 inputs 和 class_type
-                const keys = Object.keys(json);
-                const isPromptFormat = keys.length > 0 && keys.every(key => {
-                    const node = json[key];
-                    return node && typeof node === 'object' &&
-                           (node.inputs !== undefined || node.class_type !== undefined);
-                });
-
-                if (isPromptFormat) {
-                    return { prompt: json, workflow: null };
-                }
-
-                // 情况3: ComfyUI 网页保存的完整 Workflow 格式 JSON
-                // 特征: 包含 nodes 数组和 links 数组
-                if (json.nodes && Array.isArray(json.nodes) && json.links && Array.isArray(json.links)) {
-                    const prompt = convertWorkflowToPrompt(json);
-                    return { prompt: prompt, workflow: json };
-                }
-
-                // 无法识别的格式
-                alert(t('noPromptError'));
-                return null;
-            } catch (e) {
-                console.error('JSON metadata read error:', e);
-                return null;
+                return new TextDecoder(encoding).decode(bytes);
+            } catch (error) {
+                return new TextDecoder('utf-8').decode(bytes);
             }
         }
 
         /**
-         * 从 PNG 文件中读取元数据
-         * PNG 格式: 元数据存储在 tEXt 或 iTXt chunk 中
-         * 返回格式: { prompt: "...", workflow: "..." } (字符串格式，需要 parseWorkflow 进一步解析)
+         * 兼容旧格式的文本解析
+         * 支持两种写法：
+         * 1) keyword\0value（标准 tEXt）
+         * 2) key\0value\0key\0value...（历史写法）
+         * @param {string} text - 文本内容
+         * @returns {Object} 键值对象
          */
-        async function readPngMetadata(data) {
-            try {
-                const textDecoder = new TextDecoder('utf-8');
-                let offset = 8;
-                const result = { prompt: null, workflow: null };
-
-                while (offset < data.length - 12) {
-                    const length = (data[offset] << 24) | (data[offset + 1] << 16) |
-                                   (data[offset + 2] << 8) | data[offset + 3];
-
-                    if (length < 0 || length > data.length - offset - 12) break;
-
-                    const type = textDecoder.decode(data.slice(offset + 4, offset + 8));
-
-                    if (type === 'tEXt' || type === 'iTXt') {
-                        const chunkData = data.slice(offset + 8, offset + 8 + length);
-                        const text = textDecoder.decode(chunkData);
-                        const parsed = parsePngText(text);
-                        // 合并解析结果
-                        if (parsed.prompt) result.prompt = parsed.prompt;
-                        if (parsed.workflow) result.workflow = parsed.workflow;
-                    }
-
-                    if (type === 'IEND') break;
-                    offset += 12 + length;
-                }
-
-                // 如果找到了 prompt 或 workflow，返回结果
-                if (result.prompt || result.workflow) {
-                    return result;
-                }
-            } catch (e) {
-                console.error('PNG metadata read error:', e);
-            }
-            return null;
-        }
-
-        /**
-         * 从 Latent 文件中读取元数据
-         * Latent 格式: 前8字节是头部大小，后面是 JSON 格式的头部数据
-         * 头部中包含 __metadata__ 字段，其中有 prompt 和 workflow
-         * 返回格式: { prompt: {...}, workflow: {...} }
-         */
-        async function readLatentMetadata(data) {
-            try {
-                if (data.length < 8) return null;
-
-                const headerSize = Number(
-                    new BigUint64Array(data.slice(0, 8).buffer)[0]
-                );
-
-                if (headerSize < 0 || headerSize > data.length - 8) {
-                    return null;
-                }
-
-                const textDecoder = new TextDecoder('utf-8');
-                const headerJson = textDecoder.decode(
-                    data.slice(8, 8 + headerSize)
-                );
-
-                const header = JSON.parse(headerJson);
-
-                if (header.__metadata__) {
-                    const metadata = header.__metadata__;
-                    const result = { prompt: null, workflow: null };
-
-                    // 解析 prompt
-                    if (metadata.prompt) {
-                        try {
-                            result.prompt = JSON.parse(metadata.prompt);
-                        } catch {
-                            result.prompt = metadata.prompt;
-                        }
-                    }
-
-                    // 解析 workflow
-                    if (metadata.workflow) {
-                        try {
-                            result.workflow = JSON.parse(metadata.workflow);
-                        } catch {
-                            result.workflow = metadata.workflow;
-                        }
-                    }
-
-                    // 如果找到了 prompt 或 workflow，返回结果
-                    if (result.prompt || result.workflow) {
-                        return result;
-                    }
-
-                    return metadata;
-                }
-
-                return null;
-            } catch (e) {
-                console.error('Latent metadata read error:', e);
-            }
-            return null;
-        }
-
-        /**
-         * 解析 PNG tEXt chunk 的文本数据
-         * 格式: key\0value\0key\0value...
-         * 返回: { key: value, ... }
-         */
-        function parsePngText(text) {
+        function parsePngTextPayload(text) {
             const result = {};
+            if (!text || typeof text !== 'string') {
+                return result;
+            }
             const parts = text.split('\0');
+            if (parts.length === 2 && parts[0]) {
+                result[parts[0]] = parts[1];
+                return result;
+            }
             for (let i = 0; i < parts.length - 1; i += 2) {
                 const key = parts[i];
                 const value = parts[i + 1];
-                if (key && value) {
+                if (key && value !== undefined) {
                     result[key] = value;
                 }
             }
             return result;
+        }
+
+        /**
+         * 解析 PNG 文本 chunk（tEXt / iTXt）
+         * @param {string} chunkType - chunk 类型
+         * @param {Uint8Array} chunkData - chunk 数据体
+         * @returns {Object} 键值对象
+         */
+        function parsePngMetadataChunk(chunkType, chunkData) {
+            if (chunkType === 'tEXt') {
+                return parsePngTextPayload(decodeBytes(chunkData, 'utf-8'));
+            }
+
+            if (chunkType !== 'iTXt') {
+                return {};
+            }
+
+            let offset = 0;
+            const readNullTerminated = () => {
+                const start = offset;
+                while (offset < chunkData.length && chunkData[offset] !== 0) {
+                    offset++;
+                }
+                const part = chunkData.slice(start, offset);
+                offset++;
+                return part;
+            };
+
+            try {
+                const keyword = decodeBytes(readNullTerminated(), 'utf-8');
+                if (!keyword || offset + 2 > chunkData.length) {
+                    return {};
+                }
+
+                const compressionFlag = chunkData[offset];
+                offset++;
+                offset++; // compression method
+
+                // language tag
+                readNullTerminated();
+                // translated keyword
+                readNullTerminated();
+
+                if (offset > chunkData.length) {
+                    return {};
+                }
+
+                if (compressionFlag === 1) {
+                    // 不引入额外解压依赖，压缩 iTXt 暂不解析。
+                    return {};
+                }
+
+                const textBytes = chunkData.slice(offset);
+                const text = decodeBytes(textBytes, 'utf-8');
+                return { [keyword]: text };
+            } catch (error) {
+                console.error('Failed to parse iTXt chunk:', error);
+                return {};
+            }
+        }
+
+        /**
+         * 从 PNG 二进制中提取全部文本元数据
+         * @param {Uint8Array} data - PNG 文件数据
+         * @returns {Object} 元数据对象
+         */
+        function extractPngMetadata(data) {
+            const metadata = {};
+            let offset = 8;
+            while (offset < data.length - 12) {
+                const length = (data[offset] << 24) |
+                    (data[offset + 1] << 16) |
+                    (data[offset + 2] << 8) |
+                    data[offset + 3];
+
+                if (length < 0 || length > data.length - offset - 12) {
+                    break;
+                }
+
+                const type = decodeBytes(data.slice(offset + 4, offset + 8));
+                if (type === 'tEXt' || type === 'iTXt') {
+                    const chunkData = data.slice(offset + 8, offset + 8 + length);
+                    const parsed = parsePngMetadataChunk(type, chunkData);
+                    Object.assign(metadata, parsed);
+                }
+                if (type === 'IEND') {
+                    break;
+                }
+                offset += 12 + length;
+            }
+            return metadata;
         }
 
         /**
@@ -2631,6 +3903,8 @@
                 // 确定节点位置（优先使用从 workflow 中保存的位置）
                 const pos = positions[nodeId] || { x: 100, y: 100 };
                 const classType = nodeData.class_type;
+                const safeClassType = escapeHtml(String(classType || ''));
+                const safeNodeId = escapeHtml(String(nodeId || ''));
 
                 // 构建节点 CSS 类名
                 let className = 'node';
@@ -2668,11 +3942,11 @@
                 if (classType === 'Note' || classType === 'MarkdownNote') {
                     const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
                     content = `
-                        <div class="node-header" data-node-id="${nodeId}">
-                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
-                            <span class="node-header-text">${classType}</span>
+                        <div class="node-header" data-node-id="${safeNodeId}">
+                            <button class="header-btn copy-title-btn" data-node="${safeNodeId}" data-title="${safeClassType}" title="${t('copyTitle')}">📋</button>
+                            <span class="node-header-text">${safeClassType}</span>
                             <div class="header-actions">
-                                <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
+                                <button class="header-btn toggle-btn" data-node="${safeNodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
                         </div>
                         <div class="node-body">
@@ -2684,7 +3958,7 @@
                     const displayInputs = Object.entries(inputs);
 
                     const subgraphTag = nodeData.subgraphName ?
-                        `<div class="subgraph-tag" data-subgraph-color="${subgraphColor}">${escapeHtml(nodeData.subgraphName)} [${nodeId}]</div>` :
+                        `<div class="subgraph-tag" data-subgraph-color="${subgraphColor}">${escapeHtml(nodeData.subgraphName)} [${safeNodeId}]</div>` :
                         '';
 
                     const nodeIdTag = !nodeData.subgraphName ?
@@ -2692,11 +3966,11 @@
                         '';
 
                     content = `
-                        <div class="node-header" data-node-id="${nodeId}">
-                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
-                            <span class="node-header-text">${classType}</span>
+                        <div class="node-header" data-node-id="${safeNodeId}">
+                            <button class="header-btn copy-title-btn" data-node="${safeNodeId}" data-title="${safeClassType}" title="${t('copyTitle')}">📋</button>
+                            <span class="node-header-text">${safeClassType}</span>
                             <div class="header-actions">
-                                <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
+                                <button class="header-btn toggle-btn" data-node="${safeNodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
                         </div>
                         ${subgraphTag}
@@ -2823,10 +4097,6 @@
                 });
 
                 const header = nodeEl.querySelector('.node-header');
-                let isNodeDragging = false;
-                let hasDragStarted = false;
-                let nodeDragStartX, nodeDragStartY, nodeStartX, nodeStartY;
-                const DRAG_THRESHOLD = 3; // 拖动阈值（像素）
 
                 header.addEventListener('mousedown', (e) => {
                     if (e.target.classList.contains('header-btn')) return;
@@ -2857,68 +4127,20 @@
                     }
 
                     // 单节点拖动
-                    isNodeDragging = true;
-                    hasDragStarted = false;
-                    nodeDragStartX = e.clientX;
-                    nodeDragStartY = e.clientY;
-                    nodeStartX = parseFloat(nodeEl.style.left);
-                    nodeStartY = parseFloat(nodeEl.style.top);
+                    activeNodeDrag = {
+                        nodeId: nodeId,
+                        nodeEl: nodeEl,
+                        headerEl: header,
+                        isDragging: true,
+                        hasDragStarted: false,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        nodeStartX: parseFloat(nodeEl.style.left),
+                        nodeStartY: parseFloat(nodeEl.style.top)
+                    };
                     // 阻止默认行为，防止文本选择
                     e.preventDefault();
                     e.stopPropagation();
-                });
-
-                document.addEventListener('mousemove', (e) => {
-                    if (isNodeDragging) {
-                        const dx = e.clientX - nodeDragStartX;
-                        const dy = e.clientY - nodeDragStartY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-
-                        // 只有当移动距离超过阈值时才真正开始拖动
-                        if (!hasDragStarted && distance > DRAG_THRESHOLD) {
-                            hasDragStarted = true;
-                            // 开始拖动时阻止文本选择并改变光标样式
-                            header.classList.add('dragging');
-                            document.body.style.userSelect = 'none';
-                            document.body.style.webkitUserSelect = 'none';
-                        }
-
-                        if (hasDragStarted) {
-                            const scaledDx = dx / scale;
-                            const scaledDy = dy / scale;
-                            nodeEl.style.left = (nodeStartX + scaledDx) + 'px';
-                            nodeEl.style.top = (nodeStartY + scaledDy) + 'px';
-                            updateConnectionPaths();
-                            updateConnectionHighlight();
-                        }
-                    }
-                });
-
-                document.addEventListener('mouseup', () => {
-                    if (isNodeDragging) {
-                        // 恢复文本选择和光标样式
-                        header.classList.remove('dragging');
-                        document.body.style.userSelect = '';
-                        document.body.style.webkitUserSelect = '';
-
-                        // 只有真正拖动过才保存位置
-                        if (hasDragStarted) {
-                            const newX = parseFloat(nodeEl.style.left);
-                            const newY = parseFloat(nodeEl.style.top);
-                            if (!workflowData.nodePositions) {
-                                workflowData.nodePositions = {};
-                            }
-                            workflowData.nodePositions[nodeId] = { x: newX, y: newY };
-
-                            // 设置标记，防止触发点击事件
-                            justFinishedDrag = true;
-                            setTimeout(() => {
-                                justFinishedDrag = false;
-                            }, 50);
-                        }
-                    }
-                    isNodeDragging = false;
-                    hasDragStarted = false;
                 });
 
                 // 为拉伸手柄添加事件监听
@@ -3338,7 +4560,13 @@
          * 根据节点位置计算贝塞尔曲线路径，连接点位于节点边框上
          */
         function updateConnectionPaths() {
-            let svgContent = '';
+            // 如果没有工作流数据，清空连接线并返回
+            if (!workflowData || !workflowData.connections) {
+                connectionsSvg.innerHTML = '';
+                return;
+            }
+
+            connectionsSvg.innerHTML = '';
 
             for (const conn of workflowData.connections) {
                 const fromNodeEl = document.querySelector(`[data-node-id="${conn.from}"]`);
@@ -3373,16 +4601,42 @@
 
                 // 绘制连接线路径（从圆点边缘开始，到圆点边缘结束）
                 const path = `M ${x1 + dotRadius} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2 - dotRadius} ${y2}`;
-                svgContent += `<path class="connection-line" d="${path}" data-from="${conn.from}" data-to="${conn.to}" />`;
+                const lineEl = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'path'
+                );
+                lineEl.setAttribute('class', 'connection-line');
+                lineEl.setAttribute('d', path);
+                lineEl.dataset.from = String(conn.from);
+                lineEl.dataset.to = String(conn.to);
+                connectionsSvg.appendChild(lineEl);
 
                 // 添加起点圆点（在右边框上）
-                svgContent += `<circle class="connection-dot" cx="${x1}" cy="${y1}" r="${dotRadius}" data-dot-type="output" data-node="${conn.from}" />`;
+                const outDot = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'circle'
+                );
+                outDot.setAttribute('class', 'connection-dot');
+                outDot.setAttribute('cx', String(x1));
+                outDot.setAttribute('cy', String(y1));
+                outDot.setAttribute('r', String(dotRadius));
+                outDot.dataset.dotType = 'output';
+                outDot.dataset.node = String(conn.from);
+                connectionsSvg.appendChild(outDot);
 
                 // 添加终点圆点（在左边框上）
-                svgContent += `<circle class="connection-dot" cx="${x2}" cy="${y2}" r="${dotRadius}" data-dot-type="input" data-node="${conn.to}" />`;
+                const inDot = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'circle'
+                );
+                inDot.setAttribute('class', 'connection-dot');
+                inDot.setAttribute('cx', String(x2));
+                inDot.setAttribute('cy', String(y2));
+                inDot.setAttribute('r', String(dotRadius));
+                inDot.dataset.dotType = 'input';
+                inDot.dataset.node = String(conn.to);
+                connectionsSvg.appendChild(inDot);
             }
-
-            connectionsSvg.innerHTML = svgContent;
 
             const wrapperRect = canvasWrapper.getBoundingClientRect();
             connectionsSvg.setAttribute('viewBox', `0 0 ${wrapperRect.width} ${wrapperRect.height}`);
@@ -3522,6 +4776,93 @@
                     dot.classList.remove('highlight');
                 }
             });
+        }
+
+        /**
+         * 显示模态弹窗
+         * @param {string} message - 提示消息
+         * @param {string} type - 弹窗类型: 'error' | 'warning' | 'info'
+         * @param {string} title - 弹窗标题（可选，默认根据类型自动选择）
+         */
+        function showModal(message, type = 'error', title = null) {
+            // 移除已存在的弹窗
+            const existingModal = document.getElementById('modalOverlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            // 根据类型设置图标和默认标题（使用本地化）
+            const icons = {
+                error: '❌',
+                warning: '⚠️',
+                info: 'ℹ️'
+            };
+
+            const titleKeys = {
+                error: 'modalErrorTitle',
+                warning: 'modalWarningTitle',
+                info: 'modalInfoTitle'
+            };
+
+            const modalTitle = title || t(titleKeys[type]) || t('modalErrorTitle');
+            const modalIcon = icons[type] || icons.error;
+
+            // 创建弹窗元素
+            const overlay = document.createElement('div');
+            overlay.id = 'modalOverlay';
+            overlay.className = 'modal-overlay';
+            const container = document.createElement('div');
+            container.className = 'modal-container';
+
+            const iconEl = document.createElement('div');
+            iconEl.className = `modal-icon ${type}`;
+            iconEl.textContent = modalIcon;
+            container.appendChild(iconEl);
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'modal-title';
+            titleEl.textContent = modalTitle;
+            container.appendChild(titleEl);
+
+            const messageEl = document.createElement('div');
+            messageEl.className = 'modal-message';
+            messageEl.textContent = String(message);
+            container.appendChild(messageEl);
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'modal-btn';
+            closeBtn.id = 'modalCloseBtn';
+            closeBtn.textContent = t('modalOkBtn');
+            container.appendChild(closeBtn);
+
+            overlay.appendChild(container);
+
+            document.body.appendChild(overlay);
+
+            // 显示弹窗（使用 setTimeout 确保动画生效）
+            requestAnimationFrame(() => {
+                overlay.classList.add('active');
+            });
+
+            // 绑定关闭事件
+            const closeModal = () => {
+                overlay.classList.remove('active');
+                setTimeout(() => overlay.remove(), 300);
+            };
+
+            document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeModal();
+            });
+
+            // ESC 键关闭
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    closeModal();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
         }
     </script>
 </body>

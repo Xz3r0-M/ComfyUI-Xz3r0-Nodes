@@ -209,9 +209,13 @@ __marimo__/
 
 
 # Xz3r0
-.trae/
 .vscode/
 tests/
 web/test
 ruff.toml
 记录/
+其他/
+.codex/
+.agents/
+AGENTS.md
+检验/

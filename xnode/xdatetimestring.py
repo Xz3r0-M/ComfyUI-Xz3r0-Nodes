@@ -7,8 +7,10 @@
 
 from datetime import datetime
 
+from comfy_api.latest import io
 
-class XDateTimeString:
+
+class XDateTimeString(io.ComfyNode):
     """
     日期时间字符串节点
 
@@ -33,7 +35,7 @@ class XDateTimeString:
         prefix="Image_",
         format_template="%Y%-%m%-%d%_%H%-%M%-%S%",
         suffix="_v1"
-        Output: "Image_20260114_143052_v1"
+        Output: "Image_2026-01-14_143052_v1"
 
     支持的占位符:
         %Y% - 四位年份 (如: 2026)
@@ -45,70 +47,90 @@ class XDateTimeString:
     """
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
+    def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "prefix": (
-                    "STRING",
-                    {
-                        "default": "",
-                        "tooltip": "Prefix string, added before datetime",
-                    },
+        return io.Schema(
+            node_id="XDateTimeString",
+            display_name="XDateTimeString",
+            description=(
+                "Generate a formatted string containing date and time "
+                "identifiers for use in filenames or other purposes"
+            ),
+            category="♾️ Xz3r0/Workflow-Processing",
+            inputs=[
+                io.String.Input(
+                    "prefix",
+                    default="",
+                    tooltip="Prefix string, added before datetime",
                 ),
-                "format_template": (
-                    "STRING",
-                    {
-                        "default": "%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": (
-                            "Datetime format template, supports: "
-                            "%Y%(year), %m%(month), %d%(day), "
-                            "%H%(hour), %M%(minute), %S%(second)"
-                        ),
-                    },
+                io.String.Input(
+                    "format_template",
+                    default="%Y%-%m%-%d%_%H%-%M%-%S%",
+                    tooltip=(
+                        "Datetime format template, supports: "
+                        "%Y%(year), %m%(month), %d%(day), "
+                        "%H%(hour), %M%(minute), %S%(second)"
+                    ),
                 ),
-                "suffix": (
-                    "STRING",
-                    {
-                        "default": "",
-                        "tooltip": "Suffix string, added after datetime",
-                    },
+                io.String.Input(
+                    "suffix",
+                    default="",
+                    tooltip="Suffix string, added after datetime",
                 ),
-            },
-        }
+            ],
+            outputs=[
+                io.String.Output(
+                    "datetime_string",
+                    tooltip="Formatted datetime string",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("datetime_string",)
-    OUTPUT_TOOLTIPS = ("Formatted datetime string",)
-    FUNCTION = "generate"
-    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
-
-    def generate(
-        self,
+    @classmethod
+    def fingerprint_inputs(
+        cls,
+        prefix: str,
         format_template: str,
-        prefix: str = "",
-        suffix: str = "",
-    ) -> tuple[str]:
+        suffix: str,
+    ) -> float:
+        """
+        生成输入指纹，确保每次执行都生成新的时间戳
+
+        由于日期时间是实时变化的，返回当前时间戳作为指纹
+        确保节点不会缓存结果
+        """
+        import time
+
+        return time.time()
+
+    @classmethod
+    def execute(
+        cls,
+        prefix: str,
+        format_template: str,
+        suffix: str,
+    ) -> io.NodeOutput:
         """
         生成日期时间字符串
 
         Args:
-            format_template: 日期时间格式模板
             prefix: 前缀字符串
+            format_template: 日期时间格式模板
             suffix: 后缀字符串
 
         Returns:
-            (datetime_string,): 格式化后的完整字符串
+            NodeOutput: 包含格式化后的完整字符串
         """
         # 替换日期时间占位符
-        datetime_str = self._replace_datetime_placeholders(format_template)
+        datetime_str = cls._replace_datetime_placeholders(format_template)
 
         # 组合前缀、日期时间字符串和后缀
         result = f"{prefix}{datetime_str}{suffix}"
 
-        return (result,)
+        return io.NodeOutput(result)
 
-    def _replace_datetime_placeholders(self, text: str) -> str:
+    @classmethod
+    def _replace_datetime_placeholders(cls, text: str) -> str:
         """
         替换日期时间标识符
 
@@ -137,12 +159,3 @@ class XDateTimeString:
             result = result.replace(placeholder, value)
 
         return result
-
-
-NODE_CLASS_MAPPINGS = {
-    "XDateTimeString": XDateTimeString,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XDateTimeString": "XDateTimeString",
-}

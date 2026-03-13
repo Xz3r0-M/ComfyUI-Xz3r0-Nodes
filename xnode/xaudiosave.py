@@ -1,6 +1,6 @@
 """
-音频保存节点模块
-================
+音频保存节点模块 (V3 API)
+========================
 
 这个模块包含音频保存相关的节点。
 """
@@ -11,30 +11,55 @@ import re
 import shutil
 import tempfile
 import time
-import traceback
-from datetime import datetime
 from pathlib import Path
 
 import comfy.utils
 import ffmpeg
-import folder_paths
 import numpy as np
 import torch
+from comfy_api.latest import io
 from scipy.io import wavfile
 from torchaudio.transforms import Resample
+
+try:
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+
+try:
+    import folder_paths
+
+    COMFYUI_AVAILABLE = True
+except ImportError:
+    COMFYUI_AVAILABLE = False
 
 NULL_DEVICE = "NUL" if os.name == "nt" else "/dev/null"
 
 
-class XAudioSave:
+class XAudioSave(io.ComfyNode):
     """
-    XAudioSave 音频保存节点
+    XAudioSave 音频保存节点 (V3)
 
-    提供音频保存功能，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、音量标准化和峰值限制。
+    提供音频保存功能，支持WAV/FLAC无损导出，自定义文件名、
+    子文件夹、日期时间标识符、音量标准化和峰值限制。
 
     功能:
         - 保存音频到ComfyUI默认输出目录
-        - 统一使用WAV无损格式(PCM 32-bit float)
+        - 默认使用WAV无损格式(PCM 32-bit float)
+        - 支持FLAC无损压缩导出(最终阶段量化到s32)
+        - WAV 在当前 FFmpeg 路径下不稳定保留自定义 metadata
+        - FLAC 支持嵌入 prompt/workflow 等工作流 metadata
         - 支持多种采样率(44.1kHz, 48kHz, 96kHz, 192kHz)
         - LUFS音量标准化(默认-14.1 LUFS)
         - 传统压缩器支持(acompressor, 三种预设: 快速/平衡/缓慢)
@@ -98,166 +123,158 @@ class XAudioSave:
         save_path="output/Audio/MyAudio_20260114.wav"
     """
 
-    OUTPUT_NODE = True
-
     SAMPLE_RATES = {
         "44100": 44100,
         "48000": 48000,
         "96000": 96000,
         "192000": 192000,
     }
+    OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    INVALID_SAVE_PATH_ERROR = "Invalid save path"
+    RELATIVE_PATH_ERROR = "Unable to build relative save path"
+    AUDIO_TENSOR_PREPARE_ERROR = "Unable to prepare audio tensor for saving"
+    AUDIO_NORMALIZE_ERROR = "Audio normalization failed"
+    AUDIO_SAVE_ERROR = "Audio file saving failed"
+    FILE_SAVE_VALIDATION_ERROR = "Saved audio file validation failed"
+    INVALID_FORMAT_ERROR = "format must be either WAV or FLAC"
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
-        """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "audio": ("AUDIO", {"tooltip": "Input audio tensor"}),
-                "filename_prefix": (
-                    "STRING",
-                    {
-                        "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": (
-                            "Filename prefix, supports datetime placeholders: "
-                            "%Y%, %m%, %d%, %H%, %M%, %S%"
-                        ),
-                    },
+    def define_schema(cls):
+        """定义节点的输入输出模式"""
+        return io.Schema(
+            node_id="XAudioSave",
+            display_name="XAudioSave",
+            description="Save audio with LUFS normalization, compression, "
+            "peak limiting, and WAV/FLAC lossless output",
+            category="♾️ Xz3r0/File-Processing",
+            is_output_node=True,
+            inputs=[
+                io.Audio.Input(
+                    "audio",
+                    tooltip="Input audio tensor",
                 ),
-                "subfolder": (
-                    "STRING",
-                    {
-                        "default": "Audio",
-                        "tooltip": (
-                            "Subfolder name (no path separators allowed), "
-                            "supports datetime placeholders: "
-                            "%Y%, %m%, %d%, %H%, %M%, %S%"
-                        ),
-                    },
+                io.String.Input(
+                    "filename_prefix",
+                    default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                    tooltip="Filename prefix, supports datetime "
+                    "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
                 ),
-                "sample_rate": (
-                    list(cls.SAMPLE_RATES.keys()),
-                    {
-                        "default": "48000",
-                        "tooltip": (
-                            "Target sample rate for the output audio file"
-                        ),
-                    },
+                io.String.Input(
+                    "subfolder",
+                    default="Audio",
+                    tooltip="Subfolder name (no path separators "
+                    "allowed), supports datetime "
+                    "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
                 ),
-                "target_lufs": (
-                    "FLOAT",
-                    {
-                        "default": -14.1,
-                        "min": -70.0,
-                        "max": 0.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Target LUFS value for loudness normalization. "
-                            "Lower values make audio quieter. "
-                            "Default -14.1, Set to -70 to disable."
-                        ),
-                    },
+                io.Combo.Input(
+                    "format",
+                    options=["WAV", "FLAC"],
+                    default="FLAC",
+                    tooltip="Output file format. WAV keeps float32 "
+                    "master output but does not reliably preserve "
+                    "custom workflow metadata. FLAC uses lossless "
+                    "compression and supports metadata embedding.",
                 ),
-                "enable_peak_limiter": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "Enable True Peak limiting "
-                            "(Broadcast standard, 8x oversampling). "
-                            "When disabled, skips peak limiting."
-                        ),
-                    },
+                io.Combo.Input(
+                    "sample_rate",
+                    options=list(cls.SAMPLE_RATES.keys()),
+                    default="48000",
+                    tooltip="Target sample rate for the output audio file",
                 ),
-                "peak_limit": (
-                    "FLOAT",
-                    {
-                        "default": -1.1,
-                        "min": -6.0,
-                        "max": 0.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Peak limiting value in dB. "
-                            "Only used when enable_peak_limiter is enabled. "
-                            "Default -1.1, Values below 0 dB prevent clipping."
-                        ),
-                    },
+                io.Float.Input(
+                    "target_lufs",
+                    default=-14.1,
+                    min=-70.0,
+                    max=0.0,
+                    step=0.1,
+                    tooltip="Target LUFS value for loudness normalization. "
+                    "Lower values make audio quieter. "
+                    "Default -14.1, Set to -70 to disable.",
                 ),
-                "enable_compression": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": (
-                            "Enable dynamic range compression using "
-                            "acompressor filter. "
-                            "When disabled, skips compression and "
-                            "proceeds directly to LUFS normalization."
-                        ),
-                    },
+                io.Boolean.Input(
+                    "enable_peak_limiter",
+                    default=True,
+                    tooltip="Enable True Peak limiting "
+                    "(Broadcast standard, 8x oversampling). "
+                    "When disabled, skips peak limiting.",
                 ),
-                "compression_mode": (
-                    ["Fast", "Balanced", "Slow"],
-                    {
-                        "default": "Balanced",
-                        "tooltip": (
-                            "Compression preset mode. "
-                            "Threshold is automatically calculated based "
-                            "on audio LUFS and target LUFS. "
-                            "Fast: Fast response for voice/podcasts, "
-                            "ratio=3:1. "
-                            "Balanced: Balanced for general use, "
-                            "ratio=2:1. "
-                            "Slow: Smooth for mastering/broadcast, "
-                            "ratio=1.5:1."
-                        ),
-                    },
+                io.Float.Input(
+                    "peak_limit",
+                    default=-1.1,
+                    min=-6.0,
+                    max=0.0,
+                    step=0.1,
+                    tooltip="Peak limiting value in dB. "
+                    "Only used when enable_peak_limiter is enabled. "
+                    "Default -1.1, Values below 0 dB prevent clipping.",
                 ),
-                "use_custom_ratio": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": (
-                            "Enable custom compression ratio to "
-                            "override preset value. "
-                            "When disabled, uses the preset's "
-                            "default ratio."
-                        ),
-                    },
+                io.Boolean.Input(
+                    "enable_compression",
+                    default=False,
+                    tooltip="Enable dynamic range compression using "
+                    "acompressor filter. "
+                    "When disabled, skips compression and "
+                    "proceeds directly to LUFS normalization.",
                 ),
-                "custom_ratio": (
-                    "FLOAT",
-                    {
-                        "default": 2.0,
-                        "min": 1.0,
-                        "max": 20.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Custom compression ratio (1.0 to 20.0). "
-                            "Only used when use_custom_ratio is enabled. "
-                            "Lower values = lighter compression, higher "
-                            "values = stronger compression. "
-                            "Set ratio to 1.0 to disable compression "
-                            "(pass-through mode)."
-                        ),
-                    },
+                io.Combo.Input(
+                    "compression_mode",
+                    options=["Fast", "Balanced", "Slow"],
+                    default="Balanced",
+                    tooltip="Compression preset mode. "
+                    "Threshold is automatically calculated based "
+                    "on audio LUFS and target LUFS. "
+                    "Fast: Fast response for voice/podcasts, "
+                    "ratio=3:1. "
+                    "Balanced: Balanced for general use, "
+                    "ratio=2:1. "
+                    "Slow: Smooth for mastering/broadcast, "
+                    "ratio=1.5:1.",
                 ),
-            }
-        }
+                io.Boolean.Input(
+                    "use_custom_ratio",
+                    default=False,
+                    tooltip="Enable custom compression ratio to "
+                    "override preset value. "
+                    "When disabled, uses the preset's "
+                    "default ratio.",
+                ),
+                io.Float.Input(
+                    "custom_ratio",
+                    default=2.0,
+                    min=1.0,
+                    max=20.0,
+                    step=0.1,
+                    tooltip="Custom compression ratio (1.0 to 20.0). "
+                    "Only used when use_custom_ratio is enabled. "
+                    "Lower values = lighter compression, higher "
+                    "values = stronger compression. "
+                    "Set ratio to 1.0 to disable compression "
+                    "(pass-through mode).",
+                ),
+            ],
+            outputs=[
+                io.Audio.Output(
+                    "processed_audio",
+                    tooltip="Audio after resampling, loudness "
+                    "normalization, and peak limiting "
+                    "(32-bit float format)",
+                ),
+                io.String.Output(
+                    "save_path",
+                    tooltip="Saved file path relative to ComfyUI "
+                    "output directory",
+                ),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+        )
 
-    RETURN_TYPES = ("AUDIO", "STRING")
-    RETURN_NAMES = ("processed_audio", "save_path")
-    OUTPUT_TOOLTIPS = (
-        "Audio after resampling, loudness normalization, and peak limiting "
-        "(32-bit float format)",
-        "Saved file path relative to ComfyUI output directory",
-    )
-    FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/File-Processing"
-
-    def save(
-        self,
+    @classmethod
+    def execute(
+        cls,
         audio: dict,
         filename_prefix: str,
         subfolder: str,
+        format: str,
         sample_rate: str,
         target_lufs: float,
         enable_peak_limiter: bool,
@@ -266,7 +283,7 @@ class XAudioSave:
         compression_mode: str,
         use_custom_ratio: bool,
         custom_ratio: float,
-    ) -> tuple[dict, str]:
+    ) -> io.NodeOutput:
         """
         保存音频到ComfyUI输出目录
 
@@ -274,6 +291,7 @@ class XAudioSave:
             audio: 音频字典，包含"waveform"和"sample_rate"
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
+            format: 输出格式 (WAV/FLAC)
             sample_rate: 采样率选项
             target_lufs: 目标LUFS值
             enable_peak_limiter: 是否启用峰值限制
@@ -284,29 +302,32 @@ class XAudioSave:
             custom_ratio: 自定义压缩比
 
         Returns:
-            (processed_audio, save_path): 处理后的音频和保存的相对路径
+            NodeOutput: 包含处理后的音频和保存的相对路径
             - processed_audio: 32-bit float 格式的音频
-            - save_path: 保存的 WAV 文件相对路径 (32-bit float)
+            - save_path: 保存的音频文件相对路径(.wav或.flac)
         """
         # 获取ComfyUI默认输出目录
-        output_dir = self._get_output_directory()
-
+        output_dir = cls._get_output_directory()
+        output_format = cls._normalize_output_format(format)
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(
+        safe_filename_prefix = sanitize_path_component(filename_prefix)
+        safe_filename_prefix = replace_datetime_tokens(
             safe_filename_prefix
         )
 
-        safe_subfolder = self._sanitize_path(subfolder)
-        safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = sanitize_path_component(subfolder)
+        safe_subfolder = replace_datetime_tokens(safe_subfolder)
 
-        # 创建完整保存路径
-        save_dir = output_dir
-        if safe_subfolder:
-            save_dir = save_dir / safe_subfolder
+        try:
+            save_dir = resolve_output_subpath(output_dir, safe_subfolder)
+        except ValueError as exc:
+            raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
         # 创建目录(仅支持单级目录)
-        save_dir.mkdir(exist_ok=True)
+        try:
+            save_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
 
         # 获取音频数据
         waveform = audio["waveform"]
@@ -319,7 +340,7 @@ class XAudioSave:
             waveform = waveform.unsqueeze(0)
 
         # 获取目标采样率
-        target_sr = self.SAMPLE_RATES[sample_rate]
+        target_sr = cls.SAMPLE_RATES[sample_rate]
 
         # 定义处理步骤数
         # 步骤1: 重采样, 步骤2: 文件名生成, 步骤3-10: 音频处理各阶段
@@ -328,43 +349,106 @@ class XAudioSave:
 
         # 重采样音频(如果需要)
         if original_sr != target_sr:
-            waveform = self._resample_audio(waveform, original_sr, target_sr)
+            waveform = cls._resample_audio(waveform, original_sr, target_sr)
         progress_bar.update_absolute(1)
 
         # 生成文件名(添加序列号)
         base_filename = safe_filename_prefix
-        final_filename = self._get_unique_filename(
-            save_dir, base_filename, ".wav"
+        extension = ".wav" if output_format == "WAV" else ".flac"
+        final_filename = ensure_unique_filename(
+            save_dir, base_filename, extension
         )
         progress_bar.update_absolute(2)
 
-        # 保存路径
-        save_path = save_dir / final_filename
+        try:
+            save_path = resolve_output_subpath(
+                output_dir,
+                Path(safe_subfolder) / final_filename,
+            )
+        except ValueError as exc:
+            raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
         # 处理LUFS标准化和峰值限制
+        # WAV 容器在当前 FFmpeg 路径下无法稳定保留自定义工作流元数据，
+        # 因此 WAV 路径不做 metadata 注入。FLAC 路径会注入 metadata。
         final_lufs = target_lufs if target_lufs > -70 else None
         if final_lufs is not None:
-            waveform = self._normalize_audio(
-                waveform,
-                target_sr,
-                final_lufs,
-                enable_peak_limiter,
-                peak_limit,
-                enable_compression,
-                compression_mode,
-                use_custom_ratio,
-                custom_ratio,
-                save_path,
-                progress_bar,
-                current_step=2,
-            )
+            if output_format == "WAV":
+                waveform = cls._normalize_audio(
+                    waveform,
+                    target_sr,
+                    final_lufs,
+                    enable_peak_limiter,
+                    peak_limit,
+                    enable_compression,
+                    compression_mode,
+                    use_custom_ratio,
+                    custom_ratio,
+                    save_path,
+                    progress_bar,
+                    current_step=2,
+                )
+            else:
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav", delete=False
+                ) as temp_output:
+                    temp_output_path = temp_output.name
+
+                try:
+                    waveform = cls._normalize_audio(
+                        waveform,
+                        target_sr,
+                        final_lufs,
+                        enable_peak_limiter,
+                        peak_limit,
+                        enable_compression,
+                        compression_mode,
+                        use_custom_ratio,
+                        custom_ratio,
+                        Path(temp_output_path),
+                        progress_bar,
+                        current_step=2,
+                    )
+                    metadata = cls._generate_metadata(
+                        cls.hidden.prompt,
+                        cls.hidden.extra_pnginfo,
+                    )
+                    cls._save_flac_from_source(
+                        source_path=temp_output_path,
+                        target_path=save_path,
+                        metadata=metadata,
+                    )
+                finally:
+                    if os.path.exists(temp_output_path):
+                        try:
+                            os.remove(temp_output_path)
+                        except OSError:
+                            pass
         else:
-            # 没有LUFS标准化时，保存为32-bit float WAV格式
-            self._save_wav_32bit_float(waveform, save_path, target_sr)
+            # 没有LUFS标准化时按目标格式直接保存。
+            if output_format == "WAV":
+                cls._save_wav_32bit_float(
+                    waveform,
+                    save_path,
+                    target_sr,
+                )
+            else:
+                metadata = cls._generate_metadata(
+                    cls.hidden.prompt,
+                    cls.hidden.extra_pnginfo,
+                )
+                cls._save_flac_from_waveform(
+                    waveform=waveform,
+                    path=save_path,
+                    sample_rate=target_sr,
+                    metadata=metadata,
+                )
             progress_bar.update_absolute(total_steps)
 
+        cls._validate_saved_file(save_path)
+
         # 记录相对路径
-        relative_path = str(save_path.relative_to(output_dir))
+        relative_path = cls._build_relative_save_path(save_path, output_dir)
 
         # 构建 ComfyUI 音频字典格式 (需要 batch 维度)
         processed_audio = {
@@ -372,10 +456,11 @@ class XAudioSave:
             "sample_rate": target_sr,
         }
 
-        return (processed_audio, relative_path)
+        return io.NodeOutput(processed_audio, relative_path)
 
+    @classmethod
     def _resample_audio(
-        self, waveform: torch.Tensor, original_sr: int, target_sr: int
+        cls, waveform: torch.Tensor, original_sr: int, target_sr: int
     ) -> torch.Tensor:
         """
         重采样音频
@@ -391,8 +476,19 @@ class XAudioSave:
         resampler = Resample(orig_freq=original_sr, new_freq=target_sr)
         return resampler(waveform)
 
+    @classmethod
+    def _normalize_output_format(cls, output_format: str) -> str:
+        """
+        规范化输出格式并校验合法值。
+        """
+        normalized = str(output_format).upper()
+        if normalized not in ("WAV", "FLAC"):
+            raise ValueError(cls.INVALID_FORMAT_ERROR)
+        return normalized
+
+    @classmethod
     def _normalize_audio(
-        self,
+        cls,
         waveform: torch.Tensor,
         sample_rate: int,
         target_lufs: float,
@@ -427,7 +523,7 @@ class XAudioSave:
             标准化后的音频波形
         """
         files_to_cleanup = []
-        audio_np = waveform.numpy()
+        audio_np = cls._prepare_waveform_for_io(waveform)
 
         try:
             print("[XAudioSave] ===== ♾️Starting audio processing♾️ =====")
@@ -489,8 +585,6 @@ class XAudioSave:
                 f"(target: {tp_value} dB)"
             )
 
-            # print("[XAudioSave] Measuring initial audio statistics")
-
             stdout, stderr = (
                 ffmpeg.input(current_input_path)
                 .filter(
@@ -508,11 +602,10 @@ class XAudioSave:
                 try:
                     stats_json = json.loads(json_match.group(0))
                 except json.JSONDecodeError:
-                    pass
+                    raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from None
 
             if stats_json is None:
-                print("[XAudioSave] Warning: Could not parse loudnorm stats")
-                return waveform
+                raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
 
             # 步骤4: 初始测量完成
             if progress_bar:
@@ -620,11 +713,6 @@ class XAudioSave:
             if progress_bar:
                 progress_bar.update_absolute(current_step + 3)
 
-            # print(
-            #     "[XAudioSave] ===== Applying LUFS normalization "
-            #     "(Two-pass mode) ====="
-            # )
-
             loudnorm_tp = tp_value if enable_peak_limiter else 0
 
             rough_lufs_filter = (
@@ -672,14 +760,10 @@ class XAudioSave:
                 try:
                     stats_rough = json.loads(json_match_rough.group(0))
                 except json.JSONDecodeError:
-                    pass
+                    raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from None
 
             if stats_rough is None:
-                print(
-                    "[XAudioSave] Warning: Could not parse "
-                    "loudnorm stats after rough normalization"
-                )
-                stats_rough = stats_json
+                raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
 
             # 步骤6: 粗略标准化完成
             if progress_bar:
@@ -715,11 +799,6 @@ class XAudioSave:
                 .run(capture_stdout=True, capture_stderr=True)
             )
 
-            # print(
-            #     "[XAudioSave] ===== Measuring audio "
-            #     "after LUFS normalization ====="
-            # )
-
             _, stderr_after = (
                 ffmpeg.input(str(lufs_path))
                 .filter(
@@ -739,24 +818,24 @@ class XAudioSave:
                 try:
                     stats_after = json.loads(json_match_after.group(0))
                 except json.JSONDecodeError:
-                    pass
+                    raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from None
 
-            if stats_after:
-                after_i = str(stats_after["input_i"])
-                after_lra = str(stats_after["input_lra"])
-                after_tp = str(stats_after["input_tp"])
-                after_thresh = str(stats_after["input_thresh"])
-                print(
-                    f"[XAudioSave] Finished LUFS - I: {after_i}, "
-                    f"LRA: {after_lra}, TP: {after_tp}, "
-                    f"Thresh: {after_thresh}"
-                )
+            if stats_after is None:
+                raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
+
+            after_i = str(stats_after["input_i"])
+            after_lra = str(stats_after["input_lra"])
+            after_tp = str(stats_after["input_tp"])
+            after_thresh = str(stats_after["input_thresh"])
+            print(
+                f"[XAudioSave] Finished LUFS - I: {after_i}, "
+                f"LRA: {after_lra}, TP: {after_tp}, "
+                f"Thresh: {after_thresh}"
+            )
 
             # 步骤7: 精确标准化完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 5)
-
-            # print("[XAudioSave] ===== Final audio verification =====")
 
             _, verify_stderr = (
                 ffmpeg.input(str(lufs_path))
@@ -780,11 +859,6 @@ class XAudioSave:
                 progress_bar.update_absolute(current_step + 6)
 
             shutil.copy2(lufs_path, final_save_path)
-            # final_size = os.path.getsize(final_save_path)
-            # print(
-            #     f"[XAudioSave] Copied to: {final_save_path} "
-            #     f"({final_size} bytes)"
-            # )
 
             sample_rate_out, audio_data_out = wavfile.read(
                 lufs_path, mmap=True
@@ -815,32 +889,8 @@ class XAudioSave:
 
             print("[XAudioSave] ===== ♾️Audio processing completed♾️ =====")
             return waveform_processed
-        except ffmpeg.Error as e:
-            print("[XAudioSave] ERROR: FFmpeg processing failed")
-            print(f"[XAudioSave] Error details: {e}")
-            if e.stderr:
-                print(
-                    f"[XAudioSave] FFmpeg stderr: {e.stderr.decode('utf-8')}"
-                )
-            if e.stdout:
-                print(
-                    f"[XAudioSave] FFmpeg stdout: {e.stdout.decode('utf-8')}"
-                )
-            print("[XAudioSave] Using original audio without processing.")
-            return waveform
-        except Exception as e:
-            print(
-                "[XAudioSave] ERROR: Unexpected error during audio processing"
-            )
-            print(f"[XAudioSave] Exception type: {type(e).__name__}")
-            print(f"[XAudioSave] Exception message: {e}")
-            print("[XAudioSave] Traceback:")
-            print(traceback.format_exc())
-            print(
-                "[XAudioSave] ===== ♾️Warning: Using original audio "
-                "without processing♾️ ====="
-            )
-            return waveform
+        except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
+            raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from exc
         finally:
             for path in files_to_cleanup:
                 if os.path.exists(path):
@@ -849,25 +899,30 @@ class XAudioSave:
                     except OSError:
                         pass
 
+    @classmethod
     def _save_wav_32bit_float(
-        self, waveform: torch.Tensor, path: Path, sample_rate: int
+        cls,
+        waveform: torch.Tensor,
+        path: Path,
+        sample_rate: int,
     ):
         """
         保存为32-bit float WAV文件（使用FFmpeg）
+        仅负责音频数据保存，不包含工作流 metadata。
 
         Args:
             waveform: 音频波形张量 (channels, samples)
             path: 保存路径
             sample_rate: 采样率
         """
+        audio_np = cls._prepare_waveform_for_io(waveform)
+
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
             raise RuntimeError(
                 "FFmpeg executable not found. "
                 "Please install FFmpeg and add it to your system PATH."
             )
-
-        audio_np = waveform.numpy()
 
         with tempfile.NamedTemporaryFile(
             suffix=".wav", delete=False
@@ -891,6 +946,8 @@ class XAudioSave:
                 .overwrite_output()
                 .run(capture_stdout=True, capture_stderr=True)
             )
+        except (ffmpeg.Error, OSError, ValueError) as exc:
+            raise RuntimeError(cls.AUDIO_SAVE_ERROR) from exc
         finally:
             if os.path.exists(temp_path):
                 try:
@@ -898,160 +955,147 @@ class XAudioSave:
                 except OSError:
                     pass
 
-    def _get_output_directory(self) -> Path:
+    @classmethod
+    def _save_flac_from_waveform(
+        cls,
+        waveform: torch.Tensor,
+        path: Path,
+        sample_rate: int,
+        metadata: dict | None = None,
+    ) -> None:
+        """
+        将 float 波形写临时 WAV，再以 FLAC(s32) 无损压缩导出。
+        """
+        audio_np = cls._prepare_waveform_for_io(waveform)
+        with tempfile.NamedTemporaryFile(
+            suffix=".wav", delete=False
+        ) as temp_file:
+            temp_path = temp_file.name
+
+        try:
+            audio_data = np.transpose(audio_np, (1, 0))
+            wavfile.write(temp_path, sample_rate, audio_data)
+            cls._save_flac_from_source(
+                source_path=temp_path,
+                target_path=path,
+                metadata=metadata,
+            )
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+    @classmethod
+    def _save_flac_from_source(
+        cls,
+        source_path: str | Path,
+        target_path: Path,
+        metadata: dict | None = None,
+    ) -> None:
+        """
+        将源音频编码为 FLAC，并写入工作流元数据。
+        """
+        output_kwargs = {
+            "acodec": "flac",
+            "sample_fmt": "s32",
+            **{"loglevel": "error"},
+        }
+        output_kwargs.update(
+            cls._build_ffmpeg_metadata_options(metadata)
+        )
+        try:
+            (
+                ffmpeg.input(str(source_path))
+                .output(str(target_path), **output_kwargs)
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+        except (ffmpeg.Error, OSError, ValueError) as exc:
+            raise RuntimeError(cls.AUDIO_SAVE_ERROR) from exc
+
+    @classmethod
+    def _generate_metadata(cls, prompt, extra_pnginfo):
+        """
+        生成音频文件元数据（用于 FLAC）。
+        """
+        if prompt is None and extra_pnginfo is None:
+            return None
+
+        metadata = {}
+        if prompt is not None:
+            metadata["prompt"] = json.dumps(prompt)
+        if extra_pnginfo is not None:
+            for key, value in extra_pnginfo.items():
+                metadata[key] = json.dumps(value)
+        return metadata
+
+    @classmethod
+    def _build_ffmpeg_metadata_options(
+        cls, metadata: dict | None
+    ) -> dict[str, str]:
+        """
+        将元数据转为 FFmpeg metadata 参数。
+        """
+        if not metadata:
+            return {}
+
+        options = {}
+        for index, (key, value) in enumerate(metadata.items()):
+            options[f"metadata:g:{index}"] = f"{key}={value}"
+        return options
+
+    @classmethod
+    def _prepare_waveform_for_io(cls, waveform: torch.Tensor) -> np.ndarray:
+        """
+        将音频张量转换为适合磁盘读写的 NumPy 格式。
+        """
+        try:
+            prepared = waveform.detach()
+            prepared = prepared.to(device="cpu", dtype=torch.float32)
+            prepared = prepared.contiguous()
+            return prepared.numpy()
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise RuntimeError(cls.AUDIO_TENSOR_PREPARE_ERROR) from exc
+
+    @classmethod
+    def _validate_saved_file(cls, save_path: Path) -> None:
+        """
+        验证保存结果，确保文件已落盘且不是空文件。
+        """
+        try:
+            if not save_path.exists():
+                raise RuntimeError(cls.FILE_SAVE_VALIDATION_ERROR)
+
+            if save_path.stat().st_size <= 0:
+                raise RuntimeError(cls.FILE_SAVE_VALIDATION_ERROR)
+        except OSError as exc:
+            raise RuntimeError(cls.FILE_SAVE_VALIDATION_ERROR) from exc
+
+    @classmethod
+    def _get_output_directory(cls) -> Path:
         """
         获取ComfyUI默认输出目录
 
         Returns:
             输出目录路径
         """
-        return Path(folder_paths.get_output_directory())
+        if COMFYUI_AVAILABLE:
+            return Path(folder_paths.get_output_directory())
 
-    def _sanitize_path(self, path: str) -> str:
-        """
-        清理路径，防止遍历攻击并禁用多级目录
+        return Path("test_output")
 
-        将所有危险字符和路径分隔符替换为下划线，确保只允许单级文件夹名称
-
-        Args:
-            path: 原始路径或文件夹名称
-
-        Returns:
-            安全的文件夹名称
-        """
-        if not path:
-            return ""
-
-        # 危险字符列表
-        dangerous_chars = [
-            "\\",
-            "/",
-            "..",
-            ".",
-            "|",
-            ":",
-            "*",
-            "?",
-            '"',
-            "<",
-            ">",
-            "\n",
-            "\r",
-            "\t",
-            "\x00",
-            "\x0b",
-            "\x0c",
-        ]
-
-        # 路径遍历模式
-        path_traversal_patterns = [
-            r"\.\./+",
-            r"\.\.\\+",
-            r"~",
-            r"^\.",
-            r"\.$",
-            r"^/",
-            r"^\\",
-        ]
-
-        # 替换危险字符
-        safe_path = path
-        for char in dangerous_chars:
-            safe_path = safe_path.replace(char, "_")
-
-        # 替换路径遍历模式
-        for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, "_", safe_path)
-
-        # 清理连续的下划线
-        safe_path = re.sub(r"_+", "_", safe_path)
-
-        # 移除首尾下划线
-        safe_path = safe_path.strip("_")
-
-        return safe_path
-
-    def _replace_datetime_placeholders(self, text: str) -> str:
-        """
-        替换日期时间标识符
-
-        支持的标识符:
-        - %Y%: 年份(4位)
-        - %m%: 月份(01-12)
-        - %d%: 日期(01-31)
-        - %H%: 小时(00-23)
-        - %M%: 分钟(00-59)
-        - %S%: 秒(00-59)
-
-        Args:
-            text: 包含日期时间标识符的文本
-
-        Returns:
-            替换后的文本
-        """
-        if not text:
-            return ""
-
-        now = datetime.now()
-
-        replacements = {
-            "%Y%": now.strftime("%Y"),
-            "%m%": now.strftime("%m"),
-            "%d%": now.strftime("%d"),
-            "%H%": now.strftime("%H"),
-            "%M%": now.strftime("%M"),
-            "%S%": now.strftime("%S"),
-        }
-
-        result = text
-        for placeholder, value in replacements.items():
-            result = result.replace(placeholder, value)
-
-        return result
-
-    def _get_unique_filename(
-        self,
-        directory: Path,
-        filename: str,
-        extension: str,
-        max_attempts: int = 100000,
+    @classmethod
+    def _build_relative_save_path(
+        cls,
+        save_path: Path,
+        output_dir: Path,
     ) -> str:
         """
-        获取唯一的文件名，避免覆盖
-
-        如果文件名不存在则直接使用，存在则添加序列号
-
-        Args:
-            directory: 目录路径
-            filename: 基础文件名
-            extension: 文件扩展名
-            max_attempts: 最大尝试次数，防止无限循环
-
-        Returns:
-            唯一的文件名
-
-        Raises:
-            FileExistsError: 无法生成唯一文件名时抛出
+        基于当前实例输出目录构建相对保存路径。
         """
-        base_name = filename
-
-        for counter in range(max_attempts):
-            if counter == 0:
-                candidate = f"{base_name}{extension}"
-            else:
-                candidate = f"{base_name}_{counter:05d}{extension}"
-
-            candidate_path = directory / candidate
-
-            if not candidate_path.exists():
-                return candidate
-
-        raise FileExistsError("Unable to generate unique filename")
-
-
-NODE_CLASS_MAPPINGS = {
-    "XAudioSave": XAudioSave,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XAudioSave": "XAudioSave",
-}
+        try:
+            return str(Path(save_path).relative_to(output_dir))
+        except ValueError as exc:
+            raise RuntimeError(cls.RELATIVE_PATH_ERROR) from exc

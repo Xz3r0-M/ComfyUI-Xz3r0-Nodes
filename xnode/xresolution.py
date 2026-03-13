@@ -5,8 +5,10 @@
 这个模块包含分辨率宽高设置相关的节点。
 """
 
+from comfy_api.latest import io
 
-class XResolution:
+
+class XResolution(io.ComfyNode):
     """
     XResolution 分辨率宽高设置节点
 
@@ -97,113 +99,111 @@ class XResolution:
     }
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
+    def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "preset": (
-                    list(cls.PRESETS.keys()),
-                    {
-                        "default": "Custom",
-                        "tooltip": "Custom or standard resolution presets",
-                    },
+        return io.Schema(
+            node_id="XResolution",
+            display_name="XResolution",
+            description="Resolution width and height settings with preset, "
+            "scaling, swap, divisible adjustment and offset support",
+            category="♾️ Xz3r0/Workflow-Processing",
+            inputs=[
+                io.Combo.Input(
+                    "preset",
+                    options=list(cls.PRESETS.keys()),
+                    default="Custom",
+                    tooltip="Custom or standard resolution presets",
                 ),
-                "width": (
-                    "INT",
-                    {
-                        "default": 1280,
-                        "min": 1,
-                        "max": 16384,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Custom resolution width",
-                    },
+                io.Int.Input(
+                    "width",
+                    default=1280,
+                    min=1,
+                    max=16384,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Custom resolution width",
                 ),
-                "height": (
-                    "INT",
-                    {
-                        "default": 720,
-                        "min": 1,
-                        "max": 16384,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Custom resolution height",
-                    },
+                io.Int.Input(
+                    "height",
+                    default=720,
+                    min=1,
+                    max=16384,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Custom resolution height",
                 ),
-                "scale": (
-                    "FLOAT",
-                    {
-                        "default": 1.0,
-                        "min": 0.01,
-                        "max": 100.0,
-                        "step": 0.1,
-                        "display": "number",
-                        "tooltip": "Scale multiplier",
-                    },
+                io.Float.Input(
+                    "scale",
+                    default=1.0,
+                    min=0.01,
+                    max=100.0,
+                    step=0.1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Scale multiplier",
                 ),
-                "swap": (
-                    "BOOLEAN",
-                    {"default": False, "tooltip": "Swap width and height"},
+                io.Boolean.Input(
+                    "swap",
+                    default=False,
+                    tooltip="Swap width and height",
                 ),
-                "divisible_mode": (
-                    ["Disabled", "Nearest", "Up", "Down"],
-                    {
-                        "default": "Disabled",
-                        "tooltip": "How to adjust resolution to be divisible: "
-                        "Disabled=no adjustment, Nearest=round to nearest "
-                        "multiple, Up=round up, Down=round down",
-                    },
+                io.Combo.Input(
+                    "divisible_mode",
+                    options=["Disabled", "Nearest", "Up", "Down"],
+                    default="Disabled",
+                    tooltip="How to adjust resolution to be divisible: "
+                    "Disabled=no adjustment, Nearest=round to nearest "
+                    "multiple, Up=round up, Down=round down",
                 ),
-                "divisible": (
-                    "INT",
-                    {
-                        "default": 16,
-                        "min": 1,
-                        "max": 128,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Make resolution divisible by this number "
-                        "(set to 1 to disable, common values: 8, 16, 32, 64)",
-                    },
+                io.Int.Input(
+                    "divisible",
+                    default=16,
+                    min=1,
+                    max=128,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Make resolution divisible by this number "
+                    "(set to 1 to disable, common values: 8, 16, 32, 64)",
                 ),
-                "width_offset": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": -128,
-                        "max": 128,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Add offset to output width "
-                        "(positive=increase, negative=decrease)",
-                    },
+                io.Int.Input(
+                    "width_offset",
+                    default=0,
+                    min=-128,
+                    max=128,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Add offset to output width "
+                    "(positive=increase, negative=decrease)",
                 ),
-                "height_offset": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": -128,
-                        "max": 128,
-                        "step": 1,
-                        "display": "number",
-                        "tooltip": "Add offset to output height "
-                        "(positive=increase, negative=decrease)",
-                    },
+                io.Int.Input(
+                    "height_offset",
+                    default=0,
+                    min=-128,
+                    max=128,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Add offset to output height "
+                    "(positive=increase, negative=decrease)",
                 ),
-            }
-        }
+            ],
+            outputs=[
+                io.Int.Output(
+                    "width",
+                    tooltip="Output resolution width "
+                    "(after preset, scaling, swap, divisible adjustment, "
+                    "and offset)",
+                ),
+                io.Int.Output(
+                    "height",
+                    tooltip="Output resolution height "
+                    "(after preset, scaling, swap, divisible adjustment, "
+                    "and offset)",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("INT", "INT")
-    RETURN_NAMES = ("width", "height")
-    OUTPUT_TOOLTIPS = (
-        "Output resolution width (after preset, scaling, and swap)",
-        "Output resolution height (after preset, scaling, and swap)",
-    )
-    FUNCTION = "process"
-    CATEGORY = "♾️ Xz3r0/Workflow-Processing"
-
-    def process(
-        self,
+    @classmethod
+    def execute(
+        cls,
         width: int,
         height: int,
         preset: str,
@@ -213,7 +213,7 @@ class XResolution:
         divisible_mode: str,
         width_offset: int,
         height_offset: int,
-    ) -> tuple[int, int]:
+    ) -> io.NodeOutput:
         """
         处理分辨率设置
 
@@ -239,10 +239,10 @@ class XResolution:
                 在最终分辨率上添加的偏移值（正数=增加，负数=减少，0=禁用）
 
         Returns:
-            (output_width, output_height): 处理后的宽度和高度
+            NodeOutput: 包含处理后的宽度和高度
         """
-        if preset in self.PRESETS and preset != "Custom":
-            preset_width, preset_height = self.PRESETS[preset]
+        if preset in cls.PRESETS and preset != "Custom":
+            preset_width, preset_height = cls.PRESETS[preset]
             if preset_width > 0 and preset_height > 0:
                 width = preset_width
                 height = preset_height
@@ -263,10 +263,10 @@ class XResolution:
 
         # 应用整除调整
         if divisible_mode != "Disabled" and divisible > 1:
-            output_width = self._make_divisible(
+            output_width = cls._make_divisible(
                 output_width, divisible, divisible_mode
             )
-            output_height = self._make_divisible(
+            output_height = cls._make_divisible(
                 output_height, divisible, divisible_mode
             )
 
@@ -278,7 +278,7 @@ class XResolution:
         output_width = max(output_width, 1)
         output_height = max(output_height, 1)
 
-        return (output_width, output_height)
+        return io.NodeOutput(output_width, output_height)
 
     @staticmethod
     def _make_divisible(value: int, divisor: int, mode: str = "Up") -> int:
@@ -313,11 +313,3 @@ class XResolution:
                 return value - remainder
             else:
                 return value + (divisor - remainder)
-
-
-NODE_CLASS_MAPPINGS = {
-    "XResolution": XResolution,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XResolution": "XResolution",
-}

@@ -1,4 +1,48 @@
 {
+  "XAnyToString": {
+    "display_name": "XAnyToString",
+    "description": "Converts any input data to a string while passing the original input through to downstream nodes.",
+    "inputs": {
+      "anything": {
+        "name": "Any Input",
+        "tooltip": "Any input type that will be converted to a string using Python str()"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Any Output",
+        "tooltip": "Original input data passed through for downstream nodes"
+      },
+      "1": {
+        "name": "String",
+        "tooltip": "String converted from the input using str()"
+      }
+    }
+  },
+  "XDateTimeString": {
+    "display_name": "XDateTimeString",
+    "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
+    "inputs": {
+      "prefix": {
+        "name": "Prefix",
+        "tooltip": "Prefix string, added before datetime"
+      },
+      "format_template": {
+        "name": "Format Template",
+        "tooltip": "Datetime format template, supports placeholders: %Y%(year), %m%(month), %d%(day), %H%(hour), %M%(minute), %S%(second)"
+      },
+      "suffix": {
+        "name": "Suffix",
+        "tooltip": "Suffix string, added after datetime"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Datetime String",
+        "tooltip": "Formatted datetime string"
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
@@ -59,7 +103,7 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "Resolution setting node with standard presets, custom scaling, and divisible adjustment.",
+    "description": "Resolution setting node with standard presets, custom scaling, divisible adjustment, and offset support.",
     "inputs": {
       "preset": {
         "name": "Preset",
@@ -107,278 +151,11 @@
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output resolution width (after preset, scaling, swap, and divisible adjustment)"
+        "tooltip": "Output resolution width (after preset, scaling, swap, divisible adjustment, and offset)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output resolution height (after preset, scaling, swap, and divisible adjustment)"
-      }
-    }
-  },
-  "XImageResize": {
-    "display_name": "XImageResize",
-    "description": "Fully automatic image scaling node with intelligent landscape/portrait/square detection, multiple interpolation methods, and aspect ratio preservation.",
-    "inputs": {
-      "images": {
-        "name": "Images",
-        "tooltip": "Input images"
-      },
-      "scale_mode": {
-        "name": "Interpolation",
-        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality",
-        "options": {
-          "Nearest-exact": "Nearest Exact (fastest, pixel-perfect, ideal for pixel art)",
-          "Bilinear": "Bilinear (fast, medium quality, general purpose)",
-          "Area": "Area (best for downsampling, preserves details)",
-          "Bicubic": "Bicubic (medium speed, high quality, good for upscaling)",
-          "Lanczos": "Lanczos (slow, highest quality, professional use)"
-        }
-      },
-      "edge_mode": {
-        "name": "Scale Mode",
-        "tooltip": "Select scaling mode: Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
-        "options": {
-          "Long": "Long Edge (width for landscape, height for portrait)",
-          "Short": "Short Edge (height for landscape, width for portrait)",
-          "Megapixels": "Megapixels (scale to exact pixel count)",
-          "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
-        }
-      },
-      "target_edge": {
-        "name": "Target Edge",
-        "tooltip": "Target edge length in pixels (ignored in megapixels mode)"
-      },
-      "megapixels": {
-        "name": "Megapixels",
-        "tooltip": "Edge mode=upper limit (0=disabled), Megapixels mode=target (must be >0)"
-      },
-      "scale_multiplier": {
-        "name": "Scale Multiplier",
-        "tooltip": "Scale multiplier (only used in Scale Multiplier mode, range: 0.1-10.0)"
-      },
-      "divisible_mode": {
-        "name": "Divisible Mode",
-        "tooltip": "How to adjust resolution to be divisible: Disabled=no adjustment, Nearest=round to nearest multiple, Up=round up, Down=round down",
-        "options": {
-          "Disabled": "Disable divisible adjustment",
-          "Nearest": "Round to nearest multiple (down if remainder≤divisor/2, else up)",
-          "Up": "Round up to next multiple",
-          "Down": "Round down to previous multiple"
-        }
-      },
-      "divisible": {
-        "name": "Divisible By",
-        "tooltip": "Make resolution divisible by this number (set to 1 to disable, common values: 8, 16, 32, 64)"
-      },
-      "width_offset": {
-        "name": "Width Offset",
-        "tooltip": "Add offset to output width (positive=increase, negative=decrease, default=0)"
-      },
-      "height_offset": {
-        "name": "Height Offset",
-        "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Images",
-        "tooltip": "Scaled images"
-      },
-      "1": {
-        "name": "width",
-        "tooltip": "Output resolution width"
-      },
-      "2": {
-        "name": "height",
-        "tooltip": "Output resolution height"
-      }
-    }
-  },
-  "XImageSave": {
-    "display_name": "XImageSave",
-    "description": "Advanced image saving node with custom filename, subfolder support, and datetime placeholders.",
-    "inputs": {
-      "images": {
-        "name": "Images",
-        "tooltip": "Input image tensor (B, H, W, C)"
-      },
-      "filename_prefix": {
-        "name": "Filename Prefix",
-        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "subfolder": {
-        "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "compression_level": {
-        "name": "Compression Level",
-        "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Images",
-        "tooltip": "Original input images (passed through)"
-      },
-      "1": {
-        "name": "save_path",
-        "tooltip": "Saved file path relative to ComfyUI output directory"
-      }
-    }
-  },
-  "XLatentLoad": {
-    "display_name": "XLatentLoad",
-    "description": "Latent loading node supporting both input port and file loading with automatic format detection.",
-    "inputs": {
-      "latent_input": {
-        "name": "Latent",
-        "tooltip": "Input latent from another node (higher priority than file loading)"
-      },
-      "latent_file": {
-        "name": "Latent File",
-        "tooltip": "Latent file to load from ComfyUI output directory"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Latent",
-        "tooltip": "Loaded latent tensor (from input port or file)"
-      }
-    }
-  },
-  "XLatentSave": {
-    "display_name": "XLatentSave",
-    "description": "Latent saving node with metadata support and custom filename.",
-    "inputs": {
-      "latent": {
-        "name": "Latent",
-        "tooltip": "Input latent tensor to save"
-      },
-      "filename_prefix": {
-        "name": "Filename Prefix",
-        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "subfolder": {
-        "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Latent",
-        "tooltip": "Input latent (passed through)"
-      },
-      "1": {
-        "name": "save_path",
-        "tooltip": "Saved file path relative to ComfyUI output directory"
-      }
-    }
-  },
-  "XVideoSave": {
-    "display_name": "XVideoSave",
-    "description": "Video saving node with H.265 encoding support and custom parameters.",
-    "inputs": {
-      "video": {
-        "name": "VIDEO",
-        "tooltip": "The video to save."
-      },
-      "filename_prefix": {
-        "name": "Filename Prefix",
-        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "subfolder": {
-        "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "crf": {
-        "name": "Video CRF",
-        "tooltip": "Quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."
-      },
-      "preset": {
-        "name": "Encoding Preset",
-        "tooltip": "Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer.",
-        "options": {
-          "ultrafast": "ultrafast",
-          "superfast": "superfast",
-          "veryfast": "veryfast",
-          "faster": "faster",
-          "fast": "fast",
-          "medium": "medium",
-          "slow": "slow",
-          "slower": "slower",
-          "veryslow": "veryslow"
-        }
-      }
-    }
-  },
-  "XAudioSave": {
-    "display_name": "XAudioSave",
-    "description": "Audio saving node with WAV lossless format, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
-    "inputs": {
-      "audio": {
-        "name": "AUDIO",
-        "tooltip": "Input audio tensor"
-      },
-      "filename_prefix": {
-        "name": "Filename Prefix",
-        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "subfolder": {
-        "name": "Subfolder",
-        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-      },
-      "sample_rate": {
-        "name": "Sample Rate",
-        "tooltip": "Target sample rate for the output audio file",
-        "options": {
-          "44100": "44100 Hz",
-          "48000": "48000 Hz",
-          "96000": "96000 Hz",
-          "192000": "192000 Hz"
-        }
-      },
-      "target_lufs": {
-        "name": "Target LUFS",
-        "tooltip": "Target LUFS value for loudness normalization. Lower values make audio quieter. Default -14.1, Set to -70 to disable."
-      },
-      "enable_peak_limiter": {
-        "name": "Enable Peak Limiter",
-        "tooltip": "Enable True Peak limiting (broadcast standard, 8x oversampling). When disabled, skips peak limiting."
-      },
-      "peak_limit": {
-        "name": "Peak Limit",
-        "tooltip": "Peak limiting value in dB. Only used when enable_peak_limiter is enabled. Default -1.1, Values below 0 dB prevent clipping."
-      },
-      "enable_compression": {
-        "name": "Enable Compression",
-        "tooltip": "Enable dynamic range compression using acompressor filter. When disabled, skips compression and proceeds directly to LUFS normalization."
-      },
-      "compression_mode": {
-        "name": "Compression Mode",
-        "tooltip": "Compression preset mode. Threshold is automatically calculated based on audio LUFS and target LUFS. Fast: Fast response for voice/podcasts, ratio=3:1. Balanced: Balanced for general use, ratio=2:1. Slow: Smooth for mastering/broadcast, ratio=1.5:1.",
-        "options": {
-          "Fast": "Fast",
-          "Balanced": "Balanced",
-          "Slow": "Slow"
-        }
-      },
-      "use_custom_ratio": {
-        "name": "Use Custom Ratio",
-        "tooltip": "Enable custom compression ratio to override preset value. When disabled, uses the preset's default ratio."
-      },
-      "custom_ratio": {
-        "name": "Custom Ratio",
-        "tooltip": "Custom compression ratio (1.0 to 20.0). Only used when use_custom_ratio is enabled. Lower values = lighter compression, higher values = stronger compression. Set ratio to 1.0 to disable compression (pass-through mode)."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Processed_AUDIO",
-        "tooltip": "Audio after resampling, compression, loudness normalization, and peak limiting"
-      },
-      "1": {
-        "name": "save_path",
-        "tooltip": "Saved file path relative to ComfyUI output directory"
+        "tooltip": "Output resolution height (after preset, scaling, swap, divisible adjustment, and offset)"
       }
     }
   },
@@ -501,9 +278,364 @@
       }
     }
   },
+  "XAudioSave": {
+    "display_name": "XAudioSave",
+    "description": "Audio saving node with WAV/FLAC lossless output, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
+    "inputs": {
+      "audio": {
+        "name": "AUDIO",
+        "tooltip": "Input audio tensor"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "format": {
+        "name": "Output Format",
+        "tooltip": "Output file format. WAV keeps float32 master output but does not reliably preserve custom workflow metadata on the current FFmpeg path; FLAC uses lossless compression and supports workflow metadata embedding.",
+        "options": {
+          "WAV": "WAV",
+          "FLAC": "FLAC"
+        }
+      },
+      "sample_rate": {
+        "name": "Sample Rate",
+        "tooltip": "Target sample rate for the output audio file",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "target_lufs": {
+        "name": "Target LUFS",
+        "tooltip": "Target LUFS value for loudness normalization. Lower values make audio quieter. Default -14.1, Set to -70 to disable."
+      },
+      "enable_peak_limiter": {
+        "name": "Enable Peak Limiter",
+        "tooltip": "Enable True Peak limiting (broadcast standard, 8x oversampling). When disabled, skips peak limiting."
+      },
+      "peak_limit": {
+        "name": "Peak Limit",
+        "tooltip": "Peak limiting value in dB. Only used when enable_peak_limiter is enabled. Default -1.1, Values below 0 dB prevent clipping."
+      },
+      "enable_compression": {
+        "name": "Enable Compression",
+        "tooltip": "Enable dynamic range compression using acompressor filter. When disabled, skips compression and proceeds directly to LUFS normalization."
+      },
+      "compression_mode": {
+        "name": "Compression Mode",
+        "tooltip": "Compression preset mode. Threshold is automatically calculated based on audio LUFS and target LUFS. Fast: Fast response for voice/podcasts, ratio=3:1. Balanced: Balanced for general use, ratio=2:1. Slow: Smooth for mastering/broadcast, ratio=1.5:1.",
+        "options": {
+          "Fast": "Fast",
+          "Balanced": "Balanced",
+          "Slow": "Slow"
+        }
+      },
+      "use_custom_ratio": {
+        "name": "Use Custom Ratio",
+        "tooltip": "Enable custom compression ratio to override preset value. When disabled, uses the preset's default ratio."
+      },
+      "custom_ratio": {
+        "name": "Custom Ratio",
+        "tooltip": "Custom compression ratio (1.0 to 20.0). Only used when use_custom_ratio is enabled. Lower values = lighter compression, higher values = stronger compression. Set ratio to 1.0 to disable compression (pass-through mode)."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Processed_AUDIO",
+        "tooltip": "Audio after resampling, compression, loudness normalization, and peak limiting"
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XImageResize": {
+    "display_name": "XImageResize",
+    "description": "Fully automatic image scaling node with intelligent landscape/portrait/square detection, multiple interpolation methods, and aspect ratio preservation.",
+    "inputs": {
+      "images": {
+        "name": "Images",
+        "tooltip": "Input images"
+      },
+      "scale_mode": {
+        "name": "Interpolation",
+        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality",
+        "options": {
+          "Nearest-exact": "Nearest Exact (fastest, pixel-perfect, ideal for pixel art)",
+          "Bilinear": "Bilinear (fast, medium quality, general purpose)",
+          "Area": "Area (best for downsampling, preserves details)",
+          "Bicubic": "Bicubic (medium speed, high quality, good for upscaling)",
+          "Lanczos": "Lanczos (slow, highest quality, professional use)"
+        }
+      },
+      "edge_mode": {
+        "name": "Scale Mode",
+        "tooltip": "Select scaling mode: Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
+        "options": {
+          "Long": "Long Edge (width for landscape, height for portrait)",
+          "Short": "Short Edge (height for landscape, width for portrait)",
+          "Megapixels": "Megapixels (scale to exact pixel count)",
+          "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
+        }
+      },
+      "target_edge": {
+        "name": "Target Edge",
+        "tooltip": "Target edge length in pixels (ignored in megapixels mode)"
+      },
+      "megapixels": {
+        "name": "Megapixels",
+        "tooltip": "Only used in Megapixels mode as target pixel count (must be >0)"
+      },
+      "scale_multiplier": {
+        "name": "Scale Multiplier",
+        "tooltip": "Scale multiplier (only used in Scale Multiplier mode, range: 0.1-10.0)"
+      },
+      "divisible_mode": {
+        "name": "Divisible Mode",
+        "tooltip": "How to adjust resolution to be divisible: Disabled=no adjustment, Nearest=round to nearest multiple, Up=round up, Down=round down",
+        "options": {
+          "Disabled": "Disable divisible adjustment",
+          "Nearest": "Round to nearest multiple (down if remainder≤divisor/2, else up)",
+          "Up": "Round up to next multiple",
+          "Down": "Round down to previous multiple"
+        }
+      },
+      "divisible": {
+        "name": "Divisible By",
+        "tooltip": "Make resolution divisible by this number (set to 1 to disable, common values: 8, 16, 32, 64)"
+      },
+      "width_offset": {
+        "name": "Width Offset",
+        "tooltip": "Add offset to output width (positive=increase, negative=decrease, default=0)"
+      },
+      "height_offset": {
+        "name": "Height Offset",
+        "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Processed Images",
+        "tooltip": "Scaled images (batch is resized with one unified target size)"
+      },
+      "1": {
+        "name": "width",
+        "tooltip": "Output resolution width"
+      },
+      "2": {
+        "name": "height",
+        "tooltip": "Output resolution height"
+      }
+    }
+  },
+  "XImageSave": {
+    "display_name": "XImageSave",
+    "description": "Advanced image saving node with custom filename, subfolder support, and datetime placeholders.",
+    "inputs": {
+      "images": {
+        "name": "Images",
+        "tooltip": "Input image"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "compression_level": {
+        "name": "Compression Level",
+        "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Images",
+        "tooltip": "Original input images (passed through)"
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XLatentLoad": {
+    "display_name": "XLatentLoad",
+    "description": "Latent loading node supporting both input port and file loading with automatic format detection.",
+    "inputs": {
+      "latent_input": {
+        "name": "Latent",
+        "tooltip": "Input latent from another node (higher priority than file loading)"
+      },
+      "latent_file": {
+        "name": "Latent File",
+        "tooltip": "Latent file to load from ComfyUI output directory"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Latent",
+        "tooltip": "Loaded latent tensor (from input port or file)"
+      }
+    }
+  },
+  "XLatentSave": {
+    "display_name": "XLatentSave",
+    "description": "Latent saving node with metadata support and custom filename.",
+    "inputs": {
+      "latent": {
+        "name": "Latent",
+        "tooltip": "Input latent tensor to save"
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Latent",
+        "tooltip": "Input latent (passed through)"
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XMarkdownSave": {
+    "display_name": "XMarkdownSave",
+    "description": "Markdown saving node with header/main/footer string input priority, multiline textbox fallback, explicit separators before and after the main content, newline count validation, custom filename, subfolder, and datetime placeholders.",
+    "inputs": {
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "header_input": {
+        "name": "Header Input",
+        "tooltip": "Optional header string input port. When connected, this input takes priority over header_text."
+      },
+      "header_text": {
+        "name": "Header Text",
+        "tooltip": "Additional multiline text prepended before the main content. Do not rely on trailing blank lines; use the separator controls below for stable newlines."
+      },
+      "before_main_separator": {
+        "name": "Before Main Separator",
+        "tooltip": "Separator inserted between header_text and the main content. none = no separator, newline = insert newline characters.",
+        "options": {
+          "none": "None",
+          "newline": "Newline"
+        }
+      },
+      "before_main_newline_count": {
+        "name": "Before Main Newline Count",
+        "tooltip": "Only used when Before Main Separator is newline. Must be greater than or equal to 1."
+      },
+      "main_text_input": {
+        "name": "Main Text Input",
+        "tooltip": "Optional main content string input port. When connected, this input takes priority over text_content."
+      },
+      "text_content": {
+        "name": "Text Content",
+        "tooltip": "Fallback multiline textbox content used only when main_text_input is not connected."
+      },
+      "after_main_separator": {
+        "name": "After Main Separator",
+        "tooltip": "Separator inserted between the main content and footer_text. none = no separator, newline = insert newline characters.",
+        "options": {
+          "none": "None",
+          "newline": "Newline"
+        }
+      },
+      "after_main_newline_count": {
+        "name": "After Main Newline Count",
+        "tooltip": "Only used when After Main Separator is newline. Must be greater than or equal to 1."
+      },
+      "footer_input": {
+        "name": "Footer Input",
+        "tooltip": "Optional footer string input port. When connected, this input takes priority over footer_text."
+      },
+      "footer_text": {
+        "name": "Footer Text",
+        "tooltip": "Additional multiline text appended after the main content. Do not rely on leading blank lines; use the separator controls above for stable newlines."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "content",
+        "tooltip": "Final complete string written into the markdown file, available for downstream nodes."
+      },
+      "1": {
+        "name": "save_path",
+        "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XVideoSave": {
+    "display_name": "XVideoSave",
+    "description": "Video saving node with H.265 encoding support and custom parameters.",
+    "inputs": {
+      "video": {
+        "name": "VIDEO",
+        "tooltip": "The video to save."
+      },
+      "filename_prefix": {
+        "name": "Filename Prefix",
+        "tooltip": "Filename prefix, supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "subfolder": {
+        "name": "Subfolder",
+        "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "crf": {
+        "name": "Video CRF",
+        "tooltip": "Integer quality parameter (0=lossless, 40=worst quality). Higher CRF means lower quality with smaller file size."
+      },
+      "preset": {
+        "name": "Encoding Preset",
+        "tooltip": "Encoding speed/compression tradeoff. Faster presets encode quickly but with larger files. Slower presets provide better compression but take longer.",
+        "options": {
+          "ultrafast": "ultrafast",
+          "superfast": "superfast",
+          "veryfast": "veryfast",
+          "faster": "faster",
+          "fast": "fast",
+          "medium": "medium",
+          "slow": "slow",
+          "slower": "slower",
+          "veryslow": "veryslow"
+        }
+      },
+      "container": {
+        "name": "Container",
+        "tooltip": "Output container format. MKV prioritizes lossless compatibility; MP4 prioritizes ComfyUI web metadata compatibility.",
+        "options": {
+          "MKV": "MKV",
+          "MP4": "MP4"
+        }
+      }
+    }
+  },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "Saves ComfyUI workflow as JSON file, supporting four save modes (Auto auto-detect, Standard mode, FullWorkflow mode, Prompt+FullWorkflow combined mode), custom filename, subfolder, and datetime placeholders.",
+    "description": "Saves ComfyUI workflow as JSON file, supporting three save modes (Auto auto-detect, Native mode, Prompt+FullWorkflow combined mode), custom filename, subfolder, and datetime placeholders.",
     "inputs": {
       "anything": {
         "name": "Any Input",
@@ -511,11 +643,10 @@
       },
       "save_mode": {
         "name": "Save Mode",
-        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow, fallback to Standard if frontend extension not loaded), Standard (use extra_pnginfo to save prompt+workflow), FullWorkflow (save full workflow only, requires frontend API data), Prompt+FullWorkflow (save prompt + full workflow, requires frontend API data)",
+        "tooltip": "Save mode: Auto (auto-detect, prefer Prompt+FullWorkflow, fallback to Native if frontend extension not loaded), Native (use extra_pnginfo to save native workflow format, compatible with ComfyUI web), Prompt+FullWorkflow (save prompt + full workflow, requires frontend API data)",
         "options": {
           "Auto": "Auto",
-          "Standard": "Standard",
-          "FullWorkflow": "FullWorkflow",
+          "Native": "Native",
           "Prompt+FullWorkflow": "Prompt+FullWorkflow"
         }
       },
@@ -536,30 +667,6 @@
       "1": {
         "name": "Workflow Info",
         "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
-      }
-    }
-  },
-  "XDateTimeString": {
-    "display_name": "XDateTimeString",
-    "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
-    "inputs": {
-      "prefix": {
-        "name": "Prefix",
-        "tooltip": "Prefix string, added before datetime"
-      },
-      "format_template": {
-        "name": "Format Template",
-        "tooltip": "Datetime format template, supports placeholders: %Y%(year), %m%(month), %d%(day), %H%(hour), %M%(minute), %S%(second)"
-      },
-      "suffix": {
-        "name": "Suffix",
-        "tooltip": "Suffix string, added after datetime"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Datetime String",
-        "tooltip": "Formatted datetime string"
       }
     }
   }

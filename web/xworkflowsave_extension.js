@@ -28,6 +28,15 @@
 
 import { app } from "../../scripts/app.js";
 
+const QUEUE_PROMPT_WRAPPED_MARK = Symbol(
+    "ComfyUI.Xz3r0.XWorkflowSave.queuePromptWrapped"
+);
+const ORIGINAL_QUEUE_PROMPT = Symbol(
+    "ComfyUI.Xz3r0.XWorkflowSave.originalQueuePrompt"
+);
+const CAPTURE_TIMEOUT_MS = 5000;
+const DEBUG_SUCCESS_LOG = false;
+
 /**
  * 注册 ComfyUI 扩展
  */
@@ -47,87 +56,184 @@ app.registerExtension({
      * 在 queuePrompt 调用前捕获 workflow 数据并通过 API 发送
      */
     setupQueueInterceptor() {
+        if (typeof app.queuePrompt !== "function") {
+            return;
+        }
+
+        const currentQueuePrompt = app.queuePrompt;
+        if (currentQueuePrompt[QUEUE_PROMPT_WRAPPED_MARK]) {
+            return;
+        }
+
         const self = this;
-        const originalQueuePrompt = app.queuePrompt;
-
-        app.queuePrompt = async function(number, batchCount) {
-            // 查找需要完整 workflow 数据的 XWorkflowSave 节点
-            const saveNodes = app.graph.nodes.filter(
-                n => n.type === "XWorkflowSave"
-            );
-
-            if (saveNodes.length > 0) {
-                // 检查是否有节点需要完整 workflow
-                const targetNodes = saveNodes.filter(node => {
-                    const modeWidget = node.widgets?.find(
-                        w => w.name === "save_mode"
-                    );
-                    const mode = modeWidget?.value || "Auto";
-                    // FullWorkflow、Auto、Prompt+FullWorkflow 模式都需要完整 workflow
-                    return mode === "FullWorkflow" ||
-                           mode === "Auto" ||
-                           mode === "Prompt+FullWorkflow";
-                });
-
-                if (targetNodes.length > 0) {
-                    // 捕获完整 workflow 数据
-                    const workflowData = self.captureWorkflow();
-
-                    if (workflowData) {
-                        // 为每个目标节点发送数据
-                        for (const node of targetNodes) {
-                            const modeWidget = node.widgets?.find(
-                                w => w.name === "save_mode"
-                            );
-                            const mode = modeWidget?.value || "Auto";
-
-                            // 使用节点 ID 作为存储 key
-                            const nodeId = String(node.id);
-
-                            // 通过 API 发送数据到后端
-                            try {
-                                const response = await fetch(
-                                    '/xz3r0/xworkflowsave/capture',
-                                    {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json'
-                                        },
-                                        body: JSON.stringify({
-                                            prompt_id: nodeId,
-                                            workflow: workflowData,
-                                            mode: mode
-                                        })
-                                    }
-                                );
-
-                                if (!response.ok) {
-                                    console.error(
-                                        `[XWorkflowSave] Failed to send ` +
-                                        `workflow data for node ${nodeId}:`,
-                                        await response.text()
-                                    );
-                                } else {
-                                    console.log(
-                                        `[XWorkflowSave] Workflow data sent ` +
-                                        `successfully for node ${nodeId}`
-                                    );
-                                }
-                            } catch (error) {
-                                console.error(
-                                    `[XWorkflowSave] Error sending workflow ` +
-                                    `data for node ${nodeId}:`,
-                                    error
-                                );
-                            }
-                        }
-                    }
-                }
+        const originalQueuePrompt = currentQueuePrompt[ORIGINAL_QUEUE_PROMPT] ||
+            currentQueuePrompt;
+        const wrappedQueuePrompt = async function(number, batchCount) {
+            const capturePayload = self.buildCapturePayload();
+            if (capturePayload) {
+                self.sendCaptureInBackground(capturePayload);
             }
 
-            // 调用原始的 queuePrompt
+            // 调用原始的 queuePrompt，不等待上传请求
             return originalQueuePrompt.apply(this, arguments);
         };
+
+        wrappedQueuePrompt[QUEUE_PROMPT_WRAPPED_MARK] = true;
+        wrappedQueuePrompt[ORIGINAL_QUEUE_PROMPT] = originalQueuePrompt;
+        app.queuePrompt = wrappedQueuePrompt;
+    },
+
+    /**
+     * 构建需要上传的数据快照。
+     *
+     * @returns {Object|null} 上传负载
+     */
+    buildCapturePayload() {
+        const graphNodes = app.graph?.nodes;
+        if (!Array.isArray(graphNodes) || graphNodes.length === 0) {
+            return null;
+        }
+
+        // 查找需要完整 workflow 数据的 XWorkflowSave 节点
+        const saveNodes = graphNodes.filter(
+            (node) => node?.type === "XWorkflowSave"
+        );
+        if (saveNodes.length === 0) {
+            return null;
+        }
+
+        // 检查是否有节点需要完整 workflow
+        const targetNodes = saveNodes
+            .map((node) => {
+                const modeWidget = node.widgets?.find(
+                    (widget) => widget.name === "save_mode"
+                );
+                const mode = modeWidget?.value || "Auto";
+                return {
+                    node_id: String(node.id),
+                    mode,
+                };
+            })
+            .filter(
+                (nodeInfo) => nodeInfo.mode === "FullWorkflow" ||
+                    nodeInfo.mode === "Auto" ||
+                    nodeInfo.mode === "Prompt+FullWorkflow"
+            );
+        if (targetNodes.length === 0) {
+            return null;
+        }
+
+        // 捕获完整 workflow 数据
+        const workflowData = this.captureWorkflow();
+        if (!workflowData) {
+            return null;
+        }
+
+        return {
+            target_nodes: targetNodes,
+            workflow: workflowData,
+        };
+    },
+
+    /**
+     * 后台上传，避免阻塞 queuePrompt。
+     *
+     * @param {Object} payload - 上传负载
+     */
+    sendCaptureInBackground(payload) {
+        Promise.resolve()
+            .then(() => this.sendCapturePayload(payload))
+            .catch((error) => {
+                console.error("[XWorkflowSave] Background send error:", error);
+            });
+    },
+
+    /**
+     * 顺序发送所有目标节点的 workflow 数据。
+     *
+     * @param {Object} payload - 上传负载
+     */
+    async sendCapturePayload(payload) {
+        const targetNodes = payload?.target_nodes;
+        if (!Array.isArray(targetNodes) || targetNodes.length === 0) {
+            return;
+        }
+
+        for (const nodeInfo of targetNodes) {
+            await this.sendNodeCapture(
+                nodeInfo.node_id,
+                payload.workflow,
+                nodeInfo.mode
+            );
+        }
+    },
+
+    /**
+     * 上传单个节点的 workflow 数据。
+     *
+     * @param {string} nodeId - 节点 ID
+     * @param {Object} workflowData - workflow 快照
+     * @param {string} mode - 保存模式
+     */
+    async sendNodeCapture(nodeId, workflowData, mode) {
+        let timeoutId = null;
+        let controller = null;
+
+        if (typeof AbortController !== "undefined") {
+            controller = new AbortController();
+            timeoutId = setTimeout(() => {
+                controller.abort();
+            }, CAPTURE_TIMEOUT_MS);
+        }
+
+        try {
+            const response = await fetch(
+                "/xz3r0/xworkflowsave/capture",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        prompt_id: nodeId,
+                        workflow: workflowData,
+                        mode: mode
+                    }),
+                    signal: controller?.signal
+                }
+            );
+
+            if (!response.ok) {
+                console.error(
+                    "[XWorkflowSave] Failed to send workflow data for " +
+                    `node ${nodeId}:`,
+                    await response.text()
+                );
+            } else if (DEBUG_SUCCESS_LOG) {
+                console.log(
+                    "[XWorkflowSave] Workflow data sent successfully for " +
+                    `node ${nodeId}`
+                );
+            }
+        } catch (error) {
+            if (error?.name === "AbortError") {
+                console.error(
+                    "[XWorkflowSave] Capture request timed out for " +
+                    `node ${nodeId}`
+                );
+                return;
+            }
+
+            console.error(
+                "[XWorkflowSave] Error sending workflow data for " +
+                `node ${nodeId}:`,
+                error
+            );
+        } finally {
+            if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+            }
+        }
     },
 
     /**
@@ -172,13 +278,24 @@ app.registerExtension({
      * @returns {Object} 补充后的 workflow 数据
      */
     enrichWorkflowData(workflow) {
-        if (!app.graph?.nodes) {
+        if (!Array.isArray(workflow?.nodes)) {
             return workflow;
         }
 
+        const graphNodes = app.graph?.nodes;
+        if (!Array.isArray(graphNodes)) {
+            return workflow;
+        }
+
+        const graphNodeMap = new Map(
+            graphNodes.map((node) => [node.id, node])
+        );
+
         for (const node of workflow.nodes) {
-            const graphNode = app.graph.nodes.find(n => n.id === node.id);
-            if (!graphNode) continue;
+            const graphNode = graphNodeMap.get(node.id);
+            if (!graphNode) {
+                continue;
+            }
 
             // 补充 inputs
             if (graphNode.inputs) {

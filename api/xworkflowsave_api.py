@@ -5,6 +5,7 @@ XWorkflowSave API 模块
 提供自定义 API 接口用于前端传输工作流元数据。
 使用内存存储，以 prompt_id 为键存储工作流数据。
 支持主动清理，文件保存成功后立即释放内存。
+支持执行事件监听自动清理和调试日志功能。
 """
 
 import json
@@ -13,6 +14,57 @@ from typing import Any
 
 import server
 from aiohttp import web
+
+# ================================
+# 日志配置
+# ================================
+
+# 日志级别：0=关闭, 1=信息, 2=详细调试
+# 开发者直接修改此变量控制日志输出
+LOG_LEVEL: int = 0
+INTERNAL_ERROR_MESSAGE = "Internal server error"
+_EXECUTION_CLEANUP_REGISTERED = False
+
+
+def log_info(message: str) -> None:
+    """
+    输出信息日志
+
+    在LOG_LEVEL >= 1时输出到服务器日志。
+    用于记录正常操作流程。
+
+    Args:
+        message: 日志消息
+    """
+    if LOG_LEVEL >= 1:
+        print(f"[XWorkflowSave] {message}", flush=True)
+
+
+def log_debug(message: str) -> None:
+    """
+    输出调试日志
+
+    在LOG_LEVEL >= 2时输出到服务器日志。
+    用于详细调试信息。
+
+    Args:
+        message: 日志消息
+    """
+    if LOG_LEVEL >= 2:
+        print(f"[XWorkflowSave DEBUG] {message}", flush=True)
+
+
+def log_error(message: str) -> None:
+    """
+    输出错误日志
+
+    始终输出到服务器日志。
+    用于记录错误信息。
+
+    Args:
+        message: 日志消息
+    """
+    print(f"[XWorkflowSave ERROR] {message}", flush=True)
 
 
 class WorkflowDataStore:
@@ -23,10 +75,10 @@ class WorkflowDataStore:
     支持主动清理（推荐）和自动过期清理（备用）。
     """
 
-    _instance = None  # 单例实例
-    _data: dict[str, dict[str, Any]] = {}  # 存储工作流数据的字典
-    _timestamps: dict[str, float] = {}  # 记录数据存储时间戳
-    _expire_seconds: float = 300  # 数据过期时间（秒），5分钟过期（备用机制）
+    _instance = None
+    _data: dict[str, dict[str, Any]] = {}
+    _timestamps: dict[str, float] = {}
+    _expire_seconds: float = 300
 
     def __new__(cls):
         if cls._instance is None:
@@ -41,9 +93,6 @@ class WorkflowDataStore:
         Args:
             prompt_id: 提示ID，作为存储键
             workflow_data: 工作流数据字典
-
-        Returns:
-            None
         """
         cls._data[prompt_id] = workflow_data
         cls._timestamps[prompt_id] = time.time()
@@ -66,11 +115,8 @@ class WorkflowDataStore:
 
         if prompt_id in cls._data:
             data = cls._data[prompt_id]
-
-            # 默认在读取后立即清理，释放内存
             if auto_cleanup:
                 cls.cleanup(prompt_id)
-
             return data
         return None
 
@@ -83,10 +129,9 @@ class WorkflowDataStore:
             prompt_id: 要清理的提示ID
 
         Returns:
-            是否成功清理（True表示数据存在并已清理）
+            是否成功清理
         """
         if prompt_id in cls._data:
-            # 删除数据释放内存
             del cls._data[prompt_id]
             cls._timestamps.pop(prompt_id, None)
             return True
@@ -96,12 +141,6 @@ class WorkflowDataStore:
     def _cleanup_expired(cls) -> None:
         """
         清理过期数据（备用机制）
-
-        遍历所有存储的数据，删除超过 _expire_seconds 时间限制的数据。
-        此方法在 retrieve 方法中被自动调用。
-
-        Returns:
-            None
         """
         current_time = time.time()
         expired_keys = [
@@ -125,7 +164,6 @@ class WorkflowDataStore:
         total_size = 0
 
         for _, value in cls._data.items():
-            # 估算数据大小（粗略计算）
             try:
                 size = len(json.dumps(value))
                 total_size += size
@@ -139,29 +177,13 @@ class WorkflowDataStore:
         }
 
 
-# 全局数据存储实例
 workflow_store = WorkflowDataStore()
-
-
-# ================================
-# API 路由定义
-# ================================
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xworkflowsave/capture")
 async def capture_workflow(request: web.Request) -> web.Response:
     """
     接收前端捕获的工作流数据
-
-    Request Body:
-        {
-            "prompt_id": "uuid-string",
-            "workflow": { ... },
-            "mode": "full" | "auto"
-        }
-
-    Returns:
-        {"status": "success"} 或错误信息
     """
     try:
         data = await request.json()
@@ -179,7 +201,6 @@ async def capture_workflow(request: web.Request) -> web.Response:
                 status=400,
             )
 
-        # 存储数据
         workflow_store.store(
             prompt_id,
             {
@@ -189,6 +210,7 @@ async def capture_workflow(request: web.Request) -> web.Response:
             },
         )
 
+        log_info(f"Stored workflow data for prompt_id: {prompt_id}")
         return web.json_response({"status": "success"})
 
     except json.JSONDecodeError:
@@ -196,8 +218,10 @@ async def capture_workflow(request: web.Request) -> web.Response:
             {"status": "error", "message": "Invalid JSON"}, status=400
         )
     except Exception as e:
+        log_error(f"capture_workflow failed: {type(e).__name__}: {e}")
         return web.json_response(
-            {"status": "error", "message": str(e)}, status=500
+            {"status": "error", "message": INTERNAL_ERROR_MESSAGE},
+            status=500,
         )
 
 
@@ -205,14 +229,6 @@ async def capture_workflow(request: web.Request) -> web.Response:
 async def cleanup_workflow(request: web.Request) -> web.Response:
     """
     主动清理工作流数据
-
-    Request Body:
-        {
-            "prompt_id": "uuid-string"
-        }
-
-    Returns:
-        {"status": "success", "cleaned": true/false}
     """
     try:
         data = await request.json()
@@ -224,7 +240,6 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
             )
 
         cleaned = workflow_store.cleanup(prompt_id)
-
         return web.json_response({"status": "success", "cleaned": cleaned})
 
     except json.JSONDecodeError:
@@ -232,8 +247,10 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
             {"status": "error", "message": "Invalid JSON"}, status=400
         )
     except Exception as e:
+        log_error(f"cleanup_workflow failed: {type(e).__name__}: {e}")
         return web.json_response(
-            {"status": "error", "message": str(e)}, status=500
+            {"status": "error", "message": INTERNAL_ERROR_MESSAGE},
+            status=500,
         )
 
 
@@ -241,19 +258,66 @@ async def cleanup_workflow(request: web.Request) -> web.Response:
 async def get_status(request: web.Request) -> web.Response:
     """
     获取存储状态（调试用）
-
-    Returns:
-        当前存储的数据键列表和内存使用情况
     """
     memory_info = workflow_store.get_memory_usage()
 
     return web.json_response(
-        {
-            "stored_prompts": list(workflow_store._data.keys()),
-            "count": memory_info["entries"],
-            "memory_usage": {
-                "estimated_bytes": memory_info["estimated_bytes"],
-                "estimated_mb": memory_info["estimated_mb"],
-            },
-        }
+        _build_status_payload(memory_info)
     )
+
+
+def _build_status_payload(memory_info: dict) -> dict:
+    """
+    构建状态接口返回数据。
+    """
+    status_data = {
+        "count": memory_info["entries"],
+        "memory_usage": {
+            "estimated_bytes": memory_info["estimated_bytes"],
+            "estimated_mb": memory_info["estimated_mb"],
+        },
+    }
+    if LOG_LEVEL >= 2:
+        status_data["stored_prompts"] = list(workflow_store._data.keys())
+    return status_data
+
+
+def register_execution_cleanup() -> None:
+    """
+    注册执行事件监听，自动清理工作流数据
+    """
+    global _EXECUTION_CLEANUP_REGISTERED
+    if _EXECUTION_CLEANUP_REGISTERED:
+        log_debug("Execution cleanup listener already registered")
+        return
+
+    original_send_sync = server.PromptServer.instance.send_sync
+
+    def patched_send_sync(event: str, data: dict, sid: str = None) -> None:
+        """
+        包装后的 send_sync 方法
+        """
+        original_send_sync(event, data, sid)
+
+        if event in ("execution_success", "execution_error"):
+            if isinstance(data, dict):
+                prompt_id = data.get("prompt_id")
+                if prompt_id:
+                    cleaned = workflow_store.cleanup(prompt_id)
+                    if cleaned:
+                        log_debug(
+                            f"Auto-cleaned data for prompt_id: {prompt_id} "
+                            f"(event: {event})"
+                        )
+                    else:
+                        log_debug(
+                            f"Auto-clean skipped for prompt_id: {prompt_id} "
+                            f"(event: {event})"
+                        )
+
+    server.PromptServer.instance.send_sync = patched_send_sync
+    _EXECUTION_CLEANUP_REGISTERED = True
+    log_debug("Execution cleanup listener registered")
+
+
+register_execution_cleanup()

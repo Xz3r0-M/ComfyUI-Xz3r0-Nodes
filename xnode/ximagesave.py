@@ -1,26 +1,47 @@
 """
-图像保存节点模块
-================
+图像保存节点模块 (V3 API)
+=======================
 
 这个模块包含图像保存相关的节点。
 """
 
 import json
-import re
-from datetime import datetime
 from pathlib import Path
 
 import comfy.utils
-import folder_paths
 import numpy as np
 import torch
+from comfy_api.latest import ComfyExtension, io
 from PIL import Image, PngImagePlugin
+from typing_extensions import override
+
+try:
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+except ImportError:
+    # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        replace_datetime_tokens,
+        resolve_output_subpath,
+        sanitize_path_component,
+    )
+
+try:
+    import folder_paths
+
+    COMFYUI_AVAILABLE = True
+except ImportError:
+    COMFYUI_AVAILABLE = False
 
 
-class XImageSave:
-    OUTPUT_NODE = True
+class XImageSave(io.ComfyNode):
     """
-    XImageSave 图像保存节点
+    XImageSave 图像保存节点 (V3)
 
     提供图像保存功能，支持自定义文件名、子文件夹、
     日期时间标识符、元数据保存和安全防护。
@@ -62,73 +83,70 @@ class XImageSave:
         - extra_pnginfo: 包含工作流结构、种子值、模型信息等
         - 元数据以PNG文本块形式嵌入图像，可通过图像查看器查看
     """
+    OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
+    WRITE_IMAGE_ERROR = "Unable to write image file"
+    RELATIVE_PATH_ERROR = "Unable to build relative save path"
 
     @classmethod
-    def INPUT_TYPES(cls) -> dict:
-        """定义节点的输入类型和约束"""
-        return {
-            "required": {
-                "images": (
-                    "IMAGE",
-                    {"tooltip": "Input image tensor (B, H, W, C)"},
+    def define_schema(cls):
+        """定义节点的输入输出模式"""
+        return io.Schema(
+            node_id="XImageSave",
+            display_name="XImageSave",
+            description="Save images with custom filename, subfolder, "
+            "datetime placeholders, and metadata",
+            category="♾️ Xz3r0/File-Processing",
+            is_output_node=True,
+            inputs=[
+                io.Image.Input(
+                    "images",
+                    tooltip="Input image",
                 ),
-                "filename_prefix": (
-                    "STRING",
-                    {
-                        "default": "ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
-                        "tooltip": (
-                            "Filename prefix, supports datetime "
-                            "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
-                        ),
-                    },
+                io.String.Input(
+                    "filename_prefix",
+                    default="ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%",
+                    tooltip="Filename prefix, supports datetime "
+                    "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
                 ),
-                "subfolder": (
-                    "STRING",
-                    {
-                        "default": "Images",
-                        "tooltip": (
-                            "Subfolder name (no path separators "
-                            "allowed), supports datetime "
-                            "placeholders: %Y%, %m%, %d%, %H%, "
-                            "%M%, %S%"
-                        ),
-                    },
+                io.String.Input(
+                    "subfolder",
+                    default="Images",
+                    tooltip="Subfolder name (no path separators "
+                    "allowed), supports datetime "
+                    "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
                 ),
-                "compression_level": (
-                    "INT",
-                    {
-                        "default": 5,
-                        "min": 0,
-                        "max": 9,
-                        "step": 1,
-                        "tooltip": (
-                            "PNG compression level (0=no compression, "
-                            "9=maximum compression)"
-                        ),
-                    },
+                io.Int.Input(
+                    "compression_level",
+                    default=5,
+                    min=0,
+                    max=9,
+                    step=1,
+                    tooltip="PNG compression level (0=no compression, "
+                    "9=maximum compression)",
                 ),
-            },
-            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
-        }
+            ],
+            outputs=[
+                io.Image.Output(
+                    "images",
+                    tooltip="Original input images (passed through)",
+                ),
+                io.String.Output(
+                    "save_path",
+                    tooltip="Saved file path relative to ComfyUI "
+                    "output directory",
+                ),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+        )
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "save_path")
-    OUTPUT_TOOLTIPS = (
-        "Original input images (passed through)",
-        "Saved file path relative to ComfyUI output directory",
-    )
-    FUNCTION = "save"
-    CATEGORY = "♾️ Xz3r0/File-Processing"
-
-    def save(
-        self,
+    @classmethod
+    def execute(
+        cls,
         images: torch.Tensor,
         filename_prefix: str,
         subfolder: str = "",
-        compression_level: int = 0,
-        prompt=None,
-        extra_pnginfo=None,
-    ) -> tuple[torch.Tensor, str]:
+        compression_level: int = 5,
+    ) -> io.NodeOutput:
         """
         保存图像到ComfyUI输出目录
 
@@ -137,38 +155,54 @@ class XImageSave:
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
             compression_level: PNG压缩级别(0-9)
-            prompt: 工作流提示词(元数据)
-            extra_pnginfo: 额外的PNG元数据
 
         Returns:
-            (images, save_path): 原始图像和保存的相对路径
+            NodeOutput: 包含原始图像和保存的相对路径
         """
+        if images is None or len(images) == 0:
+            raise ValueError("Input images cannot be empty")
+
+        if images.dim() != 4:
+            raise ValueError(
+                "Expected image tensor shape (B,H,W,C), "
+                f"got {images.dim()}D tensor"
+            )
+
+        # 从隐藏参数获取元数据
+        prompt = cls.hidden.prompt if hasattr(cls.hidden, "prompt") else None
+        extra_pnginfo = (
+            cls.hidden.extra_pnginfo
+            if hasattr(cls.hidden, "extra_pnginfo")
+            else None
+        )
+
         # 获取ComfyUI默认输出目录
-        output_dir = self._get_output_directory()
+        output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
-        safe_filename_prefix = self._sanitize_path(filename_prefix)
-        safe_filename_prefix = self._replace_datetime_placeholders(
+        safe_filename_prefix = sanitize_path_component(filename_prefix)
+        safe_filename_prefix = replace_datetime_tokens(
             safe_filename_prefix
         )
 
-        safe_subfolder = self._sanitize_path(subfolder)
-        safe_subfolder = self._replace_datetime_placeholders(safe_subfolder)
+        safe_subfolder = sanitize_path_component(subfolder)
+        safe_subfolder = replace_datetime_tokens(safe_subfolder)
 
         # 创建完整保存路径
-        save_dir = output_dir
-        if safe_subfolder:
-            save_dir = save_dir / safe_subfolder
+        save_dir = resolve_output_subpath(output_dir, safe_subfolder)
 
         # 创建目录(仅支持单级目录)
-        save_dir.mkdir(exist_ok=True)
+        try:
+            save_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
 
         # 保存图像序列
         saved_paths = []
         progress_bar = comfy.utils.ProgressBar(len(images))
         for i, img_tensor in enumerate(images):
             # 转换张量到PIL图像
-            img_pil = self._tensor_to_pil(img_tensor)
+            img_pil = cls._tensor_to_pil(img_tensor)
 
             # 生成文件名(添加序列号)
             filename = safe_filename_prefix
@@ -176,34 +210,47 @@ class XImageSave:
                 filename = f"{filename}_{i:04d}"
 
             # 检测同名文件并添加序列号
-            final_filename = self._get_unique_filename(
-                save_dir, filename, ".png"
+            final_filename = ensure_unique_filename(
+                save_dir,
+                filename,
+                ".png",
             )
 
             # 生成PNG元数据
-            pnginfo = self._generate_pnginfo(prompt, extra_pnginfo)
+            pnginfo = cls._generate_pnginfo(prompt, extra_pnginfo)
 
             # 保存图像
-            save_path = save_dir / final_filename
-            if pnginfo:
-                # 使用Pillow兼容的方式保存元数据
-                pnginfo_obj = PngImagePlugin.PngInfo()
-                for key, value in pnginfo.items():
-                    pnginfo_obj.add_text(key, value)
-                img_pil.save(
-                    save_path,
-                    format="PNG",
-                    compress_level=compression_level,
-                    pnginfo=pnginfo_obj,
-                )
-            else:
-                # 无元数据时正常保存
-                img_pil.save(
-                    save_path, format="PNG", compress_level=compression_level
-                )
+            save_path = resolve_output_subpath(
+                output_dir,
+                Path(safe_subfolder) / final_filename,
+            )
+            try:
+                if pnginfo:
+                    # 使用Pillow兼容的方式保存元数据
+                    pnginfo_obj = PngImagePlugin.PngInfo()
+                    for key, value in pnginfo.items():
+                        pnginfo_obj.add_text(key, value)
+                    img_pil.save(
+                        save_path,
+                        format="PNG",
+                        compress_level=compression_level,
+                        pnginfo=pnginfo_obj,
+                    )
+                else:
+                    # 无元数据时正常保存
+                    img_pil.save(
+                        save_path,
+                        format="PNG",
+                        compress_level=compression_level,
+                    )
+            except OSError as exc:
+                raise RuntimeError(cls.WRITE_IMAGE_ERROR) from exc
 
             # 记录相对路径
-            relative_path = str(save_path.relative_to(output_dir))
+            relative_path = cls._build_relative_save_path(
+                save_path,
+                output_dir,
+            )
             saved_paths.append(relative_path)
 
             # 更新进度条
@@ -212,9 +259,10 @@ class XImageSave:
         # 输出保存路径(多个图像用分号分隔)
         save_path_str = ";".join(saved_paths) if saved_paths else ""
 
-        return (images, save_path_str)
+        return io.NodeOutput(images, save_path_str)
 
-    def _generate_pnginfo(self, prompt, extra_pnginfo):
+    @classmethod
+    def _generate_pnginfo(cls, prompt, extra_pnginfo):
         """
         生成PNG元数据。
 
@@ -243,149 +291,34 @@ class XImageSave:
 
         return pnginfo
 
-    def _get_output_directory(self) -> Path:
+    @classmethod
+    def _get_output_directory(cls) -> Path:
         """
         获取ComfyUI默认输出目录
 
         Returns:
             输出目录路径
         """
-        return Path(folder_paths.get_output_directory())
+        if COMFYUI_AVAILABLE:
+            return Path(folder_paths.get_output_directory())
+        return Path("test_output")
 
-    def _sanitize_path(self, path: str) -> str:
-        """
-        清理路径，防止遍历攻击并禁用多级目录
-
-        将所有危险字符和路径分隔符替换为下划线，确保只允许单级文件夹名称
-
-        Args:
-            path: 原始路径或文件夹名称
-
-        Returns:
-            安全的文件夹名称
-        """
-        if not path:
-            return ""
-
-        # 危险字符列表
-        dangerous_chars = [
-            "\\",
-            "/",
-            "..",
-            ".",
-            "|",
-            ":",
-            "*",
-            "?",
-            '"',
-            "<",
-            ">",
-            "\n",
-            "\r",
-            "\t",
-            "\x00",
-            "\x0b",
-            "\x0c",
-        ]
-
-        # 路径遍历模式
-        path_traversal_patterns = [
-            r"\.\./+",
-            r"\.\.\\+",
-            r"~",
-            r"^\.",
-            r"\.$",
-            r"^/",
-            r"^\\",
-        ]
-
-        # 替换危险字符
-        safe_path = path
-        for char in dangerous_chars:
-            safe_path = safe_path.replace(char, "_")
-
-        # 替换路径遍历模式
-        for pattern in path_traversal_patterns:
-            safe_path = re.sub(pattern, "_", safe_path)
-
-        # 清理连续的下划线
-        safe_path = re.sub(r"_+", "_", safe_path)
-
-        # 移除首尾下划线
-        safe_path = safe_path.strip("_")
-
-        return safe_path
-
-    def _replace_datetime_placeholders(self, text: str) -> str:
-        """
-        替换日期时间标识符
-
-        Args:
-            text: 包含日期时间标识符的文本
-
-        Returns:
-            替换后的文本
-        """
-        if not text:
-            return ""
-
-        now = datetime.now()
-
-        replacements = {
-            "%Y%": now.strftime("%Y"),
-            "%m%": now.strftime("%m"),
-            "%d%": now.strftime("%d"),
-            "%H%": now.strftime("%H"),
-            "%M%": now.strftime("%M"),
-            "%S%": now.strftime("%S"),
-        }
-
-        result = text
-        for placeholder, value in replacements.items():
-            result = result.replace(placeholder, value)
-
-        return result
-
-    def _get_unique_filename(
-        self,
-        directory: Path,
-        filename: str,
-        extension: str,
-        max_attempts: int = 100000,
+    @classmethod
+    def _build_relative_save_path(
+        cls,
+        save_path: Path,
+        output_dir: Path,
     ) -> str:
         """
-        获取唯一的文件名，避免覆盖
-
-        如果文件名不存在则直接使用，存在则添加序列号
-
-        Args:
-            directory: 目录路径
-            filename: 基础文件名
-            extension: 文件扩展名
-            max_attempts: 最大尝试次数，防止无限循环
-
-        Returns:
-            唯一的文件名
-
-        Raises:
-            FileExistsError: 无法生成唯一文件名时抛出
+        基于当前实例输出目录构建相对保存路径。
         """
-        base_name = filename
+        try:
+            return str(Path(save_path).relative_to(output_dir))
+        except ValueError as exc:
+            raise RuntimeError(cls.RELATIVE_PATH_ERROR) from exc
 
-        for counter in range(max_attempts):
-            if counter == 0:
-                candidate = f"{base_name}{extension}"
-            else:
-                candidate = f"{base_name}_{counter:05d}{extension}"
-
-            candidate_path = directory / candidate
-
-            if not candidate_path.exists():
-                return candidate
-
-        raise FileExistsError("Unable to generate unique filename")
-
-    def _tensor_to_pil(self, tensor: torch.Tensor) -> Image.Image:
+    @classmethod
+    def _tensor_to_pil(cls, tensor: torch.Tensor) -> Image.Image:
         """
         将张量转换为 PIL 图像
 
@@ -398,8 +331,8 @@ class XImageSave:
         Raises:
             ValueError: 当张量维度或通道数不支持时
         """
-        # 确保张量在 CPU 上
-        tensor = tensor.cpu()
+        # 先断开梯度图再转到 CPU，避免 numpy 转换报错。
+        tensor = tensor.detach().cpu()
 
         # 处理批次维度：如果是 4D 张量，提取第一个图像
         if tensor.dim() == 4:
@@ -450,9 +383,13 @@ class XImageSave:
         return pil_image
 
 
-NODE_CLASS_MAPPINGS = {
-    "XImageSave": XImageSave,
-}
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "XImageSave": "XImageSave",
-}
+class Xz3r0Extension(ComfyExtension):
+    """Xz3r0 Nodes Extension"""
+
+    @override
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return [XImageSave]
+
+
+async def comfy_entrypoint() -> Xz3r0Extension:
+    return Xz3r0Extension()
