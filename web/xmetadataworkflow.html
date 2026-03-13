@@ -1643,7 +1643,21 @@
             }
         };
 
-        let currentLang = localStorage.getItem('lang') || 'en';
+        /**
+         * 从 localStorage 读取受限枚举值
+         * 防止缓存污染导致启动报错
+         * @param {string} key - 存储键名
+         * @param {string[]} allowedValues - 白名单
+         * @param {string} fallback - 回退值
+         * @returns {string} 安全值
+         */
+        function getSafeStoredValue(key, allowedValues, fallback) {
+            const raw = localStorage.getItem(key);
+            if (!raw) return fallback;
+            return allowedValues.includes(raw) ? raw : fallback;
+        }
+
+        let currentLang = getSafeStoredValue('lang', ['zh', 'en'], 'en');
 
         /**
          * 国际化翻译函数
@@ -1651,7 +1665,8 @@
          * @returns {string} 翻译后的文本，如果没有找到则返回键名
          */
         function t(key) {
-            return i18n[currentLang][key] || key;
+            const langPack = i18n[currentLang] || i18n.en || {};
+            return langPack[key] || key;
         }
 
         /**
@@ -1704,21 +1719,38 @@
             });
         });
 
-        document.querySelector(`.lang-btn[data-lang="${currentLang}"]`).classList.add('active');
+        const activeLangBtn = document.querySelector(
+            `.lang-btn[data-lang="${currentLang}"]`
+        );
+        if (activeLangBtn) {
+            activeLangBtn.classList.add('active');
+        }
         updateLanguage();
 
-        let currentTheme = localStorage.getItem('theme') || 'dark';
+        let currentTheme = getSafeStoredValue(
+            'theme',
+            ['dark', 'light'],
+            'dark'
+        );
 
         /**
          * 设置页面主题（亮色/暗色）
          * @param {string} theme - 主题名称 'dark' 或 'light'
          */
         function setTheme(theme) {
+            if (!['dark', 'light'].includes(theme)) {
+                theme = 'dark';
+            }
             currentTheme = theme;
             document.documentElement.setAttribute('data-theme', theme);
             localStorage.setItem('theme', theme);
             document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector(`.theme-btn[data-theme="${theme}"]`).classList.add('active');
+            const activeThemeBtn = document.querySelector(
+                `.theme-btn[data-theme="${theme}"]`
+            );
+            if (activeThemeBtn) {
+                activeThemeBtn.classList.add('active');
+            }
         }
 
         document.querySelectorAll('.theme-btn').forEach(btn => {
@@ -1735,7 +1767,12 @@
             currentParseMode = mode;
             // 故意不保存到 localStorage，每次打开工具都重置为原生模式
             document.querySelectorAll('.topbar-mode-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector(`.topbar-mode-btn[data-mode="${mode}"]`).classList.add('active');
+            const activeModeBtn = document.querySelector(
+                `.topbar-mode-btn[data-mode="${mode}"]`
+            );
+            if (activeModeBtn) {
+                activeModeBtn.classList.add('active');
+            }
 
             // 清空视图和重置状态，避免切换到错误的解析模式还保留内容让使用者困惑
             clearWorkflowView();
@@ -1780,7 +1817,12 @@
         });
 
         // 初始化解析模式
-        document.querySelector(`.topbar-mode-btn[data-mode="${currentParseMode}"]`).classList.add('active');
+        const defaultModeBtn = document.querySelector(
+            `.topbar-mode-btn[data-mode="${currentParseMode}"]`
+        );
+        if (defaultModeBtn) {
+            defaultModeBtn.classList.add('active');
+        }
 
         // 顶边栏折叠功能
         const topbar = document.getElementById('topbar');
@@ -2036,6 +2078,8 @@
 
         // 拖动标记，用于防止拖动后触发点击事件
         let justFinishedDrag = false;
+        const NODE_DRAG_THRESHOLD = 3; // 单节点拖动阈值（像素）
+        let activeNodeDrag = null;
 
         // 节点拉伸状态变量
         let isResizing = false;
@@ -2161,6 +2205,31 @@
                 return; // 拉伸时阻止其他操作
             }
 
+            // 单节点拖动（全局单实例监听，避免重复注册）
+            if (activeNodeDrag && activeNodeDrag.isDragging) {
+                const dx = e.clientX - activeNodeDrag.startX;
+                const dy = e.clientY - activeNodeDrag.startY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (!activeNodeDrag.hasDragStarted && distance > NODE_DRAG_THRESHOLD) {
+                    activeNodeDrag.hasDragStarted = true;
+                    activeNodeDrag.headerEl.classList.add('dragging');
+                    document.body.style.userSelect = 'none';
+                    document.body.style.webkitUserSelect = 'none';
+                }
+
+                if (activeNodeDrag.hasDragStarted) {
+                    const scaledDx = dx / scale;
+                    const scaledDy = dy / scale;
+                    activeNodeDrag.nodeEl.style.left =
+                        (activeNodeDrag.nodeStartX + scaledDx) + 'px';
+                    activeNodeDrag.nodeEl.style.top =
+                        (activeNodeDrag.nodeStartY + scaledDy) + 'px';
+                    updateConnectionPaths();
+                    updateConnectionHighlight();
+                }
+            }
+
             if (isPanning) {
                 panX = e.clientX - panStartX;
                 panY = e.clientY - panStartY;
@@ -2248,6 +2317,34 @@
                 setTimeout(() => {
                     justFinishedDrag = false;
                 }, 50);
+            }
+
+            // 结束单节点拖动
+            if (activeNodeDrag && activeNodeDrag.isDragging) {
+                activeNodeDrag.headerEl.classList.remove('dragging');
+                document.body.style.userSelect = '';
+                document.body.style.webkitUserSelect = '';
+
+                if (activeNodeDrag.hasDragStarted) {
+                    const newX = parseFloat(activeNodeDrag.nodeEl.style.left);
+                    const newY = parseFloat(activeNodeDrag.nodeEl.style.top);
+                    if (!workflowData.nodePositions) {
+                        workflowData.nodePositions = {};
+                    }
+                    workflowData.nodePositions[activeNodeDrag.nodeId] = {
+                        x: newX,
+                        y: newY
+                    };
+
+                    justFinishedDrag = true;
+                    setTimeout(() => {
+                        justFinishedDrag = false;
+                    }, 50);
+                }
+
+                activeNodeDrag.isDragging = false;
+                activeNodeDrag.hasDragStarted = false;
+                activeNodeDrag = null;
             }
 
             // 结束框选
@@ -2780,29 +2877,8 @@
          */
         async function readPngMetadataNative(data) {
             try {
-                const textDecoder = new TextDecoder('utf-8');
-                let offset = 8;
-                let workflowData = null;
-
-                while (offset < data.length - 12) {
-                    const length = (data[offset] << 24) | (data[offset + 1] << 16) |
-                                   (data[offset + 2] << 8) | data[offset + 3];
-
-                    if (length < 0 || length > data.length - offset - 12) break;
-
-                    const type = textDecoder.decode(data.slice(offset + 4, offset + 8));
-
-                    if (type === 'tEXt' || type === 'iTXt') {
-                        const chunkData = data.slice(offset + 8, offset + 8 + length);
-                        const text = textDecoder.decode(chunkData);
-                        const parsed = parsePngText(text);
-                        // 原生模式只使用 workflow 字段
-                        if (parsed.workflow) workflowData = parsed.workflow;
-                    }
-
-                    if (type === 'IEND') break;
-                    offset += 12 + length;
-                }
+                const metadata = extractPngMetadata(data);
+                let workflowData = metadata.workflow || null;
 
                 // 解析 workflow 字符串为对象
                 if (workflowData && typeof workflowData === 'string') {
@@ -2957,34 +3033,9 @@
          */
         async function readPngMetadataMerged(data) {
             try {
-                const textDecoder = new TextDecoder('utf-8');
-                let offset = 8;
-                let promptData = null;
-                let workflowData = null;
-
-                while (offset < data.length - 12) {
-                    const length = (data[offset] << 24) | (data[offset + 1] << 16) |
-                                   (data[offset + 2] << 8) | data[offset + 3];
-
-                    if (length < 0 || length > data.length - offset - 12) break;
-
-                    const type = textDecoder.decode(data.slice(offset + 4, offset + 8));
-
-                    if (type === 'tEXt' || type === 'iTXt') {
-                        const chunkData = data.slice(offset + 8, offset + 8 + length);
-                        const text = textDecoder.decode(chunkData);
-                        const parsed = parsePngText(text);
-                        if (parsed.prompt && !promptData) {
-                            promptData = parsed.prompt;
-                        }
-                        if (parsed.workflow && !workflowData) {
-                            workflowData = parsed.workflow;
-                        }
-                    }
-
-                    if (type === 'IEND') break;
-                    offset += 12 + length;
-                }
+                const metadata = extractPngMetadata(data);
+                let promptData = metadata.prompt || null;
+                let workflowData = metadata.workflow || null;
 
                 // 解析字符串为对象
                 if (promptData && typeof promptData === 'string') {
@@ -3156,34 +3207,15 @@
          */
         async function readPngMetadataPromptFW(data) {
             try {
-                const textDecoder = new TextDecoder('utf-8');
-                let offset = 8;
-                let promptData = null;
-                let workflowData = null;
+                const metadata = extractPngMetadata(data);
+                let promptData = metadata.prompt || null;
+                let workflowData = metadata.full_workflow || null;
 
-                while (offset < data.length - 12) {
-                    const length = (data[offset] << 24) | (data[offset + 1] << 16) |
-                                   (data[offset + 2] << 8) | data[offset + 3];
-
-                    if (length < 0 || length > data.length - offset - 12) break;
-
-                    const type = textDecoder.decode(data.slice(offset + 4, offset + 8));
-
-                    if (type === 'tEXt' || type === 'iTXt') {
-                        const chunkData = data.slice(offset + 8, offset + 8 + length);
-                        const text = textDecoder.decode(chunkData);
-                        const parsed = parsePngText(text);
-
-                        if (parsed.prompt && !promptData) {
-                            promptData = JSON.parse(parsed.prompt);
-                        }
-                        if (parsed.full_workflow && !workflowData) {
-                            workflowData = JSON.parse(parsed.full_workflow);
-                        }
-                    }
-
-                    if (type === 'IEND') break;
-                    offset += 12 + length;
+                if (promptData && typeof promptData === 'string') {
+                    promptData = JSON.parse(promptData);
+                }
+                if (workflowData && typeof workflowData === 'string') {
+                    workflowData = JSON.parse(workflowData);
                 }
 
                 if (!promptData) {
@@ -3433,21 +3465,136 @@
         }
 
         /**
-         * 解析 PNG tEXt chunk 的文本数据
-         * 格式: key\0value\0key\0value...
-         * 返回: { key: value, ... }
+         * 安全解码字节数组为字符串
+         * @param {Uint8Array} bytes - 源字节
+         * @param {string} [encoding='utf-8'] - 编码名
+         * @returns {string} 解码结果
          */
-        function parsePngText(text) {
+        function decodeBytes(bytes, encoding = 'utf-8') {
+            try {
+                return new TextDecoder(encoding).decode(bytes);
+            } catch (error) {
+                return new TextDecoder('utf-8').decode(bytes);
+            }
+        }
+
+        /**
+         * 兼容旧格式的文本解析
+         * 支持两种写法：
+         * 1) keyword\0value（标准 tEXt）
+         * 2) key\0value\0key\0value...（历史写法）
+         * @param {string} text - 文本内容
+         * @returns {Object} 键值对象
+         */
+        function parsePngTextPayload(text) {
             const result = {};
+            if (!text || typeof text !== 'string') {
+                return result;
+            }
             const parts = text.split('\0');
+            if (parts.length === 2 && parts[0]) {
+                result[parts[0]] = parts[1];
+                return result;
+            }
             for (let i = 0; i < parts.length - 1; i += 2) {
                 const key = parts[i];
                 const value = parts[i + 1];
-                if (key && value) {
+                if (key && value !== undefined) {
                     result[key] = value;
                 }
             }
             return result;
+        }
+
+        /**
+         * 解析 PNG 文本 chunk（tEXt / iTXt）
+         * @param {string} chunkType - chunk 类型
+         * @param {Uint8Array} chunkData - chunk 数据体
+         * @returns {Object} 键值对象
+         */
+        function parsePngMetadataChunk(chunkType, chunkData) {
+            if (chunkType === 'tEXt') {
+                return parsePngTextPayload(decodeBytes(chunkData, 'utf-8'));
+            }
+
+            if (chunkType !== 'iTXt') {
+                return {};
+            }
+
+            let offset = 0;
+            const readNullTerminated = () => {
+                const start = offset;
+                while (offset < chunkData.length && chunkData[offset] !== 0) {
+                    offset++;
+                }
+                const part = chunkData.slice(start, offset);
+                offset++;
+                return part;
+            };
+
+            try {
+                const keyword = decodeBytes(readNullTerminated(), 'utf-8');
+                if (!keyword || offset + 2 > chunkData.length) {
+                    return {};
+                }
+
+                const compressionFlag = chunkData[offset];
+                offset++;
+                offset++; // compression method
+
+                // language tag
+                readNullTerminated();
+                // translated keyword
+                readNullTerminated();
+
+                if (offset > chunkData.length) {
+                    return {};
+                }
+
+                if (compressionFlag === 1) {
+                    // 不引入额外解压依赖，压缩 iTXt 暂不解析。
+                    return {};
+                }
+
+                const textBytes = chunkData.slice(offset);
+                const text = decodeBytes(textBytes, 'utf-8');
+                return { [keyword]: text };
+            } catch (error) {
+                console.error('Failed to parse iTXt chunk:', error);
+                return {};
+            }
+        }
+
+        /**
+         * 从 PNG 二进制中提取全部文本元数据
+         * @param {Uint8Array} data - PNG 文件数据
+         * @returns {Object} 元数据对象
+         */
+        function extractPngMetadata(data) {
+            const metadata = {};
+            let offset = 8;
+            while (offset < data.length - 12) {
+                const length = (data[offset] << 24) |
+                    (data[offset + 1] << 16) |
+                    (data[offset + 2] << 8) |
+                    data[offset + 3];
+
+                if (length < 0 || length > data.length - offset - 12) {
+                    break;
+                }
+
+                const type = decodeBytes(data.slice(offset + 4, offset + 8));
+                if (type === 'tEXt' || type === 'iTXt') {
+                    const chunkData = data.slice(offset + 8, offset + 8 + length);
+                    const parsed = parsePngMetadataChunk(type, chunkData);
+                    Object.assign(metadata, parsed);
+                }
+                if (type === 'IEND') {
+                    break;
+                }
+                offset += 12 + length;
+            }
+            return metadata;
         }
 
         /**
@@ -3756,6 +3903,8 @@
                 // 确定节点位置（优先使用从 workflow 中保存的位置）
                 const pos = positions[nodeId] || { x: 100, y: 100 };
                 const classType = nodeData.class_type;
+                const safeClassType = escapeHtml(String(classType || ''));
+                const safeNodeId = escapeHtml(String(nodeId || ''));
 
                 // 构建节点 CSS 类名
                 let className = 'node';
@@ -3793,11 +3942,11 @@
                 if (classType === 'Note' || classType === 'MarkdownNote') {
                     const noteDataItem = workflowData.notes.find(n => n.id === nodeId);
                     content = `
-                        <div class="node-header" data-node-id="${nodeId}">
-                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
-                            <span class="node-header-text">${classType}</span>
+                        <div class="node-header" data-node-id="${safeNodeId}">
+                            <button class="header-btn copy-title-btn" data-node="${safeNodeId}" data-title="${safeClassType}" title="${t('copyTitle')}">📋</button>
+                            <span class="node-header-text">${safeClassType}</span>
                             <div class="header-actions">
-                                <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
+                                <button class="header-btn toggle-btn" data-node="${safeNodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
                         </div>
                         <div class="node-body">
@@ -3809,7 +3958,7 @@
                     const displayInputs = Object.entries(inputs);
 
                     const subgraphTag = nodeData.subgraphName ?
-                        `<div class="subgraph-tag" data-subgraph-color="${subgraphColor}">${escapeHtml(nodeData.subgraphName)} [${nodeId}]</div>` :
+                        `<div class="subgraph-tag" data-subgraph-color="${subgraphColor}">${escapeHtml(nodeData.subgraphName)} [${safeNodeId}]</div>` :
                         '';
 
                     const nodeIdTag = !nodeData.subgraphName ?
@@ -3817,11 +3966,11 @@
                         '';
 
                     content = `
-                        <div class="node-header" data-node-id="${nodeId}">
-                            <button class="header-btn copy-title-btn" data-node="${nodeId}" data-title="${classType}" title="${t('copyTitle')}">📋</button>
-                            <span class="node-header-text">${classType}</span>
+                        <div class="node-header" data-node-id="${safeNodeId}">
+                            <button class="header-btn copy-title-btn" data-node="${safeNodeId}" data-title="${safeClassType}" title="${t('copyTitle')}">📋</button>
+                            <span class="node-header-text">${safeClassType}</span>
                             <div class="header-actions">
-                                <button class="header-btn toggle-btn" data-node="${nodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
+                                <button class="header-btn toggle-btn" data-node="${safeNodeId}" title="${isCollapsed ? t('expand') : t('toggleCollapse')}">${isCollapsed ? '➕' : '➖'}</button>
                             </div>
                         </div>
                         ${subgraphTag}
@@ -3948,10 +4097,6 @@
                 });
 
                 const header = nodeEl.querySelector('.node-header');
-                let isNodeDragging = false;
-                let hasDragStarted = false;
-                let nodeDragStartX, nodeDragStartY, nodeStartX, nodeStartY;
-                const DRAG_THRESHOLD = 3; // 拖动阈值（像素）
 
                 header.addEventListener('mousedown', (e) => {
                     if (e.target.classList.contains('header-btn')) return;
@@ -3982,68 +4127,20 @@
                     }
 
                     // 单节点拖动
-                    isNodeDragging = true;
-                    hasDragStarted = false;
-                    nodeDragStartX = e.clientX;
-                    nodeDragStartY = e.clientY;
-                    nodeStartX = parseFloat(nodeEl.style.left);
-                    nodeStartY = parseFloat(nodeEl.style.top);
+                    activeNodeDrag = {
+                        nodeId: nodeId,
+                        nodeEl: nodeEl,
+                        headerEl: header,
+                        isDragging: true,
+                        hasDragStarted: false,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        nodeStartX: parseFloat(nodeEl.style.left),
+                        nodeStartY: parseFloat(nodeEl.style.top)
+                    };
                     // 阻止默认行为，防止文本选择
                     e.preventDefault();
                     e.stopPropagation();
-                });
-
-                document.addEventListener('mousemove', (e) => {
-                    if (isNodeDragging) {
-                        const dx = e.clientX - nodeDragStartX;
-                        const dy = e.clientY - nodeDragStartY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-
-                        // 只有当移动距离超过阈值时才真正开始拖动
-                        if (!hasDragStarted && distance > DRAG_THRESHOLD) {
-                            hasDragStarted = true;
-                            // 开始拖动时阻止文本选择并改变光标样式
-                            header.classList.add('dragging');
-                            document.body.style.userSelect = 'none';
-                            document.body.style.webkitUserSelect = 'none';
-                        }
-
-                        if (hasDragStarted) {
-                            const scaledDx = dx / scale;
-                            const scaledDy = dy / scale;
-                            nodeEl.style.left = (nodeStartX + scaledDx) + 'px';
-                            nodeEl.style.top = (nodeStartY + scaledDy) + 'px';
-                            updateConnectionPaths();
-                            updateConnectionHighlight();
-                        }
-                    }
-                });
-
-                document.addEventListener('mouseup', () => {
-                    if (isNodeDragging) {
-                        // 恢复文本选择和光标样式
-                        header.classList.remove('dragging');
-                        document.body.style.userSelect = '';
-                        document.body.style.webkitUserSelect = '';
-
-                        // 只有真正拖动过才保存位置
-                        if (hasDragStarted) {
-                            const newX = parseFloat(nodeEl.style.left);
-                            const newY = parseFloat(nodeEl.style.top);
-                            if (!workflowData.nodePositions) {
-                                workflowData.nodePositions = {};
-                            }
-                            workflowData.nodePositions[nodeId] = { x: newX, y: newY };
-
-                            // 设置标记，防止触发点击事件
-                            justFinishedDrag = true;
-                            setTimeout(() => {
-                                justFinishedDrag = false;
-                            }, 50);
-                        }
-                    }
-                    isNodeDragging = false;
-                    hasDragStarted = false;
                 });
 
                 // 为拉伸手柄添加事件监听
@@ -4469,7 +4566,7 @@
                 return;
             }
 
-            let svgContent = '';
+            connectionsSvg.innerHTML = '';
 
             for (const conn of workflowData.connections) {
                 const fromNodeEl = document.querySelector(`[data-node-id="${conn.from}"]`);
@@ -4504,16 +4601,42 @@
 
                 // 绘制连接线路径（从圆点边缘开始，到圆点边缘结束）
                 const path = `M ${x1 + dotRadius} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2 - dotRadius} ${y2}`;
-                svgContent += `<path class="connection-line" d="${path}" data-from="${conn.from}" data-to="${conn.to}" />`;
+                const lineEl = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'path'
+                );
+                lineEl.setAttribute('class', 'connection-line');
+                lineEl.setAttribute('d', path);
+                lineEl.dataset.from = String(conn.from);
+                lineEl.dataset.to = String(conn.to);
+                connectionsSvg.appendChild(lineEl);
 
                 // 添加起点圆点（在右边框上）
-                svgContent += `<circle class="connection-dot" cx="${x1}" cy="${y1}" r="${dotRadius}" data-dot-type="output" data-node="${conn.from}" />`;
+                const outDot = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'circle'
+                );
+                outDot.setAttribute('class', 'connection-dot');
+                outDot.setAttribute('cx', String(x1));
+                outDot.setAttribute('cy', String(y1));
+                outDot.setAttribute('r', String(dotRadius));
+                outDot.dataset.dotType = 'output';
+                outDot.dataset.node = String(conn.from);
+                connectionsSvg.appendChild(outDot);
 
                 // 添加终点圆点（在左边框上）
-                svgContent += `<circle class="connection-dot" cx="${x2}" cy="${y2}" r="${dotRadius}" data-dot-type="input" data-node="${conn.to}" />`;
+                const inDot = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    'circle'
+                );
+                inDot.setAttribute('class', 'connection-dot');
+                inDot.setAttribute('cx', String(x2));
+                inDot.setAttribute('cy', String(y2));
+                inDot.setAttribute('r', String(dotRadius));
+                inDot.dataset.dotType = 'input';
+                inDot.dataset.node = String(conn.to);
+                connectionsSvg.appendChild(inDot);
             }
-
-            connectionsSvg.innerHTML = svgContent;
 
             const wrapperRect = canvasWrapper.getBoundingClientRect();
             connectionsSvg.setAttribute('viewBox', `0 0 ${wrapperRect.width} ${wrapperRect.height}`);
@@ -4688,14 +4811,31 @@
             const overlay = document.createElement('div');
             overlay.id = 'modalOverlay';
             overlay.className = 'modal-overlay';
-            overlay.innerHTML = `
-                <div class="modal-container">
-                    <div class="modal-icon ${type}">${modalIcon}</div>
-                    <div class="modal-title">${modalTitle}</div>
-                    <div class="modal-message">${message}</div>
-                    <button class="modal-btn" id="modalCloseBtn">${t('modalOkBtn')}</button>
-                </div>
-            `;
+            const container = document.createElement('div');
+            container.className = 'modal-container';
+
+            const iconEl = document.createElement('div');
+            iconEl.className = `modal-icon ${type}`;
+            iconEl.textContent = modalIcon;
+            container.appendChild(iconEl);
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'modal-title';
+            titleEl.textContent = modalTitle;
+            container.appendChild(titleEl);
+
+            const messageEl = document.createElement('div');
+            messageEl.className = 'modal-message';
+            messageEl.textContent = String(message);
+            container.appendChild(messageEl);
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'modal-btn';
+            closeBtn.id = 'modalCloseBtn';
+            closeBtn.textContent = t('modalOkBtn');
+            container.appendChild(closeBtn);
+
+            overlay.appendChild(container);
 
             document.body.appendChild(overlay);
 
