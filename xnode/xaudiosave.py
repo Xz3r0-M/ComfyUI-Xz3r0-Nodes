@@ -51,12 +51,15 @@ class XAudioSave(io.ComfyNode):
     """
     XAudioSave 音频保存节点 (V3)
 
-    提供音频保存功能，使用WAV无损格式，支持自定义文件名、
+    提供音频保存功能，支持WAV/FLAC无损导出，自定义文件名、
     子文件夹、日期时间标识符、音量标准化和峰值限制。
 
     功能:
         - 保存音频到ComfyUI默认输出目录
-        - 统一使用WAV无损格式(PCM 32-bit float)
+        - 默认使用WAV无损格式(PCM 32-bit float)
+        - 支持FLAC无损压缩导出(最终阶段量化到s32)
+        - WAV 在当前 FFmpeg 路径下不稳定保留自定义 metadata
+        - FLAC 支持嵌入 prompt/workflow 等工作流 metadata
         - 支持多种采样率(44.1kHz, 48kHz, 96kHz, 192kHz)
         - LUFS音量标准化(默认-14.1 LUFS)
         - 传统压缩器支持(acompressor, 三种预设: 快速/平衡/缓慢)
@@ -133,6 +136,7 @@ class XAudioSave(io.ComfyNode):
     AUDIO_NORMALIZE_ERROR = "Audio normalization failed"
     AUDIO_SAVE_ERROR = "Audio file saving failed"
     FILE_SAVE_VALIDATION_ERROR = "Saved audio file validation failed"
+    INVALID_FORMAT_ERROR = "format must be either WAV or FLAC"
 
     @classmethod
     def define_schema(cls):
@@ -141,7 +145,7 @@ class XAudioSave(io.ComfyNode):
             node_id="XAudioSave",
             display_name="XAudioSave",
             description="Save audio with LUFS normalization, compression, "
-            "and peak limiting using WAV lossless format",
+            "peak limiting, and WAV/FLAC lossless output",
             category="♾️ Xz3r0/File-Processing",
             is_output_node=True,
             inputs=[
@@ -161,6 +165,15 @@ class XAudioSave(io.ComfyNode):
                     tooltip="Subfolder name (no path separators "
                     "allowed), supports datetime "
                     "placeholders: %Y%, %m%, %d%, %H%, %M%, %S%",
+                ),
+                io.Combo.Input(
+                    "format",
+                    options=["WAV", "FLAC"],
+                    default="FLAC",
+                    tooltip="Output file format. WAV keeps float32 "
+                    "master output but does not reliably preserve "
+                    "custom workflow metadata. FLAC uses lossless "
+                    "compression and supports metadata embedding.",
                 ),
                 io.Combo.Input(
                     "sample_rate",
@@ -252,6 +265,7 @@ class XAudioSave(io.ComfyNode):
                     "output directory",
                 ),
             ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
         )
 
     @classmethod
@@ -260,6 +274,7 @@ class XAudioSave(io.ComfyNode):
         audio: dict,
         filename_prefix: str,
         subfolder: str,
+        format: str,
         sample_rate: str,
         target_lufs: float,
         enable_peak_limiter: bool,
@@ -276,6 +291,7 @@ class XAudioSave(io.ComfyNode):
             audio: 音频字典，包含"waveform"和"sample_rate"
             filename_prefix: 文件名前缀(支持日期时间标识符)
             subfolder: 子文件夹名称(单级)
+            format: 输出格式 (WAV/FLAC)
             sample_rate: 采样率选项
             target_lufs: 目标LUFS值
             enable_peak_limiter: 是否启用峰值限制
@@ -288,11 +304,11 @@ class XAudioSave(io.ComfyNode):
         Returns:
             NodeOutput: 包含处理后的音频和保存的相对路径
             - processed_audio: 32-bit float 格式的音频
-            - save_path: 保存的 WAV 文件相对路径 (32-bit float)
+            - save_path: 保存的音频文件相对路径(.wav或.flac)
         """
         # 获取ComfyUI默认输出目录
         output_dir = cls._get_output_directory()
-
+        output_format = cls._normalize_output_format(format)
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = sanitize_path_component(filename_prefix)
         safe_filename_prefix = replace_datetime_tokens(
@@ -338,8 +354,9 @@ class XAudioSave(io.ComfyNode):
 
         # 生成文件名(添加序列号)
         base_filename = safe_filename_prefix
+        extension = ".wav" if output_format == "WAV" else ".flac"
         final_filename = ensure_unique_filename(
-            save_dir, base_filename, ".wav"
+            save_dir, base_filename, extension
         )
         progress_bar.update_absolute(2)
 
@@ -352,25 +369,80 @@ class XAudioSave(io.ComfyNode):
             raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
         # 处理LUFS标准化和峰值限制
+        # WAV 容器在当前 FFmpeg 路径下无法稳定保留自定义工作流元数据，
+        # 因此 WAV 路径不做 metadata 注入。FLAC 路径会注入 metadata。
         final_lufs = target_lufs if target_lufs > -70 else None
         if final_lufs is not None:
-            waveform = cls._normalize_audio(
-                waveform,
-                target_sr,
-                final_lufs,
-                enable_peak_limiter,
-                peak_limit,
-                enable_compression,
-                compression_mode,
-                use_custom_ratio,
-                custom_ratio,
-                save_path,
-                progress_bar,
-                current_step=2,
-            )
+            if output_format == "WAV":
+                waveform = cls._normalize_audio(
+                    waveform,
+                    target_sr,
+                    final_lufs,
+                    enable_peak_limiter,
+                    peak_limit,
+                    enable_compression,
+                    compression_mode,
+                    use_custom_ratio,
+                    custom_ratio,
+                    save_path,
+                    progress_bar,
+                    current_step=2,
+                )
+            else:
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav", delete=False
+                ) as temp_output:
+                    temp_output_path = temp_output.name
+
+                try:
+                    waveform = cls._normalize_audio(
+                        waveform,
+                        target_sr,
+                        final_lufs,
+                        enable_peak_limiter,
+                        peak_limit,
+                        enable_compression,
+                        compression_mode,
+                        use_custom_ratio,
+                        custom_ratio,
+                        Path(temp_output_path),
+                        progress_bar,
+                        current_step=2,
+                    )
+                    metadata = cls._generate_metadata(
+                        cls.hidden.prompt,
+                        cls.hidden.extra_pnginfo,
+                    )
+                    cls._save_flac_from_source(
+                        source_path=temp_output_path,
+                        target_path=save_path,
+                        metadata=metadata,
+                    )
+                finally:
+                    if os.path.exists(temp_output_path):
+                        try:
+                            os.remove(temp_output_path)
+                        except OSError:
+                            pass
         else:
-            # 没有LUFS标准化时，保存为32-bit float WAV格式
-            cls._save_wav_32bit_float(waveform, save_path, target_sr)
+            # 没有LUFS标准化时按目标格式直接保存。
+            if output_format == "WAV":
+                cls._save_wav_32bit_float(
+                    waveform,
+                    save_path,
+                    target_sr,
+                )
+            else:
+                metadata = cls._generate_metadata(
+                    cls.hidden.prompt,
+                    cls.hidden.extra_pnginfo,
+                )
+                cls._save_flac_from_waveform(
+                    waveform=waveform,
+                    path=save_path,
+                    sample_rate=target_sr,
+                    metadata=metadata,
+                )
             progress_bar.update_absolute(total_steps)
 
         cls._validate_saved_file(save_path)
@@ -403,6 +475,16 @@ class XAudioSave(io.ComfyNode):
         """
         resampler = Resample(orig_freq=original_sr, new_freq=target_sr)
         return resampler(waveform)
+
+    @classmethod
+    def _normalize_output_format(cls, output_format: str) -> str:
+        """
+        规范化输出格式并校验合法值。
+        """
+        normalized = str(output_format).upper()
+        if normalized not in ("WAV", "FLAC"):
+            raise ValueError(cls.INVALID_FORMAT_ERROR)
+        return normalized
 
     @classmethod
     def _normalize_audio(
@@ -819,10 +901,14 @@ class XAudioSave(io.ComfyNode):
 
     @classmethod
     def _save_wav_32bit_float(
-        cls, waveform: torch.Tensor, path: Path, sample_rate: int
+        cls,
+        waveform: torch.Tensor,
+        path: Path,
+        sample_rate: int,
     ):
         """
         保存为32-bit float WAV文件（使用FFmpeg）
+        仅负责音频数据保存，不包含工作流 metadata。
 
         Args:
             waveform: 音频波形张量 (channels, samples)
@@ -868,6 +954,97 @@ class XAudioSave(io.ComfyNode):
                     os.remove(temp_path)
                 except OSError:
                     pass
+
+    @classmethod
+    def _save_flac_from_waveform(
+        cls,
+        waveform: torch.Tensor,
+        path: Path,
+        sample_rate: int,
+        metadata: dict | None = None,
+    ) -> None:
+        """
+        将 float 波形写临时 WAV，再以 FLAC(s32) 无损压缩导出。
+        """
+        audio_np = cls._prepare_waveform_for_io(waveform)
+        with tempfile.NamedTemporaryFile(
+            suffix=".wav", delete=False
+        ) as temp_file:
+            temp_path = temp_file.name
+
+        try:
+            audio_data = np.transpose(audio_np, (1, 0))
+            wavfile.write(temp_path, sample_rate, audio_data)
+            cls._save_flac_from_source(
+                source_path=temp_path,
+                target_path=path,
+                metadata=metadata,
+            )
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+    @classmethod
+    def _save_flac_from_source(
+        cls,
+        source_path: str | Path,
+        target_path: Path,
+        metadata: dict | None = None,
+    ) -> None:
+        """
+        将源音频编码为 FLAC，并写入工作流元数据。
+        """
+        output_kwargs = {
+            "acodec": "flac",
+            "sample_fmt": "s32",
+            **{"loglevel": "error"},
+        }
+        output_kwargs.update(
+            cls._build_ffmpeg_metadata_options(metadata)
+        )
+        try:
+            (
+                ffmpeg.input(str(source_path))
+                .output(str(target_path), **output_kwargs)
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+        except (ffmpeg.Error, OSError, ValueError) as exc:
+            raise RuntimeError(cls.AUDIO_SAVE_ERROR) from exc
+
+    @classmethod
+    def _generate_metadata(cls, prompt, extra_pnginfo):
+        """
+        生成音频文件元数据（用于 FLAC）。
+        """
+        if prompt is None and extra_pnginfo is None:
+            return None
+
+        metadata = {}
+        if prompt is not None:
+            metadata["prompt"] = json.dumps(prompt)
+        if extra_pnginfo is not None:
+            for key, value in extra_pnginfo.items():
+                metadata[key] = json.dumps(value)
+        return metadata
+
+    @classmethod
+    def _build_ffmpeg_metadata_options(
+        cls, metadata: dict | None
+    ) -> dict[str, str]:
+        """
+        将元数据转为 FFmpeg metadata 参数。
+        """
+        if not metadata:
+            return {}
+
+        options = {}
+        for index, (key, value) in enumerate(metadata.items()):
+            options[f"metadata:g:{index}"] = f"{key}={value}"
+        return options
 
     @classmethod
     def _prepare_waveform_for_io(cls, waveform: torch.Tensor) -> np.ndarray:

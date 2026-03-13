@@ -236,6 +236,35 @@ function debugLog(...args) {
 }
 
 /**
+ * 查找 Fit View 按钮（仅使用图标规则，避免文案误匹配）
+ * 查找顺序：
+ * 1. 精确匹配 i.icon-\[lucide--focus\]
+ * 2. 匹配 i[class*="lucide--focus"]
+ * 3. 匹配按钮内 i/svg 且类名含 focus
+ * @returns {HTMLButtonElement|null} Fit View 按钮
+ */
+function findFitViewButton() {
+    const exactLucideFocusButton = document
+        .querySelector('i.icon-\\[lucide--focus\\]')
+        ?.closest('button');
+    if (exactLucideFocusButton) {
+        return exactLucideFocusButton;
+    }
+
+    const partialLucideFocusButton = document
+        .querySelector('i[class*="lucide--focus"]')
+        ?.closest('button');
+    if (partialLucideFocusButton) {
+        return partialLucideFocusButton;
+    }
+
+    const fallbackFocusIcon = document.querySelector(
+        'button i[class*="focus"], button svg[class*="focus"]'
+    );
+    return fallbackFocusIcon?.closest('button') ?? null;
+}
+
+/**
  * 获取当前子图标识
  * 基于面包屑导航中的子图名称生成唯一标识
  * @param {boolean} silent - 是否静默模式（不输出日志）
@@ -298,6 +327,10 @@ function isInSubgraph() {
  */
 let subgraphObserver = null;
 let lastSubgraphId = null;
+let subgraphButtonClickHandler = null;
+let subgraphObserverInitTimeout = null;
+let lastDetectedSubgraphId = null;
+let lastBreadcrumbLevel = 0;
 
 /**
  * 子图适应视图防抖定时器
@@ -310,10 +343,46 @@ let subgraphFitTimeout = null;
 let lastSubgraphFitTime = 0;
 
 /**
+ * 清理子图监听相关资源
+ */
+function teardownSubgraphTracking() {
+    if (subgraphObserverInitTimeout) {
+        clearTimeout(subgraphObserverInitTimeout);
+        subgraphObserverInitTimeout = null;
+    }
+
+    if (subgraphObserver) {
+        subgraphObserver.disconnect();
+        subgraphObserver = null;
+    }
+
+    if (subgraphButtonClickHandler) {
+        document.removeEventListener('click', subgraphButtonClickHandler, true);
+        subgraphButtonClickHandler = null;
+    }
+
+    if (subgraphFitTimeout) {
+        clearTimeout(subgraphFitTimeout);
+        subgraphFitTimeout = null;
+    }
+
+    lastDetectedSubgraphId = null;
+    lastBreadcrumbLevel = 0;
+    lastSubgraphId = null;
+}
+
+/**
+ * 根据当前设置重建子图监听逻辑
+ */
+function refreshSubgraphTracking() {
+    teardownSubgraphTracking();
+    initSubgraphObserver();
+}
+
+/**
  * 执行子图适应视图操作
  * @param {number} delay - 延迟时间（毫秒）
  * @param {boolean} checkSubgraph - 是否检查子图是否已适应
- * @param {string} subgraphMode - 子图适应模式
  */
 function fitSubgraphToView(delay = 100, checkSubgraph = false) {
     const subgraphId = getCurrentSubgraphId();
@@ -365,24 +434,8 @@ function fitSubgraphToView(delay = 100, checkSubgraph = false) {
                 }
             }
 
-            // 使用多种方式查找 Fit View 按钮（优先使用图标类名，支持多语言）
-            const fitViewButton =
-                // 1. 优先：通过 lucide focus 图标类名（语言无关）
-                document.querySelector('button i.icon-\[lucide--focus\]')?.closest('button') ||
-                document.querySelector('i.icon-\[lucide--focus\]')?.closest('button') ||
-                // 2. 通过部分类名匹配
-                document.querySelector('button i[class*="lucide--focus"]')?.closest('button') ||
-                document.querySelector('i[class*="lucide--focus"]')?.closest('button') ||
-                // 3. 中文版本（aria-label）
-                document.querySelector('button[aria-label*="适应视图"]') ||
-                document.querySelector('button[aria-label*="适应"]') ||
-                // 4. 英文版本（aria-label）
-                document.querySelector('button[aria-label*="Fit View" i]') ||
-                // 5. 备用方案：查找包含 focus 图标的按钮
-                Array.from(document.querySelectorAll('button')).find(btn =>
-                    btn.querySelector('i[class*="focus"]') ||
-                    btn.querySelector('svg[class*="focus"]')
-                );
+            // 统一使用图标规则查找 Fit View 按钮
+            const fitViewButton = findFitViewButton();
 
             debugLog('Fit View button found:', !!fitViewButton);
 
@@ -390,7 +443,7 @@ function fitSubgraphToView(delay = 100, checkSubgraph = false) {
                 debugLog('Clicking Fit View button');
                 fitViewButton.click();
             } else {
-                debugLog('Fit View button not found!');
+                debugLog('Fit View button not found (icon strategy)');
             }
         } catch (error) {
             debugLog('Error in fitSubgraphToView:', error);
@@ -408,68 +461,65 @@ function fitSubgraphToView(delay = 100, checkSubgraph = false) {
 /**
  * 通过检测子图按钮点击来触发适应
  * 子图节点右上角有一个进入子图的按钮
- * @param {string} enterMode - 进入子图时的适应模式
- * @param {string} exitMode - 退出子图时的适应模式
- * @param {number} delay - 适应延迟（毫秒）
  */
-function setupSubgraphButtonListener(enterMode, exitMode, delay) {
-    if (enterMode === "Never" && exitMode === "Never") {
+function setupSubgraphButtonListener() {
+    if (settings.subgraphEnterMode === "Never") {
         return;
     }
 
     debugLog('Setting up subgraph button listener');
 
     // 监听整个文档的点击事件
-    document.addEventListener('click', (e) => {
+    subgraphButtonClickHandler = (e) => {
         const target = e.target;
         const button = target.closest('button');
+        const delay = settings.fitDelay;
 
         // ========== 检查是否是子图进入按钮 ==========
         const isSubgraphButton = button?.querySelector('i[class*="lucide"], i[class*="subgraph"], [class*="subgraph"]') ||
                                  target.closest('[title*="subgraph" i], [data-tooltip*="subgraph" i]');
 
-        if (isSubgraphButton && enterMode !== "Never") {
+        if (isSubgraphButton && settings.subgraphEnterMode !== "Never") {
             debugLog('Subgraph button clicked, scheduling fit check');
             // 延迟检查，等待子图页面加载完成
             setTimeout(() => {
                 const currentSubgraphId = getCurrentSubgraphId();
                 if (currentSubgraphId && currentSubgraphId !== lastSubgraphId) {
                     debugLog('Subgraph detected after button click');
-                    const checkSubgraph = enterMode === "First";
+                    const checkSubgraph = settings.subgraphEnterMode === "First";
                     fitSubgraphToView(delay, checkSubgraph);
                 }
             }, delay + 100);
         }
 
-    }, true);
+    };
+
+    document.addEventListener('click', subgraphButtonClickHandler, true);
 }
 
 /**
  * 初始化子图观察器
  * 监听面包屑导航变化以检测子图进入/退出
- * @param {string} subgraphEnterMode - 进入子图时的适应模式 ("first" | "always" | "never")
- * @param {string} subgraphExitMode - 退出子图时的适应模式 ("first" | "always" | "never")
- * @param {number} delay - 适应延迟（毫秒）
  */
-function initSubgraphObserver(subgraphEnterMode, subgraphExitMode, delay) {
-    if (subgraphEnterMode === "Never" && subgraphExitMode === "Never" && settings.workflowExitMode === "Never") {
+function initSubgraphObserver() {
+    if (settings.subgraphEnterMode === "Never"
+        && settings.subgraphExitMode === "Never"
+        && settings.workflowExitMode === "Never") {
         debugLog('Subgraph observer disabled (all modes: Never)');
         return;
     }
 
-    debugLog('Initializing subgraph observer with subgraphEnterMode:', subgraphEnterMode, 'subgraphExitMode:', subgraphExitMode, 'delay:', delay);
+    debugLog(
+        'Initializing subgraph observer with modes:',
+        settings.subgraphEnterMode,
+        settings.subgraphExitMode,
+        settings.workflowExitMode,
+        'delay:',
+        settings.fitDelay
+    );
 
     // 设置按钮点击监听
-    setupSubgraphButtonListener(subgraphEnterMode, subgraphExitMode, delay);
-
-    // 如果已存在观察器，先断开
-    if (subgraphObserver) {
-        subgraphObserver.disconnect();
-    }
-
-    // 跟踪上一次检测到的子图ID和面包屑层级
-    let lastDetectedSubgraphId = null;
-    let lastBreadcrumbLevel = 0;
+    setupSubgraphButtonListener();
 
     // 获取面包屑层级（子图深度）
     function getBreadcrumbLevel() {
@@ -483,28 +533,35 @@ function initSubgraphObserver(subgraphEnterMode, subgraphExitMode, delay) {
         const currentLevel = getBreadcrumbLevel();
 
         // ========== 进入更深的子图（层级增加）==========
-        if (currentSubgraphId && currentSubgraphId !== lastDetectedSubgraphId && currentLevel > lastBreadcrumbLevel) {
+        if (currentSubgraphId
+            && currentSubgraphId !== lastDetectedSubgraphId
+            && currentLevel > lastBreadcrumbLevel) {
             debugLog('Mutation detected: entered deeper subgraph', currentSubgraphId, 'level:', currentLevel);
             lastDetectedSubgraphId = currentSubgraphId;
             lastSubgraphId = currentSubgraphId;
             lastBreadcrumbLevel = currentLevel;
 
             // 触发子图适应（如果启用）
-            if (subgraphEnterMode !== "Never") {
-                const checkSubgraph = subgraphEnterMode === "First";
+            if (settings.subgraphEnterMode !== "Never") {
+                const checkSubgraph = settings.subgraphEnterMode === "First";
+                const delay = settings.fitDelay;
                 fitSubgraphToView(delay, checkSubgraph);
             }
         }
         // ========== 返回上一级子图（层级减少但仍大于1）==========
-        else if (currentSubgraphId && currentSubgraphId !== lastDetectedSubgraphId && currentLevel < lastBreadcrumbLevel && currentLevel > 1) {
+        else if (currentSubgraphId
+            && currentSubgraphId !== lastDetectedSubgraphId
+            && currentLevel < lastBreadcrumbLevel
+            && currentLevel > 1) {
             debugLog('Mutation detected: returned to parent subgraph', currentSubgraphId, 'level:', currentLevel);
             lastDetectedSubgraphId = currentSubgraphId;
             lastSubgraphId = currentSubgraphId;
             lastBreadcrumbLevel = currentLevel;
 
             // 返回上一级子图时，使用 subgraphExitMode 设置（视为子图退出行为）
-            if (subgraphExitMode !== "Never") {
-                const checkSubgraph = subgraphExitMode === "First";
+            if (settings.subgraphExitMode !== "Never") {
+                const checkSubgraph = settings.subgraphExitMode === "First";
+                const delay = settings.fitDelay;
                 fitSubgraphToView(delay, checkSubgraph);
             }
         }
@@ -519,6 +576,7 @@ function initSubgraphObserver(subgraphEnterMode, subgraphExitMode, delay) {
             if (settings.workflowExitMode !== "Never") {
                 debugLog('Triggering workflow fit after subgraph exit');
                 const checkWorkflow = settings.workflowExitMode === "First";
+                const delay = settings.fitDelay;
                 fitToView(delay, checkWorkflow, true);
             }
         }
@@ -526,7 +584,7 @@ function initSubgraphObserver(subgraphEnterMode, subgraphExitMode, delay) {
 
     // 开始观察文档中的面包屑导航
     // 使用延迟确保 DOM 已就绪
-    setTimeout(() => {
+    subgraphObserverInitTimeout = setTimeout(() => {
         // 尝试找到面包屑容器
         const breadcrumbContainer = document.querySelector('.p-breadcrumb, .p-breadcrumb-list, [class*="breadcrumb"]');
 
@@ -558,6 +616,7 @@ function initSubgraphObserver(subgraphEnterMode, subgraphExitMode, delay) {
             lastSubgraphId = currentSubgraphId;
             lastBreadcrumbLevel = currentLevel;
         }
+        subgraphObserverInitTimeout = null;
     }, 500);
 }
 
@@ -634,14 +693,16 @@ function fitToView(delay = 100, checkWorkflow = false, isExit = false) {
                 }
             }
 
-            // 使用图标类名查找 Fit View 按钮
-            const fitViewButton = document.querySelector('button i.icon-\\[lucide--focus\\]')?.closest('button');
+            // 统一使用图标规则查找 Fit View 按钮
+            const fitViewButton = findFitViewButton();
 
             debugLog('Fit View button found:', !!fitViewButton);
 
             if (fitViewButton) {
                 debugLog('Clicking Fit View button');
                 fitViewButton.click();
+            } else {
+                debugLog('Fit View button not found (icon strategy)');
             }
         } catch (error) {
             debugLog('Error in fitToView:', error);
@@ -671,6 +732,9 @@ let settings = {
  * 标记是否已执行过首次加载适应
  */
 let hasFittedOnLoad = false;
+let workflowHooksInstalled = false;
+let originalGraphOnConfigure = null;
+let originalAppLoadGraphData = null;
 
 /**
  * 注册 ComfyUI 扩展
@@ -704,6 +768,7 @@ app.registerExtension({
             options: ["First", "Always", "Never"],
             onChange: (value) => {
                 settings.workflowExitMode = value;
+                refreshSubgraphTracking();
             }
         },
         {
@@ -716,6 +781,7 @@ app.registerExtension({
             options: ["First", "Always", "Never"],
             onChange: (value) => {
                 settings.subgraphEnterMode = value;
+                refreshSubgraphTracking();
             }
         },
         {
@@ -728,6 +794,7 @@ app.registerExtension({
             options: ["First", "Always", "Never"],
             onChange: (value) => {
                 settings.subgraphExitMode = value;
+                refreshSubgraphTracking();
             }
         },
         {
@@ -744,6 +811,7 @@ app.registerExtension({
             },
             onChange: (value) => {
                 settings.fitDelay = value;
+                refreshSubgraphTracking();
             }
         }
     ],
@@ -767,12 +835,14 @@ app.registerExtension({
         // 如果画布已就绪，直接执行
         if (app.canvas && app.graph) {
             initFitView();
+            this.setupWorkflowListener();
         } else {
             // 否则等待初始化完成
             const checkInterval = setInterval(() => {
                 if (app.canvas && app.graph) {
                     clearInterval(checkInterval);
                     initFitView();
+                    this.setupWorkflowListener();
                 }
             }, 100);
 
@@ -782,11 +852,8 @@ app.registerExtension({
             }, 5000);
         }
 
-        // 设置工作流加载监听器
-        this.setupWorkflowListener();
-
-        // 初始化子图观察器（传入子图进入和退出模式）
-        initSubgraphObserver(settings.subgraphEnterMode, settings.subgraphExitMode, settings.fitDelay);
+        // 初始化子图观察逻辑
+        refreshSubgraphTracking();
     },
 
     /**
@@ -794,15 +861,25 @@ app.registerExtension({
      * 监听工作流配置变化，在新工作流加载时自动适应视图
      */
     setupWorkflowListener() {
-        // 保存原始的 onConfigure 方法
-        const originalOnConfigure = app.graph.onConfigure;
+        if (workflowHooksInstalled) {
+            debugLog('Workflow listeners already installed, skipping');
+            return;
+        }
+
+        if (!app.graph) {
+            debugLog('Graph not ready, skipping workflow listener setup');
+            return;
+        }
+
+        // 保存原始方法，避免重复包裹
+        originalGraphOnConfigure = app.graph.onConfigure;
 
         // 重写 onConfigure 方法
         app.graph.onConfigure = function(config) {
             debugLog('onConfigure called, workflowEnterMode:', settings.workflowEnterMode);
 
             // 调用原始方法
-            const result = originalOnConfigure?.apply(this, arguments);
+            const result = originalGraphOnConfigure?.apply(this, arguments);
 
             // 根据主工作流进入模式决定是否执行适应视图
             if (settings.workflowEnterMode !== "Never") {
@@ -819,13 +896,13 @@ app.registerExtension({
         };
 
         // 监听 loadGraphData 方法（ComfyUI 加载工作流的主要方法）
-        const originalLoadGraphData = app.loadGraphData;
-        if (originalLoadGraphData) {
+        originalAppLoadGraphData = app.loadGraphData;
+        if (originalAppLoadGraphData) {
             app.loadGraphData = async function() {
                 debugLog('loadGraphData called, workflowEnterMode:', settings.workflowEnterMode);
 
                 // 调用原始方法
-                const result = await originalLoadGraphData.apply(this, arguments);
+                const result = await originalAppLoadGraphData.apply(this, arguments);
 
                 // 根据主工作流进入模式决定是否执行适应视图
                 if (settings.workflowEnterMode !== "Never") {
@@ -839,6 +916,8 @@ app.registerExtension({
                 return result;
             };
         }
+
+        workflowHooksInstalled = true;
     }
 });
 

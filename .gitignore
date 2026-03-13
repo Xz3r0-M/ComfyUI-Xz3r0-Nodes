@@ -218,3 +218,4 @@ ruff.toml
 .codex/
 .agents/
 AGENTS.md
+检验/

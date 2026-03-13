@@ -280,7 +280,7 @@
   },
   "XAudioSave": {
     "display_name": "XAudioSave",
-    "description": "Audio saving node with WAV lossless format, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
+    "description": "Audio saving node with WAV/FLAC lossless output, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
     "inputs": {
       "audio": {
         "name": "AUDIO",
@@ -293,6 +293,14 @@
       "subfolder": {
         "name": "Subfolder",
         "tooltip": "Subfolder name (no path separators allowed), supports datetime placeholders: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "format": {
+        "name": "Output Format",
+        "tooltip": "Output file format. WAV keeps float32 master output but does not reliably preserve custom workflow metadata on the current FFmpeg path; FLAC uses lossless compression and supports workflow metadata embedding.",
+        "options": {
+          "WAV": "WAV",
+          "FLAC": "FLAC"
+        }
       },
       "sample_rate": {
         "name": "Sample Rate",
@@ -613,6 +621,14 @@
           "slow": "slow",
           "slower": "slower",
           "veryslow": "veryslow"
+        }
+      },
+      "container": {
+        "name": "Container",
+        "tooltip": "Output container format. MKV prioritizes lossless compatibility; MP4 prioritizes ComfyUI web metadata compatibility.",
+        "options": {
+          "MKV": "MKV",
+          "MP4": "MP4"
         }
       }
     }

@@ -8,12 +8,13 @@
 import os
 import shutil
 import tempfile
+import json
 from pathlib import Path
 
 import comfy.utils
 import ffmpeg
 import torch
-from comfy_api.latest import Input, io, ui
+from comfy_api.latest import Input, InputImpl, Types, io, ui
 
 try:
     from ..xz3r0_utils import (
@@ -144,6 +145,20 @@ class XVideoSave(io.ComfyNode):
                         "take longer."
                     ),
                 ),
+                io.Combo.Input(
+                    "container",
+                    options=["MKV", "MP4"],
+                    default="MP4",
+                    tooltip=(
+                        "Output container format. MKV prioritizes "
+                        "lossless compatibility. MP4 prioritizes "
+                        "ComfyUI web metadata compatibility."
+                    ),
+                ),
+            ],
+            hidden=[
+                io.Hidden.prompt,
+                io.Hidden.extra_pnginfo,
             ],
         )
 
@@ -155,6 +170,7 @@ class XVideoSave(io.ComfyNode):
         subfolder: str,
         crf: int,
         preset: str,
+        container: str,
     ) -> io.NodeOutput:
         """
         保存视频到ComfyUI输出目录
@@ -171,6 +187,20 @@ class XVideoSave(io.ComfyNode):
             io.NodeOutput: 包含视频预览的输出
         """
         normalized_crf = cls._normalize_crf(crf)
+        prompt = cls.hidden.prompt if hasattr(cls.hidden, "prompt") else None
+        extra_pnginfo = (
+            cls.hidden.extra_pnginfo
+            if hasattr(cls.hidden, "extra_pnginfo")
+            else None
+        )
+        metadata = cls._generate_metadata(prompt, extra_pnginfo)
+        metadata_for_official = cls._generate_metadata(
+            prompt,
+            extra_pnginfo,
+            to_json=False,
+        )
+        normalized_container = container.upper()
+        extension = ".mkv" if normalized_container == "MKV" else ".mp4"
 
         # 获取视频组件
         components = video.get_components()
@@ -206,7 +236,7 @@ class XVideoSave(io.ComfyNode):
         final_filename = ensure_unique_filename(
             save_dir,
             safe_filename_prefix,
-            ".mkv",
+            extension,
         )
         save_path = resolve_output_subpath(
             output_dir,
@@ -229,16 +259,51 @@ class XVideoSave(io.ComfyNode):
             )
 
             if temp_audio_path:
-                cls._mux_video_and_audio(
-                    temp_video_path=temp_video_path,
-                    temp_audio_path=temp_audio_path,
-                    save_path=save_path,
-                )
+                if normalized_container == "MP4":
+                    temp_muxed_path = cls._mux_video_and_audio_to_temp(
+                        temp_video_path=temp_video_path,
+                        temp_audio_path=temp_audio_path,
+                    )
+                    try:
+                        cls._save_mp4_with_official_api(
+                            source_path=temp_muxed_path,
+                            save_path=save_path,
+                            metadata=metadata_for_official,
+                        )
+                    finally:
+                        if os.path.exists(temp_muxed_path):
+                            try:
+                                os.unlink(temp_muxed_path)
+                            except OSError:
+                                pass
+                else:
+                    cls._mux_video_and_audio(
+                        temp_video_path=temp_video_path,
+                        temp_audio_path=temp_audio_path,
+                        save_path=save_path,
+                        metadata=metadata,
+                    )
             else:
-                try:
-                    shutil.move(temp_video_path, save_path)
-                except OSError as exc:
-                    raise RuntimeError(cls.WRITE_VIDEO_ERROR) from exc
+                if normalized_container == "MP4":
+                    cls._save_mp4_with_official_api(
+                        source_path=temp_video_path,
+                        save_path=save_path,
+                        metadata=metadata_for_official,
+                    )
+                else:
+                    if metadata:
+                        cls._write_video_with_metadata(
+                            temp_video_path=temp_video_path,
+                            save_path=save_path,
+                            metadata=metadata,
+                        )
+                    else:
+                        try:
+                            shutil.move(temp_video_path, save_path)
+                        except OSError as exc:
+                            raise RuntimeError(
+                                cls.WRITE_VIDEO_ERROR
+                            ) from exc
         finally:
             for path_str in [temp_audio_path, temp_video_path]:
                 if path_str and os.path.exists(path_str):
@@ -340,6 +405,7 @@ class XVideoSave(io.ComfyNode):
         subfolder,
         crf,
         preset,
+        container,
     ):
         """
         在执行前校验 CRF，防止外部节点传入非法值。
@@ -348,6 +414,8 @@ class XVideoSave(io.ComfyNode):
             cls._normalize_crf(crf)
         except ValueError as exc:
             return str(exc)
+        if container not in ("MKV", "MP4"):
+            return "container must be either MKV or MP4"
         return True
 
     @classmethod
@@ -439,10 +507,50 @@ class XVideoSave(io.ComfyNode):
         temp_video_path: str,
         temp_audio_path: str,
         save_path: Path,
+        metadata: dict | None = None,
     ) -> None:
         """
         合并临时视频和临时音频到最终输出文件。
         """
+        video_input = ffmpeg.input(temp_video_path)
+        audio_input = ffmpeg.input(temp_audio_path)
+        output_kwargs = {
+            "vcodec": "copy",
+            "acodec": "copy",
+            "movflags": "faststart",
+            **{"loglevel": "quiet"},
+        }
+        output_kwargs.update(
+            cls._build_ffmpeg_metadata_options(metadata)
+        )
+        try:
+            (
+                ffmpeg.output(
+                    video_input,
+                    audio_input,
+                    str(save_path),
+                    **output_kwargs,
+                )
+                .overwrite_output()
+                .run()
+            )
+        except (ffmpeg.Error, OSError):
+            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
+
+    @classmethod
+    def _mux_video_and_audio_to_temp(
+        cls,
+        temp_video_path: str,
+        temp_audio_path: str,
+    ) -> str:
+        """
+        先合并视频和音频到临时文件，供官方 API 二次写入元数据。
+        """
+        with tempfile.NamedTemporaryFile(
+            suffix=".mkv", delete=False
+        ) as temp_muxed:
+            temp_muxed_path = temp_muxed.name
+
         video_input = ffmpeg.input(temp_video_path)
         audio_input = ffmpeg.input(temp_audio_path)
         try:
@@ -450,7 +558,7 @@ class XVideoSave(io.ComfyNode):
                 ffmpeg.output(
                     video_input,
                     audio_input,
-                    str(save_path),
+                    temp_muxed_path,
                     vcodec="copy",
                     acodec="copy",
                     movflags="faststart",
@@ -459,8 +567,107 @@ class XVideoSave(io.ComfyNode):
                 .overwrite_output()
                 .run()
             )
+            return temp_muxed_path
+        except (ffmpeg.Error, OSError):
+            if os.path.exists(temp_muxed_path):
+                try:
+                    os.unlink(temp_muxed_path)
+                except OSError:
+                    pass
+            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
+
+    @classmethod
+    def _save_mp4_with_official_api(
+        cls,
+        source_path: str,
+        save_path: Path,
+        metadata: dict | None = None,
+    ) -> None:
+        """
+        使用官方 Video API 写 MP4，确保主界面读取 metadata 行为一致。
+        """
+        try:
+            video = InputImpl.VideoFromFile(source_path)
+            video.save_to(
+                str(save_path),
+                format=Types.VideoContainer.MP4,
+                codec=Types.VideoCodec.AUTO,
+                metadata=metadata,
+            )
+        except (OSError, RuntimeError, ValueError):
+            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
+
+    @classmethod
+    def _write_video_with_metadata(
+        cls,
+        temp_video_path: str,
+        save_path: Path,
+        metadata: dict | None = None,
+    ) -> None:
+        """
+        无音频时通过 FFmpeg 复制并写入元数据。
+        """
+        video_input = ffmpeg.input(temp_video_path)
+        output_kwargs = {
+            "vcodec": "copy",
+            "movflags": "faststart",
+            **{"loglevel": "quiet"},
+        }
+        output_kwargs.update(
+            cls._build_ffmpeg_metadata_options(metadata)
+        )
+        try:
+            (
+                ffmpeg.output(
+                    video_input,
+                    str(save_path),
+                    **output_kwargs,
+                )
+                .overwrite_output()
+                .run()
+            )
         except (ffmpeg.Error, OSError):
             raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
+
+    @classmethod
+    def _generate_metadata(
+        cls,
+        prompt,
+        extra_pnginfo,
+        to_json: bool = True,
+    ):
+        """
+        生成用于视频容器写入的工作流元数据。
+        """
+        if prompt is None and extra_pnginfo is None:
+            return None
+
+        metadata = {}
+        if prompt is not None:
+            metadata["prompt"] = (
+                json.dumps(prompt) if to_json else prompt
+            )
+        if extra_pnginfo is not None:
+            for key, value in extra_pnginfo.items():
+                metadata[key] = (
+                    json.dumps(value) if to_json else value
+                )
+        return metadata
+
+    @classmethod
+    def _build_ffmpeg_metadata_options(
+        cls, metadata: dict | None
+    ) -> dict[str, str]:
+        """
+        将元数据转换为 FFmpeg 可识别的 metadata 参数。
+        """
+        if not metadata:
+            return {}
+
+        options = {}
+        for index, (key, value) in enumerate(metadata.items()):
+            options[f"metadata:g:{index}"] = f"{key}={value}"
+        return options
 
     @classmethod
     def _get_output_directory(cls) -> Path:

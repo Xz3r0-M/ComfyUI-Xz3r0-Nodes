@@ -3,6 +3,11 @@
 ## 🎉 v1.6.0
 <details>
 
+### ⚠️ 注意
+- 本次 `1.6.0` 版本更新为本项目至今改动最多的更新, 有些改动我可能记不起来加到更新日志中了
+- 如果发现问题请进入 Github 主页的 Issues 提交反馈
+
+
 ### 1. ⭐ 新增 `XAnyToString` 任意数据转换为字符串节点
 - 任意数据的输入与透传输出端口 和 转换为字符串的输出端口
 - 我知道大多数人都在使用的那些知名自定义节点库几乎都有这个功能的节点, 但是我的节点库没有, 所以我就是要重新造轮子!😈
@@ -31,6 +36,27 @@
     - 经过再次思考, 我认为这个模式在节点已经有了数据更加完整的 `Prompt+FullWorkflow` 保存模式的情况下有些多余
 - 将 `Standard` 保存模式名称改为 `Native` (原生)
     - 原生模式所保存 JSON 的元数据 (Prompt + Workflow 字段) 与官方的保存图片节点所保存到图片中的元数据一致 (`XImageSave` 和 `XLatentSave` 节点保存的元数据也是一致的)
+
+### 5. 增强 `XAudioSave` 音频保存节点
+- 新增 `FLAC` 无损文件保存格式
+    - `FLAC` 格式支持工作流元数据嵌入, 支持直接拖入 ComfyUI 网页界面读取工作流
+        - `WAV` 格式并不支持工作流元数据嵌入, 虽然两个音频格式都是无损类, 但 `WAV` 格式是精度更高的 32位浮点 所以音频质量会更高些 (虽然对于绝大多数人来说和 `FLAC` 没区别)
+- 新增选择音频格式的下拉菜单:
+    - `WAV`
+    - `FLAC` (默认)
+
+### 6. 增强 `XVideoSave` 视频保存节点
+- 新增 `MP4` 文件保存格式
+    - `MP4` 格式支持工作流元数据嵌入, 支持直接拖入 ComfyUI 网页界面读取工作流
+        - 虽然 `MP4` 支持拖入网页界面读取工作流, 但是 `MP4` 格式对无损和音频合并的兼容性没有 `MKV` 格式好
+        - 虽然 `MKV` 是无损和音频合并兼容性最佳的格式, 但是由于该格式在嵌入工作流元数据时, 元数据的键名会被强制改为大写 (PROMPT/WORKFLOW), 而 ComfyUI 网页界面只会读 (Prompt/Workflow) 的元数据键名, 所以即使 `MKV` 格式被嵌入了工作流元数据也无法拖入到 ComfyUI 网页界面加载工作流
+- 新增选择音频格式的下拉菜单:
+    - `MKV`
+    - `MP4` (默认)
+        - 如果因为 `MP4` 的兼容性遇到报错可以选择 `MKV` (但是就不支持加载工作流了. 无论选什么格式都有问题, 头痛😕)
+
+
+
 
 ### 5. 🛠️ 增强 `XMetadataWorkflow` 工作流元数据可视化查看网页工具
 - 将原来工具内部解析多种不同文件和不同元数据格式的单一实现方式, 改为独立分开的元数据解析模式
@@ -64,123 +90,10 @@
     - type
 - 额外的可选键并不是必须数据, 无论是基础数据还是可选数据都是上游生成 Latent 的节点负责的, 如果生成的 Latent 不符合规范, 这属于是上游节点的问题, 并不是 `XLatentSave` 和 `XLatentLoad` 的责任
 
-### 8. 🛠️ 所有节点迁移至V3 API
-- 这不会影响节点原本的功能
-    - 除非迁移的过程中搞错了什么
-- 所有节点经过了简单的测试 (我希望没有问题)
-
----
-
-### 1. ⭐ Added `XAnyToString` Any Data to String Node
-- Includes an input port for any data, a passthrough output port, and an
-  output port that converts the input into a string
-- I know most of those well-known custom node packs already have a node like
-  this, but my node pack did not, so I decided to reinvent the wheel!😈
-- The `XMath` node's A/B input ports can already accept integers and floats
-  and output integers and floats. With this new node added, there are now
-  nodes for converting among the 3 main data types:
-  integer/float/string 😌
-
-### 2. ⭐ Added `XMarkdownSave` Markdown File Save Node
-- Saves string content as a Markdown format file
-- Header / Main / Footer string text input boxes
-- Optional Header / Main / Footer string input ports that can be used with
-  priority
-- Separator mode between Header / Main / Footer content
-  (default: `none`, no line break):
-    - `none`: No separator, content is directly joined
-    - `newline`: Line break (`\n`)
-- Number of line breaks when using `newline` separator
-  (default: `1`)
-- Output ports for the string content and file save path
-- Supports date identifiers in filenames and subfolder names
-
-### 3. 🛠️ Enhanced and Adjusted `XImageResize` Image Resize Node
-- Removed the megapixel limit protection for Long / Short edge modes
-    - After thinking it over again, I feel this protection became somewhat
-      redundant now that the node already has a dedicated `Megapixels`
-      scaling mode
-- Changed the megapixel input range to `0.1-100` (default: `1.0`)
-- Renamed the output port to `Processed_Images`
-- Aligned with official image scaling behavior by using one unified target
-  size for the whole batch
-- Narrowed the node responsibility to image-only scaling
-    - For mask scaling and image+mask merge, users should compose official
-      mask split/join nodes in the workflow
-
-### 4. 🪛 Adjusted `XWorkflowSave` Workflow Metadata JSON Save Node
-- Removed `FullWorkflow` save mode
-    - After thinking it over again, I feel this mode became somewhat
-      redundant now that the node already has the more complete
-      `Prompt+FullWorkflow` save mode
-- Renamed `Standard` save mode to `Native`
-    - The metadata JSON saved in Native mode
-      (Prompt + Workflow fields) matches the metadata saved into images by
-      ComfyUI's official image save nodes
-      (`XImageSave` and `XLatentSave` save the same metadata too)
-
-### 5. 🛠️ Enhanced `XMetadataWorkflow` Workflow Metadata Visualization
-### Web Tool
-- Replaced the previous single internal implementation that parsed many
-  different file types and metadata formats with separate metadata parsing
-  modes
-    - Splitting parsing into separate modes will greatly reduce maintenance
-      difficulty in the future, but it also lowers ease of use because it is
-      no longer fully automatic like before
-- Added metadata parsing mode selection buttons at the top of the web tool
-  view (default: `Native`)
-    - `📋 Native`: Parses only based on the Workflow field in metadata
-    - `🔗 Native (Merged)`: Merges and parses based on both Prompt and
-      Workflow fields in metadata
-    - `🔗 P+FW`: Prompt + Full Workflow mode, merges and parses based on both
-      Prompt and Full Workflow fields in metadata
-        - This mode is specifically used to parse JSON saved by
-          `XWorkflowSave` in `Prompt+FullWorkflow` mode
-- Added `💾 Convert XWorkflowSave JSON` conversion feature to convert JSON
-  saved by `XWorkflowSave` into a format that can be loaded by the ComfyUI
-  web interface
-    - The JSON saved by the node contains nested structures, so it cannot be
-      loaded directly by the ComfyUI web interface. That nesting exists so
-      the web tool can distinguish which part belongs to Prompt and which
-      part belongs to (Full)Workflow. This conversion feature removes that
-      nesting
-    - Please note that once the nesting is removed through conversion, the
-      JSON can only be parsed with `Native` mode
-- Added a 🔄️ reset webpage button
-    - The button is located at the top-right corner of the web tool view
-
-### 6. 🛠️ Enhanced `XFitView` Web Extension
-- Fit View now supports Subgraph pages
-    - Separate Fit View options for entering / leaving workflows and
-      subgraphs have been added to the ComfyUI settings page
-
-### 7. 🛠️ Enhanced `XLatentSave` and `XLatentLoad` Latent Processing Nodes
-- Added internal basic Latent validation to verify whether acquired or
-  loaded Latent data conforms to ComfyUI standards
-    - Basic Latent validation:
-        - Type validation: must be a dictionary (`dict`)
-        - Key validation: must contain the `"samples"` key
-        - Tensor validation: `samples` must be a `torch.Tensor`
-        - Dimension validation: `samples` must be 4D `[B,C,H,W]` or 5D
-          `[B,C,T,H,W]`
-    - Compatible with all standard 4D or 5D ComfyUI Latent types, including
-      image, audio, 3D, video, inpaint, batch processing, and more
-- When `XLatentSave` and `XLatentLoad` obtain and process Latent data, they
-  do not validate whether additional optional keys on the Latent conform to
-  standards, for example:
-    - `noise_mask`
-    - `batch_index`
-    - `type`
-- Extra optional keys are not required data. Whether it is the base data or
-  optional data, the upstream node that generates the Latent is responsible
-  for it. If the generated Latent does not conform to the standard, that is
-  an upstream node issue, not the responsibility of `XLatentSave` and
-  `XLatentLoad`
-
-### 8. 🛠️ Migrated All Nodes to the V3 API
-- This does not affect the nodes' original functionality
-    - Unless I messed something up during the migration
-- All nodes have gone through simple testing (I hope there are no issues)
+### 8. 🛠️增强和调整 所有节点和网页扩展
+- 所有节点迁移至V3 API
+    -不会影响节点原本的功能, 除非迁移的过程中搞错了什么
+- 所有节点和网页扩展进行了代码优化和修复Bug (然后引入新的Bug🤣)
 </details>
 
 ---

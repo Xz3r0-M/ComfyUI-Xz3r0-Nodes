@@ -99,8 +99,8 @@ let windowEnabled = true;
 function updateMenuButtonVisibility() {
     if (!menuButton) return;
     menuButton.element.style.display = windowEnabled ? "" : "none";
-    if (!windowEnabled && window.XFloatingWindow?.instance?.isVisible) {
-        window.XFloatingWindow.instance.hide();
+    if (!windowEnabled && XFloatingWindow.instance?.isVisible) {
+        XFloatingWindow.instance.hide();
     }
 }
 
@@ -521,6 +521,71 @@ const XFloatingWindow = {
         // 最大化状态变量
         let isMaximized = false;
         let preMaximizeState = null;
+        let isAltPressed = false;
+
+        /**
+         * 保存窗口状态
+         */
+        const persistWindowState = () => {
+            XFloatingWindow.saveState({
+                left: windowEl.style.left,
+                top: windowEl.style.top,
+                width: windowEl.style.width,
+                height: windowEl.style.height
+            });
+        };
+
+        /**
+         * 结束拖拽状态并按需保存
+         * @param {boolean} shouldSave - 是否保存窗口状态
+         */
+        const stopDragging = (shouldSave = false) => {
+            if (!isDragging) return;
+
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+            }
+
+            if (hasDragStarted) {
+                updatePosition(pendingX, pendingY);
+                if (shouldSave) {
+                    persistWindowState();
+                }
+            }
+
+            header.classList.remove("dragging");
+            document.body.classList.remove("xz3r0-dragging");
+            document.body.style.userSelect = "";
+            isDragging = false;
+            hasDragStarted = false;
+        };
+
+        /**
+         * 结束拉伸状态并按需保存
+         * @param {boolean} shouldSave - 是否保存窗口状态
+         */
+        const stopResizing = (shouldSave = false) => {
+            if (!isResizing) return;
+
+            isResizing = false;
+            resizeDirection = "";
+            document.body.classList.remove("xz3r0-resizing");
+            document.body.style.userSelect = "";
+
+            if (shouldSave) {
+                persistWindowState();
+            }
+        };
+
+        /**
+         * 重置交互状态，避免残留
+         * @param {boolean} shouldSave - 是否保存窗口状态
+         */
+        const resetInteractionState = (shouldSave = false) => {
+            stopDragging(shouldSave);
+            stopResizing(shouldSave);
+        };
 
         /**
          * 最大化窗口
@@ -578,6 +643,15 @@ const XFloatingWindow = {
             } else {
                 maximizeWindow();
             }
+        };
+
+        /**
+         * 窗口尺寸变化时保持最大化窗口贴合视口
+         */
+        const handleWindowResize = () => {
+            if (!isMaximized) return;
+            windowEl.style.width = `${window.innerWidth}px`;
+            windowEl.style.height = `${window.innerHeight}px`;
         };
 
         /**
@@ -699,51 +773,14 @@ const XFloatingWindow = {
          * 确保一旦鼠标左键松开就立即重置所有状态
          */
         const handleMouseUp = () => {
-            // 处理拖拽状态
-            if (isDragging) {
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = null;
-                }
-
-                if (hasDragStarted) {
-                    updatePosition(pendingX, pendingY);
-                    XFloatingWindow.saveState({
-                        left: windowEl.style.left,
-                        top: windowEl.style.top,
-                        width: windowEl.style.width,
-                        height: windowEl.style.height
-                    });
-                }
-
-                header.classList.remove("dragging");
-                document.body.classList.remove("xz3r0-dragging");
-                document.body.style.userSelect = "";
-            }
-
-            // 处理拉伸状态 - 确保鼠标松开时立即重置
-            if (isResizing) {
-                isResizing = false;
-                resizeDirection = '';
-                document.body.classList.remove("xz3r0-resizing");
-                document.body.style.userSelect = "";
-
-                // 保存状态
-                XFloatingWindow.saveState({
-                    left: windowEl.style.left,
-                    top: windowEl.style.top,
-                    width: windowEl.style.width,
-                    height: windowEl.style.height
-                });
-            }
-
-            isDragging = false;
-            hasDragStarted = false;
+            // 鼠标松开时统一结束拖拽/拉伸并保存状态
+            resetInteractionState(true);
         };
 
         // 绑定全局鼠标事件 - 使用 pointer 事件以支持 setPointerCapture
         document.addEventListener("pointermove", handleMouseMove);
         document.addEventListener("pointerup", handleMouseUp);
+        window.addEventListener("resize", handleWindowResize);
 
         // 标题栏拖拽事件 - 使用 pointer 事件保持一致性
         header.addEventListener("pointerdown", (e) => {
@@ -769,29 +806,7 @@ const XFloatingWindow = {
 
         // 当失去指针捕获时（如鼠标松开），重置拖拽状态
         header.addEventListener('lostpointercapture', () => {
-            if (isDragging) {
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = null;
-                }
-
-                if (hasDragStarted) {
-                    updatePosition(pendingX, pendingY);
-                    XFloatingWindow.saveState({
-                        left: windowEl.style.left,
-                        top: windowEl.style.top,
-                        width: windowEl.style.width,
-                        height: windowEl.style.height
-                    });
-                }
-
-                header.classList.remove("dragging");
-                document.body.classList.remove("xz3r0-dragging");
-                document.body.style.userSelect = "";
-
-                isDragging = false;
-                hasDragStarted = false;
-            }
+            stopDragging(true);
         });
 
         // 当鼠标移入标题栏时，检查鼠标左键是否真正按下
@@ -799,45 +814,39 @@ const XFloatingWindow = {
         header.addEventListener('pointerenter', (e) => {
             // 如果处于拖拽状态但鼠标左键未按下，则重置状态
             if (isDragging && (e.buttons & 1) === 0) {
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = null;
-                }
-                header.classList.remove("dragging");
-                document.body.classList.remove("xz3r0-dragging");
-                document.body.style.userSelect = "";
-                isDragging = false;
-                hasDragStarted = false;
+                stopDragging(false);
             }
         });
 
         // Alt + 鼠标左键拖动窗口（在窗口任意位置）
         // 通过监听 keydown/keyup 来检测 Alt 键状态，并控制 iframe 的 pointer-events
-        let isAltPressed = false;
-
-        document.addEventListener('keydown', (e) => {
+        const handleKeyDown = (e) => {
             if (e.key === 'Alt' && !isAltPressed) {
                 isAltPressed = true;
                 // 禁用 iframe 的鼠标事件，让事件能够传递到父窗口
                 iframe.style.pointerEvents = 'none';
             }
-        });
+        };
 
-        document.addEventListener('keyup', (e) => {
+        const handleKeyUp = (e) => {
             if (e.key === 'Alt' && isAltPressed) {
                 isAltPressed = false;
                 // 恢复 iframe 的鼠标事件
                 iframe.style.pointerEvents = 'auto';
             }
-        });
+        };
 
         // 当窗口失去焦点时，重置 Alt 状态
-        window.addEventListener('blur', () => {
+        const handleWindowBlur = () => {
             if (isAltPressed) {
                 isAltPressed = false;
                 iframe.style.pointerEvents = 'auto';
             }
-        });
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('blur', handleWindowBlur);
 
         windowEl.addEventListener('pointerdown', (e) => {
             // 检查是否按住 Alt 键且是左键点击
@@ -864,27 +873,7 @@ const XFloatingWindow = {
 
         // 当失去指针捕获时，重置 Alt+拖拽状态
         windowEl.addEventListener('lostpointercapture', () => {
-            if (isDragging) {
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = null;
-                }
-
-                if (hasDragStarted) {
-                    updatePosition(pendingX, pendingY);
-                    XFloatingWindow.saveState({
-                        left: windowEl.style.left,
-                        top: windowEl.style.top,
-                        width: windowEl.style.width,
-                        height: windowEl.style.height
-                    });
-                }
-
-                document.body.classList.remove("xz3r0-dragging");
-                document.body.style.userSelect = "";
-                isDragging = false;
-                hasDragStarted = false;
-            }
+            stopDragging(true);
         });
 
         // 拉伸手柄事件 - 使用 pointer 事件确保捕获能正常工作
@@ -914,20 +903,7 @@ const XFloatingWindow = {
 
             // 当失去指针捕获时（如鼠标松开），重置拉伸状态
             handle.addEventListener('lostpointercapture', () => {
-                if (isResizing) {
-                    isResizing = false;
-                    resizeDirection = '';
-                    document.body.classList.remove("xz3r0-resizing");
-                    document.body.style.userSelect = "";
-
-                    // 保存状态
-                    XFloatingWindow.saveState({
-                        left: windowEl.style.left,
-                        top: windowEl.style.top,
-                        width: windowEl.style.width,
-                        height: windowEl.style.height
-                    });
-                }
+                stopResizing(true);
             });
         });
 
@@ -937,10 +913,7 @@ const XFloatingWindow = {
             handle.addEventListener('pointerenter', (e) => {
                 // 如果处于拉伸状态但鼠标左键未按下，则重置状态
                 if (isResizing && (e.buttons & 1) === 0) {
-                    isResizing = false;
-                    resizeDirection = '';
-                    document.body.classList.remove("xz3r0-resizing");
-                    document.body.style.userSelect = "";
+                    stopResizing(false);
                 }
             });
         });
@@ -975,12 +948,15 @@ const XFloatingWindow = {
              * 移除事件监听和 DOM 元素，清理资源
              */
             destroy() {
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                }
-
+                resetInteractionState(false);
+                isAltPressed = false;
+                iframe.style.pointerEvents = "auto";
                 document.removeEventListener("pointermove", handleMouseMove);
                 document.removeEventListener("pointerup", handleMouseUp);
+                document.removeEventListener("keydown", handleKeyDown);
+                document.removeEventListener("keyup", handleKeyUp);
+                window.removeEventListener("blur", handleWindowBlur);
+                window.removeEventListener("resize", handleWindowResize);
                 windowEl.remove();
                 XFloatingWindow.instance = null;
             }

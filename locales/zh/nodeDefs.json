@@ -280,7 +280,7 @@
   },
   "XAudioSave": {
     "display_name": "XAudioSave",
-    "description": "音频保存节点，使用WAV无损格式，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",
+    "description": "音频保存节点，支持WAV/FLAC无损导出，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",
     "inputs": {
       "audio": {
         "name": "音频",
@@ -293,6 +293,14 @@
       "subfolder": {
         "name": "子文件夹",
         "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+      },
+      "format": {
+        "name": "输出格式",
+        "tooltip": "输出文件格式。WAV 保持 float32 母版输出，但在当前 FFmpeg 路径下无法稳定保留自定义工作流元数据；FLAC 使用无损压缩并支持工作流元数据嵌入。",
+        "options": {
+          "WAV": "WAV",
+          "FLAC": "FLAC"
+        }
       },
       "sample_rate": {
         "name": "采样率",
@@ -613,6 +621,14 @@
           "slow": "慢",
           "slower": "较慢",
           "veryslow": "很慢"
+        }
+      },
+      "container": {
+        "name": "封装格式",
+        "tooltip": "输出封装格式。MKV 优先无损兼容性；MP4 优先 ComfyUI 网页元数据兼容性。",
+        "options": {
+          "MKV": "MKV",
+          "MP4": "MP4"
         }
       }
     }
