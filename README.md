@@ -328,11 +328,15 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 
 `♾️ Xz3r0/File-Processing`
 
-音频保存节点，使用 WAV 无损格式保存音频，支持压缩和 LUFS 标准化以及峰值限制
+音频保存节点，支持 WAV/FLAC 无损格式保存音频，支持压缩和
+LUFS 标准化以及峰值限制
 
 **功能**:
 - 保存音频到 ComfyUI 默认输出目录
-- WAV 无损格式 (PCM 32-bit float)
+- 输出格式下拉菜单（默认：`FLAC`）
+  - `WAV`: 无损格式 (PCM 32-bit float)
+  - `FLAC`: 无损压缩格式，支持嵌入工作流元数据
+- `WAV` 无法嵌入工作流元数据
 - 支持多种采样率 (44.1kHz, 48kHz, 96kHz, 192kHz)
 - 可以使用压缩器 (acompressor 滤镜，三种预设：快速/平衡/缓慢)
 - 支持自定义压缩比 (1.0-20.0)
@@ -365,6 +369,7 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 - `audio` (AUDIO): 音频对象 (包含波形和采样率)
 - `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
 - `subfolder` (STRING): 子文件夹名称 (默认：`Audio`)
+- `format` (STRING): 输出格式 (默认：`FLAC`，可选：WAV, FLAC)
 - `sample_rate` (STRING): 采样率 (默认：`48000`，可选：44100, 48000, 96000, 192000)
 - `target_lufs` (FLOAT): 目标LUFS值 (默认：`-14.1`，范围-70.0到0.0，-70禁用)
 - `enable_peak_limiter` (BOOLEAN): 是否启用峰值限制 (默认：True)
@@ -672,7 +677,9 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 视频保存节点，使用 FFmpeg 将图像序列保存为视频
 
 **功能**:
-- 使用 FFmpeg 将视频对象保存为 MKV 格式视频
+- 支持容器格式下拉菜单（默认：`MP4`）
+  - `MKV`: 优先兼容无损与音频合并场景
+  - `MP4`: 优先兼容 ComfyUI 网页端工作流元数据读取
 - H.265/HEVC 编码，yuv444p10le 像素格式
 - FPS 从视频对象自动获取 (由官方的 CreateVideo 创建视频节点设置)
 - 音频支持 (自动从视频对象获取)
@@ -687,8 +694,9 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - `video` (VIDEO): 视频对象 (包含图像序列、音频和帧率)
 - `filename_prefix` (STRING): 文件名前缀 (默认：`ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%`)
 - `subfolder` (STRING): 子文件夹名称 (默认：`Videos`)
-- `crf` (FLOAT): 质量参数 (默认：`0.0`，范围0-40，0为无损，40为最差质量)
+- `crf` (INT): 质量参数 (默认：`0`，范围0-40，0为无损，40为最差质量)
 - `preset` (STRING): 编码预设 (默认：`medium`，可选：ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
+- `container` (STRING): 容器格式 (默认：`MP4`，可选：MKV, MP4)
 
 **输出**:
 - 视频预览 (显示保存的视频)
@@ -698,7 +706,7 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - pix_fmt: yuv444p10le (10位YUV 4:4:4 采样)
 - crf: 可配置 (0=无损，40=最差质量)
 - preset: 可配置 (ultrafast 到 veryslow)
-- 容器格式: MKV
+- 容器格式: MKV 或 MP4（默认：MP4）
 </details>
 
 ### XWorkflowSave - 📄 JSON工作流元数据保存
