@@ -27,7 +27,7 @@ ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标
 
 ### ✨ 当前项目节点和工具数量
 
-🎁 自定义节点（数量总计：`13`）
+🎁 自定义节点（数量总计：`14`）
 
 🧩 网页扩展与工具（数量总计：`4`）
 
@@ -167,6 +167,59 @@ prefix="Image_",
 format_template="%Y%-%m%-%d%_%H%-%M%-%S%",
 suffix="_v1"
 输出："Image_2026-02-21_14-30-52_v1"
+```
+</details>
+
+<details>
+<summary><strong> XKleinRefConditioning </strong> | 🧠 FLUX.2-klein 参考条件链路合并</summary>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+FLUX.2-klein 工作流的参考条件链路节点，用来把多张参考图自动编码并同时追加到
+正面条件与负面条件两条链路。
+
+**这个节点是做什么的**:
+- 你不需要为参考图手动重复搭建多组 `VAE Encode + ReferenceLatent` 了
+- 只要把参考图接进来，节点会自动按顺序处理并追加到正负条件
+- 适合在 文生图/单图/多图 来回切换时保持工作流结构便捷和稳定
+- 没有输入参考图时正面和负面条件会直接透传，即文生图模式
+
+**功能**:
+- 支持 `image_1` 到 `image_4` 四个可选参考图输入
+- 只处理实际连接的图片输入口
+- 每张图编码一次，同时追加到正面与负面条件
+- 没有接参考图时，正负条件原样透传
+- 缺少正面或负面条件时抛出英文错误提示
+
+**输入**:
+- `positive_conditioning` (CONDITIONING): 正面条件输入
+- `negative_conditioning` (CONDITIONING): 负面条件输入
+- `vae` (VAE): 用于把参考图编码为 latent 的 VAE
+- `image_1` (IMAGE, 可选): 参考图 1
+- `image_2` (IMAGE, 可选): 参考图 2
+- `image_3` (IMAGE, 可选): 参考图 3
+- `image_4` (IMAGE, 可选): 参考图 4
+
+**输出**:
+- `positive_conditioning` (CONDITIONING): 已追加参考信息的正面条件
+- `negative_conditioning` (CONDITIONING): 已追加参考信息的负面条件
+
+**多图传递逻辑**:
+1. 按顺序检查 `image_1 -> image_2 -> image_3 -> image_4`
+2. 对每张已连接图片执行一次 VAE 编码
+3. 将该图片的 latent 同时追加到正面和负面条件链
+4. 重复直到所有已连接图片处理完成
+
+**使用示例**:
+```
+输入:
+positive_conditioning = P
+negative_conditioning = N
+image_1, image_3 已连接（image_2, image_4 未连接）
+
+输出:
+positive_out = P + ref(image_1) + ref(image_3)
+negative_out = N + ref(image_1) + ref(image_3)
 ```
 </details>
 

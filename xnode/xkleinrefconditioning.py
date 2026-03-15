@@ -1,9 +1,9 @@
 """
-Klein 参考 Conditioning 自动处理节点
+FLUX.2-klein 参考 Conditioning 自动处理节点
 ===================================
 
 该节点把多张参考图的编码与参考 conditioning 追加合并到一个节点里，
-用于简化 Flux/Klein 多图编辑工作流的搭建。
+用于简化 FLUX.2-klein 多图编辑工作流的搭建。
 """
 
 import torch
