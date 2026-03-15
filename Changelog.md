@@ -19,6 +19,10 @@
 - 缩放条件仅作用于 `Long` / `Short` / `Megapixels` 长边/短边/百万像素 模式
     - 当条件不满足时，会跳过缩放，但整除与偏移仍会继续执行
 
+### 3. 🪛 调整 节点注册 (加载)
+- 移除原先在 ComfyUI 启动时控制台的相关输出信息
+- 现在只有额外依赖 (比如 FFmpeg) 在用户的电脑 (系统环境 PATH) 中检测不到时才会在 ComfyUI 控制台中提示
+
 ---
 
 ### 1. ⭐ Added `XKleinRefConditioning` FLUX.2-klein Reference Conditioning Auto-Processing Node
@@ -40,6 +44,12 @@
 - Resize conditions apply only to `Long` / `Short` / `Megapixels` modes.
     - When the condition is not met, resizing is skipped, but divisibility
       adjustment and offset are still applied.
+
+### 3. 🪛 Adjusted Node Registration (Loading)
+- Removed the related console output messages that previously appeared when
+  ComfyUI starts.
+- Now, messages are shown in the ComfyUI console only when extra dependencies
+  (such as FFmpeg) are not detected on the user's system PATH.
 </details>
 
 ---
