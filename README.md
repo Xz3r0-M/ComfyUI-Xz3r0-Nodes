@@ -479,7 +479,7 @@ LUFS 标准化以及峰值限制
 - `edge_mode="Scale Multiplier"` 时，使用 `scale_multiplier` 作为缩放倍率
 - `resize_condition` 仅作用于 `Long` / `Short` / `Megapixels` 模式
 - `edge_mode="Scale Multiplier"` 时会忽略 `resize_condition`
-- 当条件不满足时，会跳过“按比例缩放”，但整除与偏移仍会继续执行
+- 当条件不满足时，会跳过缩放，但整除与偏移仍会继续执行
 - 整除调整在尺寸计算之后应用
 - 分辨率偏移在整除调整之后应用
 - `edge_mode="Megapixels"` 时必须设置 `megapixels > 0`

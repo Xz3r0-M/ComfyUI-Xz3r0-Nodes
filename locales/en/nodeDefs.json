@@ -388,7 +388,7 @@
       },
       "resize_condition": {
         "name": "Resize Condition",
-        "tooltip": "Resize trigger condition (applies only to Long/Short/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in Scale Multiplier mode.",
+        "tooltip": "Resize trigger condition (applies only to Long/Short/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in Scale Multiplier mode. If the condition is not met, resizing is skipped, but divisible and offset are still applied.",
         "options": {
           "Always": "Always Resize",
           "Only if Larger": "Resize Only if Larger",
@@ -679,8 +679,8 @@
       }
     }
   },
-  "XKleinRefLatentAuto": {
-    "display_name": "XKleinRefLatentAuto",
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
     "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
     "inputs": {
       "positive_conditioning": {

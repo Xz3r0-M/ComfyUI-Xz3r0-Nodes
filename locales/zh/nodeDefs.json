@@ -363,7 +363,7 @@
     "inputs": {
       "images": {
         "name": "图像",
-        "tooltip": "图像"
+        "tooltip": "输入图像"
       },
       "scale_mode": {
         "name": "插值算法",
@@ -388,7 +388,7 @@
       },
       "resize_condition": {
         "name": "缩放条件",
-        "tooltip": "缩放触发条件（仅作用于长边/短边/百万像素模式）：Always=总是缩放，Only if Larger=仅当图像大于目标时缩放，Only if Smaller=仅当图像小于目标时缩放。倍率模式会忽略此项。",
+        "tooltip": "缩放触发条件（仅作用于 长边/短边/百万像素模式）：Always=总是缩放，Only if Larger=仅当图像大于目标时缩放，Only if Smaller=仅当图像小于目标时缩放。倍率模式会忽略此项。若条件不满足，会跳过缩放，但整除与偏移仍会继续应用。",
         "options": {
           "Always": "总是缩放",
           "Only if Larger": "仅当图像大于目标时缩放",
@@ -679,8 +679,8 @@
       }
     }
   },
-  "XKleinRefLatentAuto": {
-    "display_name": "XKleinRefLatentAuto",
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
     "description": "自动对已连接参考图执行 VAE 编码，并将参考 latent 同步追加到正面与负面条件链。",
     "inputs": {
       "positive_conditioning": {

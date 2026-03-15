@@ -111,7 +111,9 @@ class XImageResize(io.ComfyNode):
                     "Only if Larger=resize only when image is larger than "
                     "target, "
                     "Only if Smaller=resize only when image is smaller than "
-                    "target. Ignored in Scale Multiplier mode",
+                    "target. Ignored in Scale Multiplier mode. If the "
+                    "condition is not met, resizing is skipped, but "
+                    "divisible and offset are still applied.",
                 ),
                 io.Int.Input(
                     "target_edge",
@@ -346,7 +348,7 @@ class XImageResize(io.ComfyNode):
         target_value: int,
     ) -> bool:
         """
-        根据缩放条件判断是否执行比例缩放。
+        根据缩放条件判断是否执行缩放。
         """
         if resize_condition == "Only if Larger":
             return current_value > target_value

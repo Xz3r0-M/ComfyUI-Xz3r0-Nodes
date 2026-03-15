@@ -1,8 +1,8 @@
 """
-Flux 参考 Latent 自动处理节点
-===========================
+Klein 参考 Conditioning 自动处理节点
+===================================
 
-该节点把多张参考图的编码与参考 latent 追加合并到一个节点里，
+该节点把多张参考图的编码与参考 conditioning 追加合并到一个节点里，
 用于简化 Flux/Klein 多图编辑工作流的搭建。
 """
 
@@ -17,9 +17,9 @@ except ImportError:
     HAS_NODE_HELPERS = False
 
 
-class XKleinRefLatentAuto(io.ComfyNode):
+class XKleinRefConditioning(io.ComfyNode):
     """
-    XKleinRefLatentAuto 动态参考 latent 节点
+    XKleinRefConditioning 动态参考 conditioning 节点
 
     工作流程：
         1. 接收正面条件、负面条件、VAE 和最多 4 张可选参考图。
@@ -56,8 +56,8 @@ class XKleinRefLatentAuto(io.ComfyNode):
         vae_io_type = cls._get_vae_io_type()
 
         return io.Schema(
-            node_id="XKleinRefLatentAuto",
-            display_name="XKleinRefLatentAuto",
+            node_id="XKleinRefConditioning",
+            display_name="XKleinRefConditioning",
             description=(
                 "Automatically encodes connected reference images and "
                 "applies reference latents to both positive and "

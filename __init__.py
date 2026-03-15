@@ -34,7 +34,7 @@ from comfy_api.latest import ComfyExtension, io  # noqa: I001
 from .api import xworkflowsave_api
 from .xnode.xanytostring import XAnyToString
 from .xnode.xdatetimestring import XDateTimeString
-from .xnode.xkleinreflatentauto import XKleinRefLatentAuto
+from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xmath import XMath
 from .xnode.xresolution import XResolution
 from .xnode.xstringgroup import XStringGroup
@@ -51,7 +51,7 @@ WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XAnyToString,
     XDateTimeString,
-    XKleinRefLatentAuto,
+    XKleinRefConditioning,
     XMath,
     XResolution,
     XStringGroup,
