@@ -1,5 +1,49 @@
 # 更新日志 | Changelog
 
+## 🎉 v1.7.0
+<details>
+
+### 1. ⭐ 新增 `XKleinRefConditioning` FLUX.2-klein 参考条件自动处理节点
+`♾️ Xz3r0/Workflow-Processing`
+- FLUX.2-klein 工作流的参考条件链路节点，用来把多张参考图自动编码并同时追加到
+正面条件与负面条件两条链路。
+    - 适合需要在 文生图/单图编辑/多图编辑 模式来回切换的工作流场景
+- 支持 4 张可选参考图
+- 没有输入参考图时正面和负面条件会直接透传，即文生图模式
+
+### 2. 🛠️ 增强 `XImageResize` 图像缩放节点
+- 新增缩放条件选择
+    - `Always` 总是缩放 (默认)
+    - `Only if Larger` 仅当图像大于目标时缩放
+    - `Only if Smaller` 仅当图像小于目标时缩放
+- 缩放条件仅作用于 `Long` / `Short` / `Megapixels` 长边/短边/百万像素 模式
+    - 当条件不满足时，会跳过缩放，但整除与偏移仍会继续执行
+
+---
+
+### 1. ⭐ Added `XKleinRefConditioning` FLUX.2-klein Reference Conditioning Auto-Processing Node
+`♾️ Xz3r0/Workflow-Processing`
+- A reference-conditioning chain node for FLUX.2-klein workflows, used to
+  automatically encode multiple reference images and append them to both
+  positive and negative conditioning chains at the same time.
+    - Suitable for workflow scenarios that need to switch between text-to-image,
+      single-image editing, and multi-image editing modes.
+- Supports up to 4 optional reference images.
+- If no reference image is provided, positive and negative conditioning are
+  passed through directly (text-to-image mode).
+
+### 2. 🛠️ Enhanced `XImageResize` Image Resize Node
+- Added resize-condition options:
+    - `Always`: Always resize (default)
+    - `Only if Larger`: Resize only when the image is larger than the target
+    - `Only if Smaller`: Resize only when the image is smaller than the target
+- Resize conditions apply only to `Long` / `Short` / `Megapixels` modes.
+    - When the condition is not met, resizing is skipped, but divisibility
+      adjustment and offset are still applied.
+</details>
+
+---
+
 ## 🎉 v1.6.0
 <details>
 
