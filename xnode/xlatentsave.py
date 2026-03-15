@@ -72,6 +72,7 @@ class XLatentSave(io.ComfyNode):
         - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
         - 元数据以SafeTensors格式嵌入latent文件
     """
+
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
     UNIQUE_FILENAME_ERROR = "Unable to generate unique latent filename"
     WRITE_LATENT_ERROR = "Unable to write latent file"
@@ -188,9 +189,7 @@ class XLatentSave(io.ComfyNode):
 
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = sanitize_path_component(filename_prefix)
-        safe_filename_prefix = replace_datetime_tokens(
-            safe_filename_prefix
-        )
+        safe_filename_prefix = replace_datetime_tokens(safe_filename_prefix)
 
         safe_subfolder = sanitize_path_component(subfolder)
         safe_subfolder = replace_datetime_tokens(safe_subfolder)

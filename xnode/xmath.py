@@ -14,30 +14,30 @@ class XMath(io.ComfyNode):
     """
     XMath 数学计算节点
 
-    提供基础数学运算功能，支持双输出格式（整数+浮点数）。
+    提供基础数学运算功能，支持双输出格式（整数 + 浮点数）。
 
-    运算方式:
+    运算方式：
         - 加法 (+): a + b
         - 减法 (-): a - b
         - 乘法 (×): a × b
         - 除法 (÷): a ÷ b
         - 幂运算 (**): a 的 b 次方
         - 取模 (%): a % b
-        - 最大值: max(a, b)
-        - 最小值: min(a, b)
+        - 最大值：max(a, b)
+        - 最小值：min(a, b)
 
-    输入:
+    输入：
         operation: 计算方式 (下拉菜单选择)
         basic_a: 基础第一个数值 (FLOAT)
         basic_b: 基础第二个数值 (FLOAT)
         input_a: 接收的第一个数值 (INT/FLOAT, 可选，连接时优先使用)
         input_b: 接收的第二个数值 (INT/FLOAT, 可选，连接时优先使用)
 
-    输出:
+    输出：
         int_result: 整数结果，截断小数部分（向零取整）
         float_result: 浮点数结果，保留精确值
 
-    优先级逻辑:
+    优先级逻辑：
         如果 use_input_a 为 True，则使用 input_a（如果未连接则为默认值 0.0）
         否则使用 basic_a
         同样的逻辑适用于 use_input_b、input_b 和 basic_b
@@ -173,12 +173,12 @@ class XMath(io.ComfyNode):
             basic_a: 基础第一个数值 (FLOAT)
             basic_b: 基础第二个数值 (FLOAT)
             operation: 计算方式 (下拉菜单选择)
-            use_input_a: 是否优先使用 input_a (BOOLEAN, 默认True)
-            use_input_b: 是否优先使用 input_b (BOOLEAN, 默认True)
-            swap_ab: 是否交换 a 和 b 的值 (BOOLEAN, 默认False)
+            use_input_a: 是否优先使用 input_a (BOOLEAN, 默认 True)
+            use_input_b: 是否优先使用 input_b (BOOLEAN, 默认 True)
+            swap_ab: 是否交换 a 和 b 的值 (BOOLEAN, 默认 False)
 
         Returns:
-            NodeOutput: 包含整数结果(截断)和浮点数结果(精确)
+            NodeOutput: 包含整数结果 (截断) 和浮点数结果 (精确)
         """
         # 运算映射表
         operations = {

@@ -23,21 +23,23 @@ class XImageResize(io.ComfyNode):
     这个节点只处理图像缩放，不处理遮罩。
     批处理时遵循官方风格：整批统一计算目标尺寸并统一缩放。
 
-    功能:
+    功能：
         - 自动识别横屏/竖屏/正方形
         - 按长边或短边缩放（可切换）
         - 按百万像素缩放（精确控制输出像素数）
         - 按缩放倍率缩放
+        - 支持按条件缩放（总是/仅图像大于目标/仅图像小于目标）
         - 保持原始宽高比，永不变形
         - 支持分辨率整除调整（适配模型要求）
         - 支持分辨率偏移调整（适配特殊模型要求）
         - 支持批量图像处理（图片序列）
         - 支持多种插值算法（双线性/双三次/最近邻/区域/Lanczos）
 
-    输入:
+    输入：
         images: 输入图像张量 (IMAGE)
         scale_mode: 缩放模式 (STRING)
         edge_mode: 缩放基准 (STRING)
+        resize_condition: 缩放条件 (STRING)
         target_edge: 目标边长 (INT, 范围 64-8192)
         megapixels: 百万像素 (FLOAT, 范围 0.1-100)
         scale_multiplier: 缩放倍率 (FLOAT, 范围 0.1-10)
@@ -46,7 +48,7 @@ class XImageResize(io.ComfyNode):
         width_offset: 宽度偏移 (INT, 范围 -128 到 128)
         height_offset: 高度偏移 (INT, 范围 -128 到 128)
 
-    输出:
+    输出：
         Processed_Images: 缩放后的图像张量 (B, H, W, C)
         width: 输出分辨率宽度
         height: 输出分辨率高度
@@ -95,6 +97,21 @@ class XImageResize(io.ComfyNode):
                     tooltip="Select scaling mode: Long=long edge, "
                     "Short=short edge, Megapixels=target pixels, "
                     "Scale Multiplier=scale by multiplier",
+                ),
+                io.Combo.Input(
+                    "resize_condition",
+                    options=[
+                        "Always",
+                        "Only if Larger",
+                        "Only if Smaller",
+                    ],
+                    default="Always",
+                    tooltip="Resize condition for Long/Short/Megapixels: "
+                    "Always=always resize, "
+                    "Only if Larger=resize only when image is larger than "
+                    "target, "
+                    "Only if Smaller=resize only when image is smaller than "
+                    "target. Ignored in Scale Multiplier mode",
                 ),
                 io.Int.Input(
                     "target_edge",
@@ -187,6 +204,7 @@ class XImageResize(io.ComfyNode):
         images: torch.Tensor,
         scale_mode: str,
         edge_mode: str,
+        resize_condition: str,
         target_edge: int,
         megapixels: float,
         scale_multiplier: float,
@@ -207,6 +225,14 @@ class XImageResize(io.ComfyNode):
         if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
             return "Scale Multiplier mode requires scale_multiplier > 0"
 
+        valid_conditions = {
+            "Always",
+            "Only if Larger",
+            "Only if Smaller",
+        }
+        if resize_condition not in valid_conditions:
+            return "Invalid resize_condition value"
+
         return True
 
     @classmethod
@@ -215,6 +241,7 @@ class XImageResize(io.ComfyNode):
         images: torch.Tensor,
         scale_mode: str,
         edge_mode: str,
+        resize_condition: str,
         target_edge: int,
         megapixels: float,
         scale_multiplier: float,
@@ -250,9 +277,18 @@ class XImageResize(io.ComfyNode):
                 )
             target_pixels = int(target_mp * PIXELS_PER_MEGAPIXEL)
             current_pixels = width * height
-            scale = math.sqrt(target_pixels / current_pixels)
-            new_width = round(width * scale)
-            new_height = round(height * scale)
+            should_resize = cls._should_resize(
+                resize_condition,
+                current_pixels,
+                target_pixels,
+            )
+            if should_resize:
+                scale = math.sqrt(target_pixels / current_pixels)
+                new_width = round(width * scale)
+                new_height = round(height * scale)
+            else:
+                new_width = width
+                new_height = height
         elif edge_mode == "Scale Multiplier":
             new_width = round(width * scale_multiplier)
             new_height = round(height * scale_multiplier)
@@ -261,9 +297,18 @@ class XImageResize(io.ComfyNode):
                 base_edge = long_edge
             else:
                 base_edge = short_edge
-            scale = target_edge / base_edge
-            new_width = round(width * scale)
-            new_height = round(height * scale)
+            should_resize = cls._should_resize(
+                resize_condition,
+                base_edge,
+                target_edge,
+            )
+            if should_resize:
+                scale = target_edge / base_edge
+                new_width = round(width * scale)
+                new_height = round(height * scale)
+            else:
+                new_width = width
+                new_height = height
 
         if divisible_mode != "Disabled" and divisible > 1:
             new_width = cls._make_divisible(
@@ -293,6 +338,21 @@ class XImageResize(io.ComfyNode):
         progress_bar.update_absolute(1)
 
         return io.NodeOutput(output_tensor, new_width, new_height)
+
+    @staticmethod
+    def _should_resize(
+        resize_condition: str,
+        current_value: int,
+        target_value: int,
+    ) -> bool:
+        """
+        根据缩放条件判断是否执行比例缩放。
+        """
+        if resize_condition == "Only if Larger":
+            return current_value > target_value
+        if resize_condition == "Only if Smaller":
+            return current_value < target_value
+        return True
 
     @staticmethod
     def _make_divisible(value: int, divisor: int, mode: str = "Up") -> int:

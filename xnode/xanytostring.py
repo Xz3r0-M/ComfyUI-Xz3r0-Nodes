@@ -16,15 +16,15 @@ class XAnyToString(io.ComfyNode):
 
     将任意类型输入转换为字符串输出，同时保留原始数据透传。
 
-    功能:
+    功能：
         - 接收任意类型输入
         - 使用 Python 原生 str() 转换为字符串
         - 同时输出原始数据，方便继续连接下游节点
 
-    输入:
+    输入：
         anything: 任意输入类型 (ANY)
 
-    输出:
+    输出：
         anything: 原始输入数据 (ANY)
         string: 转换后的字符串 (STRING)
 

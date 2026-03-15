@@ -262,9 +262,7 @@ class XMarkdownSave(io.ComfyNode):
         output_dir = cls._get_output_directory()
 
         safe_filename_prefix = sanitize_path_component(filename_prefix)
-        safe_filename_prefix = replace_datetime_tokens(
-            safe_filename_prefix
-        )
+        safe_filename_prefix = replace_datetime_tokens(safe_filename_prefix)
 
         safe_subfolder = sanitize_path_component(subfolder)
         safe_subfolder = replace_datetime_tokens(safe_subfolder)
@@ -279,9 +277,7 @@ class XMarkdownSave(io.ComfyNode):
             header_input if header_input is not None else header_text
         )
         main_text = (
-            main_text_input
-            if main_text_input is not None
-            else text_content
+            main_text_input if main_text_input is not None else text_content
         )
         footer_value = (
             footer_input if footer_input is not None else footer_text

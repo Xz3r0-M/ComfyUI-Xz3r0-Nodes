@@ -14,7 +14,7 @@ class XResolution(io.ComfyNode):
 
     提供分辨率宽高设置功能，支持倍率缩放和宽高互换。
 
-    功能:
+    功能：
         - 设置宽度和高度
         - 支持倍率缩放（同时缩放宽和高）
         - 支持宽高互换
@@ -23,7 +23,7 @@ class XResolution(io.ComfyNode):
         - 支持分辨率整除调整（可被指定整数整除）
         - 支持分辨率偏移调整（适配特殊模型要求）
 
-    输入:
+    输入：
         preset: 标准分辨率预设 (STRING)
         width: 宽度 (INT)
         height: 高度 (INT)
@@ -37,11 +37,11 @@ class XResolution(io.ComfyNode):
         height_offset: 高度偏移 (INT, 范围 -128 到 128)
             在最终分辨率上添加的偏移值（正数=增加，负数=减少）
 
-    输出:
+    输出：
         width: 输出宽度
         height: 输出高度
 
-    使用示例:
+    使用示例：
         width=1280, height=720, scale=2, swap=False
         输出：width=2560, height=1440
 
@@ -217,7 +217,7 @@ class XResolution(io.ComfyNode):
         """
         处理分辨率设置
 
-        处理流程:
+        处理流程：
             1. 应用预设分辨率
             2. 应用倍率缩放
             3. 应用宽高互换

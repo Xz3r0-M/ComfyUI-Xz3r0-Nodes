@@ -8,12 +8,16 @@
 import json
 from pathlib import Path
 
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
+
 import comfy.utils
 import numpy as np
 import torch
 from comfy_api.latest import ComfyExtension, io
 from PIL import Image, PngImagePlugin
-from typing_extensions import override
 
 try:
     from ..xz3r0_utils import (
@@ -46,28 +50,28 @@ class XImageSave(io.ComfyNode):
     提供图像保存功能，支持自定义文件名、子文件夹、
     日期时间标识符、元数据保存和安全防护。
 
-    功能:
-        - 保存图像到ComfyUI默认输出目录
+    功能：
+        - 保存图像到 ComfyUI 默认输出目录
         - 支持自定义文件名和子文件夹
-        - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
+        - 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
         - 自动检测同名文件并添加序列号
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击，禁用路径分隔符)
-        - 图像序列支持(批量保存)
-        - 可调节PNG压缩级别(0-9)
-        - 元数据保存(工作流提示词、种子值、生成参数等)
-        - 输出相对路径(不泄露绝对路径)
+        - 安全防护 (防止路径遍历攻击，禁用路径分隔符)
+        - 图像序列支持 (批量保存)
+        - 可调节 PNG 压缩级别 (0-9)
+        - 元数据保存 (工作流提示词、种子值、生成参数等)
+        - 输出相对路径 (不泄露绝对路径)
 
-    输入:
+    输入：
         images: 图像张量 (IMAGE)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
-        compression_level: PNG压缩级别 0-9 (INT)
-        prompt: 工作流提示词(隐藏参数，自动注入)
-        extra_pnginfo: 额外元数据(隐藏参数，自动注入)
+        compression_level: PNG 压缩级别 0-9 (INT)
+        prompt: 工作流提示词 (隐藏参数，自动注入)
+        extra_pnginfo: 额外元数据 (隐藏参数，自动注入)
 
-    输出:
-        images: 原始图像(透传)
+    输出：
+        images: 原始图像 (透传)
         save_path: 保存的相对路径 (STRING)
 
     Usage example:
@@ -77,12 +81,13 @@ class XImageSave(io.ComfyNode):
         Output: images(original),
         save_path="output/Characters/MyImage_20260114.png"
 
-    元数据说明:
-        - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
-        - prompt: 包含完整的工作流提示词JSON数据
+    元数据说明：
+        - 节点自动接收 ComfyUI 注入的隐藏参数 (prompt 和 extra_pnginfo)
+        - prompt: 包含完整的工作流提示词 JSON 数据
         - extra_pnginfo: 包含工作流结构、种子值、模型信息等
-        - 元数据以PNG文本块形式嵌入图像，可通过图像查看器查看
+        - 元数据以 PNG 文本块形式嵌入图像，可通过图像查看器查看
     """
+
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
     WRITE_IMAGE_ERROR = "Unable to write image file"
     RELATIVE_PATH_ERROR = "Unable to build relative save path"
@@ -148,13 +153,13 @@ class XImageSave(io.ComfyNode):
         compression_level: int = 5,
     ) -> io.NodeOutput:
         """
-        保存图像到ComfyUI输出目录
+        保存图像到 ComfyUI 输出目录
 
         Args:
             images: 图像张量 (B, H, W, C)
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
-            compression_level: PNG压缩级别(0-9)
+            compression_level: PNG 压缩级别 (0-9)
 
         Returns:
             NodeOutput: 包含原始图像和保存的相对路径
@@ -176,14 +181,12 @@ class XImageSave(io.ComfyNode):
             else None
         )
 
-        # 获取ComfyUI默认输出目录
+        # 获取 ComfyUI 默认输出目录
         output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
         safe_filename_prefix = sanitize_path_component(filename_prefix)
-        safe_filename_prefix = replace_datetime_tokens(
-            safe_filename_prefix
-        )
+        safe_filename_prefix = replace_datetime_tokens(safe_filename_prefix)
 
         safe_subfolder = sanitize_path_component(subfolder)
         safe_subfolder = replace_datetime_tokens(safe_subfolder)
@@ -191,7 +194,7 @@ class XImageSave(io.ComfyNode):
         # 创建完整保存路径
         save_dir = resolve_output_subpath(output_dir, safe_subfolder)
 
-        # 创建目录(仅支持单级目录)
+        # 创建目录 (仅支持单级目录)
         try:
             save_dir.mkdir(exist_ok=True)
         except OSError as exc:
@@ -201,10 +204,10 @@ class XImageSave(io.ComfyNode):
         saved_paths = []
         progress_bar = comfy.utils.ProgressBar(len(images))
         for i, img_tensor in enumerate(images):
-            # 转换张量到PIL图像
+            # 转换张量到 PIL 图像
             img_pil = cls._tensor_to_pil(img_tensor)
 
-            # 生成文件名(添加序列号)
+            # 生成文件名 (添加序列号)
             filename = safe_filename_prefix
             if len(images) > 1:
                 filename = f"{filename}_{i:04d}"
@@ -216,7 +219,7 @@ class XImageSave(io.ComfyNode):
                 ".png",
             )
 
-            # 生成PNG元数据
+            # 生成 PNG 元数据
             pnginfo = cls._generate_pnginfo(prompt, extra_pnginfo)
 
             # 保存图像
@@ -226,7 +229,7 @@ class XImageSave(io.ComfyNode):
             )
             try:
                 if pnginfo:
-                    # 使用Pillow兼容的方式保存元数据
+                    # 使用 Pillow 兼容的方式保存元数据
                     pnginfo_obj = PngImagePlugin.PngInfo()
                     for key, value in pnginfo.items():
                         pnginfo_obj.add_text(key, value)
@@ -256,7 +259,7 @@ class XImageSave(io.ComfyNode):
             # 更新进度条
             progress_bar.update_absolute(i + 1)
 
-        # 输出保存路径(多个图像用分号分隔)
+        # 输出保存路径 (多个图像用分号分隔)
         save_path_str = ";".join(saved_paths) if saved_paths else ""
 
         return io.NodeOutput(images, save_path_str)
@@ -264,14 +267,14 @@ class XImageSave(io.ComfyNode):
     @classmethod
     def _generate_pnginfo(cls, prompt, extra_pnginfo):
         """
-        生成PNG元数据。
+        生成 PNG 元数据。
 
         Args:
             prompt: 工作流提示词。
-            extra_pnginfo: 额外的PNG元数据。
+            extra_pnginfo: 额外的 PNG 元数据。
 
         Returns:
-            字典格式的PNG元数据或None。
+            字典格式的 PNG 元数据或 None。
         """
         # 检查是否有元数据
         if prompt is None and extra_pnginfo is None:
@@ -280,11 +283,11 @@ class XImageSave(io.ComfyNode):
         # 创建元数据字典
         pnginfo = {}
 
-        # 添加prompt元数据
+        # 添加 prompt 元数据
         if prompt is not None:
             pnginfo["prompt"] = json.dumps(prompt)
 
-        # 添加额外的PNG元数据
+        # 添加额外的 PNG 元数据
         if extra_pnginfo is not None:
             for key, value in extra_pnginfo.items():
                 pnginfo[key] = json.dumps(value)
@@ -294,7 +297,7 @@ class XImageSave(io.ComfyNode):
     @classmethod
     def _get_output_directory(cls) -> Path:
         """
-        获取ComfyUI默认输出目录
+        获取 ComfyUI 默认输出目录
 
         Returns:
             输出目录路径
