@@ -19,7 +19,7 @@ from aiohttp import web
 # 日志配置
 # ================================
 
-# 日志级别：0=关闭, 1=信息, 2=详细调试
+# 日志级别：0=关闭，1=信息，2=详细调试
 # 开发者直接修改此变量控制日志输出
 LOG_LEVEL: int = 0
 INTERNAL_ERROR_MESSAGE = "Internal server error"
@@ -30,7 +30,7 @@ def log_info(message: str) -> None:
     """
     输出信息日志
 
-    在LOG_LEVEL >= 1时输出到服务器日志。
+    在 LOG_LEVEL >= 1 时输出到服务器日志。
     用于记录正常操作流程。
 
     Args:
@@ -44,7 +44,7 @@ def log_debug(message: str) -> None:
     """
     输出调试日志
 
-    在LOG_LEVEL >= 2时输出到服务器日志。
+    在 LOG_LEVEL >= 2 时输出到服务器日志。
     用于详细调试信息。
 
     Args:
@@ -91,7 +91,7 @@ class WorkflowDataStore:
         存储工作流数据
 
         Args:
-            prompt_id: 提示ID，作为存储键
+            prompt_id: 提示 ID，作为存储键
             workflow_data: 工作流数据字典
         """
         cls._data[prompt_id] = workflow_data
@@ -105,11 +105,11 @@ class WorkflowDataStore:
         获取工作流数据
 
         Args:
-            prompt_id: 提示ID
-            auto_cleanup: 是否在读取后自动清理（默认True）
+            prompt_id: 提示 ID
+            auto_cleanup: 是否在读取后自动清理（默认 True）
 
         Returns:
-            工作流数据字典，不存在则返回None
+            工作流数据字典，不存在则返回 None
         """
         cls._cleanup_expired()
 
@@ -126,7 +126,7 @@ class WorkflowDataStore:
         主动清理指定的工作流数据
 
         Args:
-            prompt_id: 要清理的提示ID
+            prompt_id: 要清理的提示 ID
 
         Returns:
             是否成功清理
@@ -261,9 +261,7 @@ async def get_status(request: web.Request) -> web.Response:
     """
     memory_info = workflow_store.get_memory_usage()
 
-    return web.json_response(
-        _build_status_payload(memory_info)
-    )
+    return web.json_response(_build_status_payload(memory_info))
 
 
 def _build_status_payload(memory_info: dict) -> dict:

@@ -79,9 +79,7 @@ class XStringGroup(io.ComfyNode):
         """
         separator = cls.SEPARATION_METHOD_MAP.get(method_name)
         if separator is None:
-            raise ValueError(
-                f"Invalid separation method: {method_name}"
-            )
+            raise ValueError(f"Invalid separation method: {method_name}")
         return separator
 
     @classmethod
@@ -104,9 +102,7 @@ class XStringGroup(io.ComfyNode):
             ) from exc
 
         if selected_index < 0 or selected_index >= len(strings):
-            raise ValueError(
-                f"Invalid select_string value: {select_string}"
-            )
+            raise ValueError(f"Invalid select_string value: {select_string}")
 
         return strings[selected_index]
 

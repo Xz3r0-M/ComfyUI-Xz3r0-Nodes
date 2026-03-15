@@ -5,10 +5,10 @@
 这个模块包含视频保存相关的节点。
 """
 
+import json
 import os
 import shutil
 import tempfile
-import json
 from pathlib import Path
 
 import comfy.utils
@@ -44,32 +44,32 @@ class XVideoSave(io.ComfyNode):
     """
     XVideoSave 视频保存节点 (V3)
 
-    提供视频保存功能，使用H.265/HEVC编码，支持自定义文件名、
+    提供视频保存功能，使用 H.265/HEVC 编码，支持自定义文件名、
     子文件夹、日期时间标识符和安全防护。
 
-    功能:
-        - 保存视频到ComfyUI默认输出目录
-        - 强制使用H.265/HEVC编码，yuv444p10le像素格式，mkv格式
-        - fps从video对象自动获取(由CreateVideo节点设置)
-        - 音频流直接拷贝，保留原始质量（支持PCM/FLAC/AAC等）
+    功能：
+        - 保存视频到 ComfyUI 默认输出目录
+        - 强制使用 H.265/HEVC 编码，yuv444p10le 像素格式，mkv 格式
+        - fps 从 video 对象自动获取 (由 CreateVideo 节点设置)
+        - 音频流直接拷贝，保留原始质量（支持 PCM/FLAC/AAC 等）
         - 支持自定义文件名和子文件夹
-        - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
-        - 自动添加序列号防止覆盖(从00001开始)
+        - 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+        - 自动添加序列号防止覆盖 (从 00001 开始)
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击，禁用路径分隔符)
-        - 输出相对路径(不泄露绝对路径)
-        - 编码预设选择(ultrafast到veryslow，平衡编码速度和压缩效率)
+        - 安全防护 (防止路径遍历攻击，禁用路径分隔符)
+        - 输出相对路径 (不泄露绝对路径)
+        - 编码预设选择 (ultrafast 到 veryslow，平衡编码速度和压缩效率)
 
-    输入:
-        video: 视频对象(fps已集成其中)
+    输入：
+        video: 视频对象 (fps 已集成其中)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         crf: 质量参数 0-40 (INT)
-        preset: 编码预设 (STRING, 可选: ultrafast,
+        preset: 编码预设 (STRING, 可选：ultrafast,
             superfast, veryfast, faster, fast, medium, slow,
             slower, veryslow)
 
-    使用示例:
+    使用示例：
         filename_prefix="MyVideo_%Y%m%d",
         subfolder="Videos", crf=0, preset="medium"
 
@@ -173,14 +173,14 @@ class XVideoSave(io.ComfyNode):
         container: str,
     ) -> io.NodeOutput:
         """
-        保存视频到ComfyUI输出目录
+        保存视频到 ComfyUI 输出目录
 
         Args:
-            video: 视频对象(fps已由CreateVideo节点集成)
-            filename_prefix: 文件名前缀(支持日期时间标识符)
-            subfolder: 子文件夹名称(单级)
-            crf: 整数质量参数(0=无损, 40=最差质量)
-            preset: 编码预设(ultrafast到veryslow，
+            video: 视频对象 (fps 已由 CreateVideo 节点集成)
+            filename_prefix: 文件名前缀 (支持日期时间标识符)
+            subfolder: 子文件夹名称 (单级)
+            crf: 整数质量参数 (0=无损，40=最差质量)
+            preset: 编码预设 (ultrafast 到 veryslow，
                 平衡编码速度和压缩效率)
 
         Returns:
@@ -226,13 +226,13 @@ class XVideoSave(io.ComfyNode):
         # 创建完整保存路径
         save_dir = resolve_output_subpath(output_dir, safe_subfolder)
 
-        # 创建目录(仅支持单级目录)
+        # 创建目录 (仅支持单级目录)
         try:
             save_dir.mkdir(exist_ok=True)
         except OSError as exc:
             raise RuntimeError(cls.OUTPUT_DIRECTORY_ERROR) from exc
 
-        # 生成文件名(检测同名文件并添加序列号)
+        # 生成文件名 (检测同名文件并添加序列号)
         final_filename = ensure_unique_filename(
             save_dir,
             safe_filename_prefix,

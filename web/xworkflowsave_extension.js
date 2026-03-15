@@ -2,20 +2,20 @@
  * XWorkflowSave_Extension 前端扩展
  * ======================
  *
- * 功能概述:
+ * 功能概述：
  * ---------
  * 为 XWorkflowSave 节点提供完整 workflow 数据捕获支持。
  * 当节点使用 "FullWorkflow"、"Auto" 或 "Prompt+FullWorkflow" 模式时，
  * 自动捕获完整 workflow 数据并通过自定义 API 接口发送到后端。
  *
- * 核心功能:
+ * 核心功能：
  * ---------
  * 1. 拦截 queuePrompt 调用
  * 2. 检测 XWorkflowSave 节点及其保存模式
  * 3. 捕获完整 workflow 数据（包含 localized_name 和 widget）
  * 4. 通过 /xz3r0/xworkflowsave/capture API 发送数据
  *
- * 技术实现:
+ * 技术实现：
  * ---------
  * - 使用 ComfyUI 扩展 API (app.registerExtension)
  * - 拦截 queuePrompt 方法

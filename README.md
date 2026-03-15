@@ -27,7 +27,7 @@ ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标
 
 ### ✨ 当前项目节点和工具数量
 
-🎁 自定义节点（数量总计：`13`）
+🎁 自定义节点（数量总计：`14`）
 
 🧩 网页扩展与工具（数量总计：`4`）
 
@@ -85,8 +85,9 @@ pip install -r requirements.txt
 `xnode`
 
 `Workflow-Processing`
-### XAnyToString - 🔤 任意数据转字符串
+
 <details>
+<summary><strong> XAnyToString </strong> | 🔤 任意数据转字符串</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
 
@@ -130,8 +131,8 @@ string = "123"
 - 把任意数据转成字符串后接到 `XMarkdownSave`
 </details>
 
-### XDateTimeString - 📅 日期时间标识符字符串
 <details>
+<summary><strong> XDateTimeString </strong> | 📅 日期时间标识符字符串</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
 
@@ -169,8 +170,61 @@ suffix="_v1"
 ```
 </details>
 
-### XMath - 🔢 数学运算
 <details>
+<summary><strong> XKleinRefConditioning </strong> | 🧠 FLUX.2-klein 参考条件链路合并</summary>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+FLUX.2-klein 工作流的参考条件链路节点，用来把多张参考图自动编码并同时追加到
+正面条件与负面条件两条链路。
+
+**这个节点是做什么的**:
+- 你不需要为参考图手动重复搭建多组 `VAE Encode + ReferenceLatent` 了
+- 只要把参考图接进来，节点会自动按顺序处理并追加到正负条件
+- 适合需要在 文生图/单图编辑/多图编辑 模式来回切换的工作流场景，保持工作流结构便捷和稳定
+- 没有输入参考图时正面和负面条件会直接透传，即文生图模式
+
+**功能**:
+- 支持 `image_1` 到 `image_4` 四个可选参考图输入
+- 只处理实际连接的图片输入口
+- 每张图编码一次，同时追加到正面与负面条件
+- 没有接参考图时，正负条件原样透传
+- 缺少正面或负面条件时抛出英文错误提示
+
+**输入**:
+- `positive_conditioning` (CONDITIONING): 正面条件输入
+- `negative_conditioning` (CONDITIONING): 负面条件输入
+- `vae` (VAE): 用于把参考图编码为 latent 的 VAE
+- `image_1` (IMAGE, 可选): 参考图 1
+- `image_2` (IMAGE, 可选): 参考图 2
+- `image_3` (IMAGE, 可选): 参考图 3
+- `image_4` (IMAGE, 可选): 参考图 4
+
+**输出**:
+- `positive_conditioning` (CONDITIONING): 已追加参考信息的正面条件
+- `negative_conditioning` (CONDITIONING): 已追加参考信息的负面条件
+
+**多图传递逻辑**:
+1. 按顺序检查 `image_1 -> image_2 -> image_3 -> image_4`
+2. 对每张已连接图片执行一次 VAE 编码
+3. 将该图片的 latent 同时追加到正面和负面条件链
+4. 重复直到所有已连接图片处理完成
+
+**使用示例**:
+```
+输入:
+positive_conditioning = P
+negative_conditioning = N
+image_1, image_3 已连接（image_2, image_4 未连接）
+
+输出:
+positive_out = P + ref(image_1) + ref(image_3)
+negative_out = N + ref(image_1) + ref(image_3)
+```
+</details>
+
+<details>
+<summary><strong> XMath </strong> | 🔢 数学运算</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
 
@@ -201,8 +255,8 @@ suffix="_v1"
 - `float_result` (FLOAT): 浮点数结果 (精确值)
 </details>
 
-### XResolution - 📐 分辨率设置
 <details>
+<summary><strong> XResolution </strong> | 📐 分辨率设置</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
 
@@ -269,8 +323,8 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 ```
 </details>
 
-### XStringGroup - 🔗 字符串组合
 <details>
+<summary><strong> XStringGroup </strong> | 🔗 字符串组合</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
 
@@ -323,8 +377,8 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 ---
 `File-Processing`
 
-### XAudioSave - 🎵 音频保存
 <details>
+<summary><strong> XAudioSave </strong> | 🎵 音频保存</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -384,8 +438,8 @@ LUFS 标准化以及峰值限制
 - `save_path` (STRING): 保存的相对路径
 </details>
 
-### XImageResize - 🔎 图像缩放
 <details>
+<summary><strong> XImageResize </strong> | 🔎 图像缩放</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -395,6 +449,7 @@ LUFS 标准化以及峰值限制
 - 自动识别横屏/竖屏/正方形
 - 按长边或短边缩放（可切换）
 - 按百万像素缩放（精确控制输出像素数）
+- 按条件缩放（总是 / 仅图像大于目标时 / 仅图像小于目标时）
 - 保持原始宽高比，永不变形
 - 整除调整功能 - 使分辨率可被指定整数整除
 - 分辨率偏移功能 - 在最终分辨率上添加偏移值
@@ -415,6 +470,10 @@ LUFS 标准化以及峰值限制
   - `Short`: 以短边为基准（横屏的高，竖屏的宽）
   - `Megapixels`: 以百万像素为基准（忽略 目标边长 `target_edge`）
   - `Scale Multiplier`: 以缩放倍率为基准（忽略 目标边长 `target_edge`）
+- `resize_condition` (下拉选择): 缩放触发条件
+  - `Always`: 总是缩放
+  - `Only if Larger`: 仅当图像大于目标时缩放
+  - `Only if Smaller`: 仅当图像小于目标时缩放
 - `target_edge` (INT): 目标边长（范围 64-8192）
 - `megapixels` (FLOAT): 百万像素数（范围 0.1-100，默认 1.0，仅在 Megapixels 模式下使用）
 - `scale_multiplier` (FLOAT): 缩放倍率（范围 0.1-10）
@@ -461,12 +520,19 @@ LUFS 标准化以及峰值限制
 # 示例 8: 倍率模式（放大 2 倍）
 输入：1024x1024, edge_mode="Scale Multiplier", scale_multiplier=2.0
 输出：2048x2048
+
+# 示例 9: 条件缩放（仅当图像大于目标时）
+输入：1024x768, edge_mode="Long", target_edge=1280, resize_condition="Only if Larger"
+输出：1024x768（不按比例缩放；若启用整除或偏移，仍会继续应用）
 ```
 
 **注意事项**:
 - 节点自动保持原始宽高比，不会导致图像变形
 - `edge_mode="Megapixels"` 或 `"Scale Multiplier"` 时 `target_edge` 参数被忽略
 - `edge_mode="Scale Multiplier"` 时，使用 `scale_multiplier` 作为缩放倍率
+- `resize_condition` 缩放条件仅作用于 `Long` / `Short` / `Megapixels` 长边/短边/百万像素 模式
+- `edge_mode="Scale Multiplier"` 缩放倍率模式时会忽略 `resize_condition` 缩放条件
+- 当条件不满足时，会跳过缩放，但整除与偏移仍会继续执行
 - 整除调整在尺寸计算之后应用
 - 分辨率偏移在整除调整之后应用
 - `edge_mode="Megapixels"` 时必须设置 `megapixels > 0`
@@ -478,8 +544,8 @@ LUFS 标准化以及峰值限制
 - 批处理按整批统一目标尺寸计算和缩放（与官方缩放节点风格一致）
 </details>
 
-### XImageSave - 🖼️ 图像保存
 <details>
+<summary><strong> XImageSave </strong> | 🖼️ 图像保存</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -509,8 +575,8 @@ LUFS 标准化以及峰值限制
 - `save_path` (STRING): 保存的相对路径
 </details>
 
-### XLatentLoad - 📥 Latent 加载
 <details>
+<summary><strong> XLatentLoad </strong> | 📥 Latent 加载</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -546,8 +612,8 @@ Latent 加载节点，支持从输入端口或文件加载 Latent
 - 注意：节点不验证 Latent 可能带有的额外可选键（如 noise_mask、batch_index、type），这些由上游生成 Latent 的节点负责
 </details>
 
-### XLatentSave - 📤 Latent 保存
 <details>
+<summary><strong> XLatentSave </strong> | 📤 Latent 保存</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -586,8 +652,8 @@ Latent 保存节点，支持自定义文件名和元数据保存
 - 注意：节点不验证 Latent 可能带有的额外可选键（如 noise_mask、batch_index、type），这些由上游生成 Latent 的节点负责
 </details>
 
-### XMarkdownSave - 📝 Markdown 保存
 <details>
+<summary><strong> XMarkdownSave </strong> | 📝 Markdown 保存</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -669,8 +735,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - 把多个字符串节点整理后输出成可阅读的文档
 </details>
 
-### XVideoSave - 🎬 视频保存
 <details>
+<summary><strong> XVideoSave </strong> | 🎬 视频保存</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -709,8 +775,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - 容器格式：MKV 或 MP4（默认：MP4）
 </details>
 
-### XWorkflowSave - 📄 JSON 工作流元数据保存
 <details>
+<summary><strong> XWorkflowSave </strong> | 📄 JSON 工作流元数据保存</summary>
 
 `♾️ Xz3r0/File-Processing`
 
@@ -761,8 +827,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 ## 🧩 网页扩展的详细说明（推荐查看）
 `web`
 
-### XFitView - 🔍 工作流和子图页面自动适应视图
 <details>
+<summary><strong> XFitView </strong> | 🔍 工作流和子图页面自动适应视图</summary>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFitView`
 
@@ -808,8 +874,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - 通过触发 ComfyUI 页面右下角的原生 Fit View 按钮实现适应视图功能
 </details>
 
-### XFloatingWindow - 🖥️ 浮动窗口
 <details>
+<summary><strong> XFloatingWindow </strong> | 🖥️ 浮动窗口</summary>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFloatingWindow`
 
@@ -836,8 +902,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFloatingWindow.png" alt="XFloatingWindow" width="700">
 </details>
 
-### XMetadataWorkflow - 📊 工作流元数据可视化查看
 <details>
+<summary><strong> XMetadataWorkflow </strong> | 📊 工作流元数据可视化查看</summary>
 
 `🖥️ XFloatingWindow` `🌐 web/XMetadataWorkflow.html`
 
@@ -889,8 +955,8 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 3. 浏览器直接打开（独立）: 直接打开本项目中的 `web/XMetadataWorkflow.html` 文件，在浏览器中单独使用
 </details>
 
-### XWorkflowSave Extension - 📋 捕获完整工作流元数据
 <details>
+<summary><strong> XWorkflowSave Extension </strong> | 📋 捕获完整工作流元数据</summary>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XWorkflowSave`
 
@@ -937,3 +1003,5 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+

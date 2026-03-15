@@ -29,7 +29,7 @@
       },
       "format_template": {
         "name": "格式模板",
-        "tooltip": "日期时间格式模板，支持占位符: %Y%(年), %m%(月), %d%(日), %H%(时), %M%(分), %S%(秒)"
+        "tooltip": "日期时间格式模板，支持占位符：%Y%(年), %m%(月), %d%(日), %H%(时), %M%(分), %S%(秒)"
       },
       "suffix": {
         "name": "后缀",
@@ -93,11 +93,11 @@
     "outputs": {
       "0": {
         "name": "整数结果",
-        "tooltip": "整数结果(截断小数部分，向零取整)"
+        "tooltip": "整数结果 (截断小数部分，向零取整)"
       },
       "1": {
         "name": "浮点结果",
-        "tooltip": "浮点数结果(精确值，包含小数)"
+        "tooltip": "浮点数结果 (精确值，包含小数)"
       }
     }
   },
@@ -161,7 +161,7 @@
   },
   "XStringGroup": {
     "display_name": "XStringGroup",
-    "description": "组合5个多行字符串输入，可在它们之间选择不同的分隔方式。",
+    "description": "组合 5 个多行字符串输入，可在它们之间选择不同的分隔方式。",
     "inputs": {
       "select_string": {
         "name": "选择字符串",
@@ -180,15 +180,15 @@
       },
       "separation_method_1_2": {
         "name": "分隔方式 1-2",
-        "tooltip": "字符串 1 和字符串 2 之间的分隔方式 (无: '', 换行: \\n, 空格: ' ', 逗号: ',', 逗号+空格: ', ', 句号: '.', 句号+空格: '. ')",
+        "tooltip": "字符串 1 和字符串 2 之间的分隔方式 (无：'', 换行：\\n, 空格：' ', 逗号：',', 逗号 + 空格：', ', 句号：'.', 句号 + 空格：'. ')",
         "options": {
           "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "comma_space": "逗号+空格",
+          "comma_space": "逗号 + 空格",
           "period": "句号",
-          "period_space": "句号+空格"
+          "period_space": "句号 + 空格"
         }
       },
       "string_2": {
@@ -197,15 +197,15 @@
       },
       "separation_method_2_3": {
         "name": "分隔方式 2-3",
-        "tooltip": "字符串 2 和字符串 3 之间的分隔方式 (无: '', 换行: \\n, 空格: ' ', 逗号: ',', 逗号+空格: ', ', 句号: '.', 句号+空格: '. ')",
+        "tooltip": "字符串 2 和字符串 3 之间的分隔方式 (无：'', 换行：\\n, 空格：' ', 逗号：',', 逗号 + 空格：', ', 句号：'.', 句号 + 空格：'. ')",
         "options": {
           "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "comma_space": "逗号+空格",
+          "comma_space": "逗号 + 空格",
           "period": "句号",
-          "period_space": "句号+空格"
+          "period_space": "句号 + 空格"
         }
       },
       "string_3": {
@@ -214,15 +214,15 @@
       },
       "separation_method_3_4": {
         "name": "分隔方式 3-4",
-        "tooltip": "字符串 3 和字符串 4 之间的分隔方式 (无: '', 换行: \\n, 空格: ' ', 逗号: ',', 逗号+空格: ', ', 句号: '.', 句号+空格: '. ')",
+        "tooltip": "字符串 3 和字符串 4 之间的分隔方式 (无：'', 换行：\\n, 空格：' ', 逗号：',', 逗号 + 空格：', ', 句号：'.', 句号 + 空格：'. ')",
         "options": {
           "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "comma_space": "逗号+空格",
+          "comma_space": "逗号 + 空格",
           "period": "句号",
-          "period_space": "句号+空格"
+          "period_space": "句号 + 空格"
         }
       },
       "string_4": {
@@ -231,15 +231,15 @@
       },
       "separation_method_4_5": {
         "name": "分隔方式 4-5",
-        "tooltip": "字符串 4 和字符串 5 之间的分隔方式 (无: '', 换行: \\n, 空格: ' ', 逗号: ',', 逗号+空格: ', ', 句号: '.', 句号+空格: '. ')",
+        "tooltip": "字符串 4 和字符串 5 之间的分隔方式 (无：'', 换行：\\n, 空格：' ', 逗号：',', 逗号 + 空格：', ', 句号：'.', 句号 + 空格：'. ')",
         "options": {
           "none": "无",
           "newline": "换行",
           "space": "空格",
           "comma": "逗号",
-          "comma_space": "逗号+空格",
+          "comma_space": "逗号 + 空格",
           "period": "句号",
-          "period_space": "句号+空格"
+          "period_space": "句号 + 空格"
         }
       },
       "string_5": {
@@ -250,7 +250,7 @@
     "outputs": {
       "0": {
         "name": "所有字符串",
-        "tooltip": "组合所有字符串(带有分隔方式)的输出"
+        "tooltip": "组合所有字符串 (带有分隔方式) 的输出"
       },
       "1": {
         "name": "选择的字符串",
@@ -280,7 +280,7 @@
   },
   "XAudioSave": {
     "display_name": "XAudioSave",
-    "description": "音频保存节点，支持WAV/FLAC无损导出，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",
+    "description": "音频保存节点，支持 WAV/FLAC 无损导出，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",
     "inputs": {
       "audio": {
         "name": "音频",
@@ -288,11 +288,11 @@
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "文件名前缀，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "子文件夹名称 (不支持路径分隔符)，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "format": {
         "name": "输出格式",
@@ -313,24 +313,24 @@
         }
       },
       "target_lufs": {
-        "name": "目标LUFS",
-        "tooltip": "音量标准化目标LUFS值。数值越低音频越安静。默认 -14.1，设置为-70可禁用。"
+        "name": "目标 LUFS",
+        "tooltip": "音量标准化目标 LUFS 值。数值越低音频越安静。默认 -14.1，设置为 -70 可禁用。"
       },
       "enable_peak_limiter": {
         "name": "启用峰值限制",
-        "tooltip": "启用 True Peak 限制（广播标准，8x过采样）。禁用时跳过峰值限制。"
+        "tooltip": "启用 True Peak 限制（广播标准，8x 过采样）。禁用时跳过峰值限制。"
       },
       "peak_limit": {
         "name": "峰值限制",
-        "tooltip": "峰值限制值(dB)。仅在启用峰值限制时使用。默认 -1.1，值低于0dB可防止削波。"
+        "tooltip": "峰值限制值 (dB)。仅在启用峰值限制时使用。默认 -1.1，值低于 0dB 可防止削波。"
       },
       "enable_compression": {
         "name": "启用压缩",
-        "tooltip": "启用使用acompressor滤镜的动态范围压缩。禁用时，跳过压缩并直接进行LUFS标准化。"
+        "tooltip": "启用使用 acompressor 滤镜的动态范围压缩。禁用时，跳过压缩并直接进行 LUFS 标准化。"
       },
       "compression_mode": {
         "name": "压缩模式",
-        "tooltip": "压缩预设模式。阈值根据音频LUFS和目标LUFS自动计算。快速：适合语音/播客，压缩比3:1。平衡：通用/音乐，压缩比2:1。缓慢：适合母带/广播，压缩比1.5:1。",
+        "tooltip": "压缩预设模式。阈值根据音频 LUFS 和目标 LUFS 自动计算。快速：适合语音/播客，压缩比 3:1。平衡：通用/音乐，压缩比 2:1。缓慢：适合母带/广播，压缩比 1.5:1。",
         "options": {
           "Fast": "快速",
           "Balanced": "平衡",
@@ -343,7 +343,7 @@
       },
       "custom_ratio": {
         "name": "自定义压缩比",
-        "tooltip": "自定义压缩比（1.0到20.0）。仅在启用使用自定义压缩比时使用。数值越小压缩越轻，数值越大压缩越强。将压缩比设置为1.0可禁用压缩（直通模式）。"
+        "tooltip": "自定义压缩比（1.0 到 20.0）。仅在启用使用自定义压缩比时使用。数值越小压缩越轻，数值越大压缩越强。将压缩比设置为 1.0 可禁用压缩（直通模式）。"
       }
     },
     "outputs": {
@@ -353,7 +353,7 @@
       },
       "1": {
         "name": "保存路径",
-        "tooltip": "保存的文件路径（相对于ComfyUI输出目录）"
+        "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
       }
     }
   },
@@ -384,6 +384,15 @@
           "Short": "短边（横屏的高/竖屏的宽）",
           "Megapixels": "百万像素（按目标像素数精确缩放）",
           "Scale Multiplier": "缩放倍率（按缩放倍率缩放，忽略目标边长）"
+        }
+      },
+      "resize_condition": {
+        "name": "缩放条件",
+        "tooltip": "缩放触发条件（仅作用于 长边/短边/百万像素模式）：Always=总是缩放，Only if Larger=仅当图像大于目标时缩放，Only if Smaller=仅当图像小于目标时缩放。倍率模式会忽略此项。若条件不满足，会跳过缩放，但整除与偏移仍会继续应用。",
+        "options": {
+          "Always": "总是缩放",
+          "Only if Larger": "仅当图像大于目标时缩放",
+          "Only if Smaller": "仅当图像小于目标时缩放"
         }
       },
       "target_edge": {
@@ -470,49 +479,49 @@
   },
   "XLatentLoad": {
     "display_name": "XLatentLoad",
-    "description": "Latent加载节点，支持从输入端口或文件加载，自动检测格式。",
+    "description": "Latent 加载节点，支持从输入端口或文件加载，自动检测格式。",
     "inputs": {
       "latent_input": {
         "name": "Latent",
-        "tooltip": "来自其他节点的Latent输入（优先级高于文件加载）"
+        "tooltip": "来自其他节点的 Latent 输入（优先级高于文件加载）"
       },
       "latent_file": {
-        "name": "Latent文件",
-        "tooltip": "从ComfyUI输出目录加载的Latent文件"
+        "name": "Latent 文件",
+        "tooltip": "从 ComfyUI 输出目录加载的 Latent 文件"
       }
     },
     "outputs": {
       "0": {
         "name": "Latent",
-        "tooltip": "加载的Latent张量（从输入端口或文件）"
+        "tooltip": "加载的 Latent 张量（从输入端口或文件）"
       }
     }
   },
   "XLatentSave": {
     "display_name": "XLatentSave",
-    "description": "Latent保存节点，支持元数据保存和自定义文件名。",
+    "description": "Latent 保存节点，支持元数据保存和自定义文件名。",
     "inputs": {
       "latent": {
         "name": "Latent",
-        "tooltip": "要保存的输入Latent张量"
+        "tooltip": "要保存的输入 Latent 张量"
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "文件名前缀，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "子文件夹名称 (不支持路径分隔符)，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       }
     },
     "outputs": {
       "0": {
         "name": "Latent",
-        "tooltip": "原始输入Latent(透传)"
+        "tooltip": "原始输入 Latent(透传)"
       },
       "1": {
         "name": "保存路径",
-        "tooltip": "保存的文件路径（相对于ComfyUI输出目录）"
+        "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
       }
     }
   },
@@ -522,11 +531,11 @@
     "inputs": {
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "文件名前缀，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "子文件夹名称 (不支持路径分隔符)，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "header_input": {
         "name": "头部输入",
@@ -590,7 +599,7 @@
   },
   "XVideoSave": {
     "display_name": "XVideoSave",
-    "description": "视频保存节点，支持H.265编码和自定义参数。",
+    "description": "视频保存节点，支持 H.265 编码和自定义参数。",
     "inputs": {
       "video": {
         "name": "视频",
@@ -598,14 +607,14 @@
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "文件名前缀，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%"
+        "tooltip": "子文件夹名称 (不支持路径分隔符)，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%"
       },
       "crf": {
-        "name": "视频CRF",
+        "name": "视频 CRF",
         "tooltip": "整数质量参数 (0=无损，40=最差质量)，数值越高质量越低文件越小"
       },
       "preset": {
@@ -635,7 +644,7 @@
   },
   "XWorkflowSave": {
     "display_name": "XWorkflowSave",
-    "description": "将ComfyUI工作流保存为JSON文件，支持三种保存模式（Auto自动检测、Native原生模式、Prompt+FullWorkflow组合模式），支持自定义文件名、子文件夹和日期时间标识符。",
+    "description": "将 ComfyUI 工作流保存为 JSON 文件，支持三种保存模式（Auto 自动检测、Native 原生模式、Prompt+FullWorkflow 组合模式），支持自定义文件名、子文件夹和日期时间标识符。",
     "inputs": {
       "anything": {
         "name": "任意输入",
@@ -643,20 +652,20 @@
       },
       "save_mode": {
         "name": "保存模式",
-        "tooltip": "保存模式: Auto(自动检测，优先Prompt+FullWorkflow，如前端扩展未加载则回退到Native), Native(使用extra_pnginfo保存原生workflow格式，兼容ComfyUI网页), Prompt+FullWorkflow(保存prompt+完整工作流，需要前端API数据)",
+        "tooltip": "保存模式：Auto(自动检测，优先 Prompt+FullWorkflow，如前端扩展未加载则回退到 Native), Native(使用 extra_pnginfo 保存原生 workflow 格式，兼容 ComfyUI 网页), Prompt+FullWorkflow(保存 prompt+ 完整工作流，需要前端 API 数据)",
         "options": {
           "Auto": "自动",
           "Native": "原生",
-          "Prompt+FullWorkflow": "Prompt+完整工作流"
+          "Prompt+FullWorkflow": "Prompt+ 完整工作流"
         }
       },
       "filename_prefix": {
         "name": "文件名前缀",
-        "tooltip": "文件名前缀，支持日期时间标识符: %Y%(年), %m%(月), %d%(日), %H%(时), %M%(分), %S%(秒)。默认: ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%"
+        "tooltip": "文件名前缀，支持日期时间标识符：%Y%(年), %m%(月), %d%(日), %H%(时), %M%(分), %S%(秒)。默认：ComfyUI_%Y%-%m%-%d%_%H%-%M%-%S%"
       },
       "subfolder": {
         "name": "子文件夹",
-        "tooltip": "子文件夹名称(不支持路径分隔符/和\\)，支持日期时间标识符: %Y%, %m%, %d%, %H%, %M%, %S%。默认: Workflows"
+        "tooltip": "子文件夹名称 (不支持路径分隔符/和\\)，支持日期时间标识符：%Y%, %m%, %d%, %H%, %M%, %S%。默认：Workflows"
       }
     },
     "outputs": {
@@ -667,6 +676,50 @@
       "1": {
         "name": "工作流信息",
         "tooltip": "工作流信息摘要，包含保存状态、节点数量、数据概览和文件路径。可用于调试和验证。"
+      }
+    }
+  },
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
+    "description": "自动对已连接参考图执行 VAE 编码，并将参考 latent 同步追加到正面与负面条件链。",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "正面条件",
+        "tooltip": "正面条件输入"
+      },
+      "negative_conditioning": {
+        "name": "负面条件",
+        "tooltip": "负面条件输入"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "用于编码参考图的 VAE"
+      },
+      "image_1": {
+        "name": "参考图 1",
+        "tooltip": "参考图 1（可选）"
+      },
+      "image_2": {
+        "name": "参考图 2",
+        "tooltip": "参考图 2（可选）"
+      },
+      "image_3": {
+        "name": "参考图 3",
+        "tooltip": "参考图 3（可选）"
+      },
+      "image_4": {
+        "name": "参考图 4",
+        "tooltip": "参考图 4（可选）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "正面条件",
+        "tooltip": "追加参考 latent 后的正面条件"
+      },
+      "1": {
+        "name": "负面条件",
+        "tooltip": "追加参考 latent 后的负面条件"
       }
     }
   }

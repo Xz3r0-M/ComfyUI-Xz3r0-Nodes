@@ -2,12 +2,12 @@
 工作流保存节点模块 (V3 API)
 ==========================
 
-这个模块包含工作流JSON保存相关的节点。
+这个模块包含工作流 JSON 保存相关的节点。
 支持三种保存模式：
 1. Auto：自动检测，优先使用 Prompt+FullWorkflow，
    如前端扩展未加载则回退到 Native
 2. Native：保存 prompt 和 extra_pnginfo.workflow
-   （与官方 SaveImage 节点一致，兼容ComfyUI网页）
+   （与官方 SaveImage 节点一致，兼容 ComfyUI 网页）
 3. Prompt+FullWorkflow：同时保存 prompt 和完整 workflow
    通过自定义 API 接口 /xz3r0/xworkflowsave/capture 接收数据
 """
@@ -44,42 +44,43 @@ class XWorkflowSave(io.ComfyNode):
     """
     XWorkflowSave 工作流保存节点 (V3)
 
-    将ComfyUI工作流保存为JSON文件，支持三种保存模式：
+    将 ComfyUI 工作流保存为 JSON 文件，支持三种保存模式：
     - Auto：自动检测，优先使用 Prompt+FullWorkflow，
             如前端扩展未加载则回退到 Native
     - Native：保存 prompt 和 workflow（来自 extra_pnginfo，
-              与官方 SaveImage 节点一致，兼容ComfyUI网页加载）
+              与官方 SaveImage 节点一致，兼容 ComfyUI 网页加载）
     - Prompt+FullWorkflow：同时保存 prompt 和完整 workflow
 
-    功能:
-        - 保存工作流到ComfyUI默认输出目录
+    功能：
+        - 保存工作流到 ComfyUI 默认输出目录
         - 支持自定义文件名和子文件夹
-        - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
-        - 自动添加序列号防止覆盖(从00001开始)
+        - 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+        - 自动添加序列号防止覆盖 (从 00001 开始)
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击，禁用路径分隔符)
+        - 安全防护 (防止路径遍历攻击，禁用路径分隔符)
 
-    输入:
-        anything: 任意输入(用于工作流连接，不处理数据，可选) (ANY)
+    输入：
+        anything: 任意输入 (用于工作流连接，不处理数据，可选) (ANY)
         save_mode: 保存模式选择 (COMBO: Auto/Native/Prompt+FullWorkflow)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
-    输出:
+    输出：
         anything: 透传输入的数据，可直接传递给下游节点 (ANY)
         workflow_info: 工作流信息摘要，包含保存状态和数据概览 (STRING)
 
-    使用示例:
+    使用示例：
         save_mode="Auto",
         filename_prefix="Workflow_%Y%m%d",
         subfolder="Workflows"
-        (anything输入为可选，可以不连接任何数据)
+        (anything 输入为可选，可以不连接任何数据)
 
-    技术说明:
+    技术说明：
         Prompt+FullWorkflow 模式通过前端扩展自动捕获 workflow 数据，
         并通过 /xz3r0/xworkflowsave/capture API 发送到后端存储。
         节点执行时通过 unique_id 从存储中获取数据。
     """
+
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
     WRITE_WORKFLOW_ERROR = "Unable to write workflow file"
     RELATIVE_PATH_ERROR = "Unable to build relative save path"
@@ -192,9 +193,7 @@ class XWorkflowSave(io.ComfyNode):
 
         # Process datetime placeholders and security filtering
         safe_filename_prefix = sanitize_path_component(filename_prefix)
-        safe_filename_prefix = replace_datetime_tokens(
-            safe_filename_prefix
-        )
+        safe_filename_prefix = replace_datetime_tokens(safe_filename_prefix)
 
         safe_subfolder = sanitize_path_component(subfolder)
         safe_subfolder = replace_datetime_tokens(safe_subfolder)
@@ -239,9 +238,7 @@ class XWorkflowSave(io.ComfyNode):
 
         # Generate workflow_info output content
         # Build relative path (based on ComfyUI output directory)
-        relative_path = cls._build_relative_save_path(
-            save_path, output_dir
-        )
+        relative_path = cls._build_relative_save_path(save_path, output_dir)
         workflow_info = cls._generate_workflow_info(
             final_filename,
             workflow_data,

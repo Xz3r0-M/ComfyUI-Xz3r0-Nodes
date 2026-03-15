@@ -51,58 +51,58 @@ class XAudioSave(io.ComfyNode):
     """
     XAudioSave 音频保存节点 (V3)
 
-    提供音频保存功能，支持WAV/FLAC无损导出，自定义文件名、
+    提供音频保存功能，支持 WAV/FLAC 无损导出，自定义文件名、
     子文件夹、日期时间标识符、音量标准化和峰值限制。
 
-    功能:
-        - 保存音频到ComfyUI默认输出目录
-        - 默认使用WAV无损格式(PCM 32-bit float)
-        - 支持FLAC无损压缩导出(最终阶段量化到s32)
+    功能：
+        - 保存音频到 ComfyUI 默认输出目录
+        - 默认使用 WAV 无损格式 (PCM 32-bit float)
+        - 支持 FLAC 无损压缩导出 (最终阶段量化到 s32)
         - WAV 在当前 FFmpeg 路径下不稳定保留自定义 metadata
         - FLAC 支持嵌入 prompt/workflow 等工作流 metadata
-        - 支持多种采样率(44.1kHz, 48kHz, 96kHz, 192kHz)
-        - LUFS音量标准化(默认-14.1 LUFS)
-        - 传统压缩器支持(acompressor, 三种预设: 快速/平衡/缓慢)
-        - 支持自定义压缩比(1.0-20.0)
-        - 多声道统一处理(link=average, 保持立体声平衡)
-        - 峰值限制(支持两种模式: Disabled, True Peak)
+        - 支持多种采样率 (44.1kHz, 48kHz, 96kHz, 192kHz)
+        - LUFS 音量标准化 (默认 -14.1 LUFS)
+        - 传统压缩器支持 (acompressor, 三种预设：快速/平衡/缓慢)
+        - 支持自定义压缩比 (1.0-20.0)
+        - 多声道统一处理 (link=average, 保持立体声平衡)
+        - 峰值限制 (支持两种模式：Disabled, True Peak)
         - 支持自定义文件名和子文件夹
-        - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
-        - 自动添加序列号防止覆盖(从00001开始)
+        - 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+        - 自动添加序列号防止覆盖 (从 00001 开始)
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击)
-        - 输出相对路径(不泄露绝对路径)
+        - 安全防护 (防止路径遍历攻击)
+        - 输出相对路径 (不泄露绝对路径)
 
-    处理流程:
-        1. 应用传统压缩器(如果启用):
-           - 选择预设模式(快速/平衡/缓慢)
+    处理流程：
+        1. 应用传统压缩器 (如果启用):
+           - 选择预设模式 (快速/平衡/缓慢)
            - 可选使用自定义压缩比覆盖预设值
            - 使用 acompressor 滤镜进行动态范围压缩
-        2. 使用 loudnorm 双阶段处理进行 LUFS 标准化:
+        2. 使用 loudnorm 双阶段处理进行 LUFS 标准化：
            - 步骤 2a: 粗略标准化 (dual_mono=true) - 快速达到接近目标的 LUFS
            - 步骤 2b: 测量粗略标准化后的音频信息
            - 步骤 2c: 精确调整 (linear=true) - 基于粗略测量值进行精确线性归一化
         3. 最终测量音频信息验证结果
 
-    压缩预设参数说明:
-        - 阈值自适应计算: threshold = actual_lufs + (
+    压缩预设参数说明：
+        - 阈值自适应计算：threshold = actual_lufs + (
             actual_lufs - target_lufs) * 0.3 + base_offset
-        - 快速: 适合语音/播客, base_offset=6dB, ratio=3:1,
+        - 快速：适合语音/播客，base_offset=6dB, ratio=3:1,
             attack=10ms, release=50ms
-        - 平衡: 通用/音乐, base_offset=4dB, ratio=2:1,
+        - 平衡：通用/音乐，base_offset=4dB, ratio=2:1,
             attack=20ms, release=250ms
-        - 缓慢: 适合母带/广播, base_offset=2dB, ratio=1.5:1,
+        - 缓慢：适合母带/广播，base_offset=2dB, ratio=1.5:1,
             attack=50ms, release=500ms
 
-    峰值限制说明:
-        - True Peak: 广播标准True Peak限制(8x过采样，精度高)
+    峰值限制说明：
+        - True Peak: 广播标准 True Peak 限制 (8x 过采样，精度高)
 
-    输入:
+    输入：
         audio: 音频对象 (AUDIO)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         sample_rate: 采样率 (COMBO)
-        target_lufs: 目标LUFS值 (FLOAT)
+        target_lufs: 目标 LUFS 值 (FLOAT)
         enable_peak_limiter: 是否启用峰值限制 (BOOLEAN)
         peak_limit: 峰值限制值 (FLOAT)
         enable_compression: 是否启用压缩 (BOOLEAN)
@@ -110,16 +110,16 @@ class XAudioSave(io.ComfyNode):
         use_custom_ratio: 是否使用自定义压缩比 (BOOLEAN)
         custom_ratio: 自定义压缩比 (FLOAT)
 
-    输出:
-        processed_audio: 处理后的音频(重采样、压缩、LUFS标准化、峰值限制)
+    输出：
+        processed_audio: 处理后的音频 (重采样、压缩、LUFS 标准化、峰值限制)
         save_path: 保存的相对路径 (STRING)
 
-    使用示例:
+    使用示例：
         filename_prefix="MyAudio_%Y%m%d", subfolder="Audio",
         sample_rate="48000", target_lufs=-14.0,
         enable_peak_limiter=True, peak_limit=-1.0,
         enable_compression=True, compression_mode="平衡"
-        输出: processed_audio(重采样/压缩/标准化/峰值限制),
+        输出：processed_audio(重采样/压缩/标准化/峰值限制),
         save_path="output/Audio/MyAudio_20260114.wav"
     """
 
@@ -285,15 +285,15 @@ class XAudioSave(io.ComfyNode):
         custom_ratio: float,
     ) -> io.NodeOutput:
         """
-        保存音频到ComfyUI输出目录
+        保存音频到 ComfyUI 输出目录
 
         Args:
             audio: 音频字典，包含"waveform"和"sample_rate"
-            filename_prefix: 文件名前缀(支持日期时间标识符)
-            subfolder: 子文件夹名称(单级)
+            filename_prefix: 文件名前缀 (支持日期时间标识符)
+            subfolder: 子文件夹名称 (单级)
             format: 输出格式 (WAV/FLAC)
             sample_rate: 采样率选项
-            target_lufs: 目标LUFS值
+            target_lufs: 目标 LUFS 值
             enable_peak_limiter: 是否启用峰值限制
             peak_limit: 峰值限制值
             enable_compression: 是否启用压缩
@@ -304,9 +304,9 @@ class XAudioSave(io.ComfyNode):
         Returns:
             NodeOutput: 包含处理后的音频和保存的相对路径
             - processed_audio: 32-bit float 格式的音频
-            - save_path: 保存的音频文件相对路径(.wav或.flac)
+            - save_path: 保存的音频文件相对路径 (.wav 或.flac)
         """
-        # 获取ComfyUI默认输出目录
+        # 获取 ComfyUI 默认输出目录
         output_dir = cls._get_output_directory()
         output_format = cls._normalize_output_format(format)
         # 处理日期时间标识符和安全过滤
@@ -323,7 +323,7 @@ class XAudioSave(io.ComfyNode):
         except ValueError as exc:
             raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
-        # 创建目录(仅支持单级目录)
+        # 创建目录 (仅支持单级目录)
         try:
             save_dir.mkdir(exist_ok=True)
         except OSError as exc:
@@ -343,16 +343,16 @@ class XAudioSave(io.ComfyNode):
         target_sr = cls.SAMPLE_RATES[sample_rate]
 
         # 定义处理步骤数
-        # 步骤1: 重采样, 步骤2: 文件名生成, 步骤3-10: 音频处理各阶段
+        # 步骤 1: 重采样，步骤 2: 文件名生成，步骤 3-10: 音频处理各阶段
         total_steps = 10
         progress_bar = comfy.utils.ProgressBar(total_steps)
 
-        # 重采样音频(如果需要)
+        # 重采样音频 (如果需要)
         if original_sr != target_sr:
             waveform = cls._resample_audio(waveform, original_sr, target_sr)
         progress_bar.update_absolute(1)
 
-        # 生成文件名(添加序列号)
+        # 生成文件名 (添加序列号)
         base_filename = safe_filename_prefix
         extension = ".wav" if output_format == "WAV" else ".flac"
         final_filename = ensure_unique_filename(
@@ -368,7 +368,7 @@ class XAudioSave(io.ComfyNode):
         except ValueError as exc:
             raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
 
-        # 处理LUFS标准化和峰值限制
+        # 处理 LUFS 标准化和峰值限制
         # WAV 容器在当前 FFmpeg 路径下无法稳定保留自定义工作流元数据，
         # 因此 WAV 路径不做 metadata 注入。FLAC 路径会注入 metadata。
         final_lufs = target_lufs if target_lufs > -70 else None
@@ -425,7 +425,7 @@ class XAudioSave(io.ComfyNode):
                         except OSError:
                             pass
         else:
-            # 没有LUFS标准化时按目标格式直接保存。
+            # 没有 LUFS 标准化时按目标格式直接保存。
             if output_format == "WAV":
                 cls._save_wav_32bit_float(
                     waveform,
@@ -503,7 +503,7 @@ class XAudioSave(io.ComfyNode):
         current_step: int = 0,
     ) -> torch.Tensor:
         """
-        标准化音频（压缩 + LUFS线性标准化 + 峰值限制）
+        标准化音频（压缩 + LUFS 线性标准化 + 峰值限制）
 
         Args:
             waveform: 音频波形张量 (channels, samples)
@@ -516,7 +516,7 @@ class XAudioSave(io.ComfyNode):
             use_custom_ratio: 是否使用自定义压缩比
             custom_ratio: 自定义压缩比
             final_save_path: 最终保存路径
-            progress_bar: 进度条对象(可选)
+            progress_bar: 进度条对象 (可选)
             current_step: 当前进度步数
 
         Returns:
@@ -570,7 +570,7 @@ class XAudioSave(io.ComfyNode):
                     except OSError:
                         pass
 
-            # 步骤3: 准备完成
+            # 步骤 3: 准备完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 1)
 
@@ -607,7 +607,7 @@ class XAudioSave(io.ComfyNode):
             if stats_json is None:
                 raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
 
-            # 步骤4: 初始测量完成
+            # 步骤 4: 初始测量完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 2)
 
@@ -709,7 +709,7 @@ class XAudioSave(io.ComfyNode):
             else:
                 print("[XAudioSave] Compression disabled")
 
-            # 步骤5: 压缩处理完成
+            # 步骤 5: 压缩处理完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 3)
 
@@ -765,7 +765,7 @@ class XAudioSave(io.ComfyNode):
             if stats_rough is None:
                 raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR)
 
-            # 步骤6: 粗略标准化完成
+            # 步骤 6: 粗略标准化完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 4)
 
@@ -833,7 +833,7 @@ class XAudioSave(io.ComfyNode):
                 f"Thresh: {after_thresh}"
             )
 
-            # 步骤7: 精确标准化完成
+            # 步骤 7: 精确标准化完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 5)
 
@@ -854,7 +854,7 @@ class XAudioSave(io.ComfyNode):
                 if "I:" in line or "TP:" in line or "LRA:" in line:
                     print(f"[XAudioSave] Final: {line.strip()}")
 
-            # 步骤8: 最终验证完成
+            # 步骤 8: 最终验证完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 6)
 
@@ -883,7 +883,7 @@ class XAudioSave(io.ComfyNode):
                 )
                 waveform_processed = waveform_processed.to("cpu")
 
-            # 步骤9: 文件保存完成
+            # 步骤 9: 文件保存完成
             if progress_bar:
                 progress_bar.update_absolute(current_step + 7)
 
@@ -907,7 +907,7 @@ class XAudioSave(io.ComfyNode):
         sample_rate: int,
     ):
         """
-        保存为32-bit float WAV文件（使用FFmpeg）
+        保存为 32-bit float WAV 文件（使用 FFmpeg）
         仅负责音频数据保存，不包含工作流 metadata。
 
         Args:
@@ -1076,7 +1076,7 @@ class XAudioSave(io.ComfyNode):
     @classmethod
     def _get_output_directory(cls) -> Path:
         """
-        获取ComfyUI默认输出目录
+        获取 ComfyUI 默认输出目录
 
         Returns:
             输出目录路径

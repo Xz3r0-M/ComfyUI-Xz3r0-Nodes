@@ -386,6 +386,15 @@
           "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
         }
       },
+      "resize_condition": {
+        "name": "Resize Condition",
+        "tooltip": "Resize trigger condition (applies only to Long/Short/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in Scale Multiplier mode. If the condition is not met, resizing is skipped, but divisible and offset are still applied.",
+        "options": {
+          "Always": "Always Resize",
+          "Only if Larger": "Resize Only if Larger",
+          "Only if Smaller": "Resize Only if Smaller"
+        }
+      },
       "target_edge": {
         "name": "Target Edge",
         "tooltip": "Target edge length in pixels (ignored in megapixels mode)"
@@ -667,6 +676,50 @@
       "1": {
         "name": "Workflow Info",
         "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
+      }
+    }
+  },
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
+    "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning input"
+      },
+      "negative_conditioning": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning input"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "VAE used to encode reference images"
+      },
+      "image_1": {
+        "name": "Reference Image 1",
+        "tooltip": "Reference image 1 (optional)"
+      },
+      "image_2": {
+        "name": "Reference Image 2",
+        "tooltip": "Reference image 2 (optional)"
+      },
+      "image_3": {
+        "name": "Reference Image 3",
+        "tooltip": "Reference image 3 (optional)"
+      },
+      "image_4": {
+        "name": "Reference Image 4",
+        "tooltip": "Reference image 4 (optional)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning with reference latents"
+      },
+      "1": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning with reference latents"
       }
     }
   }

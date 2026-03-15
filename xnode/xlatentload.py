@@ -1,8 +1,8 @@
 """
-Latent加载节点模块
+Latent 加载节点模块
 ================
 
-这个模块包含Latent加载相关的节点。
+这个模块包含 Latent 加载相关的节点。
 """
 
 import os
@@ -35,33 +35,33 @@ except ImportError:
 
 class XLatentLoad(io.ComfyNode):
     """
-    XLatentLoad Latent加载节点
+    XLatentLoad Latent 加载节点
 
-    提供Latent文件加载功能，支持从输入端口接收Latent或从下拉菜单选择文件。
+    提供 Latent 文件加载功能，支持从输入端口接收 Latent 或从下拉菜单选择文件。
 
-    功能:
-        - 支持从上游节点输入Latent（优先级最高）
-        - 支持从下拉菜单选择Latent文件（优先级低于输入端口）
-        - 自动扫描ComfyUI默认输出目录及其子文件夹中的.latent文件
+    功能：
+        - 支持从上游节点输入 Latent（优先级最高）
+        - 支持从下拉菜单选择 Latent 文件（优先级低于输入端口）
+        - 自动扫描 ComfyUI 默认输出目录及其子文件夹中的.latent 文件
         - 文件存在性检查和错误提示
-        - 支持Latent格式版本自动检测
-        - 输出标准Latent格式字典
+        - 支持 Latent 格式版本自动检测
+        - 输出标准 Latent 格式字典
 
-    输入:
-        latent_input: 可选的Latent输入 (LATENT)
-        latent_file: 从下拉菜单选择的Latent文件路径 (STRING)
+    输入：
+        latent_input: 可选的 Latent 输入 (LATENT)
+        latent_file: 从下拉菜单选择的 Latent 文件路径 (STRING)
 
-    输出:
-        latent: Latent字典 (LATENT)
+    输出：
+        latent: Latent 字典 (LATENT)
 
-    使用示例:
-        - 从上游节点接收Latent: 连接上游Latent节点到输入端口
-        - 从文件加载Latent: 从下拉菜单选择.latent文件
+    使用示例：
+        - 从上游节点接收 Latent: 连接上游 Latent 节点到输入端口
+        - 从文件加载 Latent: 从下拉菜单选择.latent 文件
 
-    优先级说明:
-        1. 如果输入端口有Latent，直接返回输入的Latent
-        2. 如果输入端口为None，则从下拉菜单选择的文件加载Latent
-        3. 如果输入端口为None且文件不存在，弹出警告
+    优先级说明：
+        1. 如果输入端口有 Latent，直接返回输入的 Latent
+        2. 如果输入端口为 None，则从下拉菜单选择的文件加载 Latent
+        3. 如果输入端口为 None 且文件不存在，弹出警告
     """
     NO_LATENT_SELECTED_ERROR = (
         "No latent provided via input port or file selection"
@@ -74,7 +74,7 @@ class XLatentLoad(io.ComfyNode):
     @classmethod
     def _get_latent_files(cls, directory: Path) -> list[str]:
         """
-        递归扫描目录，获取所有.latent文件
+        递归扫描目录，获取所有.latent 文件
 
         Args:
             directory: 要扫描的根目录
@@ -87,7 +87,7 @@ class XLatentLoad(io.ComfyNode):
         if not directory.exists():
             return latent_files
 
-        # 递归查找.latent文件，目录无权限时跳过。
+        # 递归查找.latent 文件，目录无权限时跳过。
         for root, _, files in os.walk(
             directory,
             onerror=lambda _err: None,
@@ -105,7 +105,7 @@ class XLatentLoad(io.ComfyNode):
     @classmethod
     def _get_latent_file_options(cls) -> list[str]:
         """
-        获取Latent文件选项列表
+        获取 Latent 文件选项列表
 
         Returns:
             文件路径列表，包含空字符串作为默认选项
@@ -121,7 +121,7 @@ class XLatentLoad(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
-        # 获取输出目录中的所有.latent文件
+        # 获取输出目录中的所有.latent 文件
         latent_files = cls._get_latent_file_options()
 
         return io.Schema(
@@ -163,21 +163,21 @@ class XLatentLoad(io.ComfyNode):
         cls, latent_input: dict | None = None, latent_file: str = ""
     ) -> io.NodeOutput:
         """
-        加载Latent
+        加载 Latent
 
         Args:
-            latent_input: 从上游节点接收的Latent（可选）
-            latent_file: 从下拉菜单选择的Latent文件路径
+            latent_input: 从上游节点接收的 Latent（可选）
+            latent_file: 从下拉菜单选择的 Latent 文件路径
 
         Returns:
-            NodeOutput: 包含Latent字典
+            NodeOutput: 包含 Latent 字典
 
         Raises:
-            RuntimeError: 当输入端口为None且文件不存在时
+            RuntimeError: 当输入端口为 None 且文件不存在时
         """
-        # 优先级1: 使用输入端口的Latent
+        # 优先级 1: 使用输入端口的 Latent
         if latent_input is not None:
-            # 验证latent结构
+            # 验证 latent 结构
             if not isinstance(latent_input, dict):
                 raise ValueError(
                     f"Expected latent to be dict, "
@@ -191,7 +191,7 @@ class XLatentLoad(io.ComfyNode):
                     f"Latent samples must be torch.Tensor, "
                     f"got {type(samples).__name__}"
                 )
-            # 支持4D图像latent [B,C,H,W] 和 5D视频latent [B,C,T,H,W]
+            # 支持 4D 图像 latent [B,C,H,W] 和 5D 视频 latent [B,C,T,H,W]
             if samples.dim() == 4:
                 # 图像 latent: [B, C, H, W]
                 pass
@@ -205,7 +205,7 @@ class XLatentLoad(io.ComfyNode):
                 )
             return io.NodeOutput(latent_input)
 
-        # 优先级2: 从文件加载Latent
+        # 优先级 2: 从文件加载 Latent
         if latent_file:
             # 构建完整文件路径
             if HAS_COMFYUI:
@@ -221,42 +221,42 @@ class XLatentLoad(io.ComfyNode):
             if not file_path.exists():
                 raise RuntimeError(cls.LATENT_FILE_NOT_FOUND_ERROR)
 
-            # 加载Latent文件
+            # 加载 Latent 文件
             try:
                 latent_data = safetensors.torch.load_file(
                     str(file_path), device="cpu"
                 )
 
-                # 验证文件包含必需的latent_tensor键
+                # 验证文件包含必需的 latent_tensor 键
                 if "latent_tensor" not in latent_data:
                     raise RuntimeError(
                         cls.INVALID_LATENT_FILE_CONTENT_ERROR
                     )
 
-                # 检查Latent格式版本并应用乘数
+                # 检查 Latent 格式版本并应用乘数
                 multiplier = 1.0
                 if "latent_format_version_0" not in latent_data:
                     multiplier = 1.0 / 0.18215
 
-                # 构建Latent字典，保留所有原始键
+                # 构建 Latent 字典，保留所有原始键
                 result = {
                     "samples": latent_data["latent_tensor"].float()
                     * multiplier
                 }
 
-                # 保留其他可能的键（如noise_mask, batch_index等）
+                # 保留其他可能的键（如 noise_mask, batch_index 等）
                 for key in ["noise_mask", "batch_index", "type"]:
                     if key in latent_data:
                         result[key] = latent_data[key]
 
-                # 验证加载的latent结构
+                # 验证加载的 latent 结构
                 samples = result["samples"]
                 if not isinstance(samples, torch.Tensor):
                     raise ValueError(
                         f"Loaded latent samples must be torch.Tensor, "
                         f"got {type(samples).__name__}"
                     )
-                # 支持4D图像latent [B,C,H,W] 和 5D视频latent [B,C,T,H,W]
+                # 支持 4D 图像 latent [B,C,H,W] 和 5D 视频 latent [B,C,T,H,W]
                 if samples.dim() == 4:
                     # 图像 latent: [B, C, H, W]
                     pass
@@ -276,7 +276,7 @@ class XLatentLoad(io.ComfyNode):
             except (OSError, SafetensorError, ValueError) as exc:
                 raise RuntimeError(cls.LATENT_LOAD_FAILED_ERROR) from exc
 
-        # 优先级3: 两者都无效，弹出警告
+        # 优先级 3: 两者都无效，弹出警告
         raise RuntimeError(cls.NO_LATENT_SELECTED_ERROR)
 
     @classmethod
