@@ -40,6 +40,7 @@ class XMemoryCleanup(io.ComfyNode):
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             not_idempotent=True,
+            is_output_node=True,
             inputs=[
                 io.MatchType.Input(
                     "passthrough",
