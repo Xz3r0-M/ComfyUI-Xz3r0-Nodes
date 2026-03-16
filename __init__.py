@@ -36,6 +36,7 @@ from .xnode.xanytostring import XAnyToString
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xmath import XMath
+from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xresolution import XResolution
 from .xnode.xstringgroup import XStringGroup
 from .xnode.xaudiosave import XAudioSave
@@ -46,6 +47,9 @@ from .xnode.xlatentsave import XLatentSave
 from .xnode.xmarkdownsave import XMarkdownSave
 from .xnode.xvideosave import XVideoSave
 from .xnode.xworkflowsave import XWorkflowSave
+from .xz3r0_utils import configure_logging, get_logger
+
+LOGGER = get_logger(__name__)
 
 WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
@@ -53,6 +57,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XDateTimeString,
     XKleinRefConditioning,
     XMath,
+    XMemoryCleanup,
     XResolution,
     XStringGroup,
     XAudioSave,
@@ -96,11 +101,11 @@ class Xz3r0NodesExtension(ComfyExtension):
         说明：
             requirements.txt 内依赖不在此处检测，交由 ComfyUI/Python。
         """
+        configure_logging()
         if not is_ffmpeg_available():
-            print(
+            LOGGER.warning(
                 "[Xz3r0-Nodes] ffmpeg not found in PATH. "
                 "Some audio/video nodes may fail at runtime.",
-                flush=True,
             )
 
 

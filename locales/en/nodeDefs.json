@@ -101,6 +101,38 @@
       }
     }
   },
+  "XMemoryCleanup": {
+    "display_name": "XMemoryCleanup",
+    "description": "Manual cleanup node for optional Python memory cleanup, model/node usage cleanup, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
+    "inputs": {
+      "passthrough": {
+        "name": "Pass-through",
+        "tooltip": "Optional pass-through input. Uses MatchType so output type automatically matches the connected input type."
+      },
+      "cleanup_memory": {
+        "name": "Cleanup Memory",
+        "tooltip": "Run Python garbage collection (gc.collect). Disabled by default."
+      },
+      "cleanup_node_usage": {
+        "name": "Cleanup Node Usage",
+        "tooltip": "Unload currently loaded models and run model cleanup checks. Disabled by default."
+      },
+      "cleanup_vram": {
+        "name": "Cleanup VRAM",
+        "tooltip": "Run VRAM/device cache cleanup (soft_empty_cache). Disabled by default."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Pass-through",
+        "tooltip": "Pass-through output (MatchType; same type as input)"
+      },
+      "1": {
+        "name": "status",
+        "tooltip": "Short cleanup result text"
+      }
+    }
+  },
   "XResolution": {
     "display_name": "XResolution",
     "description": "Resolution setting node with standard presets, custom scaling, divisible adjustment, and offset support.",

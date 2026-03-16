@@ -101,6 +101,38 @@
       }
     }
   },
+  "XMemoryCleanup": {
+    "display_name": "XMemoryCleanup",
+    "description": "手动清理节点，可按需清理 Python 内存、节点/模型占用和显存缓存。默认全部关闭，由用户自行选择执行项。",
+    "inputs": {
+      "passthrough": {
+        "name": "透传输入",
+        "tooltip": "可选透传输入。使用 MatchType：输入类型会与输出类型自动一致。"
+      },
+      "cleanup_memory": {
+        "name": "清理内存",
+        "tooltip": "执行 Python 垃圾回收（gc.collect）。默认关闭。"
+      },
+      "cleanup_node_usage": {
+        "name": "清理节点占用",
+        "tooltip": "卸载当前已加载模型并执行模型清理检查。默认关闭。"
+      },
+      "cleanup_vram": {
+        "name": "清理显存",
+        "tooltip": "执行显存缓存清理（soft_empty_cache）。默认关闭。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "透传输出",
+        "tooltip": "透传输出（MatchType，类型与透传输入一致）"
+      },
+      "1": {
+        "name": "清理状态",
+        "tooltip": "简洁清理结果文本"
+      }
+    }
+  },
   "XResolution": {
     "display_name": "XResolution",
     "description": "分辨率设置节点，提供标准预设、自定义缩放、整除调整和偏移功能。",

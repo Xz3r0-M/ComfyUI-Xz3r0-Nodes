@@ -24,6 +24,7 @@ from torchaudio.transforms import Resample
 try:
     from ..xz3r0_utils import (
         ensure_unique_filename,
+        get_logger,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
@@ -32,6 +33,7 @@ except ImportError:
     # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
     from xz3r0_utils import (
         ensure_unique_filename,
+        get_logger,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
@@ -45,6 +47,7 @@ except ImportError:
     COMFYUI_AVAILABLE = False
 
 NULL_DEVICE = "NUL" if os.name == "nt" else "/dev/null"
+LOGGER = get_logger(__name__)
 
 
 class XAudioSave(io.ComfyNode):
@@ -526,7 +529,9 @@ class XAudioSave(io.ComfyNode):
         audio_np = cls._prepare_waveform_for_io(waveform)
 
         try:
-            print("[XAudioSave] ===== ♾️Starting audio processing♾️ =====")
+            LOGGER.info(
+                "[XAudioSave] ===== ♾️Starting audio processing♾️ ====="
+            )
 
             ffmpeg_path = shutil.which("ffmpeg")
             if not ffmpeg_path:
@@ -580,9 +585,10 @@ class XAudioSave(io.ComfyNode):
             tp_value = peak_limit_db if enable_peak_limiter else 0
 
             peak_limiter_str = "enabled" if enable_peak_limiter else "disabled"
-            print(
-                f"[XAudioSave] Peak limiter {peak_limiter_str} "
-                f"(target: {tp_value} dB)"
+            LOGGER.info(
+                "[XAudioSave] Peak limiter %s (target: %s dB)",
+                peak_limiter_str,
+                tp_value,
             )
 
             stdout, stderr = (
@@ -615,9 +621,10 @@ class XAudioSave(io.ComfyNode):
 
             actual_lufs = float(stats_json["input_i"])
 
-            print(
-                f"[XAudioSave] Audio LUFS: {actual_lufs:.2f} dB, "
-                f"Target LUFS: {target_lufs:.2f} dB"
+            LOGGER.info(
+                "[XAudioSave] Audio LUFS: %.2f dB, Target LUFS: %.2f dB",
+                actual_lufs,
+                target_lufs,
             )
 
             if enable_compression:
@@ -660,9 +667,11 @@ class XAudioSave(io.ComfyNode):
                 ]
                 adaptive_threshold = actual_lufs + dynamic_offset
 
-                print(
-                    f"[XAudioSave] Dynamic offset: {dynamic_offset:.2f} dB, "
-                    f"Adaptive threshold: {adaptive_threshold:.2f} dB"
+                LOGGER.debug(
+                    "[XAudioSave] Dynamic offset: %.2f dB, "
+                    "Adaptive threshold: %.2f dB",
+                    dynamic_offset,
+                    adaptive_threshold,
                 )
 
                 acompressor_filter = (
@@ -680,9 +689,10 @@ class XAudioSave(io.ComfyNode):
                     if use_custom_ratio
                     else f"(ratio={config['ratio']})"
                 )
-                print(
-                    f"[XAudioSave] Selected: {preset_name} "
-                    f"compression preset {ratio_info}"
+                LOGGER.info(
+                    "[XAudioSave] Selected: %s compression preset %s",
+                    preset_name,
+                    ratio_info,
                 )
 
             if acompressor_filter:
@@ -705,9 +715,9 @@ class XAudioSave(io.ComfyNode):
                 )
 
                 current_input_path = compressed_path
-                print("[XAudioSave] Compression completed")
+                LOGGER.info("[XAudioSave] Compression completed")
             else:
-                print("[XAudioSave] Compression disabled")
+                LOGGER.debug("[XAudioSave] Compression disabled")
 
             # 步骤 5: 压缩处理完成
             if progress_bar:
@@ -827,10 +837,13 @@ class XAudioSave(io.ComfyNode):
             after_lra = str(stats_after["input_lra"])
             after_tp = str(stats_after["input_tp"])
             after_thresh = str(stats_after["input_thresh"])
-            print(
-                f"[XAudioSave] Finished LUFS - I: {after_i}, "
-                f"LRA: {after_lra}, TP: {after_tp}, "
-                f"Thresh: {after_thresh}"
+            LOGGER.info(
+                "[XAudioSave] Finished LUFS - I: %s, LRA: %s, TP: %s, "
+                "Thresh: %s",
+                after_i,
+                after_lra,
+                after_tp,
+                after_thresh,
             )
 
             # 步骤 7: 精确标准化完成
@@ -852,7 +865,7 @@ class XAudioSave(io.ComfyNode):
             verify_output = verify_stderr.decode("utf-8")
             for line in reversed(verify_output.split("\n")):
                 if "I:" in line or "TP:" in line or "LRA:" in line:
-                    print(f"[XAudioSave] Final: {line.strip()}")
+                    LOGGER.debug("[XAudioSave] Final: %s", line.strip())
 
             # 步骤 8: 最终验证完成
             if progress_bar:
@@ -877,9 +890,10 @@ class XAudioSave(io.ComfyNode):
                     waveform.device, non_blocking=True
                 )
             except RuntimeError:
-                print(
-                    "[XAudioSave] Warning: Could not transfer audio "
-                    f"to device {waveform.device}. Using CPU."
+                LOGGER.warning(
+                    "[XAudioSave] Could not transfer audio to device %s. "
+                    "Using CPU.",
+                    waveform.device,
                 )
                 waveform_processed = waveform_processed.to("cpu")
 
@@ -887,7 +901,9 @@ class XAudioSave(io.ComfyNode):
             if progress_bar:
                 progress_bar.update_absolute(current_step + 7)
 
-            print("[XAudioSave] ===== ♾️Audio processing completed♾️ =====")
+            LOGGER.info(
+                "[XAudioSave] ===== ♾️Audio processing completed♾️ ====="
+            )
             return waveform_processed
         except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
             raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from exc

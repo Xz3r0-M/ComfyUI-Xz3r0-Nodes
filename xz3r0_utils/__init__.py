@@ -10,12 +10,15 @@
 
 from .datetime_tokens import replace_datetime_tokens
 from .filename_uniqueness import ensure_unique_filename
+from .logging_control import configure_logging, get_logger
 from .output_path_guard import resolve_output_subpath
 from .path_component_sanitizer import sanitize_path_component
 
 __all__ = [
     "replace_datetime_tokens",
     "ensure_unique_filename",
+    "configure_logging",
+    "get_logger",
     "resolve_output_subpath",
     "sanitize_path_component",
 ]

@@ -11,9 +11,15 @@ import comfy.utils
 import torch
 from comfy_api.latest import io
 
+try:
+    from ..xz3r0_utils import get_logger
+except ImportError:
+    from xz3r0_utils import get_logger
+
 # 常量定义
 PIXELS_PER_MEGAPIXEL = 1_000_000  # 每百万像素的像素数
 MAX_MEGAPIXELS = 100.0  # 最大百万像素限制（防止显存溢出）
+LOGGER = get_logger(__name__)
 
 
 class XImageResize(io.ComfyNode):
@@ -272,10 +278,12 @@ class XImageResize(io.ComfyNode):
         if edge_mode == "Megapixels":
             target_mp = min(megapixels, MAX_MEGAPIXELS)
             if target_mp < megapixels:
-                print(
-                    f"Warning: megapixels value {megapixels} exceeds "
-                    f"maximum limit of {MAX_MEGAPIXELS}, "
-                    f"clamped to {target_mp}"
+                LOGGER.warning(
+                    "Megapixels value %s exceeds maximum limit of %s, "
+                    "clamped to %s",
+                    megapixels,
+                    MAX_MEGAPIXELS,
+                    target_mp,
                 )
             target_pixels = int(target_mp * PIXELS_PER_MEGAPIXEL)
             current_pixels = width * height
