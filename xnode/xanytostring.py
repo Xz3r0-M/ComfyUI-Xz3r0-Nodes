@@ -22,10 +22,10 @@ class XAnyToString(io.ComfyNode):
         - 同时输出原始数据，方便继续连接下游节点
 
     输入：
-        anything: 任意输入类型 (ANY)
+        anything: 任意输入类型 (MatchType 输入)
 
     输出：
-        anything: 原始输入数据 (ANY)
+        anything: 原始输入数据 (MatchType 透传输出)
         string: 转换后的字符串 (STRING)
 
     Usage example:
@@ -37,6 +37,8 @@ class XAnyToString(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
+        passthrough_template = io.MatchType.Template("anything_passthrough")
+
         return io.Schema(
             node_id="XAnyToString",
             display_name="XAnyToString",
@@ -46,18 +48,20 @@ class XAnyToString(io.ComfyNode):
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
-                io.AnyType.Input(
+                io.MatchType.Input(
                     "anything",
+                    template=passthrough_template,
                     tooltip=(
-                        "Any input type to convert into a string using "
-                        "Python str()"
+                        "MatchType passthrough input. The passthrough "
+                        "output keeps the same type as this input while "
+                        "also converting the value with Python str()"
                     ),
                 ),
             ],
             outputs=[
-                io.AnyType.Output(
-                    "anything",
-                    tooltip="Original input data passed through unchanged",
+                io.MatchType.Output(
+                    template=passthrough_template,
+                    display_name="anything",
                 ),
                 io.String.Output(
                     "string",

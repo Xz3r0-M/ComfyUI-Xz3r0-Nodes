@@ -40,7 +40,7 @@ class XAnyGate10(io.ComfyNode):
             display_name="XAnyGate10",
             description=(
                 "10-channel MatchType gate node with per-channel switches "
-                "and optional recursive output from channel 1 to 10."
+                "and recursive output using customizable channel order."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
@@ -158,8 +158,15 @@ class XAnyGate10(io.ComfyNode):
                     "enable_recursive",
                     default=True,
                     tooltip=(
-                        "Enable recursive output lookup from channel 1 "
-                        "to 10"
+                        "Enable recursive output lookup using recursive_order"
+                    ),
+                ),
+                io.String.Input(
+                    "recursive_order",
+                    default="1-2-3-4-5-6-7-8-9-10",
+                    tooltip=(
+                        "Recursive channel order list using '-' separator "
+                        "(example: 1-3-5-7-9 or 5-9-3-7-1)"
                     ),
                 ),
             ],
@@ -233,6 +240,7 @@ class XAnyGate10(io.ComfyNode):
     def _resolve_recursive_output(
         cls,
         enable_recursive: bool,
+        recursive_order: str,
         outputs: list[Any],
     ) -> Any:
         """
@@ -240,15 +248,57 @@ class XAnyGate10(io.ComfyNode):
 
         说明：
             递归开关关闭时直接返回 None；
-            开启后按 output_1 到 output_10 顺序返回首个非 None 值。
+            开启后按 recursive_order 从左到右返回首个非 None 值。
         """
         if not enable_recursive:
             return None
 
-        for output_value in outputs:
+        ordered_indexes = cls._parse_recursive_order(recursive_order)
+        for ordered_index in ordered_indexes:
+            output_value = outputs[ordered_index]
             if output_value is not None:
                 return output_value
         return None
+
+    @classmethod
+    def _parse_recursive_order(cls, recursive_order: str) -> list[int]:
+        """
+        解析递归顺序字符串并返回 0-based 索引列表。
+
+        规则：
+            1. 格式必须为数字通过 '-' 连接
+            2. 仅允许 1~10
+            3. 不允许重复数字
+            4. 不允许空片段
+        """
+        if recursive_order is None:
+            raise ValueError("recursive_order format is invalid")
+
+        normalized = recursive_order.strip()
+        if not normalized:
+            raise ValueError("recursive_order format is invalid")
+
+        parts = normalized.split("-")
+        ordered_indexes: list[int] = []
+        seen_channels: set[int] = set()
+
+        for part in parts:
+            item = part.strip()
+            if not item:
+                raise ValueError("recursive_order format is invalid")
+            if not item.isdigit():
+                raise ValueError("recursive_order format is invalid")
+
+            channel_number = int(item)
+            if channel_number < 1 or channel_number > 10:
+                raise ValueError("recursive_order channel must be 1-10")
+            if channel_number in seen_channels:
+                raise ValueError("recursive_order contains duplicate channel")
+
+            seen_channels.add(channel_number)
+            ordered_indexes.append(channel_number - 1)
+
+        return ordered_indexes
 
     @classmethod
     def execute(
@@ -274,6 +324,7 @@ class XAnyGate10(io.ComfyNode):
         enable_9: bool = True,
         enable_10: bool = True,
         enable_recursive: bool = True,
+        recursive_order: str = "1-2-3-4-5-6-7-8-9-10",
     ) -> io.NodeOutput:
         """
         执行十路开关门控与递归输出。
@@ -308,6 +359,7 @@ class XAnyGate10(io.ComfyNode):
         ]
         recursive_output = cls._resolve_recursive_output(
             enable_recursive,
+            recursive_order,
             outputs,
         )
 

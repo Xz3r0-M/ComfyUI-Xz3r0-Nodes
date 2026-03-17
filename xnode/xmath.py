@@ -51,6 +51,15 @@ class XMath(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
+        input_a_template = io.MatchType.Template(
+            "input_a_numeric",
+            allowed_types=[io.Int, io.Float],
+        )
+        input_b_template = io.MatchType.Template(
+            "input_b_numeric",
+            allowed_types=[io.Int, io.Float],
+        )
+
         return io.Schema(
             node_id="XMath",
             display_name="XMath",
@@ -58,20 +67,22 @@ class XMath(io.ComfyNode):
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
                 # 可选输入 - 接收其他节点的输出
-                io.MultiType.Input(
+                io.MatchType.Input(
                     "input_a",
-                    types=[io.Int, io.Float],
+                    template=input_a_template,
                     tooltip=(
-                        "input value A (accepts both INT and FLOAT, "
+                        "MatchType input value A (allows INT or FLOAT "
+                        "independently from input_b, "
                         "takes priority when use_input_a is enabled)"
                     ),
                     optional=True,
                 ),
-                io.MultiType.Input(
+                io.MatchType.Input(
                     "input_b",
-                    types=[io.Int, io.Float],
+                    template=input_b_template,
                     tooltip=(
-                        "input value B (accepts both INT and FLOAT, "
+                        "MatchType input value B (allows INT or FLOAT "
+                        "independently from input_a, "
                         "takes priority when use_input_b is enabled)"
                     ),
                     optional=True,

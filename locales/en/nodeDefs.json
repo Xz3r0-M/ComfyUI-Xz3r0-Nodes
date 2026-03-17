@@ -5,7 +5,7 @@
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Any input type that will be converted to a string using Python str()"
+        "tooltip": "MatchType passthrough input. The passthrough output automatically keeps the same type as this input while also converting the value with Python str()."
       }
     },
     "outputs": {
@@ -21,7 +21,7 @@
   },
   "XAnyGate10": {
     "display_name": "XAnyGate10",
-    "description": "10-channel MatchType gate node with per-channel output switches and recursive output enabled by default (find first valid value from channel 1 to 10).",
+    "description": "10-channel MatchType gate node with per-channel output switches and recursive output enabled by default, using customizable recursive order.",
     "inputs": {
       "input_1": {
         "name": "Input 1",
@@ -105,7 +105,11 @@
       },
       "enable_recursive": {
         "name": "Enable Recursive",
-        "tooltip": "Enable recursive output lookup from channel 1 to 10"
+        "tooltip": "Enable recursive output lookup using recursive_order from left to right"
+      },
+      "recursive_order": {
+        "name": "Recursive Order",
+        "tooltip": "Recursive order list separated by '-' (example: 1-3-5-7-9 or 5-9-3-7-1). Only 1-10 is allowed and duplicates are forbidden."
       }
     },
     "outputs": {
@@ -151,7 +155,7 @@
       },
       "10": {
         "name": "Recursive Output",
-        "tooltip": "First non-None output from channel 1 to 10 when recursive mode is enabled"
+        "tooltip": "First non-None output found using recursive_order when recursive mode is enabled"
       }
     }
   },
@@ -199,11 +203,11 @@
       },
       "input_a": {
         "name": "Input A",
-        "tooltip": "input value A (accepts both INT and FLOAT, takes priority when use_input_a is enabled)"
+        "tooltip": "MatchType input value A (independent numeric constraint: INT or FLOAT, takes priority when use_input_a is enabled)"
       },
       "input_b": {
         "name": "Input B",
-        "tooltip": "input value B (accepts both INT and FLOAT, takes priority when use_input_b is enabled)"
+        "tooltip": "MatchType input value B (independent numeric constraint: INT or FLOAT, takes priority when use_input_b is enabled)"
       },
       "basic_a": {
         "name": "Basic A",
@@ -871,7 +875,7 @@
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. Optional - node works without any input."
+        "tooltip": "Optional MatchType passthrough input for workflow connection. This input is not processed, only used to link the node into your workflow. The passthrough output follows the same connected type. Node works without any input."
       },
       "save_mode": {
         "name": "Save Mode",
