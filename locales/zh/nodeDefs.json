@@ -310,6 +310,61 @@
       }
     }
   },
+  "XStringWrap": {
+    "display_name": "XStringWrap",
+    "description": "极简字符串包装节点：按模式在文本前后自动应用分隔符。",
+    "inputs": {
+      "enabled": {
+        "name": "启用输出",
+        "tooltip": "节点总开关。关闭时不输出内容（返回空字符串）。"
+      },
+      "apply_mode": {
+        "name": "分隔生效模式",
+        "tooltip": "分隔生效策略：both=前后分隔同时生效，prefix_only=仅前分隔，suffix_only=仅后分隔。",
+        "options": {
+          "both": "前后分隔同时生效",
+          "prefix_only": "只有前分隔生效",
+          "suffix_only": "只有后分隔生效"
+        }
+      },
+      "prefix_separator": {
+        "name": "前分隔",
+        "tooltip": "位于文本前面的分隔符。",
+        "options": {
+          "none": "无",
+          "newline": "换行",
+          "space": "空格",
+          "comma": "逗号",
+          "comma_space": "逗号 + 空格",
+          "period": "句号",
+          "period_space": "句号 + 空格"
+        }
+      },
+      "text": {
+        "name": "文本",
+        "tooltip": "中间文本输入框。为空时不输出内容（返回空字符串）。"
+      },
+      "suffix_separator": {
+        "name": "后分隔",
+        "tooltip": "位于文本后面的分隔符。",
+        "options": {
+          "none": "无",
+          "newline": "换行",
+          "space": "空格",
+          "comma": "逗号",
+          "comma_space": "逗号 + 空格",
+          "period": "句号",
+          "period_space": "句号 + 空格"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "包装后文本",
+        "tooltip": "按当前分隔模式输出的字符串结果。"
+      }
+    }
+  },
   "XAudioSave": {
     "display_name": "XAudioSave",
     "description": "音频保存节点，支持 WAV/FLAC 无损导出，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",

@@ -39,6 +39,7 @@ from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xresolution import XResolution
 from .xnode.xstringgroup import XStringGroup
+from .xnode.xstringwrap import XStringWrap
 from .xnode.xaudiosave import XAudioSave
 from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
@@ -60,6 +61,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XMemoryCleanup,
     XResolution,
     XStringGroup,
+    XStringWrap,
     XAudioSave,
     XImageResize,
     XImageSave,
