@@ -19,6 +19,142 @@
       }
     }
   },
+  "XAnyGate10": {
+    "display_name": "XAnyGate10",
+    "description": "10 路任意类型开关门控节点：每一路可独立开关控制输出，递归输出默认启用（从第 1 路到第 10 路取第一个有效值）。",
+    "inputs": {
+      "input_1": {
+        "name": "输入 1",
+        "tooltip": "第 1 路输入（可选 MatchType 输入）"
+      },
+      "input_2": {
+        "name": "输入 2",
+        "tooltip": "第 2 路输入（可选 MatchType 输入）"
+      },
+      "input_3": {
+        "name": "输入 3",
+        "tooltip": "第 3 路输入（可选 MatchType 输入）"
+      },
+      "input_4": {
+        "name": "输入 4",
+        "tooltip": "第 4 路输入（可选 MatchType 输入）"
+      },
+      "input_5": {
+        "name": "输入 5",
+        "tooltip": "第 5 路输入（可选 MatchType 输入）"
+      },
+      "input_6": {
+        "name": "输入 6",
+        "tooltip": "第 6 路输入（可选 MatchType 输入）"
+      },
+      "input_7": {
+        "name": "输入 7",
+        "tooltip": "第 7 路输入（可选 MatchType 输入）"
+      },
+      "input_8": {
+        "name": "输入 8",
+        "tooltip": "第 8 路输入（可选 MatchType 输入）"
+      },
+      "input_9": {
+        "name": "输入 9",
+        "tooltip": "第 9 路输入（可选 MatchType 输入）"
+      },
+      "input_10": {
+        "name": "输入 10",
+        "tooltip": "第 10 路输入（可选 MatchType 输入）"
+      },
+      "enable_1": {
+        "name": "启用 1",
+        "tooltip": "启用第 1 路输出"
+      },
+      "enable_2": {
+        "name": "启用 2",
+        "tooltip": "启用第 2 路输出"
+      },
+      "enable_3": {
+        "name": "启用 3",
+        "tooltip": "启用第 3 路输出"
+      },
+      "enable_4": {
+        "name": "启用 4",
+        "tooltip": "启用第 4 路输出"
+      },
+      "enable_5": {
+        "name": "启用 5",
+        "tooltip": "启用第 5 路输出"
+      },
+      "enable_6": {
+        "name": "启用 6",
+        "tooltip": "启用第 6 路输出"
+      },
+      "enable_7": {
+        "name": "启用 7",
+        "tooltip": "启用第 7 路输出"
+      },
+      "enable_8": {
+        "name": "启用 8",
+        "tooltip": "启用第 8 路输出"
+      },
+      "enable_9": {
+        "name": "启用 9",
+        "tooltip": "启用第 9 路输出"
+      },
+      "enable_10": {
+        "name": "启用 10",
+        "tooltip": "启用第 10 路输出"
+      },
+      "enable_recursive": {
+        "name": "启用递归",
+        "tooltip": "启用递归输出查找（从第 1 路到第 10 路）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "输出 1",
+        "tooltip": "第 1 路输出（关闭或无输入时为 None）"
+      },
+      "1": {
+        "name": "输出 2",
+        "tooltip": "第 2 路输出（关闭或无输入时为 None）"
+      },
+      "2": {
+        "name": "输出 3",
+        "tooltip": "第 3 路输出（关闭或无输入时为 None）"
+      },
+      "3": {
+        "name": "输出 4",
+        "tooltip": "第 4 路输出（关闭或无输入时为 None）"
+      },
+      "4": {
+        "name": "输出 5",
+        "tooltip": "第 5 路输出（关闭或无输入时为 None）"
+      },
+      "5": {
+        "name": "输出 6",
+        "tooltip": "第 6 路输出（关闭或无输入时为 None）"
+      },
+      "6": {
+        "name": "输出 7",
+        "tooltip": "第 7 路输出（关闭或无输入时为 None）"
+      },
+      "7": {
+        "name": "输出 8",
+        "tooltip": "第 8 路输出（关闭或无输入时为 None）"
+      },
+      "8": {
+        "name": "输出 9",
+        "tooltip": "第 9 路输出（关闭或无输入时为 None）"
+      },
+      "9": {
+        "name": "输出 10",
+        "tooltip": "第 10 路输出（关闭或无输入时为 None）"
+      },
+      "10": {
+        "name": "递归输出",
+        "tooltip": "递归开启时，返回第 1~10 路中第一个非 None 输出"
+      }
+    }
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "日期时间字符串节点，生成包含日期时间标识符的格式化字符串，用于链接给本身不支持日期标识符的节点。",

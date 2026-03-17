@@ -32,6 +32,7 @@ except ImportError:
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
 from .api import xworkflowsave_api
+from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
@@ -54,6 +55,7 @@ LOGGER = get_logger(__name__)
 
 WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
+    XAnyGate10,
     XAnyToString,
     XDateTimeString,
     XKleinRefConditioning,

@@ -19,6 +19,142 @@
       }
     }
   },
+  "XAnyGate10": {
+    "display_name": "XAnyGate10",
+    "description": "10-channel MatchType gate node with per-channel output switches and recursive output enabled by default (find first valid value from channel 1 to 10).",
+    "inputs": {
+      "input_1": {
+        "name": "Input 1",
+        "tooltip": "Channel 1 input (optional MatchType input)"
+      },
+      "input_2": {
+        "name": "Input 2",
+        "tooltip": "Channel 2 input (optional MatchType input)"
+      },
+      "input_3": {
+        "name": "Input 3",
+        "tooltip": "Channel 3 input (optional MatchType input)"
+      },
+      "input_4": {
+        "name": "Input 4",
+        "tooltip": "Channel 4 input (optional MatchType input)"
+      },
+      "input_5": {
+        "name": "Input 5",
+        "tooltip": "Channel 5 input (optional MatchType input)"
+      },
+      "input_6": {
+        "name": "Input 6",
+        "tooltip": "Channel 6 input (optional MatchType input)"
+      },
+      "input_7": {
+        "name": "Input 7",
+        "tooltip": "Channel 7 input (optional MatchType input)"
+      },
+      "input_8": {
+        "name": "Input 8",
+        "tooltip": "Channel 8 input (optional MatchType input)"
+      },
+      "input_9": {
+        "name": "Input 9",
+        "tooltip": "Channel 9 input (optional MatchType input)"
+      },
+      "input_10": {
+        "name": "Input 10",
+        "tooltip": "Channel 10 input (optional MatchType input)"
+      },
+      "enable_1": {
+        "name": "Enable 1",
+        "tooltip": "Enable channel 1 output"
+      },
+      "enable_2": {
+        "name": "Enable 2",
+        "tooltip": "Enable channel 2 output"
+      },
+      "enable_3": {
+        "name": "Enable 3",
+        "tooltip": "Enable channel 3 output"
+      },
+      "enable_4": {
+        "name": "Enable 4",
+        "tooltip": "Enable channel 4 output"
+      },
+      "enable_5": {
+        "name": "Enable 5",
+        "tooltip": "Enable channel 5 output"
+      },
+      "enable_6": {
+        "name": "Enable 6",
+        "tooltip": "Enable channel 6 output"
+      },
+      "enable_7": {
+        "name": "Enable 7",
+        "tooltip": "Enable channel 7 output"
+      },
+      "enable_8": {
+        "name": "Enable 8",
+        "tooltip": "Enable channel 8 output"
+      },
+      "enable_9": {
+        "name": "Enable 9",
+        "tooltip": "Enable channel 9 output"
+      },
+      "enable_10": {
+        "name": "Enable 10",
+        "tooltip": "Enable channel 10 output"
+      },
+      "enable_recursive": {
+        "name": "Enable Recursive",
+        "tooltip": "Enable recursive output lookup from channel 1 to 10"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Output 1",
+        "tooltip": "Channel 1 output (None when disabled or input is empty)"
+      },
+      "1": {
+        "name": "Output 2",
+        "tooltip": "Channel 2 output (None when disabled or input is empty)"
+      },
+      "2": {
+        "name": "Output 3",
+        "tooltip": "Channel 3 output (None when disabled or input is empty)"
+      },
+      "3": {
+        "name": "Output 4",
+        "tooltip": "Channel 4 output (None when disabled or input is empty)"
+      },
+      "4": {
+        "name": "Output 5",
+        "tooltip": "Channel 5 output (None when disabled or input is empty)"
+      },
+      "5": {
+        "name": "Output 6",
+        "tooltip": "Channel 6 output (None when disabled or input is empty)"
+      },
+      "6": {
+        "name": "Output 7",
+        "tooltip": "Channel 7 output (None when disabled or input is empty)"
+      },
+      "7": {
+        "name": "Output 8",
+        "tooltip": "Channel 8 output (None when disabled or input is empty)"
+      },
+      "8": {
+        "name": "Output 9",
+        "tooltip": "Channel 9 output (None when disabled or input is empty)"
+      },
+      "9": {
+        "name": "Output 10",
+        "tooltip": "Channel 10 output (None when disabled or input is empty)"
+      },
+      "10": {
+        "name": "Recursive Output",
+        "tooltip": "First non-None output from channel 1 to 10 when recursive mode is enabled"
+      }
+    }
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
