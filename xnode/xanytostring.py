@@ -52,8 +52,8 @@ class XAnyToString(io.ComfyNode):
                     "anything",
                     template=passthrough_template,
                     tooltip=(
-                        "MatchType passthrough input. The passthrough "
-                        "output keeps the same type as this input while "
+                        "Optional pass-through input. The pass-through "
+                        "output keeps the same data type as this input while "
                         "also converting the value with Python str()"
                     ),
                 ),

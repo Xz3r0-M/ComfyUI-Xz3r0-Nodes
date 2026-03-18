@@ -5,7 +5,7 @@
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "MatchType passthrough input. The passthrough output automatically keeps the same type as this input while also converting the value with Python str()."
+        "tooltip": "Optional pass-through input. The pass-through output automatically keeps the same data type as this input while also converting the value with Python str()."
       }
     },
     "outputs": {
@@ -21,47 +21,47 @@
   },
   "XAnyGate10": {
     "display_name": "XAnyGate10",
-    "description": "10-channel MatchType gate node with per-channel output switches and recursive output enabled by default, using customizable recursive order.",
+    "description": "10-channel gate node with per-channel output switches and recursive output enabled by default, using customizable recursive order.",
     "inputs": {
       "input_1": {
         "name": "Input 1",
-        "tooltip": "Channel 1 input (optional MatchType input)"
+        "tooltip": "Channel 1 input (optional, accepts any data)"
       },
       "input_2": {
         "name": "Input 2",
-        "tooltip": "Channel 2 input (optional MatchType input)"
+        "tooltip": "Channel 2 input (optional, accepts any data)"
       },
       "input_3": {
         "name": "Input 3",
-        "tooltip": "Channel 3 input (optional MatchType input)"
+        "tooltip": "Channel 3 input (optional, accepts any data)"
       },
       "input_4": {
         "name": "Input 4",
-        "tooltip": "Channel 4 input (optional MatchType input)"
+        "tooltip": "Channel 4 input (optional, accepts any data)"
       },
       "input_5": {
         "name": "Input 5",
-        "tooltip": "Channel 5 input (optional MatchType input)"
+        "tooltip": "Channel 5 input (optional, accepts any data)"
       },
       "input_6": {
         "name": "Input 6",
-        "tooltip": "Channel 6 input (optional MatchType input)"
+        "tooltip": "Channel 6 input (optional, accepts any data)"
       },
       "input_7": {
         "name": "Input 7",
-        "tooltip": "Channel 7 input (optional MatchType input)"
+        "tooltip": "Channel 7 input (optional, accepts any data)"
       },
       "input_8": {
         "name": "Input 8",
-        "tooltip": "Channel 8 input (optional MatchType input)"
+        "tooltip": "Channel 8 input (optional, accepts any data)"
       },
       "input_9": {
         "name": "Input 9",
-        "tooltip": "Channel 9 input (optional MatchType input)"
+        "tooltip": "Channel 9 input (optional, accepts any data)"
       },
       "input_10": {
         "name": "Input 10",
-        "tooltip": "Channel 10 input (optional MatchType input)"
+        "tooltip": "Channel 10 input (optional, accepts any data)"
       },
       "enable_1": {
         "name": "Enable 1",
@@ -203,11 +203,11 @@
       },
       "input_a": {
         "name": "Input A",
-        "tooltip": "MatchType input value A (independent numeric constraint: INT or FLOAT, takes priority when use_input_a is enabled)"
+        "tooltip": "Input value A (accepts INT or FLOAT, takes priority when use_input_a is enabled)"
       },
       "input_b": {
         "name": "Input B",
-        "tooltip": "MatchType input value B (independent numeric constraint: INT or FLOAT, takes priority when use_input_b is enabled)"
+        "tooltip": "Input value B (accepts INT or FLOAT, takes priority when use_input_b is enabled)"
       },
       "basic_a": {
         "name": "Basic A",
@@ -232,11 +232,11 @@
     },
     "outputs": {
       "0": {
-        "name": "int_result",
+        "name": "Integer Result",
         "tooltip": "Integer result (truncated decimal part towards zero)"
       },
       "1": {
-        "name": "float_result",
+        "name": "Float Result",
         "tooltip": "Float result (exact value with decimal)"
       }
     }
@@ -247,7 +247,7 @@
     "inputs": {
       "passthrough": {
         "name": "Pass-through",
-        "tooltip": "Optional pass-through input. Uses MatchType so output type automatically matches the connected input type."
+        "tooltip": "Optional pass-through input. Output type automatically matches the connected input type."
       },
       "cleanup_memory": {
         "name": "Cleanup Memory",
@@ -265,10 +265,10 @@
     "outputs": {
       "0": {
         "name": "Pass-through",
-        "tooltip": "Pass-through output (MatchType; same type as input)"
+        "tooltip": "Pass-through output (same data type as input)"
       },
       "1": {
-        "name": "status",
+        "name": "Cleanup Status",
         "tooltip": "Short cleanup result text"
       }
     }
@@ -514,7 +514,7 @@
     "description": "Audio saving node with WAV/FLAC lossless output, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
     "inputs": {
       "audio": {
-        "name": "AUDIO",
+        "name": "Audio",
         "tooltip": "Input audio tensor"
       },
       "filename_prefix": {
@@ -579,11 +579,11 @@
     },
     "outputs": {
       "0": {
-        "name": "Processed_AUDIO",
+        "name": "Processed Audio",
         "tooltip": "Audio after resampling, compression, loudness normalization, and peak limiting"
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
@@ -703,7 +703,7 @@
         "tooltip": "Original input images (passed through)"
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
@@ -751,7 +751,7 @@
         "tooltip": "Input latent (passed through)"
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
@@ -819,11 +819,11 @@
     },
     "outputs": {
       "0": {
-        "name": "content",
+        "name": "Saved Content",
         "tooltip": "Final complete string written into the markdown file, available for downstream nodes."
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
@@ -833,7 +833,7 @@
     "description": "Video saving node with H.265 encoding support and custom parameters.",
     "inputs": {
       "video": {
-        "name": "VIDEO",
+        "name": "Video",
         "tooltip": "The video to save."
       },
       "filename_prefix": {
@@ -879,7 +879,7 @@
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Optional MatchType passthrough input for workflow connection. This input is not processed, only used to link the node into your workflow. The passthrough output follows the same connected type. Node works without any input."
+        "tooltip": "Optional pass-through input for workflow connection. This input is not processed, only used to link the node into your workflow. The pass-through output follows the connected input data type. Node works without any input."
       },
       "save_mode": {
         "name": "Save Mode",
@@ -955,3 +955,4 @@
     }
   }
 }
+

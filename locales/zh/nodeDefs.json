@@ -5,7 +5,7 @@
     "inputs": {
       "anything": {
         "name": "任意输入",
-        "tooltip": "MatchType 透传输入：透传输出会自动保持与该输入一致的类型，同时使用 Python str() 转换为字符串"
+        "tooltip": "可选透传输入：透传输出会自动保持与该输入一致的数据类型，同时使用 Python str() 转换为字符串"
       }
     },
     "outputs": {
@@ -25,43 +25,43 @@
     "inputs": {
       "input_1": {
         "name": "输入 1",
-        "tooltip": "第 1 路输入（可选 MatchType 输入）"
+        "tooltip": "第 1 路输入（可选，支持任意数据）"
       },
       "input_2": {
         "name": "输入 2",
-        "tooltip": "第 2 路输入（可选 MatchType 输入）"
+        "tooltip": "第 2 路输入（可选，支持任意数据）"
       },
       "input_3": {
         "name": "输入 3",
-        "tooltip": "第 3 路输入（可选 MatchType 输入）"
+        "tooltip": "第 3 路输入（可选，支持任意数据）"
       },
       "input_4": {
         "name": "输入 4",
-        "tooltip": "第 4 路输入（可选 MatchType 输入）"
+        "tooltip": "第 4 路输入（可选，支持任意数据）"
       },
       "input_5": {
         "name": "输入 5",
-        "tooltip": "第 5 路输入（可选 MatchType 输入）"
+        "tooltip": "第 5 路输入（可选，支持任意数据）"
       },
       "input_6": {
         "name": "输入 6",
-        "tooltip": "第 6 路输入（可选 MatchType 输入）"
+        "tooltip": "第 6 路输入（可选，支持任意数据）"
       },
       "input_7": {
         "name": "输入 7",
-        "tooltip": "第 7 路输入（可选 MatchType 输入）"
+        "tooltip": "第 7 路输入（可选，支持任意数据）"
       },
       "input_8": {
         "name": "输入 8",
-        "tooltip": "第 8 路输入（可选 MatchType 输入）"
+        "tooltip": "第 8 路输入（可选，支持任意数据）"
       },
       "input_9": {
         "name": "输入 9",
-        "tooltip": "第 9 路输入（可选 MatchType 输入）"
+        "tooltip": "第 9 路输入（可选，支持任意数据）"
       },
       "input_10": {
         "name": "输入 10",
-        "tooltip": "第 10 路输入（可选 MatchType 输入）"
+        "tooltip": "第 10 路输入（可选，支持任意数据）"
       },
       "enable_1": {
         "name": "启用 1",
@@ -203,11 +203,11 @@
       },
       "input_a": {
         "name": "输入 A",
-        "tooltip": "MatchType 输入值 A（独立约束为整数或浮点数，启用 使用输入 A 时优先使用）"
+        "tooltip": "输入值 A（可连接整数或浮点数，启用 使用输入 A 时优先使用）"
       },
       "input_b": {
         "name": "输入 B",
-        "tooltip": "MatchType 输入值 B（独立约束为整数或浮点数，启用 使用输入 B 时优先使用）"
+        "tooltip": "输入值 B（可连接整数或浮点数，启用 使用输入 B 时优先使用）"
       },
       "basic_a": {
         "name": "基础 A",
@@ -247,7 +247,7 @@
     "inputs": {
       "passthrough": {
         "name": "透传输入",
-        "tooltip": "可选透传输入。使用 MatchType：输入类型会与输出类型自动一致。"
+        "tooltip": "可选透传输入。输出会自动保持与输入一致的数据类型。"
       },
       "cleanup_memory": {
         "name": "清理内存",
@@ -265,7 +265,7 @@
     "outputs": {
       "0": {
         "name": "透传输出",
-        "tooltip": "透传输出（MatchType，类型与透传输入一致）"
+        "tooltip": "透传输出（数据类型与透传输入一致）"
       },
       "1": {
         "name": "清理状态",
@@ -879,7 +879,7 @@
     "inputs": {
       "anything": {
         "name": "任意输入",
-        "tooltip": "可选 MatchType 透传输入，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中；透传输出会自动保持相同类型。不连接任何数据也能正常工作。"
+        "tooltip": "可选透传输入，用于工作流连接。此输入不处理数据，仅用于将节点链接到工作流中；透传输出会自动保持与输入相同的数据类型。不连接任何数据也能正常工作。"
       },
       "save_mode": {
         "name": "保存模式",
@@ -955,3 +955,4 @@
     }
   }
 }
+

@@ -108,8 +108,8 @@ class XWorkflowSave(io.ComfyNode):
                     template=passthrough_template,
                     optional=True,
                     tooltip=(
-                        "Optional MatchType passthrough input for "
-                        "workflow connection. "
+                        "Optional pass-through input for workflow "
+                        "connection. "
                         "This input is not processed, only used to "
                         "link the node into your workflow. "
                         "Output type follows the connected input type. "

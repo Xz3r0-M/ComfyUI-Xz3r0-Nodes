@@ -40,7 +40,7 @@
     - 比如控制参考图输出到 `XKleinRefConditioning` 节点，或控制多个不同提示词输出
 
 ### 4. 🪛 调整 `XAnyToString` `XMath` `XWorkflowSave` 节点
-- 将输入端口改为 V3 API 的 `MatchType` 以提高兼容性，降低链接下游节点出错的可能性
+- 调整输入端口的代码内部类型以提高兼容性，降低未来链接下游节点出错的可能性
 
 ### 5. 🛠️ 增强 `XResolution` 分辨率设置节点
 - 新增 图像/遮罩 (可选) 输入端口

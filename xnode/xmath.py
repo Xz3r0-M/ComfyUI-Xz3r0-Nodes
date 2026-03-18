@@ -71,8 +71,8 @@ class XMath(io.ComfyNode):
                     "input_a",
                     template=input_a_template,
                     tooltip=(
-                        "MatchType input value A (allows INT or FLOAT "
-                        "independently from input_b, "
+                        "Optional numeric input A (allows INT or FLOAT "
+                        "independently from input B, "
                         "takes priority when use_input_a is enabled)"
                     ),
                     optional=True,
@@ -81,8 +81,8 @@ class XMath(io.ComfyNode):
                     "input_b",
                     template=input_b_template,
                     tooltip=(
-                        "MatchType input value B (allows INT or FLOAT "
-                        "independently from input_a, "
+                        "Optional numeric input B (allows INT or FLOAT "
+                        "independently from input A, "
                         "takes priority when use_input_b is enabled)"
                     ),
                     optional=True,

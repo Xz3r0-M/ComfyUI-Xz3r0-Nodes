@@ -35,8 +35,7 @@ class XMemoryCleanup(io.ComfyNode):
             description=(
                 "Manual memory cleanup node with optional Python GC, "
                 "model unload, and VRAM cache cleanup. "
-                "Pass-through uses MatchType to keep input and output "
-                "types consistent."
+                "Pass-through keeps input and output data types consistent."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             not_idempotent=True,

@@ -39,7 +39,7 @@ class XAnyGate10(io.ComfyNode):
             node_id="XAnyGate10",
             display_name="XAnyGate10",
             description=(
-                "10-channel MatchType gate node with per-channel switches "
+                "10-channel gate node with per-channel switches "
                 "and recursive output using customizable channel order."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
@@ -48,61 +48,61 @@ class XAnyGate10(io.ComfyNode):
                     "input_1",
                     template=template_1,
                     optional=True,
-                    tooltip="Channel 1 input (optional MatchType input)",
+                    tooltip="Channel 1 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_2",
                     template=template_2,
                     optional=True,
-                    tooltip="Channel 2 input (optional MatchType input)",
+                    tooltip="Channel 2 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_3",
                     template=template_3,
                     optional=True,
-                    tooltip="Channel 3 input (optional MatchType input)",
+                    tooltip="Channel 3 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_4",
                     template=template_4,
                     optional=True,
-                    tooltip="Channel 4 input (optional MatchType input)",
+                    tooltip="Channel 4 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_5",
                     template=template_5,
                     optional=True,
-                    tooltip="Channel 5 input (optional MatchType input)",
+                    tooltip="Channel 5 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_6",
                     template=template_6,
                     optional=True,
-                    tooltip="Channel 6 input (optional MatchType input)",
+                    tooltip="Channel 6 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_7",
                     template=template_7,
                     optional=True,
-                    tooltip="Channel 7 input (optional MatchType input)",
+                    tooltip="Channel 7 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_8",
                     template=template_8,
                     optional=True,
-                    tooltip="Channel 8 input (optional MatchType input)",
+                    tooltip="Channel 8 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_9",
                     template=template_9,
                     optional=True,
-                    tooltip="Channel 9 input (optional MatchType input)",
+                    tooltip="Channel 9 input (optional, accepts any data)",
                 ),
                 io.MatchType.Input(
                     "input_10",
                     template=template_10,
                     optional=True,
-                    tooltip="Channel 10 input (optional MatchType input)",
+                    tooltip="Channel 10 input (optional, accepts any data)",
                 ),
                 io.Boolean.Input(
                     "enable_1",
