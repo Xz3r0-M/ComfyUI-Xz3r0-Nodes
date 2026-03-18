@@ -16,7 +16,7 @@ except ImportError:
 import comfy.utils
 import numpy as np
 import torch
-from comfy_api.latest import ComfyExtension, io
+from comfy_api.latest import ComfyExtension, io, ui
 from PIL import Image, PngImagePlugin
 
 try:
@@ -67,6 +67,7 @@ class XImageSave(io.ComfyNode):
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         compression_level: PNG 压缩级别 0-9 (INT)
+        enable_preview: 是否显示图片预览 (BOOLEAN)
         prompt: 工作流提示词 (隐藏参数，自动注入)
         extra_pnginfo: 额外元数据 (隐藏参数，自动注入)
 
@@ -129,6 +130,14 @@ class XImageSave(io.ComfyNode):
                     tooltip="PNG compression level (0=no compression, "
                     "9=maximum compression)",
                 ),
+                io.Boolean.Input(
+                    "enable_preview",
+                    default=False,
+                    tooltip=(
+                        "Show image preview on this node after saving "
+                        "when enabled"
+                    ),
+                ),
             ],
             outputs=[
                 io.Image.Output(
@@ -151,6 +160,7 @@ class XImageSave(io.ComfyNode):
         filename_prefix: str,
         subfolder: str = "",
         compression_level: int = 5,
+        enable_preview: bool = False,
     ) -> io.NodeOutput:
         """
         保存图像到 ComfyUI 输出目录
@@ -160,6 +170,7 @@ class XImageSave(io.ComfyNode):
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
             compression_level: PNG 压缩级别 (0-9)
+            enable_preview: 是否显示节点图片预览
 
         Returns:
             NodeOutput: 包含原始图像和保存的相对路径
@@ -262,6 +273,12 @@ class XImageSave(io.ComfyNode):
         # 输出保存路径 (多个图像用分号分隔)
         save_path_str = ";".join(saved_paths) if saved_paths else ""
 
+        if enable_preview:
+            return io.NodeOutput(
+                images,
+                save_path_str,
+                ui=ui.PreviewImage(images, cls=cls),
+            )
         return io.NodeOutput(images, save_path_str)
 
     @classmethod

@@ -695,6 +695,10 @@
       "compression_level": {
         "name": "Compression Level",
         "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
+      },
+      "enable_preview": {
+        "name": "Enable Preview",
+        "tooltip": "Show image preview on this node after saving when enabled"
       }
     },
     "outputs": {

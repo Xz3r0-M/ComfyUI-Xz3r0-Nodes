@@ -695,6 +695,10 @@
       "compression_level": {
         "name": "压缩级别",
         "tooltip": "PNG 压缩级别 (0=无压缩，9=最大压缩)"
+      },
+      "enable_preview": {
+        "name": "启用预览",
+        "tooltip": "开启后在该节点显示图像预览"
       }
     },
     "outputs": {
