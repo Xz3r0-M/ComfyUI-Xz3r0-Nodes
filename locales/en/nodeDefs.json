@@ -279,15 +279,19 @@
     "inputs": {
       "preset": {
         "name": "Preset",
-        "tooltip": "Custom or standard resolution presets"
+        "tooltip": "Resolution preset (used only when image input is not connected; if preset is not Custom, it overrides custom width/height)"
+      },
+      "matchtype": {
+        "name": "Image Input",
+        "tooltip": "Image or mask input for base resolution (takes priority over preset and custom width/height)"
       },
       "width": {
         "name": "Custom Width",
-        "tooltip": "Custom resolution width"
+        "tooltip": "Custom resolution width (used only when preset is Custom and image input is not connected)"
       },
       "height": {
         "name": "Custom Height",
-        "tooltip": "Custom resolution height"
+        "tooltip": "Custom resolution height (used only when preset is Custom and image input is not connected)"
       },
       "scale": {
         "name": "Scale",

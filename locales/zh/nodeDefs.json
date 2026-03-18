@@ -279,15 +279,19 @@
     "inputs": {
       "preset": {
         "name": "分辨率预设",
-        "tooltip": "自定义或标准分辨率预设"
+        "tooltip": "分辨率预设（仅在未连接图像输入时生效；当 preset 不是 Custom 时，会覆盖自定义宽高）"
+      },
+      "matchtype": {
+        "name": "图像输入",
+        "tooltip": "用于提供基础分辨率的图像或遮罩输入（优先级高于预设和自定义宽高）"
       },
       "width": {
         "name": "自定义宽度",
-        "tooltip": "自定义分辨率宽度"
+        "tooltip": "自定义分辨率宽度（仅在 preset 为 Custom 且未连接图像输入时生效）"
       },
       "height": {
         "name": "自定义高度",
-        "tooltip": "自定义分辨率高度"
+        "tooltip": "自定义分辨率高度（仅在 preset 为 Custom 且未连接图像输入时生效）"
       },
       "scale": {
         "name": "缩放倍率",
