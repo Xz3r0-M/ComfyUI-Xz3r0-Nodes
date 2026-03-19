@@ -155,6 +155,10 @@ class XWorkflowSave(io.ComfyNode):
                 io.MatchType.Output(
                     template=passthrough_template,
                     display_name="anything",
+                    tooltip=(
+                        "Original pass-through input for downstream "
+                        "workflow chaining"
+                    ),
                 ),
                 io.String.Output(
                     "workflow_info",

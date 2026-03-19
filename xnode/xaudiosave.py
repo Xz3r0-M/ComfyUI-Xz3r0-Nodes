@@ -197,6 +197,8 @@ class XAudioSave(io.ComfyNode):
                 io.Boolean.Input(
                     "enable_peak_limiter",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable True Peak limiting "
                     "(Broadcast standard, 8x oversampling). "
                     "When disabled, skips peak limiting.",
@@ -214,6 +216,8 @@ class XAudioSave(io.ComfyNode):
                 io.Boolean.Input(
                     "enable_compression",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable dynamic range compression using "
                     "acompressor filter. "
                     "When disabled, skips compression and "
@@ -236,6 +240,8 @@ class XAudioSave(io.ComfyNode):
                 io.Boolean.Input(
                     "use_custom_ratio",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable custom compression ratio to "
                     "override preset value. "
                     "When disabled, uses the preset's "

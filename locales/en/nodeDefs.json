@@ -245,8 +245,8 @@
     "display_name": "XMemoryCleanup",
     "description": "Manual cleanup node for optional Python memory cleanup, model/node usage cleanup, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
     "inputs": {
-      "passthrough": {
-        "name": "Pass-through",
+      "anything": {
+        "name": "Anything",
         "tooltip": "Optional pass-through input. Output type automatically matches the connected input type."
       },
       "cleanup_memory": {
@@ -264,12 +264,8 @@
     },
     "outputs": {
       "0": {
-        "name": "Pass-through",
+        "name": "Anything",
         "tooltip": "Pass-through output (same data type as input)"
-      },
-      "1": {
-        "name": "Cleanup Status",
-        "tooltip": "Short cleanup result text"
       }
     }
   },
@@ -281,8 +277,8 @@
         "name": "Preset",
         "tooltip": "Resolution preset (used only when image input is not connected; if preset is not Custom, it overrides custom width/height)"
       },
-      "matchtype": {
-        "name": "Image Input",
+      "image_or_mask": {
+        "name": "Image or Mask",
         "tooltip": "Image or mask input for base resolution (takes priority over preset and custom width/height)"
       },
       "width": {
@@ -592,13 +588,25 @@
     "display_name": "XImageResize",
     "description": "Fully automatic image scaling node with intelligent landscape/portrait/square detection, multiple interpolation methods, and aspect ratio preservation.",
     "inputs": {
-      "images": {
-        "name": "Images",
-        "tooltip": "Input images"
+      "image_or_mask": {
+        "name": "Image or Mask",
+        "tooltip": "Input image or mask"
+      },
+      "resize_settings_in": {
+        "name": "Resize Settings In",
+        "tooltip": "Optional settings input. Connect upstream XImageResize settings output to pass chain settings into this node."
+      },
+      "use_passed_settings": {
+        "name": "Use Passed Settings",
+        "tooltip": "When enabled and settings input is connected, this node uses upstream settings for resize calculation. When disabled, this node uses local panel settings, but chain settings still pass through to downstream nodes."
+      },
+      "output_resize_settings": {
+        "name": "Output Resize Settings",
+        "tooltip": "When disabled, resize settings output becomes empty, equivalent to leaving the settings cable unconnected."
       },
       "scale_mode": {
         "name": "Interpolation",
-        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality",
+        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality. For MASK input, Nearest-exact is recommended to avoid edge drift.",
         "options": {
           "Nearest-exact": "Nearest Exact (fastest, pixel-perfect, ideal for pixel art)",
           "Bilinear": "Bilinear (fast, medium quality, general purpose)",
@@ -663,8 +671,8 @@
     },
     "outputs": {
       "0": {
-        "name": "Processed Images",
-        "tooltip": "Scaled images (batch is resized with one unified target size)"
+        "name": "Processed Data",
+        "tooltip": "Scaled image or mask (batch uses one unified target size)"
       },
       "1": {
         "name": "width",
@@ -673,16 +681,20 @@
       "2": {
         "name": "height",
         "tooltip": "Output resolution height"
+      },
+      "3": {
+        "name": "Resize Settings Out",
+        "tooltip": "Outputs chain settings for downstream nodes. If valid upstream settings exist, this output keeps forwarding the chain-origin settings."
       }
     }
   },
   "XImageSave": {
     "display_name": "XImageSave",
-    "description": "Advanced image saving node with custom filename, subfolder support, and datetime placeholders.",
+    "description": "Advanced image/mask saving node with custom filename, subfolder support, and datetime placeholders.",
     "inputs": {
-      "images": {
-        "name": "Images",
-        "tooltip": "Input image"
+      "image_or_mask": {
+        "name": "Image or Mask",
+        "tooltip": "Input image or mask"
       },
       "filename_prefix": {
         "name": "Filename Prefix",
@@ -703,8 +715,8 @@
     },
     "outputs": {
       "0": {
-        "name": "Images",
-        "tooltip": "Original input images (passed through)"
+        "name": "Image or Mask",
+        "tooltip": "Original input image or mask (passed through)"
       },
       "1": {
         "name": "Saved Path",
@@ -959,4 +971,5 @@
     }
   }
 }
+
 

@@ -63,7 +63,7 @@ class XImageSave(io.ComfyNode):
         - 输出相对路径 (不泄露绝对路径)
 
     输入：
-        images: 图像张量 (IMAGE)
+        image_or_mask: 图像或遮罩张量 (IMAGE/MASK)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
         compression_level: PNG 压缩级别 0-9 (INT)
@@ -72,14 +72,14 @@ class XImageSave(io.ComfyNode):
         extra_pnginfo: 额外元数据 (隐藏参数，自动注入)
 
     输出：
-        images: 原始图像 (透传)
+        image_or_mask: 原始输入 (透传)
         save_path: 保存的相对路径 (STRING)
 
     Usage example:
         filename_prefix="MyImage_%Y%m%d",
         subfolder="Characters",
         compression_level=6
-        Output: images(original),
+        Output: image_or_mask(original),
         save_path="output/Characters/MyImage_20260114.png"
 
     元数据说明：
@@ -96,17 +96,23 @@ class XImageSave(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         """定义节点的输入输出模式"""
+        passthrough_template = io.MatchType.Template(
+            "image_or_mask_passthrough",
+            allowed_types=[io.Image, io.Mask],
+        )
+
         return io.Schema(
             node_id="XImageSave",
             display_name="XImageSave",
-            description="Save images with custom filename, subfolder, "
-            "datetime placeholders, and metadata",
+            description="Save image or mask with custom filename, "
+            "subfolder, datetime placeholders, and metadata",
             category="♾️ Xz3r0/File-Processing",
             is_output_node=True,
             inputs=[
-                io.Image.Input(
-                    "images",
-                    tooltip="Input image",
+                io.MatchType.Input(
+                    "image_or_mask",
+                    template=passthrough_template,
+                    tooltip="Input image or mask",
                 ),
                 io.String.Input(
                     "filename_prefix",
@@ -132,7 +138,9 @@ class XImageSave(io.ComfyNode):
                 ),
                 io.Boolean.Input(
                     "enable_preview",
-                    default=False,
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "Show image preview on this node after saving "
                         "when enabled"
@@ -140,9 +148,10 @@ class XImageSave(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Image.Output(
-                    "images",
-                    tooltip="Original input images (passed through)",
+                io.MatchType.Output(
+                    template=passthrough_template,
+                    display_name="image_or_mask",
+                    tooltip="Original input image or mask (passed through)",
                 ),
                 io.String.Output(
                     "save_path",
@@ -156,33 +165,27 @@ class XImageSave(io.ComfyNode):
     @classmethod
     def execute(
         cls,
-        images: torch.Tensor,
+        image_or_mask: torch.Tensor,
         filename_prefix: str,
         subfolder: str = "",
         compression_level: int = 5,
-        enable_preview: bool = False,
+        enable_preview: bool = True,
     ) -> io.NodeOutput:
         """
         保存图像到 ComfyUI 输出目录
 
         Args:
-            images: 图像张量 (B, H, W, C)
+            image_or_mask: 图像或遮罩张量
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
             compression_level: PNG 压缩级别 (0-9)
             enable_preview: 是否显示节点图片预览
 
         Returns:
-            NodeOutput: 包含原始图像和保存的相对路径
+            NodeOutput: 包含原始输入和保存的相对路径
         """
-        if images is None or len(images) == 0:
-            raise ValueError("Input images cannot be empty")
-
-        if images.dim() != 4:
-            raise ValueError(
-                "Expected image tensor shape (B,H,W,C), "
-                f"got {images.dim()}D tensor"
-            )
+        normalized_batch = cls._normalize_input_batch(image_or_mask)
+        preview_batch = cls._build_preview_batch(normalized_batch)
 
         # 从隐藏参数获取元数据
         prompt = cls.hidden.prompt if hasattr(cls.hidden, "prompt") else None
@@ -213,14 +216,14 @@ class XImageSave(io.ComfyNode):
 
         # 保存图像序列
         saved_paths = []
-        progress_bar = comfy.utils.ProgressBar(len(images))
-        for i, img_tensor in enumerate(images):
+        progress_bar = comfy.utils.ProgressBar(len(normalized_batch))
+        for i, img_tensor in enumerate(normalized_batch):
             # 转换张量到 PIL 图像
             img_pil = cls._tensor_to_pil(img_tensor)
 
             # 生成文件名 (添加序列号)
             filename = safe_filename_prefix
-            if len(images) > 1:
+            if len(normalized_batch) > 1:
                 filename = f"{filename}_{i:04d}"
 
             # 检测同名文件并添加序列号
@@ -275,11 +278,66 @@ class XImageSave(io.ComfyNode):
 
         if enable_preview:
             return io.NodeOutput(
-                images,
+                image_or_mask,
                 save_path_str,
-                ui=ui.PreviewImage(images, cls=cls),
+                ui=ui.PreviewImage(preview_batch, cls=cls),
             )
-        return io.NodeOutput(images, save_path_str)
+        return io.NodeOutput(image_or_mask, save_path_str)
+
+    @classmethod
+    def _normalize_input_batch(cls, image_or_mask: torch.Tensor) -> torch.Tensor:
+        """
+        将输入统一为可保存的批次张量格式 (B, H, W, C)。
+        """
+        if image_or_mask is None:
+            raise ValueError("Input image_or_mask cannot be empty")
+        if not torch.is_tensor(image_or_mask):
+            raise ValueError(
+                "image_or_mask input must be IMAGE or MASK tensor"
+            )
+
+        dims = image_or_mask.dim()
+        if dims == 4:
+            normalized = image_or_mask
+        elif dims == 3:
+            # 3D 可能是遮罩批次 (B,H,W) 或单张图像 (H,W,C)。
+            if image_or_mask.shape[-1] in (1, 3, 4):
+                normalized = image_or_mask.unsqueeze(0)
+            else:
+                normalized = image_or_mask.unsqueeze(-1)
+        elif dims == 2:
+            normalized = image_or_mask.unsqueeze(0).unsqueeze(-1)
+        else:
+            raise ValueError(
+                "Expected IMAGE(B,H,W,C) or MASK(B,H,W/H,W), "
+                f"got {dims}D tensor"
+            )
+
+        if normalized.shape[0] == 0:
+            raise ValueError("Input image_or_mask cannot be empty")
+
+        channels = normalized.shape[-1]
+        if channels not in (1, 3, 4):
+            raise ValueError(
+                "Expected channels to be 1, 3, or 4, "
+                f"got {channels} channels"
+            )
+        return normalized
+
+    @classmethod
+    def _build_preview_batch(
+        cls,
+        normalized_batch: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        为节点预览构建图像批次。
+        """
+        channels = normalized_batch.shape[-1]
+        if channels == 3:
+            return normalized_batch
+        if channels == 4:
+            return normalized_batch[..., :3]
+        return normalized_batch.repeat(1, 1, 1, 3)
 
     @classmethod
     def _generate_pnginfo(cls, prompt, extra_pnginfo):

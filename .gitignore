@@ -98,7 +98,7 @@ ipython_config.py
 #   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
-#uv.lock
+uv.lock
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -213,9 +213,8 @@ __marimo__/
 tests/
 web/test
 ruff.toml
-记录/
-其他/
+_记录/
+_检验/
 .codex/
 .agents/
 AGENTS.md
-检验/

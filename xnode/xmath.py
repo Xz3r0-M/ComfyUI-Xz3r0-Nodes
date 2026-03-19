@@ -126,6 +126,8 @@ class XMath(io.ComfyNode):
                 io.Boolean.Input(
                     "use_input_a",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "use input value A (input_a takes "
                         "precedence when enabled, fallbacks "
@@ -136,6 +138,8 @@ class XMath(io.ComfyNode):
                 io.Boolean.Input(
                     "use_input_b",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "use input value B (input_b takes "
                         "precedence when enabled, fallbacks "
@@ -146,6 +150,8 @@ class XMath(io.ComfyNode):
                 io.Boolean.Input(
                     "swap_ab",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="swap a and b values",
                 ),
             ],

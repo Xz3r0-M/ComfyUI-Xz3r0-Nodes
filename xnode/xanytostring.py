@@ -62,6 +62,10 @@ class XAnyToString(io.ComfyNode):
                 io.MatchType.Output(
                     template=passthrough_template,
                     display_name="anything",
+                    tooltip=(
+                        "Original input data passed through for downstream "
+                        "nodes"
+                    ),
                 ),
                 io.String.Output(
                     "string",

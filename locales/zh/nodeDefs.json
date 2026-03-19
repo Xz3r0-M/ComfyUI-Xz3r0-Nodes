@@ -245,8 +245,8 @@
     "display_name": "XMemoryCleanup",
     "description": "手动清理节点，可按需清理 Python 内存、节点/模型占用和显存缓存。默认全部关闭，由用户自行选择执行项。",
     "inputs": {
-      "passthrough": {
-        "name": "透传输入",
+      "anything": {
+        "name": "任意输入",
         "tooltip": "可选透传输入。输出会自动保持与输入一致的数据类型。"
       },
       "cleanup_memory": {
@@ -264,12 +264,8 @@
     },
     "outputs": {
       "0": {
-        "name": "透传输出",
+        "name": "任意输出",
         "tooltip": "透传输出（数据类型与透传输入一致）"
-      },
-      "1": {
-        "name": "清理状态",
-        "tooltip": "简洁清理结果文本"
       }
     }
   },
@@ -281,8 +277,8 @@
         "name": "分辨率预设",
         "tooltip": "分辨率预设（仅在未连接图像输入时生效；当 preset 不是 Custom 时，会覆盖自定义宽高）"
       },
-      "matchtype": {
-        "name": "图像输入",
+      "image_or_mask": {
+        "name": "图像或遮罩",
         "tooltip": "用于提供基础分辨率的图像或遮罩输入（优先级高于预设和自定义宽高）"
       },
       "width": {
@@ -592,13 +588,25 @@
     "display_name": "XImageResize",
     "description": "全自动图像缩放节点，智能识别横屏/竖屏/正方形，支持多种插值算法，按长边或短边等比缩放。",
     "inputs": {
-      "images": {
-        "name": "图像",
-        "tooltip": "输入图像"
+      "image_or_mask": {
+        "name": "图像或遮罩",
+        "tooltip": "输入图像或遮罩"
+      },
+      "resize_settings_in": {
+        "name": "缩放设置输入",
+        "tooltip": "可选设置输入：连接上游 XImageResize 的设置输出后，可把链路设置传入本节点。"
+      },
+      "use_passed_settings": {
+        "name": "使用传递设置",
+        "tooltip": "开启时：若连接了缩放设置输入，则本节点缩放计算使用上游设置；关闭时本节点只使用面板设置，但不会中断链路设置向下游传递。"
+      },
+      "output_resize_settings": {
+        "name": "输出缩放设置",
+        "tooltip": "关闭时：缩放设置输出端口会输出空值，效果等同不连接这根设置线。"
       },
       "scale_mode": {
         "name": "插值算法",
-        "tooltip": "选择缩放图片的插值算法：Nearest-exact=最快，Bilinear=快&中等质量，Area=适合缩小，Bicubic=中等速度&高质量，Lanczos=慢&最高质量",
+        "tooltip": "选择缩放图片的插值算法：Nearest-exact=最快，Bilinear=快&中等质量，Area=适合缩小，Bicubic=中等速度&高质量，Lanczos=慢&最高质量。若输入是遮罩，建议使用 Nearest-exact 以降低边缘错位感。",
         "options": {
           "Nearest-exact": "精确最近邻（速度最快，像素级精确，适合像素艺术）",
           "Bilinear": "双线性插值（速度快，质量中等，通用场景）",
@@ -663,8 +671,8 @@
     },
     "outputs": {
       "0": {
-        "name": "处理后的图像",
-        "tooltip": "缩放后的图像（批处理时整批统一尺寸缩放）"
+        "name": "处理后的数据",
+        "tooltip": "缩放后的图像或遮罩（批处理时整批统一尺寸缩放）"
       },
       "1": {
         "name": "宽度",
@@ -673,16 +681,20 @@
       "2": {
         "name": "高度",
         "tooltip": "输出分辨率高度"
+      },
+      "3": {
+        "name": "缩放设置输出",
+        "tooltip": "输出给下游节点的链路设置；若存在有效上游设置，会继续透传链首设置。"
       }
     }
   },
   "XImageSave": {
     "display_name": "XImageSave",
-    "description": "高级图像保存节点，支持自定义文件名、子文件夹和日期时间占位符。",
+    "description": "高级图像/遮罩保存节点，支持自定义文件名、子文件夹和日期时间占位符。",
     "inputs": {
-      "images": {
-        "name": "图像",
-        "tooltip": "输入图像"
+      "image_or_mask": {
+        "name": "图像或遮罩",
+        "tooltip": "输入图像或遮罩"
       },
       "filename_prefix": {
         "name": "文件名前缀",
@@ -703,8 +715,8 @@
     },
     "outputs": {
       "0": {
-        "name": "图像",
-        "tooltip": "原始输入图像（直接传递）"
+        "name": "图像或遮罩",
+        "tooltip": "原始输入图像或遮罩（直接传递）"
       },
       "1": {
         "name": "保存路径",
@@ -959,4 +971,5 @@
     }
   }
 }
+
 

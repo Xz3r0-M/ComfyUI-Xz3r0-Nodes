@@ -27,7 +27,7 @@ class XMemoryCleanup(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点输入输出与执行约束。"""
-        passthrough_template = io.MatchType.Template("passthrough")
+        passthrough_template = io.MatchType.Template("anything_passthrough")
 
         return io.Schema(
             node_id="XMemoryCleanup",
@@ -42,7 +42,7 @@ class XMemoryCleanup(io.ComfyNode):
             is_output_node=True,
             inputs=[
                 io.MatchType.Input(
-                    "passthrough",
+                    "anything",
                     template=passthrough_template,
                     optional=True,
                     tooltip=(
@@ -53,11 +53,15 @@ class XMemoryCleanup(io.ComfyNode):
                 io.Boolean.Input(
                     "cleanup_memory",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Run Python garbage collection (gc.collect)",
                 ),
                 io.Boolean.Input(
                     "cleanup_node_usage",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "Unload currently loaded models and run model "
                         "cleanup checks"
@@ -66,6 +70,8 @@ class XMemoryCleanup(io.ComfyNode):
                 io.Boolean.Input(
                     "cleanup_vram",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "Clear device cache via ComfyUI model management"
                     ),
@@ -74,13 +80,8 @@ class XMemoryCleanup(io.ComfyNode):
             outputs=[
                 io.MatchType.Output(
                     template=passthrough_template,
-                    display_name="passthrough",
-                ),
-                io.String.Output(
-                    "status",
-                    tooltip=(
-                        "Cleanup summary text for selected actions"
-                    ),
+                    display_name="anything",
+                    tooltip="Original input data passed through unchanged",
                 ),
             ],
         )
@@ -88,7 +89,7 @@ class XMemoryCleanup(io.ComfyNode):
     @classmethod
     def execute(
         cls,
-        passthrough: Any = None,
+        anything: Any = None,
         cleanup_memory: bool = False,
         cleanup_node_usage: bool = False,
         cleanup_vram: bool = False,
@@ -97,27 +98,16 @@ class XMemoryCleanup(io.ComfyNode):
         按开关执行清理动作并透传输入。
 
         Args:
-            passthrough: 任意输入数据（可选）
+            anything: 任意输入数据（可选）
             cleanup_memory: 是否执行 Python 垃圾回收
             cleanup_node_usage: 是否卸载模型并清理节点占用
             cleanup_vram: 是否清理显存缓存
 
         Returns:
-            io.NodeOutput: 透传数据和清理状态文本
+            io.NodeOutput: 透传数据
         """
-        enabled_actions = []
-
-        if cleanup_memory:
-            enabled_actions.append("memory")
-
-        if cleanup_node_usage:
-            enabled_actions.append("node_usage")
-
-        if cleanup_vram:
-            enabled_actions.append("vram")
-
-        if not enabled_actions:
-            return io.NodeOutput(passthrough, "No cleanup action selected")
+        if not any([cleanup_memory, cleanup_node_usage, cleanup_vram]):
+            return io.NodeOutput(anything)
 
         try:
             if cleanup_memory:
@@ -133,8 +123,7 @@ class XMemoryCleanup(io.ComfyNode):
                 "Failed to run selected cleanup actions"
             ) from exc
 
-        status = "Cleanup completed: " + ", ".join(enabled_actions)
-        return io.NodeOutput(passthrough, status)
+        return io.NodeOutput(anything)
 
     @classmethod
     def _run_python_gc(cls) -> None:

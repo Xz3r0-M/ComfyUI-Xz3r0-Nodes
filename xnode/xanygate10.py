@@ -107,56 +107,78 @@ class XAnyGate10(io.ComfyNode):
                 io.Boolean.Input(
                     "enable_1",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 1 output",
                 ),
                 io.Boolean.Input(
                     "enable_2",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 2 output",
                 ),
                 io.Boolean.Input(
                     "enable_3",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 3 output",
                 ),
                 io.Boolean.Input(
                     "enable_4",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 4 output",
                 ),
                 io.Boolean.Input(
                     "enable_5",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 5 output",
                 ),
                 io.Boolean.Input(
                     "enable_6",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 6 output",
                 ),
                 io.Boolean.Input(
                     "enable_7",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 7 output",
                 ),
                 io.Boolean.Input(
                     "enable_8",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 8 output",
                 ),
                 io.Boolean.Input(
                     "enable_9",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 9 output",
                 ),
                 io.Boolean.Input(
                     "enable_10",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable channel 10 output",
                 ),
                 io.Boolean.Input(
                     "enable_recursive",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "Enable recursive output lookup using recursive_order"
                     ),
@@ -174,46 +196,60 @@ class XAnyGate10(io.ComfyNode):
                 io.MatchType.Output(
                     template=template_1,
                     display_name="output_1",
+                    tooltip="Channel 1 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_2,
                     display_name="output_2",
+                    tooltip="Channel 2 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_3,
                     display_name="output_3",
+                    tooltip="Channel 3 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_4,
                     display_name="output_4",
+                    tooltip="Channel 4 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_5,
                     display_name="output_5",
+                    tooltip="Channel 5 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_6,
                     display_name="output_6",
+                    tooltip="Channel 6 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_7,
                     display_name="output_7",
+                    tooltip="Channel 7 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_8,
                     display_name="output_8",
+                    tooltip="Channel 8 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_9,
                     display_name="output_9",
+                    tooltip="Channel 9 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=template_10,
                     display_name="output_10",
+                    tooltip="Channel 10 output (None when disabled or empty)",
                 ),
                 io.MatchType.Output(
                     template=recursive_template,
                     display_name="recursive_output",
+                    tooltip=(
+                        "First non-None output found by recursive order "
+                        "when recursive mode is enabled"
+                    ),
                 ),
             ],
         )

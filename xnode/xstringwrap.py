@@ -56,6 +56,8 @@ class XStringWrap(io.ComfyNode):
                 io.Boolean.Input(
                     "enabled",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Enable output; if disabled, output is empty",
                 ),
                 io.Combo.Input(
