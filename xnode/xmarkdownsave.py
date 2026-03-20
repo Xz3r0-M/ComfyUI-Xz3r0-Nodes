@@ -40,19 +40,19 @@ class XMarkdownSave(io.ComfyNode):
     将头部、正文、尾部的输入端口或文本框内容保存为 Markdown 文件，
     并输出最终保存内容与相对保存路径。
 
-    功能:
+    功能：
         - 保存 Markdown 到 ComfyUI 默认输出目录
         - 头部、正文、尾部都支持字符串输入端口优先
         - 支持在正文前后显式插入换行分隔
         - 支持头部和尾部文本直接拼接
         - 支持自定义文件名和子文件夹
-        - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
+        - 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
         - 自动检测同名文件并添加序列号
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击，禁用路径分隔符)
-        - 输出相对路径(不泄露绝对路径)
+        - 安全防护 (防止路径遍历攻击，禁用路径分隔符)
+        - 输出相对路径 (不泄露绝对路径)
 
-    输入:
+    输入：
         header_input: 头部字符串输入端口 (STRING，可选，优先使用)
         text_content: 正文文本输入框 (STRING，多行，回退使用)
         main_text_input: 正文字符串输入端口 (STRING，可选，优先使用)
@@ -66,7 +66,7 @@ class XMarkdownSave(io.ComfyNode):
         after_main_separator: 正文后分隔方式 (COMBO)
         after_main_newline_count: 正文后换行次数 (INT)
 
-    输出:
+    输出：
         content: 最终保存的完整 Markdown 内容 (STRING)
         save_path: 保存的相对路径 (STRING)
     """

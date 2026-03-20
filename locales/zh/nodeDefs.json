@@ -926,6 +926,82 @@
       }
     }
   },
+  "XDataSave": {
+    "display_name": "XDataSave",
+    "description": "将 xdata 数据保存到项目目录 XDataSaved 中的 SQLite 数据库文件，支持 custom/seed 两种保存类型、500 条滚动上限、头部最多 120 字符，以及单条 64KB 上限。",
+    "inputs": {
+      "xdata_input": {
+        "name": "xdata 输入",
+        "tooltip": "复合 xdata 输入。当前支持 xdata_seed，后续可扩展更多 xdata 类型。"
+      },
+      "save_type": {
+        "name": "保存类型",
+        "tooltip": "保存类型：custom 需要自定义文件名；seed 固定保存到 seed_data.db。",
+        "options": {
+          "custom": "自定义",
+          "seed": "种子"
+        }
+      },
+      "custom_filename_input": {
+        "name": "自定义文件名输入",
+        "tooltip": "可选自定义文件名输入端口。已连接时优先于自定义文件名文本框。"
+      },
+      "custom_filename_text": {
+        "name": "自定义文件名",
+        "tooltip": "save_type 为 custom 时使用的回退文件名。默认留空，未设置会报错提示先配置。"
+      },
+      "extra_header_input": {
+        "name": "额外头部输入",
+        "tooltip": "可选额外头部信息输入端口。已连接时优先于额外头部文本框。"
+      },
+      "extra_header_text": {
+        "name": "额外头部信息",
+        "tooltip": "回退额外头部信息文本。保存时会和实际时间一起写入记录头；头部最多 120 字符，且单条记录总大小不能超过 64KB。"
+      },
+      "enable_save": {
+        "name": "启用保存",
+        "tooltip": "是否执行写入。关闭时不写文件，仅返回跳过状态。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "保存状态",
+        "tooltip": "保存执行状态信息"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "相对于项目根目录的保存路径，未写入时为空字符串。"
+      }
+    }
+  },
+  "XSeed": {
+    "display_name": "XSeed",
+    "description": "使用原生种子生成控件生成非负种子，并按位数上限规则输出：超过上限时左截断，不足上限可选末尾补 0。",
+    "inputs": {
+      "digits": {
+        "name": "位数上限",
+        "tooltip": "输出种子位数上限（1 到 20）。仅当种子位数超过上限时才会截断。"
+      },
+      "pad_to_limit": {
+        "name": "用 0 补全位数",
+        "tooltip": "当种子位数不足上限时，开启后会在末尾补 0 到上限位数。关闭时保持原值。由于 64 位范围随机种子大多数是高位数，此功能在实际随机场景下通常较少触发。"
+      },
+      "seed_value": {
+        "name": "种子值",
+        "tooltip": "基础非负种子值，启用原生生成控制组件。最终输出会按位数上限规则处理。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "整数种子",
+        "tooltip": "按位数上限和补零开关处理后的最终非负整数种子值。"
+      },
+      "1": {
+        "name": "xdata 种子",
+        "tooltip": "xdata_seed 专用数据，可传给 XDataSave 进行本地历史保存。"
+      }
+    }
+  },
   "XKleinRefConditioning": {
     "display_name": "XKleinRefConditioning",
     "description": "自动对已连接参考图执行 VAE 编码，并将参考 latent 同步追加到正面与负面条件链。",
@@ -971,5 +1047,9 @@
     }
   }
 }
+
+
+
+
 
 

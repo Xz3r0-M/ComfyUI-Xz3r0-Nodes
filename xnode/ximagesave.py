@@ -285,7 +285,9 @@ class XImageSave(io.ComfyNode):
         return io.NodeOutput(image_or_mask, save_path_str)
 
     @classmethod
-    def _normalize_input_batch(cls, image_or_mask: torch.Tensor) -> torch.Tensor:
+    def _normalize_input_batch(
+        cls, image_or_mask: torch.Tensor
+    ) -> torch.Tensor:
         """
         将输入统一为可保存的批次张量格式 (B, H, W, C)。
         """
@@ -471,3 +473,4 @@ class Xz3r0Extension(ComfyExtension):
 
 async def comfy_entrypoint() -> Xz3r0Extension:
     return Xz3r0Extension()
+

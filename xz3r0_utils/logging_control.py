@@ -50,7 +50,9 @@ MODULE_LOG_LEVELS: dict[str, str] = {
     "__init__": "INFO",
     "api.xworkflowsave_api": "INFO",
     "xnode.xaudiosave": "INFO",
+    "xnode.xdatasave": "INFO",
     "xnode.ximageresize": "INFO",
+    "xnode.xseed": "INFO",
 }
 
 _CONFIGURED = False

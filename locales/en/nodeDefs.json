@@ -926,6 +926,82 @@
       }
     }
   },
+  "XDataSave": {
+    "display_name": "XDataSave",
+    "description": "Save xdata records to SQLite DB files under the project XDataSaved folder with custom/seed save types, 500-record rotation, a 120-character header limit, and a 64KB per-record limit.",
+    "inputs": {
+      "xdata_input": {
+        "name": "xdata Input",
+        "tooltip": "Composite xdata input. Currently supports xdata_seed and can be extended with more xdata types later."
+      },
+      "save_type": {
+        "name": "Save Type",
+        "tooltip": "Save type: custom requires a custom filename; seed always writes to seed_data.db.",
+        "options": {
+          "custom": "Custom",
+          "seed": "Seed"
+        }
+      },
+      "custom_filename_input": {
+        "name": "Custom Filename Input",
+        "tooltip": "Optional custom filename input port. When connected, it takes priority over the text field."
+      },
+      "custom_filename_text": {
+        "name": "Custom Filename",
+        "tooltip": "Fallback filename for custom save type. Default is empty; missing filename raises an explicit configuration error."
+      },
+      "extra_header_input": {
+        "name": "Extra Header Input",
+        "tooltip": "Optional extra header input port. When connected, it takes priority over the text field."
+      },
+      "extra_header_text": {
+        "name": "Extra Header Text",
+        "tooltip": "Fallback extra header text. Saved together with the actual timestamp in each record; header length must not exceed 120 characters and each record must not exceed 64KB."
+      },
+      "enable_save": {
+        "name": "Enable Save",
+        "tooltip": "Enable or disable file writing. When disabled, this node returns a skipped status."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Save Status",
+        "tooltip": "Save execution status message."
+      },
+      "1": {
+        "name": "Save Path",
+        "tooltip": "Path relative to project root. Empty string when save is skipped."
+      }
+    }
+  },
+  "XSeed": {
+    "display_name": "XSeed",
+    "description": "Generate non-negative seed values with native seed control, then apply max-digit truncation and optional trailing zero-padding.",
+    "inputs": {
+      "digits": {
+        "name": "Digit Limit",
+        "tooltip": "Max output digit limit (1 to 20). Truncation is applied only when seed length exceeds this limit."
+      },
+      "pad_to_limit": {
+        "name": "Pad With Zeros",
+        "tooltip": "When enabled, seeds shorter than the digit limit are padded with trailing zeros to the limit length. Because random seeds in the 64-bit range are usually high-digit values, this option is rarely triggered in practice."
+      },
+      "seed_value": {
+        "name": "Seed Value",
+        "tooltip": "Base non-negative seed value with native generate control. Final output applies digit-limit rules."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Seed Int",
+        "tooltip": "Final non-negative integer seed after limit and padding rules."
+      },
+      "1": {
+        "name": "xdata Seed",
+        "tooltip": "xdata_seed payload for passing to XDataSave as local history data."
+      }
+    }
+  },
   "XKleinRefConditioning": {
     "display_name": "XKleinRefConditioning",
     "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
@@ -971,5 +1047,9 @@
     }
   }
 }
+
+
+
+
 
 

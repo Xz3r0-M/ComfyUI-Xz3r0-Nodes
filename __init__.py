@@ -39,9 +39,11 @@ from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xresolution import XResolution
+from .xnode.xseed import XSeed
 from .xnode.xstringgroup import XStringGroup
 from .xnode.xstringwrap import XStringWrap
 from .xnode.xaudiosave import XAudioSave
+from .xnode.xdatasave import XDataSave
 from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
 from .xnode.xlatentload import XLatentLoad
@@ -62,9 +64,11 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XMath,
     XMemoryCleanup,
     XResolution,
+    XSeed,
     XStringGroup,
     XStringWrap,
     XAudioSave,
+    XDataSave,
     XImageResize,
     XImageSave,
     XLatentLoad,
