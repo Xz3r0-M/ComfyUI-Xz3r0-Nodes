@@ -48,6 +48,7 @@ DEFAULT_LOG_LEVEL = "INFO"
 # - 其他模块仍按全局级别过滤
 MODULE_LOG_LEVELS: dict[str, str] = {
     "__init__": "INFO",
+    "api.xdatahub_api": "INFO",
     "api.xworkflowsave_api": "INFO",
     "xnode.xaudiosave": "INFO",
     "xnode.xdatasave": "INFO",

@@ -69,6 +69,7 @@ app.registerExtension({
         const originalQueuePrompt = currentQueuePrompt[ORIGINAL_QUEUE_PROMPT] ||
             currentQueuePrompt;
         const wrappedQueuePrompt = async function(number, batchCount) {
+            self.notifyPromptSubmitted();
             const capturePayload = self.buildCapturePayload();
             if (capturePayload) {
                 self.sendCaptureInBackground(capturePayload);
@@ -81,6 +82,21 @@ app.registerExtension({
         wrappedQueuePrompt[QUEUE_PROMPT_WRAPPED_MARK] = true;
         wrappedQueuePrompt[ORIGINAL_QUEUE_PROMPT] = originalQueuePrompt;
         app.queuePrompt = wrappedQueuePrompt;
+    },
+
+    /**
+     * 发送执行候选信号，用于前端/后端执行期锁。
+     */
+    notifyPromptSubmitted() {
+        fetch("/xz3r0/xdatahub/lock/prompt-submitted", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: "{}",
+        }).catch(() => {
+            // 候选锁失败不阻断主流程。
+        });
     },
 
     /**

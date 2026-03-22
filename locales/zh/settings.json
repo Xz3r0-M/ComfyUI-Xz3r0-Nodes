@@ -40,8 +40,17 @@
     "name": "适应视图延迟 (毫秒)",
     "tooltip": "适应视图前的延迟时间（毫秒）。如果视图适应不正确，请增加此值。范围：0-2000 毫秒"
   },
-  "Xz3r0_XFloatingWindow_Enabled": {
-    "name": "启用 ♾️ XFloatingWindow (按钮)",
+  "Xz3r0_XDataHub_Enabled": {
+    "name": "启用 ♾️ XDataHub (按钮)",
     "tooltip": "在顶部菜单栏显示 [♾️] 浮动窗口按钮"
+  },
+  "Xz3r0_XDataHub_UnderSidebar": {
+    "name": "将 ♾️ XDataHub 置于 ComfyUI 界面组件之下",
+    "tooltip": "开启后，XDataHub 会低于 ComfyUI 的界面组件层级（不只是侧边栏）。四周面板与工具组件都可能遮挡窗口内容或右上角按钮（最大化/关闭），请确认后再开启。"
+  },
+  "Xz3r0_XDataHub_Hotkey": {
+    "name": "XDataHub 显示/隐藏快捷键",
+    "tooltip": "设置用于切换 XDataHub 显示与隐藏的快捷键。示例：Alt + X / Ctrl + Shift + H"
   }
 }
+

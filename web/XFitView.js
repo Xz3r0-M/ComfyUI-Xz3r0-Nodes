@@ -752,6 +752,7 @@ app.registerExtension({
             type: "combo",
             defaultValue: "Never",
             tooltip: "When to auto-fit view when loading main workflow (page load, load workflow file). 'First' resets on page refresh",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XFitView", "WorkflowEnter"],
             options: ["First", "Always", "Never"],
             onChange: (value) => {
@@ -764,6 +765,7 @@ app.registerExtension({
             type: "combo",
             defaultValue: "Never",
             tooltip: "When to auto-fit view when exiting subgraph back to main workflow. 'First' resets on page refresh",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XFitView", "WorkflowExit"],
             options: ["First", "Always", "Never"],
             onChange: (value) => {
@@ -777,6 +779,7 @@ app.registerExtension({
             type: "combo",
             defaultValue: "Never",
             tooltip: "When to auto-fit view when entering a subgraph. 'First' resets on page refresh",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XFitView", "SubgraphEnter"],
             options: ["First", "Always", "Never"],
             onChange: (value) => {
@@ -790,6 +793,7 @@ app.registerExtension({
             type: "combo",
             defaultValue: "Never",
             tooltip: "When to auto-fit view when returning to parent subgraph or main workflow. 'First' resets on page refresh",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XFitView", "SubgraphExit"],
             options: ["First", "Always", "Never"],
             onChange: (value) => {
@@ -803,6 +807,7 @@ app.registerExtension({
             type: "number",
             defaultValue: 300,
             tooltip: "Delay before fitting view (milliseconds). Increase if view doesn't fit correctly. Range: 0-2000ms",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XFitView", "Delay"],
             attrs: {
                 min: 0,

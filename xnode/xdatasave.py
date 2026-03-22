@@ -14,10 +14,18 @@ from typing import Any
 from comfy_api.latest import io
 
 try:
-    from ..xz3r0_utils import get_logger, sanitize_path_component
+    from ..xz3r0_utils import (
+        get_critical_db_names,
+        get_logger,
+        sanitize_path_component,
+    )
 except ImportError:
     # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
-    from xz3r0_utils import get_logger, sanitize_path_component
+    from xz3r0_utils import (
+        get_critical_db_names,
+        get_logger,
+        sanitize_path_component,
+    )
 
 LOGGER = get_logger(__name__)
 XDataSeedType = io.Custom("xdata_seed")
@@ -42,6 +50,7 @@ class XDataSave(io.ComfyNode):
     INVALID_XDATA_ERROR = "Invalid xdata input"
     HEADER_TOO_LONG_ERROR = "Header length exceeds 120 characters limit"
     RECORD_TOO_LARGE_ERROR = "Record size exceeds 64KB limit"
+    RESERVED_DB_NAME_ERROR = "Custom filename conflicts with core db list"
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -209,6 +218,13 @@ class XDataSave(io.ComfyNode):
         safe_filename = sanitize_path_component(filename).strip(" .")
         if not safe_filename:
             raise ValueError(cls.INVALID_CUSTOM_FILENAME_ERROR)
+        critical_names = {
+            Path(name).stem.lower()
+            for name in get_critical_db_names()
+        }
+        safe_stem = Path(safe_filename).stem.lower()
+        if safe_stem in critical_names:
+            raise ValueError(cls.RESERVED_DB_NAME_ERROR)
         return safe_filename
 
     @classmethod

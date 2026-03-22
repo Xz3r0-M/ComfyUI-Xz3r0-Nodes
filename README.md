@@ -875,9 +875,9 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 </details>
 
 <details>
-<summary><strong> XFloatingWindow </strong> | 🖥️ 浮动窗口</summary>
+<summary><strong> XDataHub </strong> | 🖥️ 浮动窗口</summary>
 
-`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XFloatingWindow`
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
 
 为 ComfyUI 网页界面增加可打开的浮动窗口（顶部菜单栏 按钮）
 
@@ -892,20 +892,20 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Button" width="500">
 
 **设置选项**:
-- Enable ♾️ XFloatingWindow (Button) (启用浮动窗口按钮):
+- Enable ♾️ XDataHub (Button) (启用浮动窗口按钮):
   - 控制是否在顶部菜单栏显示 ♾️ 按钮
   - 默认：`Enable` (启用)
-  - 位置：ComfyUI 网页界面 ➡️ 设置 (齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFloatingWindow
+  - 位置：ComfyUI 网页界面 ➡️ 设置 (齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XDataHub
 
 **禁用按钮**:
-- ComfyUI 网页界面 ➡️ 设置 (齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XFloatingWindow ➡️ 关闭 `Enable ♾️ XFloatingWindow (Button)` 开关
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XFloatingWindow.png" alt="XFloatingWindow" width="700">
+- ComfyUI 网页界面 ➡️ 设置 (齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XDataHub ➡️ 关闭 `Enable ♾️ XDataHub (Button)` 开关
+<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XDataHub.png" alt="XDataHub" width="700">
 </details>
 
 <details>
 <summary><strong> XMetadataWorkflow </strong> | 📊 工作流元数据可视化查看</summary>
 
-`🖥️ XFloatingWindow` `🌐 web/XMetadataWorkflow.html`
+`🖥️ XDataHub` `🌐 web/xmetadataworkflow.html`
 
 简易且独立的工作流元数据的可视化查看网页工具，将多种包含有工作流元数据的文件在网页视图中以 ComfyUI 相似的节点界面风格进行展示
 
@@ -952,7 +952,7 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 
 2. 在线使用：https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes
 
-3. 浏览器直接打开（独立）: 直接打开本项目中的 `web/XMetadataWorkflow.html` 文件，在浏览器中单独使用
+3. 浏览器直接打开（独立）: 直接打开本项目中的 `web/xmetadataworkflow.html` 文件，在浏览器中单独使用
 </details>
 
 <details>
@@ -1003,5 +1003,7 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+
 
 

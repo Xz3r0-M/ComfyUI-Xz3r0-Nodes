@@ -31,7 +31,6 @@ except ImportError:
 
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
-from .api import xworkflowsave_api
 from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
 from .xnode.xdatetimestring import XDateTimeString
@@ -54,6 +53,25 @@ from .xnode.xworkflowsave import XWorkflowSave
 from .xz3r0_utils import configure_logging, get_logger
 
 LOGGER = get_logger(__name__)
+
+
+def _register_api_modules() -> None:
+    """
+    注册 API 路由模块（导入即注册）。
+
+    兼容两种场景：
+    1) 作为包导入（ComfyUI 正常加载）
+    2) 作为脚本顶层导入（pytest 某些收集模式）
+    """
+    if __package__:
+        __import__(f"{__package__}.api.xdatahub_api", fromlist=["*"])
+        __import__(f"{__package__}.api.xworkflowsave_api", fromlist=["*"])
+        return
+    __import__("api.xdatahub_api")
+    __import__("api.xworkflowsave_api")
+
+
+_register_api_modules()
 
 WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (

@@ -1,0 +1,6 @@
+{
+  "critical_databases": [
+    "media_index.db",
+    "seed_data.db"
+  ]
+}
