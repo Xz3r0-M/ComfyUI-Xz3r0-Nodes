@@ -51,6 +51,23 @@
   "Xz3r0_XDataHub_Hotkey": {
     "name": "XDataHub 显示/隐藏快捷键",
     "tooltip": "设置用于切换 XDataHub 显示与隐藏的快捷键。示例：Alt + X / Ctrl + Shift + H"
+  },
+  "Xz3r0_XDataHub_DefaultOpenLayout": {
+    "name": "XDataHub 默认打开布局",
+    "tooltip": "设置打开 XDataHub 时的默认窗口布局。",
+    "options": {
+      "center": "默认（居中 75%）",
+      "left": "左靠边",
+      "right": "右靠边",
+      "maximized": "最大化"
+    }
+  },
+  "Xz3r0_XDataHub_WindowCloseBehavior": {
+    "name": "XDataHub 关闭按钮行为",
+    "tooltip": "隐藏：重开更快但占用更高。销毁：更省内存但重开更慢。",
+    "options": {
+      "hide": "隐藏（重开更快）",
+      "destroy": "销毁（更省内存）"
+    }
   }
 }
-

@@ -53,12 +53,12 @@ MEDIA_TYPE_EXT = {
 }
 
 ERROR_TEXT = {
-    "file_not_found": "文件不存在或已移动",
-    "permission_denied": "权限不足，无法访问目标资源",
-    "file_corrupted": "文件损坏或格式不可读",
-    "quota_exceeded": "超出限制，操作已拒绝",
-    "resource_busy": "资源忙，执行中仅允许只读浏览",
-    "internal_error": "系统繁忙，请稍后重试",
+    "file_not_found": "File not found or moved",
+    "permission_denied": "Permission denied",
+    "file_corrupted": "File corrupted or unreadable",
+    "quota_exceeded": "Limit exceeded, request rejected",
+    "resource_busy": "Resource is busy, read-only mode only",
+    "internal_error": "System busy, please retry later",
 }
 
 
@@ -184,9 +184,45 @@ async def _stream_media_file_response(
     return resp
 
 
-def json_error(code: str, status: int = 400) -> web.Response:
+def resolve_locale_from_request(request: web.Request | None) -> str:
+    if request is None:
+        return "en"
+    query_locale = normalize_locale_code(request.query.get("locale"))
+    if query_locale in {"zh", "en"}:
+        return query_locale
+    header = str(request.headers.get("Accept-Language") or "")
+    if header:
+        preferred = normalize_locale_code(header.split(",", 1)[0])
+        if preferred in {"zh", "en"}:
+            return preferred
+    return "en"
+
+
+def error_message(code: str, locale: str) -> str:
+    _ = locale
+    return ERROR_TEXT.get(code) or code
+
+
+def json_error(
+    code_or_request: str | web.Request,
+    code: str | None = None,
+    status: int = 400,
+) -> web.Response:
+    if code is None:
+        request = None
+        err_code = str(code_or_request)
+    else:
+        request = code_or_request if isinstance(code_or_request, web.Request) else None
+        err_code = str(code)
+    locale = resolve_locale_from_request(request)
+    message = error_message(err_code, locale)
     return web.json_response(
-        {"status": "error", "code": code, "message": ERROR_TEXT[code]},
+        {
+            "status": "error",
+            "code": err_code,
+            "message_key": f"xdatahub.api.error.{err_code}",
+            "message": message,
+        },
         status=status,
     )
 
@@ -222,6 +258,42 @@ def data_root() -> Path:
     root = Path(__file__).resolve().parent.parent / "XDataSaved"
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def locales_root() -> Path:
+    return Path(__file__).resolve().parent.parent / "locales"
+
+
+def normalize_locale_code(value: str | None) -> str:
+    raw = str(value or "en").strip().lower().replace("_", "-")
+    base = raw.split("-", 1)[0]
+    return base or "en"
+
+
+def read_xdatahub_ui_locale(locale: str | None) -> tuple[str, dict[str, Any]]:
+    base = normalize_locale_code(locale)
+    locale_dir = locales_root()
+    candidates = [base]
+    if "en" not in candidates:
+        candidates.append("en")
+
+    for code in candidates:
+        path = locale_dir / code / "xdatahub_ui.json"
+        try:
+            if not path.exists():
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                return code, payload
+        except Exception as exc:
+            LOGGER.warning(
+                "[xdatahub] ui locale read failed: locale=%s, path=%s, err=%s",
+                code,
+                path,
+                exc,
+            )
+            continue
+    return "en", {}
 
 
 def comfy_dirs() -> list[tuple[str, Path]]:
@@ -1487,11 +1559,11 @@ def db_file_item(
         stat.st_mtime,
         tz=timezone.utc,
     ).isoformat(timespec="seconds")
-    purpose = "其他数据库"
+    purpose = "Other DB"
     if path.name == "media_index.db":
-        purpose = "媒体索引库"
+        purpose = "Media Index DB"
     elif record_count > 0:
-        purpose = "数据记录库"
+        purpose = "Records DB"
     return {
         "name": path.name,
         "size": int(stat.st_size),
@@ -1833,6 +1905,25 @@ async def api_settings(request: web.Request) -> web.Response:
         )
         return json_error("internal_error", 500)
     return web.json_response({"status": "success", "settings": settings})
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/i18n/ui")
+async def api_i18n_ui(request: web.Request) -> web.Response:
+    try:
+        locale = str(request.query.get("locale") or "en")
+        resolved_locale, payload = read_xdatahub_ui_locale(locale)
+        return web.json_response(
+            {
+                "status": "success",
+                "locale": resolved_locale,
+                "dict": payload,
+            }
+        )
+    except Exception as exc:
+        LOGGER.warning("[xdatahub] ui locale api failed: %s", exc)
+        return web.json_response(
+            {"status": "success", "locale": "en", "dict": {}}
+        )
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/settings")

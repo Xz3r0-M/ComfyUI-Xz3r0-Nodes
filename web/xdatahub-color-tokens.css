@@ -1,204 +1,89 @@
 /*
- * XDataHub Color Tokens (Source of Truth)
- * ========================================
- * 规则：
- * 1) XDataHub 相关前端文件（含父层与 iframe）默认必须引用本文件。
- * 2) 默认禁止在业务样式中直接硬编码颜色值（#hex/rgb/rgba/hsl/hsla）。
- * 3) 如需硬编码颜色，必须由用户明确提出该要求。
- * 4) 文本与边框命名必须镜像：standard/hover/active/emphasis。
- * 5) 品牌粉唯一父变量为 `--xdh-brand-pink`，相关变量必须从其派生。
+ * XDataHub Color Tokens (Minimal)
+ * ==================================
+ * 核心层：3 档中性色 + 品牌粉
+ * 语义层：仅保留当前 UI 实际使用 token
+ * 颜色规范：
+ * 1) 弹窗外背景遮罩统一 50% 透明度（--overlay-dialog）。
+ * 2) 悬停/浮动态背景统一主题粉色 10%（--hover-accent-bg）。
  */
 
 :root,
 body[data-theme="dark"],
 body:not([data-theme]) {
-    /* 品牌与语义色 */
+    /* Core */
     --xdh-brand-pink: #ff69b4;
-    --xdh-brand-pink-rgb: 255, 105, 180;
+    --xdh-neutral-base: #353535;
+    --xdh-neutral-surface: #353535;
+    --xdh-neutral-text: #dddddd;
+
+    /* Semantic */
+    --theme-bg-main: #353535;
+    --bg: #353535;
+    --bg-panel: #353535;
+    --surface-input: #222222;
+
+    --text-standard: var(--xdh-neutral-text);
+    --text-emphasis: var(--xdh-neutral-text);
+    --text-active: var(--xdh-neutral-text);
+
+    --border-standard: #666666;
+    --border-hover: #666666;
+    --border-active: #666666;
+
     --btn-active-color: var(--xdh-brand-pink);
-    --state-accent-rgb: var(--xdh-brand-pink-rgb);
-    --state-danger-rgb: 210, 85, 85;
-    --state-warn-rgb: 213, 161, 47;
-    --state-success-rgb: 89, 179, 111;
+    --hover-accent-bg: #ff69b41a; /* 主题粉色 10% */
+    --active-highlight-bg: #ffffff14;
+    --btn-hover-glow-soft: 0 0 0 1px var(--btn-active-color);
+    --btn-hover-glow: 0 0 0 1px var(--btn-active-color),
+        0 0 10px var(--btn-active-color);
+    --btn-hover-glow-strong: var(--btn-hover-glow);
+    --btn-press-glow-inset: inset 0 0 0 1px var(--btn-active-color);
 
-    /* 交互发光 */
-    --btn-hover-glow-rgb: var(--xdh-brand-pink-rgb);
-    --btn-hover-glow-soft: 0 0 0 1px rgba(var(--btn-hover-glow-rgb), 0.16);
-    --btn-hover-glow: 0 0 0 1px rgba(var(--btn-hover-glow-rgb), 0.24),
-        0 0 12px rgba(var(--btn-hover-glow-rgb), 0.22);
-    --btn-hover-glow-strong: 0 0 0 1px rgba(var(--btn-hover-glow-rgb), 0.22),
-        0 0 12px rgba(var(--btn-hover-glow-rgb), 0.16);
-    --btn-press-glow-inset: inset 0 0 0 1px rgba(var(--btn-hover-glow-rgb), 0.3);
+    --state-danger-text-standard: var(--text-active);
+    --state-danger-border-standard: var(--border-standard);
+    --state-danger-bg-standard: var(--btn-active-color);
+    --state-danger-bg-hover: var(--hover-accent-bg);
 
-    /* 应用层背景/表面 */
-    --theme-bg-main: var(--comfy-input-bg, #252525);
-    --bg: var(--comfy-menu-bg, #1e1e1e);
-    --bg-panel: var(--theme-bg-main);
-    --surface-input: #1a1a1a;
-    --surface-input-toggle: #1a1a1a;
-    --surface-elevated: #171a22;
-    --surface-media-void: var(--theme-bg-main);
-    --surface-media-card: var(--theme-bg-main);
-    --surface-media-card-hover: color-mix(
-        in srgb,
-        var(--theme-bg-main) 92%,
-        var(--surface-black) 8%
-    );
-    --surface-media-card-glow-end: color-mix(
-        in srgb,
-        var(--theme-bg-main) 95%,
-        var(--surface-black) 5%
-    );
-    --surface-video-shell: #0d1016;
-    --surface-preview: #111111;
-    --surface-black: var(--theme-bg-main);
-    --surface-black-soft: #111111;
-    --surface-popup-main: var(--theme-bg-main);
-    --surface-popup-soft: color-mix(
-        in srgb,
-        var(--theme-bg-main) 92%,
-        var(--surface-black) 8%
-    );
-    --surface-transparent: transparent;
-    --workspace-bg: var(--surface-transparent);
-    --top-action-bar-bg: var(--surface-transparent);
-    --app-shell-padding: 4px 8px 8px 8px;
+    --state-warn-text-standard: var(--text-active);
+    --state-warn-border-standard: var(--border-standard);
+    --state-warn-bg-standard: var(--btn-active-color);
+    --state-warn-bg-hover: var(--hover-accent-bg);
 
-    /* 文字体系（分类变量） */
-    --text-standard: var(--input-text, #f4f4f4);
-    --text-hover: #f1f5ff;
-    --text-active: var(--btn-active-color);
-    --text-emphasis: #bdbdbd;
-    --state-accent-text-standard: var(--text-active);
-    --state-accent-border-standard: var(--text-active);
-    --state-accent-bg-standard: rgba(var(--state-accent-rgb), 0.12);
-    --state-accent-bg-hover: rgba(var(--state-accent-rgb), 0.18);
-    --state-danger-text-standard: #ffacac;
-    --state-danger-border-standard: #d25555;
-    --state-danger-bg-standard: rgba(var(--state-danger-rgb), 0.14);
-    --state-danger-bg-hover: rgba(var(--state-danger-rgb), 0.1);
-    --state-warn-text-standard: #f1cd82;
-    --state-warn-border-standard: #d5a12f;
-    --state-warn-bg-standard: rgba(var(--state-warn-rgb), 0.14);
-    --state-warn-bg-hover: rgba(var(--state-warn-rgb), 0.1);
-    --state-success-text-standard: #9ee3ae;
-    --state-success-border-standard: #59b36f;
-    --state-success-bg-standard: rgba(var(--state-success-rgb), 0.14);
-    --state-success-bg-hover: rgba(var(--state-success-rgb), 0.1);
-    --folder-kind-text: var(--text-emphasis);
+    --overlay-dialog: #00000080; /* 弹窗外背景 50% 透明度 */
 
-    /* 边框体系（统一变量） */
-    --border-standard: var(--border-color, #3d3d3d);
-    --border-hover: color-mix(
-        in srgb,
-        var(--btn-active-color) 60%,
-        var(--border-standard) 40%
-    );
-    --border-active: var(--btn-active-color);
-    --border-emphasis: color-mix(
-        in srgb,
-        var(--surface-black-soft) 68%,
-        var(--border-standard) 32%
-    );
-    --line-surface-soft: rgba(255, 255, 255, 0.08);
-    --line-surface-muted: rgba(255, 255, 255, 0.18);
-    --line-white-08: rgba(255, 255, 255, 0.08);
-    --line-white-18: rgba(255, 255, 255, 0.18);
-    --line-spinner-track: rgba(255, 255, 255, 0.18);
-    --fill-surface-soft: rgba(255, 255, 255, 0.02);
-    --fill-surface-muted: rgba(255, 255, 255, 0.03);
-    --fill-surface-strong: rgba(255, 255, 255, 0.04);
-    --row-content-bg: var(--bg);
-    --row-content-border: var(--border-emphasis);
-    --row-content-bg-hover: var(--bg);
-    --row-content-bg-active: var(--bg);
-    --fill-white-02: rgba(255, 255, 255, 0.02);
-    --fill-white-03: rgba(255, 255, 255, 0.03);
-    --fill-white-04: rgba(255, 255, 255, 0.04);
-    --fill-white-14: rgba(255, 255, 255, 0.14);
-    --fill-white-24: rgba(255, 255, 255, 0.24);
-    --gradient-white-52: rgba(255, 255, 255, 0.52);
-    --gradient-white-24: rgba(255, 255, 255, 0.24);
-
-    /* 遮罩/弹层/阴影 */
-    --overlay-dialog: rgba(6, 8, 12, 0.6);
-    --overlay-lightbox: rgba(8, 10, 14, 0.72);
-    --overlay-drawer: rgba(8, 10, 14, 0.45);
-    --lightbox-shell-bg: color-mix(
-        in srgb,
-        var(--surface-popup-main) 92%,
-        var(--surface-black) 8%
-    );
-    --lightbox-head-bg: color-mix(
-        in srgb,
-        var(--surface-popup-soft) 94%,
-        var(--surface-black) 6%
-    );
-    --lightbox-body-bg: color-mix(
-        in srgb,
-        var(--surface-popup-soft) 90%,
-        var(--surface-black) 10%
-    );
-    --lightbox-close-bg: rgba(18, 24, 34, 0.94);
-    --lightbox-close-bg-hover: rgba(26, 34, 48, 0.96);
-    --lightbox-close-text: var(--text-standard);
-    --lightbox-title-text: var(--text-standard);
-
-    --shadow-drop: 0 3px 8px rgba(0, 0, 0, 0.35);
-    --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.45);
-    --shadow-dialog: 0 14px 34px rgba(0, 0, 0, 0.45);
-    --shadow-dialog-strong: 0 16px 36px rgba(0, 0, 0, 0.5);
-    --shadow-button-elevated: 0 2px 10px rgba(0, 0, 0, 0.35);
-    --shadow-button-elevated-hover: 0 6px 18px rgba(0, 0, 0, 0.38);
-
-    /* 滚动条 */
     --scrollbar-size: 12px;
-    --scrollbar-track: color-mix(
-        in srgb,
-        var(--surface-black-soft) 82%,
-        var(--surface-elevated) 18%
-    );
-    --scrollbar-thumb: color-mix(
-        in srgb,
-        var(--border-standard) 72%,
-        var(--fill-white-14) 28%
-    );
-    --scrollbar-thumb-hover: color-mix(
-        in srgb,
-        var(--btn-active-color) 42%,
-        var(--border-standard) 58%
-    );
-    --scrollbar-thumb-active: color-mix(
-        in srgb,
-        var(--btn-active-color) 58%,
-        var(--border-standard) 42%
-    );
+    --scrollbar-track: var(--xdh-neutral-surface);
+    --scrollbar-thumb: #666666;
+    --scrollbar-thumb-hover: var(--btn-active-color);
+    --scrollbar-thumb-active: var(--btn-active-color);
     --scrollbar-corner: transparent;
 
-    /* 图标与资源（默认色 + 激活色统一变量源） */
-    --icon-color-filter: brightness(0) saturate(100%) invert(80%)
-        sepia(9%) saturate(289%) hue-rotate(182deg)
-        brightness(91%) contrast(88%);
-    --icon-color-filter-active: brightness(0) saturate(100%)
-        invert(61%) sepia(70%) saturate(1107%)
-        hue-rotate(287deg) brightness(103%) contrast(101%);
-    --icon-color-filter-brand-pink: brightness(0) saturate(100%)
-        invert(61%) sepia(70%) saturate(1107%)
-        hue-rotate(287deg) brightness(103%) contrast(101%);
+    --shadow-none: none;
+    --xdh-window-tab-blur: 0px;
+    --xdh-window-header-bg: #171718;
+    --xdh-tab-strip-bg: #333333;
+    --xdh-tab-strip-divider: #666666;
+    --xdh-history-content-bg: var(--surface-input);
+    --xdh-history-content-border: #666666;
+    --xdh-history-content-text: var(--text-standard);
+    --xdh-history-content-icon-filter: brightness(0) saturate(100%)
+        invert(40%);
+    --app-shell-padding: 4px 8px 8px 8px;
+
+    --icon-color-filter: brightness(0) saturate(100%) invert(40%);
+    --icon-color-filter-active: brightness(0) saturate(100%) invert(40%);
+    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(40%);
+    --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
+        invert(40%);
     --icon-db-mask-url: url("/extensions/ComfyUI-Xz3r0-Nodes/icons/database.svg");
 
-    --folder-thumb-grad-start: color-mix(
-        in srgb,
-        var(--theme-bg-main) 92%,
-        var(--surface-black) 8%
-    );
-    --folder-thumb-grad-end: color-mix(
-        in srgb,
-        var(--theme-bg-main) 84%,
-        var(--surface-black) 16%
-    );
-
-    /* DB 功能色盘（非主题规范，不参与全局主题色统一） */
+    /*
+     * DB palette (kept)
+     * 序列号色彩规则（row-id-chip）：
+     * 1) 背景：使用同色盘的减淡色（在 xdatahub_app.html 中通过 color-mix 计算）
+     * 2) 文字：使用同色盘原色（100% 色度，不减淡）
+     */
     --db-palette-default: hsl(212, 10%, 52%);
     --db-palette-01: hsl(8, 74%, 62%);
     --db-palette-02: hsl(24, 78%, 60%);
@@ -212,284 +97,82 @@ body:not([data-theme]) {
     --db-palette-10: hsl(292, 66%, 62%);
     --db-palette-11: hsl(324, 70%, 60%);
     --db-palette-12: hsl(352, 72%, 61%);
-
-    /* 父层浮窗专用 */
-    --window-theme-bg-main: #1f1f1f;
-    --window-shell-bg: var(--comfy-menu-bg, #1e1e1e);
-    --window-header-bg: #ffffff;
-    --window-content-bg: var(--window-theme-bg-main);
-    --window-tabs-bg: #2b2b2b;
-    --window-tab-item-bg: rgba(255, 255, 255, 0.02);
-    --window-tab-item-bg-grad-start: rgba(255, 255, 255, 0.12);
-    --window-tab-item-bg-grad-end: rgba(255, 255, 255, 0.03);
-    --window-tab-item-border: rgba(255, 255, 255, 0.2);
-    --window-tab-gloss-start: rgba(255, 255, 255, 0.2);
-    --window-tab-gloss-mid: rgba(255, 255, 255, 0.05);
-    --window-tab-gloss-end: rgba(255, 255, 255, 0);
-    --window-tab-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-    --window-tab-outer-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
-    --window-tab-hover-bg: rgba(var(--btn-hover-glow-rgb), 0.16);
-    --window-tab-hover-border: rgba(var(--btn-hover-glow-rgb), 0.44);
-    --window-tab-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
-        0 6px 18px rgba(0, 0, 0, 0.28);
-    --window-tab-active-bg-start: rgba(var(--btn-hover-glow-rgb), 0.38);
-    --window-tab-active-bg-end: rgba(var(--btn-hover-glow-rgb), 0.2);
-    --window-tab-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26),
-        0 8px 22px rgba(var(--btn-hover-glow-rgb), 0.34);
-    --window-tab-active-arrow: rgba(var(--btn-hover-glow-rgb), 0.9);
-    --window-tab-blur: 8px;
-    --window-tabs-rail-bg: rgba(255, 255, 255, 0.03);
-    --window-tabs-rail-border: rgba(255, 255, 255, 0.1);
-    --window-top-border: rgba(255, 255, 255, 0.34);
-    --window-tab-inactive-compact-bg: rgba(255, 255, 255, 0.015);
-    --window-tab-inactive-compact-border: rgba(255, 255, 255, 0.16);
-    --window-tabs-divider-start: rgba(255, 255, 255, 0.05);
-    --window-tabs-divider-mid: rgba(255, 255, 255, 0.14);
-    --window-shell-shadow: 0 12px 36px rgba(0, 0, 0, 0.56),
-        0 2px 10px rgba(0, 0, 0, 0.38);
-    --window-title-text: #1f2430;
-    --window-control-text: #1f2430;
-    --window-icon-filter: brightness(0) saturate(100%) invert(17%)
-        sepia(17%) saturate(759%) hue-rotate(183deg)
-        brightness(97%) contrast(92%);
-    --window-icon-filter-hover: var(--icon-color-filter-active);
-    --window-tab-text: #e6ebf2;
-    --window-tab-hover-text: #f3f7ff;
-    --window-opacity-text: #000000;
-    --window-opacity-track: var(--border-color, #3d3d3d);
-    --window-opacity-thumb: #1f2430;
-    --window-opacity-thumb-hover: var(--btn-active-color);
-
-    --icon-filter-tab-active: var(--icon-color-filter-active);
 }
 
 body[data-theme="light"] {
-    --theme-bg-main: #f7f7f7;
-    --bg: #f2f2f2;
+    --xdh-neutral-base: #ffffff;
+    --xdh-neutral-surface: #ffffff;
+    --xdh-neutral-text: #111111;
+
+    --theme-bg-main: #ffffff;
+    --bg: #ffffff;
     --bg-panel: #ffffff;
     --surface-input: #ffffff;
-    --surface-input-toggle: #f3f3f3;
-    --surface-elevated: #ececec;
-    --surface-media-void: #f3f3f3;
-    --surface-media-card: #ffffff;
-    --surface-media-card-hover: #f7f7f7;
-    --surface-media-card-glow-end: #efefef;
-    --surface-video-shell: #ececec;
-    --surface-preview: #f1f1f1;
-    --surface-black: #e9e9e9;
-    --surface-black-soft: #e3e3e3;
-    --surface-popup-main: #ffffff;
-    --surface-popup-soft: #f5f5f5;
 
-    --text-standard: #1f1f1f;
-    --text-hover: #2a2a2a;
-    --text-active: var(--btn-active-color);
-    --text-emphasis: #5c5c5c;
-    --state-accent-text-standard: var(--text-active);
-    --state-accent-border-standard: var(--text-active);
-    --state-accent-bg-standard: rgba(var(--state-accent-rgb), 0.1);
-    --state-accent-bg-hover: rgba(var(--state-accent-rgb), 0.16);
-    --state-danger-text-standard: #a02a46;
-    --state-danger-border-standard: #b12f4e;
-    --state-danger-bg-standard: rgba(var(--state-danger-rgb), 0.16);
-    --state-danger-bg-hover: rgba(var(--state-danger-rgb), 0.12);
-    --state-warn-text-standard: #8a6110;
-    --state-warn-border-standard: #916611;
-    --state-warn-bg-standard: rgba(var(--state-warn-rgb), 0.16);
-    --state-warn-bg-hover: rgba(var(--state-warn-rgb), 0.12);
-    --state-success-text-standard: #1f6c34;
-    --state-success-border-standard: #3f9d57;
-    --state-success-bg-standard: rgba(var(--state-success-rgb), 0.14);
-    --state-success-bg-hover: rgba(var(--state-success-rgb), 0.1);
-    --folder-kind-text: var(--text-emphasis);
+    --text-standard: #111111;
+    --text-emphasis: #111111;
+    --text-active: #111111;
 
-    --border-standard: #cfcfcf;
-    --border-hover: color-mix(
-        in srgb,
-        var(--btn-active-color) 52%,
-        var(--border-standard) 48%
-    );
-    --border-active: var(--btn-active-color);
-    --border-emphasis: color-mix(
-        in srgb,
-        var(--border-standard) 64%,
-        #303030 36%
-    );
-    --line-surface-soft: rgba(31, 31, 31, 0.09);
-    --line-surface-muted: rgba(31, 31, 31, 0.17);
-    --line-white-08: rgba(31, 31, 31, 0.08);
-    --line-white-18: rgba(31, 31, 31, 0.18);
-    --line-spinner-track: rgba(31, 31, 31, 0.2);
-    --fill-surface-soft: rgba(31, 31, 31, 0.03);
-    --fill-surface-muted: rgba(31, 31, 31, 0.05);
-    --fill-surface-strong: rgba(31, 31, 31, 0.07);
-    --row-content-bg: #ffffff;
-    --row-content-bg-hover: #f6f6f6;
-    --row-content-bg-active: #f0f0f0;
-    --fill-white-02: rgba(31, 31, 31, 0.02);
-    --fill-white-03: rgba(31, 31, 31, 0.03);
-    --fill-white-04: rgba(31, 31, 31, 0.05);
-    --fill-white-14: rgba(31, 31, 31, 0.14);
-    --fill-white-24: rgba(31, 31, 31, 0.22);
-    --gradient-white-52: rgba(31, 31, 31, 0.5);
-    --gradient-white-24: rgba(31, 31, 31, 0.22);
+    --border-standard: #c8c8c8;
+    --border-hover: var(--xdh-brand-pink);
+    --border-active: var(--xdh-brand-pink);
 
-    --overlay-dialog: rgba(0, 0, 0, 0.32);
-    --overlay-lightbox: rgba(0, 0, 0, 0.5);
-    --overlay-drawer: rgba(0, 0, 0, 0.24);
-    --lightbox-shell-bg: #ffffff;
-    --lightbox-head-bg: #f5f5f5;
-    --lightbox-body-bg: #f3f3f3;
-    --lightbox-close-bg: rgba(255, 255, 255, 0.95);
-    --lightbox-close-bg-hover: rgba(248, 248, 248, 0.98);
-    --lightbox-close-text: #1f1f1f;
-    --lightbox-title-text: #1f1f1f;
+    --overlay-dialog: #00000080;
+    --scrollbar-track: #ffffff;
+    --scrollbar-thumb: #c8c8c8;
+    --scrollbar-thumb-hover: var(--xdh-brand-pink);
+    --scrollbar-thumb-active: var(--xdh-brand-pink);
+    --xdh-window-header-bg: #ffffff;
+    --xdh-tab-strip-bg: #ffffff;
+    --xdh-tab-strip-divider: #c8c8c8;
+    --xdh-history-content-bg: #c9c9c9;
+    --xdh-history-content-border: #999999;
+    --xdh-history-content-text: #222222;
+    --xdh-history-content-icon-filter: brightness(0) saturate(100%)
+        invert(80%);
 
-    --shadow-drop: 0 3px 8px rgba(31, 31, 31, 0.12);
-    --shadow-popover: 0 10px 28px rgba(31, 31, 31, 0.15);
-    --shadow-dialog: 0 14px 34px rgba(31, 31, 31, 0.16);
-    --shadow-dialog-strong: 0 16px 36px rgba(31, 31, 31, 0.18);
-    --shadow-button-elevated: 0 2px 10px rgba(31, 31, 31, 0.12);
-    --shadow-button-elevated-hover: 0 6px 18px rgba(31, 31, 31, 0.16);
-
-    --scrollbar-track: #e2e2e2;
-    --scrollbar-thumb: #bcbcbc;
-    --scrollbar-thumb-hover: color-mix(
-        in srgb,
-        var(--btn-active-color) 35%,
-        #949494 65%
-    );
-    --scrollbar-thumb-active: color-mix(
-        in srgb,
-        var(--btn-active-color) 45%,
-        #848484 55%
-    );
-
-    --icon-color-filter: brightness(0) saturate(100%) invert(17%)
-        sepia(0%) saturate(0%) hue-rotate(0deg)
-        brightness(97%) contrast(92%);
-    --icon-color-filter-active: brightness(0) saturate(100%)
-        invert(56%) sepia(88%) saturate(962%)
-        hue-rotate(293deg) brightness(103%) contrast(101%);
-    --folder-thumb-grad-start: #f6f6f6;
-    --folder-thumb-grad-end: #e9e9e9;
-
-    /* DB 功能色盘（light：高区分度分组） */
-    --db-palette-default: hsl(216, 18%, 38%);
-    --db-palette-01: hsl(4, 82%, 38%);
-    --db-palette-02: hsl(20, 86%, 38%);
-    --db-palette-03: hsl(38, 90%, 36%);
-    --db-palette-04: hsl(66, 72%, 32%);
-    --db-palette-05: hsl(108, 58%, 34%);
-    --db-palette-06: hsl(150, 62%, 33%);
-    --db-palette-07: hsl(182, 72%, 34%);
-    --db-palette-08: hsl(206, 82%, 38%);
-    --db-palette-09: hsl(228, 70%, 42%);
-    --db-palette-10: hsl(258, 68%, 45%);
-    --db-palette-11: hsl(300, 68%, 40%);
-    --db-palette-12: hsl(336, 72%, 42%);
-
-    --window-theme-bg-main: #f3f3f3;
-    --window-shell-bg: #ededed;
-    --window-header-bg: #ffffff;
-    --window-content-bg: #f3f3f3;
-    --window-tabs-bg: #efefef;
-    --window-tab-item-bg: rgba(31, 31, 31, 0.04);
-    --window-tab-item-bg-grad-start: rgba(255, 255, 255, 0.78);
-    --window-tab-item-bg-grad-end: rgba(255, 255, 255, 0.5);
-    --window-tab-item-border: rgba(31, 31, 31, 0.18);
-    --window-tab-gloss-start: rgba(255, 255, 255, 0.64);
-    --window-tab-gloss-mid: rgba(255, 255, 255, 0.28);
-    --window-tab-gloss-end: rgba(255, 255, 255, 0);
-    --window-tab-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
-    --window-tab-outer-shadow: 0 2px 10px rgba(31, 31, 31, 0.16);
-    --window-tab-hover-bg: rgba(var(--btn-hover-glow-rgb), 0.12);
-    --window-tab-hover-border: rgba(var(--btn-hover-glow-rgb), 0.36);
-    --window-tab-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
-        0 8px 18px rgba(31, 31, 31, 0.18);
-    --window-tab-active-bg-start: rgba(var(--btn-hover-glow-rgb), 0.28);
-    --window-tab-active-bg-end: rgba(var(--btn-hover-glow-rgb), 0.14);
-    --window-tab-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
-        0 10px 22px rgba(var(--btn-hover-glow-rgb), 0.28);
-    --window-tab-active-arrow: rgba(var(--btn-hover-glow-rgb), 0.88);
-    --window-tab-blur: 10px;
-    --window-tabs-rail-bg: rgba(31, 31, 31, 0.04);
-    --window-tabs-rail-border: rgba(31, 31, 31, 0.14);
-    --window-top-border: rgba(31, 31, 31, 0.3);
-    --window-tab-inactive-compact-bg: rgba(31, 31, 31, 0.03);
-    --window-tab-inactive-compact-border: rgba(31, 31, 31, 0.2);
-    --window-tabs-divider-start: rgba(31, 31, 31, 0.06);
-    --window-tabs-divider-mid: rgba(31, 31, 31, 0.16);
-    --window-shell-shadow: 0 12px 32px rgba(31, 31, 31, 0.26),
-        0 2px 10px rgba(31, 31, 31, 0.16);
-    --window-title-text: #1f1f1f;
-    --window-control-text: #1f1f1f;
-    --window-icon-filter: brightness(0) saturate(100%) invert(17%)
-        sepia(0%) saturate(0%) hue-rotate(0deg)
-        brightness(97%) contrast(92%);
-    --window-icon-filter-hover: var(--icon-color-filter-active);
-    --window-tab-text: #404040;
-    --window-tab-hover-text: #1f1f1f;
-    --window-opacity-text: #1f1f1f;
-    --window-opacity-track: #bdbdbd;
-    --window-opacity-thumb: #2e2e2e;
-    --window-opacity-thumb-hover: var(--btn-active-color);
-
-    --icon-filter-tab-active: var(--icon-color-filter-active);
+    --icon-color-filter: brightness(0) saturate(100%) invert(0%);
+    --icon-color-filter-active: brightness(0) saturate(100%) invert(0%);
+    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(0%);
+    --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
+        invert(0%);
 }
 
 .xz3r0-datahub-window[data-theme="light"] {
-    --window-theme-bg-main: #f3f3f3;
-    --window-shell-bg: #ededed;
-    --window-header-bg: #ffffff;
-    --window-content-bg: #f3f3f3;
-    --window-tabs-bg: #efefef;
-    --window-tab-item-bg: rgba(31, 31, 31, 0.04);
-    --window-tab-item-bg-grad-start: rgba(255, 255, 255, 0.78);
-    --window-tab-item-bg-grad-end: rgba(255, 255, 255, 0.5);
-    --window-tab-item-border: rgba(31, 31, 31, 0.18);
-    --window-tab-gloss-start: rgba(255, 255, 255, 0.64);
-    --window-tab-gloss-mid: rgba(255, 255, 255, 0.28);
-    --window-tab-gloss-end: rgba(255, 255, 255, 0);
-    --window-tab-inner-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
-    --window-tab-outer-shadow: 0 2px 10px rgba(31, 31, 31, 0.16);
-    --window-tab-hover-bg: rgba(var(--btn-hover-glow-rgb), 0.12);
-    --window-tab-hover-border: rgba(var(--btn-hover-glow-rgb), 0.36);
-    --window-tab-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
-        0 8px 18px rgba(31, 31, 31, 0.18);
-    --window-tab-active-bg-start: rgba(var(--btn-hover-glow-rgb), 0.28);
-    --window-tab-active-bg-end: rgba(var(--btn-hover-glow-rgb), 0.14);
-    --window-tab-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
-        0 10px 22px rgba(var(--btn-hover-glow-rgb), 0.28);
-    --window-tab-active-arrow: rgba(var(--btn-hover-glow-rgb), 0.88);
-    --window-tab-blur: 10px;
-    --window-tabs-rail-bg: rgba(31, 31, 31, 0.04);
-    --window-tabs-rail-border: rgba(31, 31, 31, 0.14);
-    --window-top-border: rgba(31, 31, 31, 0.3);
-    --window-tab-inactive-compact-bg: rgba(31, 31, 31, 0.03);
-    --window-tab-inactive-compact-border: rgba(31, 31, 31, 0.2);
-    --window-tabs-divider-start: rgba(31, 31, 31, 0.06);
-    --window-tabs-divider-mid: rgba(31, 31, 31, 0.16);
-    --window-shell-shadow: 0 12px 32px rgba(31, 31, 31, 0.26),
-        0 2px 10px rgba(31, 31, 31, 0.16);
-    --window-title-text: #1f1f1f;
-    --window-control-text: #1f1f1f;
-    --window-icon-filter: brightness(0) saturate(100%) invert(17%)
-        sepia(0%) saturate(0%) hue-rotate(0deg)
-        brightness(97%) contrast(92%);
-    --window-icon-filter-hover: var(--icon-color-filter-active);
-    --window-tab-text: #404040;
-    --window-tab-hover-text: #1f1f1f;
-    --window-opacity-text: #1f1f1f;
-    --window-opacity-track: #bdbdbd;
-    --window-opacity-thumb: #2e2e2e;
-    --window-opacity-thumb-hover: var(--btn-active-color);
-    --icon-color-filter: brightness(0) saturate(100%) invert(17%)
-        sepia(0%) saturate(0%) hue-rotate(0deg)
-        brightness(97%) contrast(92%);
-    --icon-color-filter-active: brightness(0) saturate(100%)
-        invert(56%) sepia(88%) saturate(962%)
-        hue-rotate(293deg) brightness(103%) contrast(101%);
-    --icon-filter-tab-active: var(--icon-color-filter-active);
-}
+    --xdh-neutral-base: #ffffff;
+    --xdh-neutral-surface: #ffffff;
+    --xdh-neutral-text: #111111;
 
+    --theme-bg-main: #ffffff;
+    --bg: #ffffff;
+    --bg-panel: #ffffff;
+    --surface-input: #ffffff;
+
+    --text-standard: #111111;
+    --text-emphasis: #111111;
+    --text-active: #111111;
+
+    --border-standard: #c8c8c8;
+    --border-hover: var(--xdh-brand-pink);
+    --border-active: var(--xdh-brand-pink);
+
+    --overlay-dialog: #00000080;
+    --scrollbar-track: #ffffff;
+    --scrollbar-thumb: #c8c8c8;
+    --scrollbar-thumb-hover: var(--xdh-brand-pink);
+    --scrollbar-thumb-active: var(--xdh-brand-pink);
+    --xdh-window-header-bg: #ffffff;
+    --xdh-tab-strip-bg: #ffffff;
+    --xdh-tab-strip-divider: #c8c8c8;
+    --xdh-history-content-bg: #c9c9c9;
+    --xdh-history-content-border: #999999;
+    --xdh-history-content-text: #222222;
+    --xdh-history-content-icon-filter: brightness(0) saturate(100%)
+        invert(80%);
+
+    --icon-color-filter: brightness(0) saturate(100%) invert(0%);
+    --icon-color-filter-active: brightness(0) saturate(100%) invert(0%);
+    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(0%);
+    --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
+        invert(0%);
+}

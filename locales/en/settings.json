@@ -51,6 +51,23 @@
   "Xz3r0_XDataHub_Hotkey": {
     "name": "XDataHub Show/Hide Hotkey",
     "tooltip": "Set the hotkey used to toggle XDataHub visibility. Examples: Alt + X / Ctrl + Shift + H"
+  },
+  "Xz3r0_XDataHub_DefaultOpenLayout": {
+    "name": "XDataHub Default Open Layout",
+    "tooltip": "Default window layout when opening XDataHub.",
+    "options": {
+      "center": "Default (Centered 75%)",
+      "left": "Dock Left",
+      "right": "Dock Right",
+      "maximized": "Maximize"
+    }
+  },
+  "Xz3r0_XDataHub_WindowCloseBehavior": {
+    "name": "XDataHub Close Button Behavior",
+    "tooltip": "Hide: faster reopen, higher memory. Destroy: lower memory, slower reopen.",
+    "options": {
+      "hide": "Hide (faster reopen)",
+      "destroy": "Destroy (lower memory)"
+    }
   }
 }
-

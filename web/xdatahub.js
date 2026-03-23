@@ -60,13 +60,23 @@ let menuButton = null;
 const HOTKEY_SETTING_ID = "Xz3r0.XDataHub.Hotkey";
 const DEFAULT_HOTKEY_SPEC = "Alt + X";
 const OPEN_LAYOUT_SETTING_ID = "Xz3r0.XDataHub.DefaultOpenLayout";
-const OPEN_LAYOUT_OPTION_DEFAULT = "默认（居中 75%）";
-const OPEN_LAYOUT_OPTION_LEFT = "左靠边";
-const OPEN_LAYOUT_OPTION_RIGHT = "右靠边";
-const OPEN_LAYOUT_OPTION_MAXIMIZED = "最大化";
 const CLOSE_BEHAVIOR_SETTING_ID = "Xz3r0.XDataHub.WindowCloseBehavior";
-const CLOSE_BEHAVIOR_OPTION_HIDE = "隐藏（重开更快）";
-const CLOSE_BEHAVIOR_OPTION_DESTROY = "销毁（更省内存）";
+const OPEN_LAYOUT_VALUE_CENTER = "center";
+const OPEN_LAYOUT_VALUE_LEFT = "left";
+const OPEN_LAYOUT_VALUE_RIGHT = "right";
+const OPEN_LAYOUT_VALUE_MAXIMIZED = "maximized";
+const CLOSE_BEHAVIOR_VALUE_HIDE = "hide";
+const CLOSE_BEHAVIOR_VALUE_DESTROY = "destroy";
+const OPEN_LAYOUT_OPTION_CODES = [
+    OPEN_LAYOUT_VALUE_CENTER,
+    OPEN_LAYOUT_VALUE_LEFT,
+    OPEN_LAYOUT_VALUE_RIGHT,
+    OPEN_LAYOUT_VALUE_MAXIMIZED,
+];
+const CLOSE_BEHAVIOR_OPTION_CODES = [
+    CLOSE_BEHAVIOR_VALUE_HIDE,
+    CLOSE_BEHAVIOR_VALUE_DESTROY,
+];
 const WINDOW_STATE_STORAGE_KEY = "Xz3r0.XDataHub.WindowState.v1";
 const WINDOW_STATE_VERSION = 1;
 let hotkeySpec = DEFAULT_HOTKEY_SPEC;
@@ -74,41 +84,33 @@ let hotkeySettingInitialized = false;
 let defaultOpenLayout = "center";
 let closeBehavior = "hide";
 let xdataHubRef = null;
+let uiLocalePrimary = {};
+let uiLocaleFallback = {};
 
-// ============================================
-// 内部文本本地化 (仅用于窗口内部 DOM 元素)
-// ============================================
-
-const UI_TEXT = {
-    en: {
-        windowTitle: "XDataHub",
-        closeBtn: "Close",
-        maxBtn: "Maximize",
-        restoreBtn: "Restore",
-        dockLeftBtn: "Dock Left",
-        dockRightBtn: "Dock Right",
-        menuTooltip: "XDataHub",
-        opacityLabel: "Opacity"
-    },
-    zh: {
-        windowTitle: "XDataHub",
-        closeBtn: "关闭",
-        maxBtn: "最大化",
-        restoreBtn: "还原",
-        dockLeftBtn: "靠左停靠",
-        dockRightBtn: "靠右停靠",
-        menuTooltip: "XDataHub",
-        opacityLabel: "透明度"
-    }
+const UI_KEYS = {
+    windowTitle: "xdatahub.ui.shell.window_title",
+    closeBtn: "xdatahub.ui.shell.btn.close",
+    maxBtn: "xdatahub.ui.shell.btn.maximize",
+    restoreBtn: "xdatahub.ui.shell.btn.restore",
+    dockLeftBtn: "xdatahub.ui.shell.btn.dock_left",
+    dockRightBtn: "xdatahub.ui.shell.btn.dock_right",
+    menuTooltip: "xdatahub.ui.shell.menu_tooltip",
+    opacityLabel: "xdatahub.ui.shell.opacity_label",
+    hotkeyUpdated: "xdatahub.ui.shell.toast.hotkey_updated",
+    toggleCommandLabel: "xdatahub.ui.shell.command.toggle_window",
+    tabHistory: "xdatahub.ui.shell.tab.history",
+    tabImage: "xdatahub.ui.shell.tab.image",
+    tabVideo: "xdatahub.ui.shell.tab.video",
+    tabAudio: "xdatahub.ui.shell.tab.audio",
 };
 
 const HOST_TABS = [
-    { id: "history", icon: "history", text: "历史数据" },
-    { id: "image", icon: "image", text: "图片" },
-    { id: "video", icon: "video", text: "视频" },
-    { id: "audio", icon: "audio-lines", text: "音频" },
+    { id: "history", icon: "history", textKey: UI_KEYS.tabHistory },
+    { id: "image", icon: "image", textKey: UI_KEYS.tabImage },
+    { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
+    { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260323-71";
+const XDATAHUB_ASSET_VER = "20260324-118";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -171,7 +173,15 @@ function applyMenuButtonIcon() {
     menuButton.element.classList.add("xz3r0-datahub-menu-btn");
     menuButton.element.innerHTML = `
         <span class="xz3r0-datahub-menu-content">
-            ${iconHtml("infinity-bold", t("menuTooltip"), "xz3r0-icon xz3r0-menu-icon")}
+            <svg
+                class="xz3r0-menu-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+            >
+                <path d="M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8" />
+            </svg>
         </span>
     `;
 }
@@ -181,12 +191,47 @@ function getLocale() {
         || localStorage.getItem('Comfy.Locale')
         || navigator.language
         || 'en';
-    return locale.split('-')[0];
+    return String(locale).replace("_", "-").split('-')[0].toLowerCase();
 }
 
-function t(key) {
-    const locale = getLocale();
-    return UI_TEXT[locale]?.[key] ?? UI_TEXT.en[key] ?? key;
+function readUiText(key, fallback) {
+    const text = uiLocalePrimary?.[key] ?? uiLocaleFallback?.[key];
+    if (typeof text === "string" && text.length > 0) {
+        return text;
+    }
+    return fallback;
+}
+
+function t(token, fallback = "") {
+    const key = UI_KEYS[token] ?? token;
+    return readUiText(key, fallback || key);
+}
+
+async function fetchLocaleJson(localeCode) {
+    try {
+        const response = await fetch(
+            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(localeCode)}`,
+            { cache: "no-cache" }
+        );
+        if (!response.ok) {
+            return {};
+        }
+        const payload = await response.json();
+        const data = payload?.dict;
+        return data && typeof data === "object" ? data : {};
+    } catch {
+        return {};
+    }
+}
+
+async function loadUiLocaleBundle(localeOverride = null) {
+    const locale = String(localeOverride || getLocale() || "en").toLowerCase();
+    uiLocaleFallback = await fetchLocaleJson("en");
+    if (locale === "en") {
+        uiLocalePrimary = uiLocaleFallback;
+        return;
+    }
+    uiLocalePrimary = await fetchLocaleJson(locale);
 }
 
 function parseHotkeySpec(spec) {
@@ -254,46 +299,60 @@ function readHotkeySpecFromSettings() {
     ).trim() || DEFAULT_HOTKEY_SPEC;
 }
 
-function normalizeDefaultOpenLayout(value) {
+function equalsSettingOption(value, optionCode, aliases = []) {
     const text = String(value || "").trim().toLowerCase();
-    if (text === OPEN_LAYOUT_OPTION_LEFT.toLowerCase() || text === "left") {
-        return "left";
+    if (!text) {
+        return false;
     }
-    if (text === OPEN_LAYOUT_OPTION_RIGHT.toLowerCase() || text === "right") {
-        return "right";
+    if (text === optionCode.toLowerCase()) {
+        return true;
+    }
+    return aliases.some((alias) => text === String(alias).trim().toLowerCase());
+}
+
+function normalizeDefaultOpenLayout(value) {
+    if (equalsSettingOption(value, OPEN_LAYOUT_VALUE_LEFT, ["dock left"])) {
+        return OPEN_LAYOUT_VALUE_LEFT;
+    }
+    if (equalsSettingOption(value, OPEN_LAYOUT_VALUE_RIGHT, ["dock right"])) {
+        return OPEN_LAYOUT_VALUE_RIGHT;
     }
     if (
-        text === OPEN_LAYOUT_OPTION_MAXIMIZED.toLowerCase()
-        || text === "maximized"
-        || text === "maximize"
+        equalsSettingOption(
+            value,
+            OPEN_LAYOUT_VALUE_MAXIMIZED,
+            ["maximize"]
+        )
     ) {
-        return "maximized";
+        return OPEN_LAYOUT_VALUE_MAXIMIZED;
     }
-    return "center";
+    return OPEN_LAYOUT_VALUE_CENTER;
 }
 
 function readDefaultOpenLayoutFromSettings() {
     const currentValue = app.extensionManager?.setting?.get(
         OPEN_LAYOUT_SETTING_ID
-    ) || OPEN_LAYOUT_OPTION_DEFAULT;
+    ) || OPEN_LAYOUT_VALUE_CENTER;
     return normalizeDefaultOpenLayout(currentValue);
 }
 
 function normalizeCloseBehavior(value) {
-    const text = String(value || "").trim().toLowerCase();
     if (
-        text === CLOSE_BEHAVIOR_OPTION_DESTROY.toLowerCase()
-        || text === "destroy"
+        equalsSettingOption(
+            value,
+            CLOSE_BEHAVIOR_VALUE_DESTROY,
+            ["destroy (lower memory)"]
+        )
     ) {
-        return "destroy";
+        return CLOSE_BEHAVIOR_VALUE_DESTROY;
     }
-    return "hide";
+    return CLOSE_BEHAVIOR_VALUE_HIDE;
 }
 
 function readCloseBehaviorFromSettings() {
     const currentValue = app.extensionManager?.setting?.get(
         CLOSE_BEHAVIOR_SETTING_ID
-    ) || CLOSE_BEHAVIOR_OPTION_HIDE;
+    ) || CLOSE_BEHAVIOR_VALUE_HIDE;
     return normalizeCloseBehavior(currentValue);
 }
 
@@ -355,7 +414,7 @@ app.registerExtension({
     commands: [
         {
             id: "Xz3r0.XDataHub.ToggleWindow",
-            label: "Toggle XDataHub Window",
+            label: t("toggleCommandLabel", "Toggle XDataHub Window"),
             icon: "pi pi-window-maximize",
             function: () => {
                 if (!windowEnabled) {
@@ -408,15 +467,10 @@ app.registerExtension({
         },
         {
             id: OPEN_LAYOUT_SETTING_ID,
-            name: "XDataHub default open layout",
+            name: "XDataHub Default Open Layout",
             type: "combo",
-            options: [
-                OPEN_LAYOUT_OPTION_DEFAULT,
-                OPEN_LAYOUT_OPTION_LEFT,
-                OPEN_LAYOUT_OPTION_RIGHT,
-                OPEN_LAYOUT_OPTION_MAXIMIZED
-            ],
-            defaultValue: OPEN_LAYOUT_OPTION_DEFAULT,
+            options: OPEN_LAYOUT_OPTION_CODES,
+            defaultValue: OPEN_LAYOUT_VALUE_CENTER,
             tooltip: "Default window layout when opening XDataHub.",
             // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XDataHub", "Window"],
@@ -427,13 +481,10 @@ app.registerExtension({
         },
         {
             id: CLOSE_BEHAVIOR_SETTING_ID,
-            name: "XDataHub close button behavior",
+            name: "XDataHub Close Button Behavior",
             type: "combo",
-            options: [
-                CLOSE_BEHAVIOR_OPTION_HIDE,
-                CLOSE_BEHAVIOR_OPTION_DESTROY
-            ],
-            defaultValue: CLOSE_BEHAVIOR_OPTION_HIDE,
+            options: CLOSE_BEHAVIOR_OPTION_CODES,
+            defaultValue: CLOSE_BEHAVIOR_VALUE_HIDE,
             tooltip: "Hide: faster reopen, higher memory. Destroy: lower memory, slower reopen.",
             // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XDataHub", "Window"],
@@ -466,7 +517,10 @@ app.registerExtension({
                 app.extensionManager?.toast?.add?.({
                     severity: "info",
                     summary: "XDataHub",
-                    detail: "快捷键已更新，刷新页面后生效\nHotkey updated, refresh page to apply",
+                    detail: t(
+                        "hotkeyUpdated",
+                        "Hotkey updated, refresh page to apply"
+                    ),
                     life: 2200
                 });
             }
@@ -478,6 +532,7 @@ app.registerExtension({
      * 创建样式表并添加菜单按钮
      */
     async setup() {
+        await loadUiLocaleBundle();
         hotkeySpec = readHotkeySpecFromSettings();
         defaultOpenLayout = readDefaultOpenLayoutFromSettings();
         closeBehavior = readCloseBehaviorFromSettings();
@@ -490,11 +545,11 @@ app.registerExtension({
             .xz3r0-datahub-window {
                 position: fixed;
                 z-index: ${WINDOW_Z_INDEX_DEFAULT};
-                background: var(--window-shell-bg);
-                border: 1px solid var(--window-border);
-                border-top-color: var(--window-top-border);
+                background: var(--theme-bg-main);
+                border: 1px solid var(--border-standard);
+                border-top-color: var(--border-standard);
                 border-radius: 0;
-                box-shadow: var(--window-shell-shadow);
+                box-shadow: var(--shadow-none);
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -505,9 +560,9 @@ app.registerExtension({
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 5.25px 10px;
-                background: var(--window-header-bg);
-                border-bottom: 1px solid var(--window-border);
+                padding: 5.1px 10px;
+                background: var(--xdh-window-header-bg);
+                border-bottom: 1px solid var(--border-standard);
                 cursor: grab;
                 user-select: none;
                 flex-shrink: 0;
@@ -523,25 +578,31 @@ app.registerExtension({
                 align-items: center;
                 gap: 6px;
                 font-weight: 600;
-                color: var(--window-title-text);
+                color: var(--text-standard);
                 font-size: 14px;
             }
             .xz3r0-datahub-window-title .xz3r0-title-icon {
                 width: 16px;
                 height: 16px;
                 display: block;
-                filter: var(--window-icon-filter, var(--icon-color-filter));
+                filter: var(--icon-color-filter);
             }
             .xz3r0-datahub-menu-btn .xz3r0-datahub-menu-content {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
             }
+            .xz3r0-datahub-menu-btn {
+                background: transparent !important;
+            }
             .xz3r0-datahub-menu-btn .xz3r0-menu-icon {
                 width: 17px;
                 height: 17px;
                 display: block;
-                filter: var(--icon-color-filter-brand-pink);
+                stroke: var(--xdh-brand-pink);
+                stroke-width: 2.6;
+                stroke-linecap: round;
+                stroke-linejoin: round;
             }
             .xz3r0-datahub-window-controls {
                 display: flex;
@@ -559,20 +620,25 @@ app.registerExtension({
                 align-items: center;
                 justify-content: center;
                 background: transparent;
-                color: var(--window-control-text);
+                color: var(--text-standard);
                 transition: all 0.2s;
+            }
+            .xz3r0-datahub-window-btn:hover {
+                background: var(--hover-accent-bg);
+                box-shadow: var(--btn-hover-glow-soft);
+            }
+            .xz3r0-datahub-window-btn:active {
+                background: var(--btn-active-color);
+                box-shadow: var(--btn-press-glow-inset);
             }
             .xz3r0-datahub-window-btn .xz3r0-icon {
                 width: 18px;
                 height: 18px;
                 display: block;
-                filter: var(--window-icon-filter, var(--icon-color-filter));
+                filter: var(--icon-color-filter);
             }
             .xz3r0-datahub-window-btn:hover .xz3r0-icon {
-                filter: var(
-                    --window-icon-filter-hover,
-                    var(--icon-color-filter-active)
-                );
+                filter: var(--icon-color-filter-active);
             }
             .xz3r0-datahub-window-content {
                 flex: 1;
@@ -580,7 +646,7 @@ app.registerExtension({
                 min-height: 0;
                 display: flex;
                 flex-direction: column;
-                background: var(--window-content-bg);
+                background: var(--bg-panel);
                 border-radius: 0;
             }
             .xz3r0-datahub-window-content iframe {
@@ -592,8 +658,8 @@ app.registerExtension({
                 display: flex;
                 gap: 6px;
                 padding: 6px 10px 8px 10px;
-                background: var(--window-tabs-rail-bg);
-                box-shadow: inset 0 -1px 0 var(--window-tabs-rail-border);
+                background: var(--xdh-tab-strip-bg);
+                box-shadow: inset 0 -1px 0 var(--xdh-tab-strip-divider);
                 flex-shrink: 0;
                 overflow: hidden;
                 justify-content: center;
@@ -616,12 +682,7 @@ app.registerExtension({
                 right: 0;
                 bottom: 0;
                 height: 1px;
-                background: linear-gradient(
-                    90deg,
-                    var(--window-tabs-divider-start) 0%,
-                    var(--window-tabs-divider-mid) 50%,
-                    var(--window-tabs-divider-start) 100%
-                );
+                background: var(--border-standard);
                 pointer-events: none;
             }
             .xz3r0-datahub-window-host-tabs-indicator {
@@ -630,13 +691,8 @@ app.registerExtension({
                 height: 2px;
                 width: 24px;
                 border-radius: 999px;
-                background: linear-gradient(
-                    90deg,
-                    rgba(var(--btn-hover-glow-rgb), 0.35) 0%,
-                    rgba(var(--btn-hover-glow-rgb), 0.95) 50%,
-                    rgba(var(--btn-hover-glow-rgb), 0.35) 100%
-                );
-                box-shadow: 0 0 10px rgba(var(--btn-hover-glow-rgb), 0.42);
+                background: var(--btn-active-color);
+                box-shadow: none;
                 transform: translateZ(0);
                 transition:
                     left 180ms ease,
@@ -655,9 +711,9 @@ app.registerExtension({
                 align-items: center;
                 justify-content: center;
                 box-sizing: border-box;
-                border: 1px solid var(--window-tab-item-border);
-                background: var(--window-tab-item-bg);
-                color: var(--window-tab-text);
+                border: 1px solid var(--border-standard);
+                background: var(--bg-panel);
+                color: var(--text-emphasis);
                 border-radius: 10px;
                 height: 32px;
                 padding: 6px 10px;
@@ -672,34 +728,19 @@ app.registerExtension({
                 position: relative;
                 z-index: 1;
                 overflow: hidden;
-                backdrop-filter: blur(var(--window-tab-blur));
-                -webkit-backdrop-filter: blur(var(--window-tab-blur));
+                backdrop-filter: blur(var(--xdh-window-tab-blur));
+                -webkit-backdrop-filter: blur(var(--xdh-window-tab-blur));
                 box-shadow: none;
             }
             .xz3r0-datahub-window-host-tab::before {
-                content: "";
-                position: absolute;
-                left: 1px;
-                right: 1px;
-                top: 1px;
-                height: 46%;
-                border-radius: 9px 9px 12px 12px;
-                background: linear-gradient(
-                    180deg,
-                    var(--window-tab-gloss-start) 0%,
-                    var(--window-tab-gloss-mid) 45%,
-                    var(--window-tab-gloss-end) 100%
-                );
                 opacity: 0;
-                z-index: 0;
-                pointer-events: none;
-                transition: opacity 70ms ease-out;
+                display: none;
             }
             .xz3r0-datahub-window-host-tab.active::before {
-                opacity: 0.9;
+                opacity: 0;
             }
             .xz3r0-datahub-window-host-tab:not(.active) {
-                border-color: var(--window-tab-item-border);
+                border-color: var(--border-standard);
             }
             .xz3r0-datahub-window-host-tab-icon {
                 display: inline-flex;
@@ -718,7 +759,7 @@ app.registerExtension({
             }
             .xz3r0-datahub-window-host-tab.active
             .xz3r0-datahub-window-host-tab-icon .xz3r0-icon {
-                filter: var(--icon-filter-tab-active);
+                filter: var(--icon-color-filter-active);
             }
             .xz3r0-datahub-window-host-tab-text {
                 display: inline;
@@ -727,16 +768,16 @@ app.registerExtension({
             }
             @keyframes xz3r0TabBorderBreath {
                 0%, 100% {
-                    border-color: var(--window-tab-item-border);
+                    border-color: var(--border-standard);
                 }
                 50% {
                     border-color: var(--border-hover);
                 }
             }
             .xz3r0-datahub-window-host-tab:not(.active):hover {
-                color: var(--window-tab-hover-text);
-                border-color: var(--window-tab-item-border);
-                background: var(--window-tab-hover-bg);
+                color: var(--text-standard);
+                border-color: var(--border-standard);
+                background: var(--hover-accent-bg);
                 box-shadow: none;
                 animation: xz3r0TabBorderBreath 1.15s ease-in-out infinite;
             }
@@ -744,12 +785,8 @@ app.registerExtension({
                 border-color: var(--border-active);
                 color: var(--text-active);
                 font-weight: 700;
-                background: linear-gradient(
-                    180deg,
-                    var(--window-tab-active-bg-start) 0%,
-                    var(--window-tab-active-bg-end) 100%
-                );
-                box-shadow: var(--window-tab-active-shadow);
+                background: var(--btn-active-color);
+                box-shadow: none;
                 animation: none;
             }
             .xz3r0-datahub-window.compact-tabs .xz3r0-datahub-window-host-tab {
@@ -774,7 +811,7 @@ app.registerExtension({
                 height: 0;
                 border-left: 4px solid transparent;
                 border-right: 4px solid transparent;
-                border-top: 6px solid var(--window-tab-active-arrow);
+                border-top: 6px solid var(--btn-active-color);
                 transform: translateX(-50%);
                 pointer-events: none;
             }
@@ -879,7 +916,7 @@ app.registerExtension({
             }
             .xz3r0-opacity-label {
                 font-size: 12px;
-                color: var(--window-opacity-text);
+                color: var(--text-standard);
                 font-weight: 700;
             }
             .xz3r0-opacity-slider {
@@ -894,7 +931,7 @@ app.registerExtension({
             }
             .xz3r0-opacity-slider::-webkit-slider-runnable-track {
                 height: 4px;
-                background: var(--window-opacity-track);
+                background: var(--border-standard);
                 border-radius: 999px;
             }
             .xz3r0-opacity-slider::-webkit-slider-thumb {
@@ -903,18 +940,18 @@ app.registerExtension({
                 width: 13px;
                 height: 13px;
                 margin-top: -4.5px;
-                background: var(--window-opacity-thumb);
+                background: var(--text-standard);
                 border-radius: 50%;
                 cursor: pointer;
                 transition: background 0.2s;
             }
             .xz3r0-opacity-slider::-webkit-slider-thumb:hover {
-                background: var(--window-opacity-thumb-hover);
+                background: var(--btn-active-color);
             }
             .xz3r0-opacity-slider::-moz-range-thumb {
                 width: 13px;
                 height: 13px;
-                background: var(--window-opacity-thumb);
+                background: var(--text-standard);
                 border-radius: 50%;
                 cursor: pointer;
                 border: none;
@@ -922,15 +959,15 @@ app.registerExtension({
             }
             .xz3r0-opacity-slider::-moz-range-track {
                 height: 4px;
-                background: var(--window-opacity-track);
+                background: var(--border-standard);
                 border-radius: 999px;
             }
             .xz3r0-opacity-slider::-moz-range-thumb:hover {
-                background: var(--window-opacity-thumb-hover);
+                background: var(--btn-active-color);
             }
             .xz3r0-opacity-value {
                 font-size: 12px;
-                color: var(--window-opacity-text);
+                color: var(--text-standard);
                 font-weight: 700;
                 display: inline-block;
                 width: 4ch;
@@ -946,8 +983,8 @@ app.registerExtension({
                 const { ComfyButton } = await import("../../scripts/ui/components/button.js");
                 menuButton = new ComfyButton({
                     action: () => XDataHub.toggle(),
-                    tooltip: t('menuTooltip'),
-                    content: iconHtml("infinity-bold", t("menuTooltip")),
+                    tooltip: t("menuTooltip", "XDataHub"),
+                    content: iconHtml("infinity-bold", t("menuTooltip", "XDataHub")),
                 });
                 app.menu.settingsGroup.append(menuButton);
                 applyMenuButtonIcon();
@@ -1195,8 +1232,8 @@ const XDataHub = {
         const title = document.createElement("span");
         title.className = "xz3r0-datahub-window-title";
         title.innerHTML = `
-            ${iconHtml("infinity", t("windowTitle"), "xz3r0-icon xz3r0-title-icon")}
-            <span class="xz3r0-datahub-window-title-text">${t("windowTitle")}</span>
+            ${iconHtml("infinity", t("windowTitle", "XDataHub"), "xz3r0-icon xz3r0-title-icon")}
+            <span class="xz3r0-datahub-window-title-text">${t("windowTitle", "XDataHub")}</span>
         `;
 
         // 透明度控制组件
@@ -1205,7 +1242,7 @@ const XDataHub = {
 
         const opacityLabel = document.createElement("span");
         opacityLabel.className = "xz3r0-opacity-label";
-        opacityLabel.textContent = t('opacityLabel');
+        opacityLabel.textContent = t("opacityLabel", "Opacity");
 
         const opacitySlider = document.createElement("input");
         opacitySlider.type = "range";
@@ -1227,18 +1264,21 @@ const XDataHub = {
 
         const dockLeftBtn = document.createElement("button");
         dockLeftBtn.className = "xz3r0-datahub-window-btn";
-        dockLeftBtn.innerHTML = iconHtml("panel-left-close", t("dockLeftBtn"));
-        dockLeftBtn.title = t("dockLeftBtn");
+        dockLeftBtn.innerHTML = iconHtml(
+            "panel-left-close",
+            t("dockLeftBtn", "Dock Left")
+        );
+        dockLeftBtn.title = t("dockLeftBtn", "Dock Left");
 
         const maxBtn = document.createElement("button");
         maxBtn.className = "xz3r0-datahub-window-btn";
-        maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn"));
-        maxBtn.title = t('maxBtn');
+        maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+        maxBtn.title = t("maxBtn", "Maximize");
 
         const closeBtn = document.createElement("button");
         closeBtn.className = "xz3r0-datahub-window-btn";
-        closeBtn.innerHTML = iconHtml("x", t("closeBtn"));
-        closeBtn.title = t('closeBtn');
+        closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
+        closeBtn.title = t("closeBtn", "Close");
 
         controls.appendChild(dockLeftBtn);
         controls.appendChild(maxBtn);
@@ -1325,10 +1365,8 @@ const XDataHub = {
             if (hostTabs.clientWidth <= 0) {
                 return;
             }
+            // XDataHub 仅 4 个主标签，强制保持文字模式，避免快速缩放时误入图标模式。
             windowEl.classList.remove("compact-tabs");
-            const needsCompactByLayout = hostTabs.scrollWidth > hostTabs.clientWidth;
-            const isCompact = needsCompactByLayout;
-            windowEl.classList.toggle("compact-tabs", isCompact);
             requestAnimationFrame(updateHostTabIndicator);
         };
         const scheduleVisibleLayoutSync = () => {
@@ -1362,10 +1400,11 @@ const XDataHub = {
         HOST_TABS.forEach((tab) => {
             const button = document.createElement("button");
             button.className = "xz3r0-datahub-window-host-tab";
-            button.title = tab.text;
+            const tabText = t(tab.textKey, tab.id);
+            button.title = tabText;
             button.innerHTML = `
-                <span class="xz3r0-datahub-window-host-tab-icon">${iconHtml(tab.icon, tab.text)}</span>
-                <span class="xz3r0-datahub-window-host-tab-text">${tab.text}</span>
+                <span class="xz3r0-datahub-window-host-tab-icon">${iconHtml(tab.icon, tabText)}</span>
+                <span class="xz3r0-datahub-window-host-tab-text">${tabText}</span>
             `;
             button.addEventListener("pointerdown", (e) => {
                 if (e.button !== 0) return;
@@ -1376,6 +1415,39 @@ const XDataHub = {
             hostTabButtons.set(tab.id, button);
         });
         hostTabs.appendChild(hostTabsIndicator);
+
+        const applyShellLocaleText = () => {
+            const windowTitle = t("windowTitle", "XDataHub");
+            title.innerHTML = `
+                ${iconHtml("infinity", windowTitle, "xz3r0-icon xz3r0-title-icon")}
+                <span class="xz3r0-datahub-window-title-text">${windowTitle}</span>
+            `;
+            opacityLabel.textContent = t("opacityLabel", "Opacity");
+            closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
+            closeBtn.title = t("closeBtn", "Close");
+            HOST_TABS.forEach((tab) => {
+                const button = hostTabButtons.get(tab.id);
+                if (!button) {
+                    return;
+                }
+                const tabText = t(tab.textKey, tab.id);
+                button.title = tabText;
+                button.innerHTML = `
+                    <span class="xz3r0-datahub-window-host-tab-icon">${iconHtml(tab.icon, tabText)}</span>
+                    <span class="xz3r0-datahub-window-host-tab-text">${tabText}</span>
+                `;
+            });
+            if (isMaximized) {
+                maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+                maxBtn.title = t("restoreBtn", "Restore");
+            } else {
+                maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+                maxBtn.title = t("maxBtn", "Maximize");
+            }
+            updateDockButtonVisual();
+            applyMenuButtonIcon();
+            requestAnimationFrame(updateHostTabIndicator);
+        };
 
         windowEl.appendChild(header);
         windowEl.appendChild(content);
@@ -1637,8 +1709,8 @@ const XDataHub = {
 
             isMaximized = true;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn"));
-            maxBtn.title = t('restoreBtn');
+            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+            maxBtn.title = t("restoreBtn", "Restore");
             maxBtn.classList.add('maximized');
             updateHostTabCompactMode();
             updateResizeHandleLayout();
@@ -1663,8 +1735,8 @@ const XDataHub = {
             isMaximized = false;
             preMaximizeState = null;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn"));
-            maxBtn.title = t('maxBtn');
+            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove('maximized');
             updateHostTabCompactMode();
             updateResizeHandleLayout();
@@ -1694,8 +1766,9 @@ const XDataHub = {
             const titleKey = nextSide === "left"
                 ? "dockLeftBtn"
                 : "dockRightBtn";
-            dockLeftBtn.innerHTML = iconHtml(iconName, t(titleKey));
-            dockLeftBtn.title = t(titleKey);
+            const fallbackTitle = nextSide === "left" ? "Dock Left" : "Dock Right";
+            dockLeftBtn.innerHTML = iconHtml(iconName, t(titleKey, fallbackTitle));
+            dockLeftBtn.title = t(titleKey, fallbackTitle);
         };
 
         /**
@@ -1705,8 +1778,8 @@ const XDataHub = {
             resetInteractionState(false);
             isMaximized = false;
             preMaximizeState = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn"));
-            maxBtn.title = t("maxBtn");
+            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove("maximized");
 
             const targetSide = side === "right" ? "right" : "left";
@@ -1726,8 +1799,8 @@ const XDataHub = {
             persistWindowState();
         };
         if (isMaximized) {
-            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn"));
-            maxBtn.title = t("restoreBtn");
+            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+            maxBtn.title = t("restoreBtn", "Restore");
             maxBtn.classList.add("maximized");
         }
 
@@ -1749,8 +1822,8 @@ const XDataHub = {
             isMaximized = false;
             preMaximizeState = null;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn"));
-            maxBtn.title = t("maxBtn");
+            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove("maximized");
 
             const targetWidth = Math.max(
@@ -2172,6 +2245,10 @@ const XDataHub = {
             windowEl,
             dataFrame,
             setHostTab,
+            async applyUiLocale(locale) {
+                await loadUiLocaleBundle(locale);
+                applyShellLocaleText();
+            },
             applyThemeMode(mode) {
                 const normalized = normalizeThemeMode(mode);
                 windowEl.setAttribute("data-theme", normalized);
@@ -2283,6 +2360,12 @@ window.addEventListener("message", (event) => {
             return;
         }
         XDataHub.toggle();
+        return;
+    }
+    if (payload.type === "xdatahub:ui-locale") {
+        xdataHubRef?.instance?.applyUiLocale?.(payload.locale);
     }
 });
+
+
 

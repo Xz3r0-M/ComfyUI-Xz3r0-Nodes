@@ -5,17 +5,16 @@
  */
 
 const TABS = [
-    { id: "history", label: "历史数据" },
-    { id: "image", label: "图片" },
-    { id: "video", label: "视频" },
-    { id: "audio", label: "音频" },
+    { id: "history" },
+    { id: "image" },
+    { id: "video" },
+    { id: "audio" },
 ];
 
 const DEFAULT_STATE = {
     page: 1,
     pageSize: 50,
     selectedId: "",
-    scrollTop: 0,
     detailCollapsed: false,
     splitRatio: 0.45,
     drawerOpen: false,
@@ -130,6 +129,8 @@ const appState = {
     settingsDialogOpen: false,
     settingsSaving: false,
     settingsError: "",
+    localeSwitcherOpen: false,
+    localePreviewLang: "en",
     settingsDraft: null,
     settings: {
         showMediaChipType: true,
@@ -160,12 +161,17 @@ let rootDelegatedHandlersInstalled = false;
 let historyRowExtraLayoutRaf = 0;
 let topActionCompactRaf = 0;
 let renderCount = 0;
+let uiLocaleZhDict = {};
+let uiLocaleEnDict = {};
 
 const tabStates = {};
 for (const tab of TABS) {
     tabStates[tab.id] = loadTabState(tab.id);
+    // 不继承上次会话的选中项，避免出现“默认选中第一个文件”观感。
+    tabStates[tab.id].selectedId = "";
+    tabStates[tab.id].lastOpenedMediaId = "";
+    tabStates[tab.id].lastOpenedMediaUrl = "";
 }
-const scrollTopByTab = loadScrollTopByTab();
 appState.filtersSidebarOpen = loadGlobalFiltersSidebarState();
 
 const root = document.getElementById("app");
@@ -191,6 +197,7 @@ const VIDEO_SCHEDULER_TIME_BUDGET_MS = 8;
 const VIDEO_LOAD_TIMEOUT_MS = 2200;
 const MEDIA_NAV_STACK_LIMIT = 60;
 const ICON_BASE_PATH = "/extensions/ComfyUI-Xz3r0-Nodes/icons";
+const UI_LOCALE_STORAGE_KEY = "xdatahub.ui.locale";
 let iframeHotkeySpec = DEFAULT_TOGGLE_HOTKEY_SPEC;
 let iframeHotkeyCombo = null;
 const DB_ACCENT_PALETTE = [
@@ -236,6 +243,69 @@ function debounce(fn, delay) {
     };
 }
 
+function normalizeUiLocale(value) {
+    return String(value || "").trim().toLowerCase() === "en" ? "en" : "zh";
+}
+
+function currentUiDict() {
+    return appState.localePreviewLang === "en" ? uiLocaleEnDict : uiLocaleZhDict;
+}
+
+function t(key, fallback = "", vars = null) {
+    const dict = currentUiDict();
+    const base = dict?.[key];
+    let text = typeof base === "string" && base.length > 0
+        ? base
+        : (fallback || key);
+    if (!vars || typeof vars !== "object") {
+        return text;
+    }
+    for (const [name, value] of Object.entries(vars)) {
+        text = text.replaceAll(`{${name}}`, String(value));
+    }
+    return text;
+}
+
+function syncDocumentLocaleMeta() {
+    const isEn = appState.localePreviewLang === "en";
+    document.documentElement.lang = isEn ? "en" : "zh-CN";
+    document.title = t("xdatahub.ui.app_html.title", "XDataHub");
+}
+
+function readUiLocalePreference() {
+    try {
+        const raw = localStorage.getItem(UI_LOCALE_STORAGE_KEY);
+        return normalizeUiLocale(raw || appState.localePreviewLang || "en");
+    } catch {
+        return normalizeUiLocale(appState.localePreviewLang || "en");
+    }
+}
+
+function writeUiLocalePreference(locale) {
+    try {
+        localStorage.setItem(UI_LOCALE_STORAGE_KEY, normalizeUiLocale(locale));
+    } catch {
+        // ignore localStorage write errors
+    }
+}
+
+async function fetchUiLocaleDict(locale) {
+    try {
+        const response = await fetch(
+            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(locale)}`,
+            { cache: "no-cache" }
+        );
+        if (!response.ok) {
+            return {};
+        }
+        const payload = await response.json();
+        const dict = payload?.dict;
+        return dict && typeof dict === "object" ? dict : {};
+    } catch {
+        return {};
+    }
+}
+
 function loadTabState(tab) {
     try {
         const raw = sessionStorage.getItem(`xdatahub.tab.${tab}`);
@@ -252,59 +322,10 @@ function loadTabState(tab) {
 }
 
 function saveTabState(tab) {
-    if (
-        scrollTopByTab
-        && Object.prototype.hasOwnProperty.call(scrollTopByTab, tab)
-    ) {
-        tabStates[tab].scrollTop = Number(scrollTopByTab[tab] || 0);
-    }
     sessionStorage.setItem(
         `xdatahub.tab.${tab}`,
         JSON.stringify(tabStates[tab])
     );
-}
-
-function normalizeScrollTop(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 0) {
-        return 0;
-    }
-    return Math.floor(n);
-}
-
-function loadScrollTopByTab() {
-    const fallback = {
-        history: normalizeScrollTop(tabStates.history?.scrollTop),
-        image: normalizeScrollTop(tabStates.image?.scrollTop),
-        video: normalizeScrollTop(tabStates.video?.scrollTop),
-        audio: normalizeScrollTop(tabStates.audio?.scrollTop),
-    };
-    try {
-        const raw = sessionStorage.getItem("xdatahub.scroll_top_by_tab");
-        if (!raw) {
-            return fallback;
-        }
-        const parsed = JSON.parse(raw);
-        return {
-            history: normalizeScrollTop(parsed?.history ?? fallback.history),
-            image: normalizeScrollTop(parsed?.image ?? fallback.image),
-            video: normalizeScrollTop(parsed?.video ?? fallback.video),
-            audio: normalizeScrollTop(parsed?.audio ?? fallback.audio),
-        };
-    } catch {
-        return fallback;
-    }
-}
-
-function saveScrollTopByTab() {
-    try {
-        sessionStorage.setItem(
-            "xdatahub.scroll_top_by_tab",
-            JSON.stringify(scrollTopByTab)
-        );
-    } catch {
-        // ignore sessionStorage write errors
-    }
 }
 
 function apiUrl(path, query = {}) {
@@ -413,6 +434,18 @@ function buildComfyViewUrlFromEntryPath(entryPath, fallbackFilename = "") {
     return apiUrl("/view", query);
 }
 
+function resolveApiErrorMessage(data, fallbackKey, fallbackText) {
+    const payload = data && typeof data === "object" ? data : {};
+    const key = String(payload.message_key || "").trim();
+    if (key) {
+        return t(key, String(payload.message || fallbackText || fallbackKey || key));
+    }
+    if (payload.message) {
+        return String(payload.message);
+    }
+    return t(fallbackKey, fallbackText || fallbackKey);
+}
+
 async function apiGet(path, query = {}, key = "default") {
     abortRequest(key);
     const controller = new AbortController();
@@ -423,7 +456,11 @@ async function apiGet(path, query = {}, key = "default") {
         });
         const data = await response.json();
         if (!response.ok || data.status !== "success") {
-            throw new Error(data.message || "请求失败");
+            throw new Error(resolveApiErrorMessage(
+                data,
+                "xdatahub.ui.app.error.request_failed",
+                "Request Failed"
+            ));
         }
         return data;
     } finally {
@@ -442,7 +479,11 @@ async function apiPost(path, body = {}) {
     });
     const data = await response.json();
     if (!response.ok || data.status !== "success") {
-        throw new Error(data.message || "请求失败");
+        throw new Error(resolveApiErrorMessage(
+            data,
+            "xdatahub.ui.app.error.request_failed",
+            "Request Failed"
+        ));
     }
     return data;
 }
@@ -729,6 +770,7 @@ async function fetchSettings() {
     );
     appState.settings = normalizeSettings(data.settings || {});
     applyThemeMode(appState.settings.themeMode);
+    notifyParentThemeMode(appState.settings.themeMode);
     appState.settingsError = "";
 }
 
@@ -786,7 +828,10 @@ async function updateSettings(partial) {
         applyThemeMode(appState.settings.themeMode);
         notifyParentThemeMode(appState.settings.themeMode);
     } catch (error) {
-        appState.settingsError = error.message || "保存设置失败";
+        appState.settingsError = error.message || t(
+            "xdatahub.ui.app.error.save_settings_failed",
+            "Failed to save settings"
+        );
     } finally {
         appState.settingsSaving = false;
         refreshSettingsDialogOverlay();
@@ -1250,7 +1295,10 @@ async function loadList(options = {}) {
         }
     } catch (error) {
         if (error?.name !== "AbortError") {
-            setError(error.message || "加载失败");
+            setError(error.message || t(
+                "xdatahub.ui.app.error.load_failed",
+                "Load Failed"
+            ));
         }
     } finally {
         appState.loading = false;
@@ -1394,10 +1442,64 @@ function restoreListScroll() {
         return;
     }
     const tabId = getListTabId(list);
-    const top = Object.prototype.hasOwnProperty.call(scrollTopByTab, tabId)
-        ? normalizeScrollTop(scrollTopByTab[tabId])
-        : normalizeScrollTop(tabStates[tabId]?.scrollTop);
-    list.scrollTop = top;
+    const state = tabStates[tabId] || cloneDefaultState();
+    let selector = "";
+    if (tabId === "history") {
+        const selectedId = String(state.selectedId || "").trim();
+        if (selectedId) {
+            const escapedId = (
+                typeof CSS !== "undefined" && typeof CSS.escape === "function"
+                    ? CSS.escape(selectedId)
+                    : selectedId.replaceAll("\"", "\\\"")
+            );
+            selector = `.row[data-item-id="${escapedId}"]`;
+        }
+    } else {
+        const selectedMediaId = String(state.lastOpenedMediaId || "").trim();
+        if (selectedMediaId) {
+            const escapedId = (
+                typeof CSS !== "undefined" && typeof CSS.escape === "function"
+                    ? CSS.escape(selectedMediaId)
+                    : selectedMediaId.replaceAll("\"", "\\\"")
+            );
+            selector = `.media-card[data-media-item-id="${escapedId}"]`;
+        }
+    }
+    if (!selector) {
+        list.scrollTop = 0;
+        return;
+    }
+    const target = list.querySelector(selector);
+    if (!(target instanceof HTMLElement)) {
+        list.scrollTop = 0;
+        return;
+    }
+    const alignSelectedCard = () => {
+        const currentList = document.getElementById("list");
+        if (!(currentList instanceof HTMLElement)) {
+            return;
+        }
+        if (getListTabId(currentList) !== tabId) {
+            return;
+        }
+        const currentTarget = currentList.querySelector(selector);
+        if (!(currentTarget instanceof HTMLElement)) {
+            currentList.scrollTop = 0;
+            return;
+        }
+        const listRect = currentList.getBoundingClientRect();
+        const targetRect = currentTarget.getBoundingClientRect();
+        const top = Math.max(
+            0,
+            currentList.scrollTop + (targetRect.top - listRect.top) - 8
+        );
+        currentList.scrollTop = top;
+    };
+    alignSelectedCard();
+    requestAnimationFrame(() => {
+        alignSelectedCard();
+        requestAnimationFrame(alignSelectedCard);
+    });
 }
 
 function captureFocusState() {
@@ -1439,27 +1541,9 @@ function restoreFocusState(focusState) {
 }
 
 function syncListScroll(force = false, tabIdOverride = "", listOverride = null) {
-    const list = listOverride instanceof HTMLElement
-        ? listOverride
-        : document.getElementById("list");
-    if (!list) {
-        return;
-    }
-    if (!force && appState.loading) {
-        return;
-    }
-    const tabIdRaw = String(tabIdOverride || "").trim();
-    const tabId = TABS.some((item) => item.id === tabIdRaw)
-        ? tabIdRaw
-        : getListTabId(list);
-    if (!tabStates[tabId]) {
-        tabStates[tabId] = cloneDefaultState();
-    }
-    const nextTop = normalizeScrollTop(list.scrollTop);
-    scrollTopByTab[tabId] = nextTop;
-    tabStates[tabId].scrollTop = nextTop;
-    saveScrollTopByTab();
-    saveTabState(tabId);
+    void force;
+    void tabIdOverride;
+    void listOverride;
 }
 
 function selectedItem() {
@@ -1493,7 +1577,7 @@ function renderFacetInput(fieldId, label, value, placeholder, options) {
         && appState.facetDropdown.fieldId === fieldId;
     const menuHtml = isOpen
         ? `<div class="facet-menu" data-facet-menu="${fieldId}">
-            <button class="facet-option facet-option-all" type="button" data-facet-option="${fieldId}" data-facet-value="">全部</button>
+            <button class="facet-option facet-option-all" type="button" data-facet-option="${fieldId}" data-facet-value="">${escapeHtml(t("xdatahub.ui.app.facet.all", "All"))}</button>
             ${
                 options.length
                     ? options.map((option) =>
@@ -1508,7 +1592,7 @@ function renderFacetInput(fieldId, label, value, placeholder, options) {
         <div class="${wrapClass}">
             <div class="facet-input-shell">
                 <input id="${fieldId}" value="${escapeHtml(value)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off">
-                <button class="facet-toggle-btn" type="button" data-facet-toggle="${fieldId}" title="展开选项" aria-label="展开选项">▾</button>
+                <button class="facet-toggle-btn" type="button" data-facet-toggle="${fieldId}" title="${escapeAttr(t("xdatahub.ui.app.aria.h_5a73750f04", "Expand options"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_5a73750f04", "Expand options"))}">▾</button>
             </div>
             ${menuHtml}
         </div>
@@ -1767,7 +1851,10 @@ function bindImageLightboxEvents() {
         const markPreviewUnsupported = () => {
             appState.imagePreview.unsupported = true;
             appState.imagePreview.unsupportedMessage =
-                "该视频在当前浏览器中不支持此格式或编码，或仅含音频轨道。";
+                t(
+                    "xdatahub.ui.app.media.unsupported_video_codec",
+                    "Unsupported video format or codec"
+                );
             mountImageLightbox();
         };
         previewVideo.addEventListener("error", () => {
@@ -1787,7 +1874,10 @@ function bindImageLightboxEvents() {
         previewAudio.addEventListener("error", () => {
             appState.imagePreview.unsupported = true;
             appState.imagePreview.unsupportedMessage =
-                "该音频在当前浏览器中不支持此格式或编码。";
+                t(
+                    "xdatahub.ui.app.media.unsupported_audio_codec",
+                    "Unsupported audio format or codec"
+                );
             markCurrentMediaCardUnsupported("audio");
             mountImageLightbox();
         }, { once: true });
@@ -1903,7 +1993,10 @@ function setupImagePreviewEvents() {
     image.addEventListener("error", () => {
         appState.imagePreview.unsupported = true;
         appState.imagePreview.unsupportedMessage =
-            "该图片在当前浏览器中不支持此格式或编码。";
+            t(
+                "xdatahub.ui.app.media.unsupported_image_codec",
+                "Unsupported image format or codec"
+            );
         markCurrentMediaCardUnsupported("image");
         mountImageLightbox();
     }, { once: true });
@@ -1966,7 +2059,10 @@ async function doClearIndex() {
     if (!isMediaTab(appState.activeTab)) {
         return false;
     }
-    if (!window.confirm("确认清空当前媒体类型索引？")) {
+    if (!window.confirm(t(
+        "xdatahub.ui.app.confirm.clear_media_index",
+        "Confirm clearing current media type index?"
+    ))) {
         return false;
     }
     await apiPost("/xz3r0/xdatahub/media/rebuild", {
@@ -2032,9 +2128,17 @@ function buildDbDeleteSummaryText() {
     const selectedCount = appState.selectedDbFiles.length;
     const criticalCount = selectedCriticalDbCount();
     if (appState.clearDataMode === "delete") {
-        return `将删除 ${selectedCount} 个文件（关键 ${criticalCount} 个）`;
+        return t(
+            "xdatahub.ui.app.db.summary_delete_with_critical",
+            "Will delete {selected} files (critical: {critical})",
+            { selected: selectedCount, critical: criticalCount }
+        );
     }
-    return `将清空 ${selectedCount} 个数据库的历史记录（关键 ${criticalCount} 个）`;
+    return t(
+        "xdatahub.ui.app.db.summary_clear_with_critical",
+        "Will clear history in {selected} databases (critical: {critical})",
+        { selected: selectedCount, critical: criticalCount }
+    );
 }
 
 function syncDbDeleteSelectionUi() {
@@ -2055,23 +2159,23 @@ function syncDbDeleteSelectionUi() {
 }
 
 function dbPurposeIconName(purpose) {
-    const text = String(purpose || "").trim();
+    const text = String(purpose || "").trim().toLowerCase();
     if (!text) {
         return "database";
     }
-    if (text.includes("媒体")) {
+    if (text.includes("media")) {
         return "image";
     }
-    if (text.includes("音频")) {
+    if (text.includes("audio")) {
         return "audio-lines";
     }
-    if (text.includes("视频")) {
+    if (text.includes("video")) {
         return "video";
     }
-    if (text.includes("工作流")) {
+    if (text.includes("workflow")) {
         return "workflow";
     }
-    if (text.includes("记录") || text.includes("历史")) {
+    if (text.includes("record") || text.includes("history")) {
         return "history";
     }
     return "database";
@@ -2140,7 +2244,10 @@ async function runDbListRefreshNow() {
         await fetchDbFileList();
         reconcileSelectedDbFiles();
     } catch (error) {
-        appState.dbDeleteError = error.message || "刷新数据库列表失败";
+        appState.dbDeleteError = error.message || t(
+            "xdatahub.ui.app.error.refresh_db_list_failed",
+            "Failed to refresh database list"
+        );
     } finally {
         appState.dbRefreshInFlight = false;
         refreshDbDeleteDialogOverlay();
@@ -2207,7 +2314,10 @@ async function openDbDeleteDialog() {
     try {
         await fetchDbFileList();
     } catch (error) {
-        appState.dbDeleteError = error.message || "加载数据库列表失败";
+        appState.dbDeleteError = error.message || t(
+            "xdatahub.ui.app.error.load_db_list_failed",
+            "Failed to load database list"
+        );
     } finally {
         appState.dbDeleteLoading = false;
         refreshDbDeleteDialogOverlay();
@@ -2267,15 +2377,26 @@ async function submitDbDelete() {
             ? result.failed.join(", ")
             : "";
         appState.dbDeleteResult = failed
-            ? `已删除 ${deleted} 个，失败 ${failed} 个：${failedNames}`
-            : `已删除 ${deleted} 个数据库文件`;
+            ? t(
+                "xdatahub.ui.app.db.result_delete_failed",
+                "Deleted {deleted}, failed {failed}: {names}",
+                { deleted, failed, names: failedNames }
+            )
+            : t(
+                "xdatahub.ui.app.db.result_delete_success",
+                "Deleted {deleted} database files",
+                { deleted }
+            );
         await fetchDbFileList();
         appState.selectedDbFiles = [];
         appState.confirmYes = "";
         appState.confirmYesCritical = "";
         await loadList();
     } catch (error) {
-        appState.dbDeleteError = error.message || "删除失败";
+        appState.dbDeleteError = error.message || t(
+            "xdatahub.ui.app.error.delete_failed",
+            "Delete Failed"
+        );
     } finally {
         appState.dbDeleteLoading = false;
         refreshDbDeleteDialogOverlay();
@@ -2313,15 +2434,26 @@ async function submitRecordsCleanup() {
             }
         }
         appState.dbDeleteResult = failed
-            ? `已清空 ${touched} 个数据库历史（删除 ${deleted} 条），失败 ${failed} 个：${failedNames.join(", ")}`
-            : `已清空 ${touched} 个数据库历史（删除 ${deleted} 条）`;
+            ? t(
+                "xdatahub.ui.app.db.result_clear_failed",
+                "Cleared {touched} DB histories ({deleted} records), failed {failed}: {names}",
+                { touched, deleted, failed, names: failedNames.join(", ") }
+            )
+            : t(
+                "xdatahub.ui.app.db.result_clear_success",
+                "Cleared {touched} DB histories ({deleted} records)",
+                { touched, deleted }
+            );
         await fetchDbFileList();
         appState.selectedDbFiles = [];
         appState.confirmYes = "";
         appState.confirmYesCritical = "";
         await loadList();
     } catch (error) {
-        appState.dbDeleteError = error.message || "清空历史失败";
+        appState.dbDeleteError = error.message || t(
+            "xdatahub.ui.app.error.cleanup_history_failed",
+            "Failed to clear history"
+        );
     } finally {
         appState.dbDeleteLoading = false;
         refreshDbDeleteDialogOverlay();
@@ -2379,56 +2511,57 @@ function renderFilters() {
     const canCleanInvalid = isMediaTab(tab) && !readonly;
     const canClearIndex = isMediaTab(tab) && !readonly;
     const canClearData = tab === "history" && !readonly;
-    const searchBtnText = `${iconSvg("search", "搜索", "xdatahub-icon btn-icon")} 搜索`;
+    const searchText = t("xdatahub.ui.app.text.h_f04090805c", "Search");
+    const searchBtnText = `${iconSvg("search", searchText, "xdatahub-icon btn-icon")} ${searchText}`;
     const searchBtnClass = "btn primary search-btn";
     const searchDisabled = isSearchLocked() || appState.searchInFlight;
     const dbField = isHistory
         ? renderFacetInput(
             "filter-db-name",
-            "数据来源",
+            t("xdatahub.ui.app.text.h_1f6f90f1a7", "Source"),
             state.filters.dbName,
-            "数据来源",
+            t("xdatahub.ui.app.text.h_1f6f90f1a7", "Source"),
             appState.recordFacets.dbNames
         )
         : "";
     const typeField = isHistory
         ? renderFacetInput(
             "filter-data-type",
-            "数据类型",
+            t("xdatahub.ui.app.text.h_b031dc9a85", "Data Type"),
             state.filters.dataType,
-            "数据类型",
+            t("xdatahub.ui.app.text.h_b031dc9a85", "Data Type"),
             appState.recordFacets.dataTypes
         )
         : "";
     const sourceField = isHistory
         ? renderFacetInput(
             "filter-source",
-            "节点",
+            t("xdatahub.ui.app.text.h_e840cd6f1e", "Node"),
             state.filters.source,
-            "节点",
+            t("xdatahub.ui.app.text.h_e840cd6f1e", "Node"),
             appState.recordFacets.sources
         )
         : "";
     const facetBackdropHtml = appState.facetDropdown.open
-        ? '<button class="facet-backdrop" id="facet-backdrop" aria-label="关闭下拉选项"></button>'
+        ? `<button class="facet-backdrop" id="facet-backdrop" aria-label="${escapeAttr(t("xdatahub.ui.app.filters.close_options", "Close options"))}"></button>`
         : "";
     const dateFilterHtml = `
         <div class="date-range-wrap date-range-inline">
             <div class="field">
-                <span>开始:</span>
+                <span>${escapeHtml(t("xdatahub.ui.app.filters.start", "Start"))}:</span>
                 <div class="datetime-field">
                     <div class="date-input-shell">
                         <input id="filter-start" type="datetime-local" value="${escapeHtml(state.filters.start)}">
-                        <button class="date-picker-btn" type="button" data-picker-target="filter-start" title="选择开始时间" aria-label="选择开始时间">${iconSvg("calendar", "选择开始时间", "xdatahub-icon date-picker-icon")}</button>
+                        <button class="date-picker-btn" type="button" data-picker-target="filter-start" title="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}">${iconSvg("calendar", t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"), "xdatahub-icon date-picker-icon")}</button>
                     </div>
                 </div>
             </div>
             <div class="field">
-                <span>结束:</span>
+                <span>${escapeHtml(t("xdatahub.ui.app.filters.end", "End"))}:</span>
                 <div class="datetime-field">
                     <div class="date-input-shell">
                         <input id="filter-end" type="datetime-local" value="${escapeHtml(state.filters.end)}">
-                        <button class="date-picker-btn" type="button" data-picker-target="filter-end" title="选择结束时间" aria-label="选择结束时间">${iconSvg("calendar", "选择结束时间", "xdatahub-icon date-picker-icon")}</button>
+                        <button class="date-picker-btn" type="button" data-picker-target="filter-end" title="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}">${iconSvg("calendar", t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"), "xdatahub-icon date-picker-icon")}</button>
                     </div>
                 </div>
             </div>
@@ -2438,8 +2571,8 @@ function renderFilters() {
     const filtersPanelHtml = `
         <div class="filters-sidebar-body">
             <div class="field keyword-field">
-                <span>${isHistory ? "额外头部信息" : "文件名"}:</span>
-                <input id="filter-keyword" value="${escapeHtml(state.filters.keyword)}" placeholder="${isHistory ? "额外头部信息关键词" : "关键词"}">
+                <span>${escapeHtml(isHistory ? t("xdatahub.ui.app.text.h_83b27410a4", "Extra Header") : t("xdatahub.ui.app.text.h_1275f6feb7", "Filename"))}:</span>
+                <input id="filter-keyword" value="${escapeHtml(state.filters.keyword)}" placeholder="${escapeAttr(isHistory ? t("xdatahub.ui.app.placeholder.h_5825819325", "Extra header keyword") : t("xdatahub.ui.app.placeholder.h_cc1b21e800", "Keyword"))}">
             </div>
             ${dbField}
             ${typeField}
@@ -2480,10 +2613,12 @@ function renderTopActionBar() {
     const mediaSortOrder = normalizeMediaSortOrder(
         appState.settings.mediaSortOrder
     );
-    const mediaSortText = `排序:${mediaSortDisplayText(
+    const mediaSortText = `${t("xdatahub.ui.app.sort.prefix", "Sort:")}${mediaSortDisplayText(
         appState.settings.mediaSortBy,
         appState.settings.mediaSortOrder
-    )}${mediaSortOrder === "desc" ? "降序" : "升序"}`;
+    )}${mediaSortOrder === "desc"
+        ? t("xdatahub.ui.app.text.h_a4c38f3ce2", "Desc")
+        : t("xdatahub.ui.app.text.h_c0276ec9a7", "Asc")}`;
     const actionBtn = (
         id,
         iconName,
@@ -2507,39 +2642,39 @@ function renderTopActionBar() {
         ${actionBtn(
             "btn-toggle-filters-sidebar",
             "list-filter",
-            "筛选",
+            t("xdatahub.ui.app.text.h_dcce9a144a", "Filter"),
             "btn",
             false,
             sidebarOpen
         )}
-        ${actionBtn("btn-refresh-inline", "refresh-cw", "刷新", "btn", !canRefresh)}
+        ${actionBtn("btn-refresh-inline", "refresh-cw", t("xdatahub.ui.app.text.h_38108eaa1d", "Refresh"), "btn", !canRefresh)}
         ${
             isMedia
                 ? renderOrderSortButton(
                     "btn-media-sort-cycle",
                     mediaSortText,
                     mediaSortOrder,
-                    "切换排序（时间/名称/大小 + 升降序）",
+                    t("xdatahub.ui.app.text.h_78cad6696d", "Toggle sort"),
                     "btn media-sort-cycle-btn"
                 )
                 : renderOrderSortButton(
                     "btn-history-sort-cycle",
                     historySortText,
                     historySortOrder,
-                    "切换历史时间排序（升降序）",
+                    t("xdatahub.ui.app.text.h_e73dc5b0e4", "Toggle history sort"),
                     "btn"
                 )
         }
     `;
     const rightButtons = isMedia
         ? `
-            ${actionBtn("btn-clean-invalid", "brush-cleaning", "清理失效", "btn", !canCleanInvalid)}
-            ${actionBtn("btn-clear-index", "refresh-ccw", "重建数据", "btn danger", !canClearIndex)}
-            ${actionBtn("btn-open-settings", "settings", "设置", "btn")}
+            ${actionBtn("btn-clean-invalid", "brush-cleaning", t("xdatahub.ui.app.text.h_e5f025789f", "Cleanup Invalid"), "btn", !canCleanInvalid)}
+            ${actionBtn("btn-clear-index", "refresh-ccw", t("xdatahub.ui.app.action.rebuild_data", "Rebuild Data"), "btn danger", !canClearIndex)}
+            ${actionBtn("btn-open-settings", "settings", t("xdatahub.ui.app.settings.title", "Settings"), "btn")}
         `
         : `
-            ${actionBtn("btn-clear-data", "trash-2", "数据处理", "btn danger", !canClearData)}
-            ${actionBtn("btn-open-settings", "settings", "设置", "btn")}
+            ${actionBtn("btn-clear-data", "trash-2", t("xdatahub.ui.app.action.data_process", "Data Process"), "btn danger", !canClearData)}
+            ${actionBtn("btn-open-settings", "settings", t("xdatahub.ui.app.settings.title", "Settings"), "btn")}
         `;
     const topActionCount = isMedia ? 6 : 5;
     return `
@@ -2574,9 +2709,13 @@ function syncCompactActionsUi() {
         return;
     }
     if (!backdrop && root) {
+        const closeCompactActionsText = t(
+            "xdatahub.ui.app.compact.close_actions",
+            "Close compact actions"
+        );
         root.insertAdjacentHTML(
             "beforeend",
-            '<button class="compact-actions-backdrop" id="compact-actions-backdrop" aria-label="关闭紧凑操作"></button>'
+            `<button class="compact-actions-backdrop" id="compact-actions-backdrop" aria-label="${escapeAttr(closeCompactActionsText)}"></button>`
         );
     }
 }
@@ -2607,10 +2746,10 @@ function normalizeMediaSortOrder(value) {
 function mediaSortDisplayText(sortBy, sortOrder) {
     const by = normalizeMediaSortBy(sortBy);
     const byText = by === "mtime"
-        ? "时间"
+        ? t("xdatahub.ui.app.text.h_89b4aa6364", "Time")
         : by === "name"
-            ? "名称"
-            : "大小";
+            ? t("xdatahub.ui.app.text.h_1be7ae4fc2", "Name")
+            : t("xdatahub.ui.app.text.h_fd20702c73", "Size");
     return byText;
 }
 
@@ -2640,8 +2779,8 @@ function normalizeHistorySortOrder(value) {
 
 function historySortDisplayText(sortOrder) {
     return normalizeHistorySortOrder(sortOrder) === "desc"
-        ? "时间降序"
-        : "时间升序";
+        ? t("xdatahub.ui.app.text.h_74af8f8344", "Time Desc")
+        : t("xdatahub.ui.app.text.h_c7e8b29a89", "Time Asc");
 }
 
 function sortOrderIconName(sortOrder) {
@@ -2654,7 +2793,7 @@ function renderOrderSortButton(
     id,
     text,
     sortOrder,
-    title = "切换排序（升降序）",
+    title = t("xdatahub.ui.app.text.h_eb52699df3", "Toggle Sort"),
     extraClass = "btn"
 ) {
     return `
@@ -2800,41 +2939,57 @@ function stopVideoScheduler(releaseMounted = false) {
 }
 
 function renderVideoPlaceholderHtml() {
+    const loadingVideoText = t("xdatahub.ui.app.text.h_9831837ab0", "Loading video");
     return (
         '<div class="video-card-placeholder is-loading" '
         + 'data-video-placeholder="1">'
         + '<span class="media-loading-spinner" aria-hidden="true"></span>'
-        + `<span class="media-loading-icon">${iconSvg("video", "视频加载中", "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-loading-icon">${iconSvg("video", loadingVideoText, "xdatahub-icon media-loading-icon-svg")}</span>`
         + "</div>"
     );
 }
 
 function renderVideoUnsupportedHtml() {
+    const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
+    const unsupportedCodecText = t(
+        "xdatahub.ui.app.media.unsupported_format_or_codec",
+        "Unsupported format or codec"
+    );
     return (
         '<div class="video-card-placeholder is-unsupported" '
         + 'data-video-placeholder="1" data-video-unsupported="1">'
-        + `<span class="media-loading-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</span>`
-        + '<span class="media-unsupported-text">不支持的格式或编码</span>'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-unsupported-text">${escapeHtml(unsupportedCodecText)}</span>`
         + "</div>"
     );
 }
 
 function renderAudioUnsupportedHtml() {
+    const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
+    const unsupportedCodecText = t(
+        "xdatahub.ui.app.media.unsupported_format_or_codec",
+        "Unsupported format or codec"
+    );
     return (
         '<div class="audio-card-hint is-unsupported" '
         + 'data-audio-unsupported="1">'
-        + `<div class="audio-card-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon audio-icon-svg")}</div>`
-        + "<div>不支持的格式或编码</div>"
+        + `<div class="audio-card-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon audio-icon-svg")}</div>`
+        + `<div>${escapeHtml(unsupportedCodecText)}</div>`
         + "</div>"
     );
 }
 
 function renderImageUnsupportedHtml() {
+    const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
+    const unsupportedImageCodecText = t(
+        "xdatahub.ui.app.media.unsupported_image_format_or_codec",
+        "Unsupported image format or codec"
+    );
     return (
         '<div class="video-card-placeholder is-unsupported" '
         + 'data-image-placeholder="1" data-image-unsupported="1">'
-        + `<span class="media-loading-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</span>`
-        + '<span class="media-unsupported-text">不支持的图片格式或编码</span>'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-unsupported-text">${escapeHtml(unsupportedImageCodecText)}</span>`
         + "</div>"
     );
 }
@@ -3341,6 +3496,11 @@ function setupVideoCardScheduler(resetState = true) {
 
 function renderListRows() {
     const selectedId = currentTabState().selectedId;
+    const noContentText = t("xdatahub.ui.app.text.h_895269f125", "(No Content)");
+    const copyTitleText = t("xdatahub.ui.app.title.h_8bac024269", "Copy left content");
+    const copyText = t("xdatahub.ui.app.text.h_4edd1d0087", "Copy");
+    const dataTypeText = t("xdatahub.ui.app.text.h_b031dc9a85", "Data Type");
+    const tagText = t("xdatahub.ui.app.title.h_ae0a7afece", "Tag");
     return appState.items
         .map((item) => {
             const contentPreview = getRecordContentPreview(item);
@@ -3374,16 +3534,16 @@ function renderListRows() {
                         </div>
                     </div>
                     <div class="row-content-line">
-                        <div class="row-title row-content-text">${escapeHtml(contentPreview || "(无内容)")}</div>
+                        <div class="row-title row-content-text">${escapeHtml(contentPreview || noContentText)}</div>
                         <button
                             class="btn row-copy-btn row-copy-btn-inline"
                             type="button"
                             data-copy-preview="${escapeAttr(contentPreview || "")}"
-                            title="复制左侧内容"
-                            aria-label="复制左侧内容"
+                            title="${escapeAttr(copyTitleText)}"
+                            aria-label="${escapeAttr(copyTitleText)}"
                         >
-                            <span class="btn-emoji" aria-hidden="true">${iconSvg("copy", "复制", "xdatahub-icon btn-icon")}</span>
-                            <span class="btn-text row-copy-btn-text">复制</span>
+                            <span class="btn-emoji" aria-hidden="true">${iconSvg("copy", copyText, "xdatahub-icon btn-icon")}</span>
+                            <span class="btn-text row-copy-btn-text">${escapeHtml(copyText)}</span>
                         </button>
                     </div>
                     ${
@@ -3396,12 +3556,12 @@ function renderListRows() {
                                 }
                                 ${
                                     dataType
-                                        ? `<span class="chip">${iconSvg("workflow", "数据类型", "xdatahub-icon chip-icon")} ${escapeHtml(dataType)}</span>`
+                                        ? `<span class="chip">${iconSvg("workflow", dataTypeText, "xdatahub-icon chip-icon")} ${escapeHtml(dataType)}</span>`
                                         : ""
                                 }
                                 ${
                                     extraHeader
-                                        ? `<span class="chip row-extra-inline" title="${escapeAttr(extraHeader)}">${iconSvg("tag", "标签", "xdatahub-icon chip-icon")} ${escapeHtml(extraHeader)}</span>`
+                                        ? `<span class="chip row-extra-inline" title="${escapeAttr(extraHeader)}">${iconSvg("tag", tagText, "xdatahub-icon chip-icon")} ${escapeHtml(extraHeader)}</span>`
                                         : ""
                                 }
                             </div>`
@@ -3431,6 +3591,10 @@ function renderMediaGrid() {
     if (appState.loading || appState.error || appState.items.length === 0) {
         return renderStatus();
     }
+    const folderText = t("xdatahub.ui.app.text.h_46ecac2910", "Folder");
+    const untitledText = t("xdatahub.ui.app.title.h_8f9548eaa5", "(Untitled)");
+    const audioText = t("xdatahub.ui.app.text.h_461189f186", "Audio");
+    const tapToPlayText = t("xdatahub.ui.app.media.tap_to_open_player", "Click to open player");
     const showTypeChip = appState.settings.showMediaChipType !== false;
     const showResolutionChip =
         appState.settings.showMediaChipResolution !== false;
@@ -3449,12 +3613,12 @@ function renderMediaGrid() {
                     <article class="media-card media-folder-card" data-folder-path="${escapeAttr(folderPath)}">
                         <div class="media-thumb media-folder-thumb">
                             <div class="media-folder-thumb-inner">
-                                <div class="media-folder-icon">${iconSvg("folder", "文件夹", "xdatahub-icon folder-icon-svg")}</div>
-                                <div class="media-folder-kind">文件夹</div>
+                                <div class="media-folder-icon">${iconSvg("folder", folderText, "xdatahub-icon folder-icon-svg")}</div>
+                                <div class="media-folder-kind">${escapeHtml(folderText)}</div>
                             </div>
                         </div>
                         <div class="media-meta">
-                            <div class="media-title" title="${escapeAttr(item.title || "文件夹")}">${escapeHtml(item.title || "文件夹")}</div>
+                            <div class="media-title" title="${escapeAttr(item.title || folderText)}">${escapeHtml(item.title || folderText)}</div>
                         </div>
                     </article>
                 `;
@@ -3554,7 +3718,7 @@ function renderMediaGrid() {
             } else {
                 previewHtml = audioLikelyUnsupported
                     ? renderAudioUnsupportedHtml()
-                    : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("audio-lines", "音频", "xdatahub-icon audio-icon-svg")}</div><div>点击打开播放器</div></div>`;
+                    : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("audio-lines", audioText, "xdatahub-icon audio-icon-svg")}</div><div>${escapeHtml(tapToPlayText)}</div></div>`;
             }
             const unsupportedAttr = isVideoUnsupported
                 ? ' data-video-unsupported="1"'
@@ -3568,7 +3732,7 @@ function renderMediaGrid() {
                 <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${audioUnsupportedAttr}>
                     <div class="media-thumb">${previewHtml}</div>
                         <div class="media-meta">
-                            <div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || "(无标题)")}</div>
+                            <div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || untitledText)}</div>
                             ${
                                 (showTypeChip
                                     || canShowResolutionChip
@@ -3619,12 +3783,17 @@ function renderMediaGrid() {
 
 function renderSettingsDialog() {
     const draft = cloneSettings(appState.settingsDraft || appState.settings);
+    const settingsTitle = t("xdatahub.ui.app.settings.aria_label", "XDataHub Settings");
+    const settingsPanel = t("xdatahub.ui.app.settings.panel_title", "Control Panel");
+    const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
+    const savingText = t("xdatahub.ui.app.settings.saving", "Saving");
+    const saveText = t("xdatahub.ui.app.aria.h_bb79ec7c15", "Save Settings");
     return `
         <div class="danger-dialog-overlay ${appState.settingsDialogOpen ? "" : "is-hidden"}" id="settings-dialog-overlay">
-            <div class="danger-dialog settings-dialog" role="dialog" aria-modal="true" aria-label="XDataHub 设置">
-                <div class="danger-dialog-title settings-dialog-title">${iconSvg("settings", "设置", "xdatahub-icon dialog-title-icon")} 控制面板</div>
+            <div class="danger-dialog settings-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(settingsTitle)}">
+                <div class="danger-dialog-title settings-dialog-title">${iconSvg("settings", t("xdatahub.ui.app.settings.title", "Settings"), "xdatahub-icon dialog-title-icon")} ${escapeHtml(settingsPanel)}</div>
                 <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("tags", "卡片标签显示", "xdatahub-icon chip-icon")} 卡片标签显示</div>
+                    <div class="settings-section-title">${iconSvg("tags", t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"))}</div>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
                             type="checkbox"
@@ -3632,7 +3801,7 @@ function renderSettingsDialog() {
                             ${draft.showMediaChipType ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>显示类型标签</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.show_chip_type", "Show type chip"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3641,7 +3810,7 @@ function renderSettingsDialog() {
                             ${draft.showMediaChipResolution ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>显示分辨率标签（图片/视频）</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.show_chip_resolution", "Show resolution chip (image/video)"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3650,7 +3819,7 @@ function renderSettingsDialog() {
                             ${draft.showMediaChipDatetime ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>显示日期时间标签</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.show_chip_datetime", "Show datetime chip"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3659,32 +3828,32 @@ function renderSettingsDialog() {
                             ${draft.showMediaChipSize ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>显示文件大小标签</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.show_chip_size", "Show file size chip"))}</span>
                     </label>
                 </div>
                 <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("layout-grid", "卡片布局", "xdatahub-icon chip-icon")} 卡片布局</div>
+                    <div class="settings-section-title">${iconSvg("layout-grid", t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"))}</div>
                     <div class="danger-dialog-input-wrap settings-select-row">
-                        <span>卡片大小：</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.card_size", "Card size:"))}</span>
                         <select id="setting-media-card-size-preset" ${appState.settingsSaving ? "disabled" : ""}>
-                            <option value="compact" ${draft.mediaCardSizePreset === "compact" ? "selected" : ""}>紧凑</option>
-                            <option value="standard" ${draft.mediaCardSizePreset === "standard" ? "selected" : ""}>标准</option>
-                            <option value="large" ${draft.mediaCardSizePreset === "large" ? "selected" : ""}>宽大</option>
+                            <option value="compact" ${draft.mediaCardSizePreset === "compact" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.compact", "Compact"))}</option>
+                            <option value="standard" ${draft.mediaCardSizePreset === "standard" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.standard", "Standard"))}</option>
+                            <option value="large" ${draft.mediaCardSizePreset === "large" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.large", "Large"))}</option>
                         </select>
                     </div>
                 </div>
                 <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("palette", "外观主题", "xdatahub-icon chip-icon")} 外观主题</div>
+                    <div class="settings-section-title">${iconSvg("palette", t("xdatahub.ui.app.text.h_9bcf436eac", "Appearance Theme"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_9bcf436eac", "Appearance Theme"))}</div>
                     <div class="danger-dialog-input-wrap settings-select-row">
-                        <span>主题模式：</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.theme_mode", "Theme mode:"))}</span>
                         <select id="setting-theme-mode" ${appState.settingsSaving ? "disabled" : ""}>
-                            <option value="dark" ${draft.themeMode === "dark" ? "selected" : ""}>暗黑模式</option>
-                            <option value="light" ${draft.themeMode === "light" ? "selected" : ""}>明亮模式</option>
+                            <option value="dark" ${draft.themeMode === "dark" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.theme.dark", "Dark"))}</option>
+                            <option value="light" ${draft.themeMode === "light" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.theme.light", "Light"))}</option>
                         </select>
                     </div>
                 </div>
                 <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("audio-lines", "媒体播放", "xdatahub-icon chip-icon")} 媒体播放</div>
+                    <div class="settings-section-title">${iconSvg("audio-lines", t("xdatahub.ui.app.text.h_5cbb6e4131", "Media Playback"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_5cbb6e4131", "Media Playback"))}</div>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
                             type="checkbox"
@@ -3692,7 +3861,7 @@ function renderSettingsDialog() {
                             ${draft.videoPreviewAutoplay ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>视频自动播放</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.video_autoplay", "Video autoplay"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3701,7 +3870,7 @@ function renderSettingsDialog() {
                             ${draft.videoPreviewMuted ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>视频静音</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.video_muted", "Video muted"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3710,7 +3879,7 @@ function renderSettingsDialog() {
                             ${draft.videoPreviewLoop ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>视频循环</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.video_loop", "Video loop"))}</span>
                     </label>
                     <hr class="settings-divider" aria-hidden="true">
                     <label class="cleanup-all-toggle settings-toggle-row">
@@ -3720,7 +3889,7 @@ function renderSettingsDialog() {
                             ${draft.audioPreviewAutoplay ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>音频自动播放</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.audio_autoplay", "Audio autoplay"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3729,7 +3898,7 @@ function renderSettingsDialog() {
                             ${draft.audioPreviewMuted ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>音频静音</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.audio_muted", "Audio muted"))}</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3738,7 +3907,7 @@ function renderSettingsDialog() {
                             ${draft.audioPreviewLoop ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>音频循环</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.audio_loop", "Audio loop"))}</span>
                     </label>
                 </div>
                 ${
@@ -3747,12 +3916,12 @@ function renderSettingsDialog() {
                         : ""
                 }
                 <div class="danger-dialog-actions">
-                    <button class="btn" id="settings-dialog-cancel" title="取消" aria-label="取消" ${appState.settingsSaving ? "disabled" : ""}>${iconSvg("x", "取消", "xdatahub-icon btn-icon")} 取消</button>
-                    <button class="btn primary" id="settings-dialog-save" title="${appState.settingsSaving ? "保存中" : "保存设置"}" aria-label="${appState.settingsSaving ? "保存中" : "保存设置"}" ${appState.settingsSaving ? "disabled" : ""}>
+                    <button class="btn" id="settings-dialog-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}" ${appState.settingsSaving ? "disabled" : ""}>${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
+                    <button class="btn primary" id="settings-dialog-save" title="${escapeAttr(appState.settingsSaving ? savingText : saveText)}" aria-label="${escapeAttr(appState.settingsSaving ? savingText : saveText)}" ${appState.settingsSaving ? "disabled" : ""}>
                         ${
                             appState.settingsSaving
-                                ? `${iconSvg("refresh-cw", "保存中", "xdatahub-icon btn-icon")} 保存中...`
-                                : `${iconSvg("save", "保存设置", "xdatahub-icon btn-icon")} 保存设置`
+                                ? `${iconSvg("refresh-cw", savingText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.settings.saving_ellipsis", "Saving..."))}`
+                                : `${iconSvg("save", saveText, "xdatahub-icon btn-icon")} ${escapeHtml(saveText)}`
                         }
                     </button>
                 </div>
@@ -3769,15 +3938,23 @@ function renderMediaExplorerBar() {
     const fullPath = subdir ? `${rootName}/${subdir}` : rootName;
     const canGoBack = state.mediaBackStack.length > 0;
     const canGoForward = state.mediaForwardStack.length > 0;
+    const inputFolderText = t("xdatahub.ui.app.aria.h_bc5317f9a4", "input folder");
+    const outputFolderText = t("xdatahub.ui.app.aria.h_d3938c2496", "output folder");
+    const backText = t("xdatahub.ui.app.aria.h_11d0241540", "Back");
+    const forwardText = t("xdatahub.ui.app.aria.h_320ffeefca", "Forward");
+    const inputTitle = t("xdatahub.ui.app.aria.h_19e973a912", "Switch to input folder");
+    const outputTitle = t("xdatahub.ui.app.aria.h_259396db7f", "Switch to output folder");
+    const backTitle = t("xdatahub.ui.app.aria.h_6133ea3cc6", "Back to previous path");
+    const forwardTitle = t("xdatahub.ui.app.aria.h_742dbc9cfd", "Forward to next path");
     return `
         <div class="media-explorer-bar">
             <div class="media-root-switch">
-                <button class="btn ${rootName === "input" ? "active" : ""}" id="btn-media-root-input" title="切换到 input 文件夹" aria-label="切换到 input 文件夹">${iconSvg("folder-input", "input 文件夹", "xdatahub-icon btn-icon")} input 文件夹</button>
-                <button class="btn ${rootName === "output" ? "active" : ""}" id="btn-media-root-output" title="切换到 output 文件夹" aria-label="切换到 output 文件夹">${iconSvg("folder-output", "output 文件夹", "xdatahub-icon btn-icon")} output 文件夹</button>
+                <button class="btn ${rootName === "input" ? "active" : ""}" id="btn-media-root-input" title="${escapeAttr(inputTitle)}" aria-label="${escapeAttr(inputTitle)}">${iconSvg("folder-input", inputFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(inputFolderText)}</button>
+                <button class="btn ${rootName === "output" ? "active" : ""}" id="btn-media-root-output" title="${escapeAttr(outputTitle)}" aria-label="${escapeAttr(outputTitle)}">${iconSvg("folder-output", outputFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(outputFolderText)}</button>
             </div>
             <div class="media-path-line">
-                <button class="btn" id="btn-media-up" title="返回上一个路径" aria-label="返回上一个路径" ${canGoBack ? "" : "disabled"}>${iconSvg("arrow-left", "返回", "xdatahub-icon btn-icon")} 返回</button>
-                <button class="btn" id="btn-media-forward" title="前进到下一个路径" aria-label="前进到下一个路径" ${canGoForward ? "" : "disabled"}>${iconSvg("arrow-right", "前进", "xdatahub-icon btn-icon")} 前进</button>
+                <button class="btn" id="btn-media-up" title="${escapeAttr(backTitle)}" aria-label="${escapeAttr(backTitle)}" ${canGoBack ? "" : "disabled"}>${iconSvg("arrow-left", backText, "xdatahub-icon btn-icon")} ${escapeHtml(backText)}</button>
+                <button class="btn" id="btn-media-forward" title="${escapeAttr(forwardTitle)}" aria-label="${escapeAttr(forwardTitle)}" ${canGoForward ? "" : "disabled"}>${iconSvg("arrow-right", forwardText, "xdatahub-icon btn-icon")} ${escapeHtml(forwardText)}</button>
                 <span class="media-path-text" title="${escapeAttr(fullPath)}">${escapeHtml(fullPath)}</span>
             </div>
         </div>
@@ -3792,8 +3969,31 @@ function renderImagePreview() {
     const isAudio = appState.imagePreview.kind === "audio";
     const isVideo = appState.imagePreview.kind === "video";
     const title = appState.imagePreview.title || (
-        isImage ? "图片预览" : isVideo ? "视频播放" : "音频播放"
+        isImage
+            ? t("xdatahub.ui.app.text.h_feabb054e5", "Image Preview")
+            : isVideo
+                ? t("xdatahub.ui.app.text.h_6ae2095066", "Video Playback")
+                : t("xdatahub.ui.app.text.h_fd897b7598", "Audio Playback")
     );
+    const closePreviewText = t("xdatahub.ui.app.aria.h_bf76308794", "Close Preview");
+    const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
+    const unsupportedCodecText = t(
+        "xdatahub.ui.app.media.unsupported_format_or_codec",
+        "Unsupported format or codec"
+    );
+    const unsupportedImageDescText = t(
+        "xdatahub.ui.app.text.h_bbd61f296e",
+        "This image cannot be decoded for display in the current browser."
+    );
+    const unsupportedAudioDescText = t(
+        "xdatahub.ui.app.text.h_b6ec59948c",
+        "This audio cannot be decoded for playback in the current browser."
+    );
+    const unsupportedVideoDescText = t(
+        "xdatahub.ui.app.text.h_8463d13571",
+        "This video cannot be decoded for playback in the current browser."
+    );
+    const audioText = t("xdatahub.ui.app.text.h_461189f186", "Audio");
     return `
         <div class="image-lightbox" id="image-lightbox">
             <div class="image-lightbox-backdrop" id="image-lightbox-close"></div>
@@ -3801,7 +4001,7 @@ function renderImagePreview() {
                 <div class="image-lightbox-head">
                     <div class="image-lightbox-head-pill">
                         <div class="image-lightbox-title">${escapeHtml(title)}</div>
-                        <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="关闭预览" aria-label="关闭预览">${iconSvg("x", "关闭预览", "xdatahub-icon btn-icon")} 关闭</button>
+                        <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.shell.btn.close", "Close"))}</button>
                     </div>
                 </div>
                 <div class="image-lightbox-body ${isAudio ? "audio" : isVideo ? "video" : "image"}">
@@ -3810,9 +4010,9 @@ function renderImagePreview() {
                             ? appState.imagePreview.unsupported
                                 ? `<div class="media-lightbox media-lightbox-image media-lightbox-unsupported">
                         <div class="media-unsupported-panel">
-                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</div>
-                            <div class="media-unsupported-title">不支持的格式或编码</div>
-                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || "该图片无法在当前浏览器中解码显示。")}</div>
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(unsupportedCodecText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || unsupportedImageDescText)}</div>
                         </div>
                     </div>`
                                 : `<div class="image-lightbox-stage" id="image-lightbox-stage">
@@ -3830,13 +4030,13 @@ function renderImagePreview() {
                             ? appState.imagePreview.unsupported
                                 ? `<div class="media-lightbox media-lightbox-audio media-lightbox-unsupported">
                         <div class="media-unsupported-panel">
-                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</div>
-                            <div class="media-unsupported-title">不支持的格式或编码</div>
-                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || "该音频无法在当前浏览器中解码播放。")}</div>
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(unsupportedCodecText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || unsupportedAudioDescText)}</div>
                         </div>
                     </div>`
                                 : `<div class="media-lightbox media-lightbox-audio">
-                        <div class="audio-lightbox-icon">${iconSvg("audio-lines", "音频", "xdatahub-icon audio-lightbox-icon-svg")}</div>
+                        <div class="audio-lightbox-icon">${iconSvg("audio-lines", audioText, "xdatahub-icon audio-lightbox-icon-svg")}</div>
                         <audio
                             id="audio-lightbox-player"
                             src="${escapeAttr(appState.imagePreview.url)}"
@@ -3854,9 +4054,9 @@ function renderImagePreview() {
                             ? appState.imagePreview.unsupported
                                 ? `<div class="media-lightbox media-lightbox-video media-lightbox-unsupported">
                         <div class="media-unsupported-panel">
-                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</div>
-                            <div class="media-unsupported-title">不支持的格式或编码</div>
-                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || "该视频无法在当前浏览器中解码播放。")}</div>
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(unsupportedCodecText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || unsupportedVideoDescText)}</div>
                         </div>
                     </div>`
                                 : `<div class="media-lightbox media-lightbox-video">
@@ -3882,7 +4082,7 @@ function renderImagePreview() {
 function renderDetail() {
     const item = selectedItem();
     if (!item) {
-        return '<div class="status">暂无选中项</div>';
+        return `<div class="status">${escapeHtml(t("xdatahub.ui.app.status.h_6d2a230190", "No item selected"))}</div>`;
     }
     if (appState.activeTab === "history") {
         return renderHistoryDetail(item);
@@ -3922,12 +4122,17 @@ function renderHistoryDetail(item) {
     const notice = appState.copyNotice.text
         ? `<span class="copy-notice ${appState.copyNotice.error ? "error" : ""}">${escapeHtml(appState.copyNotice.text)}</span>`
         : "";
+    const showStructuredText = t("xdatahub.ui.app.aria.h_4d03befc66", "Show Structured");
+    const showRawText = t("xdatahub.ui.app.aria.h_ae9642cc6c", "Show Raw");
+    const toggleRawText = appState.historyDetailRaw ? showStructuredText : showRawText;
+    const copyContentText = t("xdatahub.ui.app.aria.h_3aeb16d4b1", "Copy Content");
+    const copyRecordText = t("xdatahub.ui.app.aria.h_62f853f5ff", "Copy This Record");
     return `
         <div class="record-detail">
             <div class="record-detail-actions">
-                <button class="btn" id="btn-toggle-raw" title="${appState.historyDetailRaw ? "显示结构化" : "显示原始格式"}" aria-label="${appState.historyDetailRaw ? "显示结构化" : "显示原始格式"}">${appState.historyDetailRaw ? "显示结构化" : "显示原始格式"}</button>
-                <button class="btn" id="btn-copy-payload" data-copy-target="payload" title="复制内容" aria-label="复制内容">复制内容</button>
-                <button class="btn" id="btn-copy-record" data-copy-target="record" title="复制本条记录" aria-label="复制本条记录">复制本条记录</button>
+                <button class="btn" id="btn-toggle-raw" title="${escapeAttr(toggleRawText)}" aria-label="${escapeAttr(toggleRawText)}">${escapeHtml(toggleRawText)}</button>
+                <button class="btn" id="btn-copy-payload" data-copy-target="payload" title="${escapeAttr(copyContentText)}" aria-label="${escapeAttr(copyContentText)}">${escapeHtml(copyContentText)}</button>
+                <button class="btn" id="btn-copy-record" data-copy-target="record" title="${escapeAttr(copyRecordText)}" aria-label="${escapeAttr(copyRecordText)}">${escapeHtml(copyRecordText)}</button>
                 ${notice}
             </div>
             <div class="record-detail-body">
@@ -3942,11 +4147,14 @@ function renderDangerDialog() {
     if (!dialog.open) {
         return "";
     }
-    let title = "危险操作确认";
-    let message = "此操作不可撤销。请输入 YES 以继续。";
+    let title = t("xdatahub.ui.app.text.h_0704bf6331", "Dangerous Action Confirmation");
+    let message = t(
+        "xdatahub.ui.app.text.h_1a176a56fb",
+        "This action cannot be undone. Type YES to continue."
+    );
     let scopeHtml = "";
     if (dialog.kind === "clear-history") {
-        title = "清空历史数据";
+        title = t("xdatahub.ui.app.confirm.clear_all_history_title", "Clear History Data");
         const deleteAll = !!dialog.meta?.deleteAll;
         const dbName = String(dialog.meta?.dbName || "").trim();
         const dbOptions = [
@@ -3956,22 +4164,29 @@ function renderDangerDialog() {
             ]),
         ].filter(Boolean);
         if (deleteAll || !dbName) {
-            message = "你将删除全部数据库中的历史数据记录。此操作不可恢复。请输入 YES 后才可确认删除。";
+            message = t(
+                "xdatahub.ui.app.confirm.clear_all_history_message",
+                "You are about to delete all history records in all databases. This action cannot be undone. Type YES to confirm."
+            );
         } else {
-            message = `你将仅删除数据库 ${dbName} 的历史数据记录。此操作不可恢复。请输入 YES 后才可确认删除。`;
+            message = t(
+                "xdatahub.ui.app.confirm.clear_one_history_message",
+                "You are about to delete history records in database {db}. This action cannot be undone. Type YES to confirm.",
+                { db: dbName }
+            );
         }
         scopeHtml = `
             <div class="danger-dialog-input-wrap">
-                <span>目标数据库：</span>
+                <span>${escapeHtml(t("xdatahub.ui.app.dialog.target_database", "Target Database:"))}</span>
                 <select id="danger-clear-db-target" ${deleteAll ? "disabled" : ""}>
-                    <option value="">请选择数据库</option>
+                    <option value="">${escapeHtml(t("xdatahub.ui.app.dialog.select_database", "Select database"))}</option>
                     ${dbOptions
                         .map((name) => `<option value="${escapeAttr(name)}" ${name === dbName ? "selected" : ""}>${escapeHtml(name)}</option>`)
                         .join("")}
                 </select>
                 <label class="cleanup-all-toggle">
                     <input id="danger-clear-all" type="checkbox" ${deleteAll ? "checked" : ""}>
-                    <span>删除全部历史</span>
+                    <span>${escapeHtml(t("xdatahub.ui.app.dialog.delete_all_history", "Delete all history"))}</span>
                 </label>
             </div>
         `;
@@ -3979,16 +4194,16 @@ function renderDangerDialog() {
     return `
         <div class="danger-dialog-overlay" id="danger-dialog-overlay">
             <div class="danger-dialog" role="dialog" aria-modal="true" aria-labelledby="danger-dialog-title">
-                <div class="danger-dialog-title" id="danger-dialog-title">${iconSvg("triangle-alert", "警告", "xdatahub-icon dialog-title-icon")} ${escapeHtml(title)}</div>
+                <div class="danger-dialog-title" id="danger-dialog-title">${iconSvg("triangle-alert", t("xdatahub.ui.app.dialog.warning", "Warning"), "xdatahub-icon dialog-title-icon")} ${escapeHtml(title)}</div>
                 <div class="danger-dialog-msg">${escapeHtml(message)}</div>
                 ${scopeHtml}
                 <div class="danger-dialog-input-wrap">
-                    <span>确认口令：</span>
-                    <input id="danger-dialog-input" autocomplete="off" placeholder="请输入 YES" value="${escapeAttr(dialog.input)}">
+                    <span>${escapeHtml(t("xdatahub.ui.app.dialog.confirm_phrase", "Confirmation phrase:"))}</span>
+                    <input id="danger-dialog-input" autocomplete="off" placeholder="${escapeAttr(t("xdatahub.ui.app.dialog.input_yes_placeholder", "Type YES"))}" value="${escapeAttr(dialog.input)}">
                 </div>
                 <div class="danger-dialog-actions">
-                    <button class="btn" id="danger-dialog-cancel" title="取消" aria-label="取消">取消</button>
-                    <button class="btn danger" id="danger-dialog-confirm" title="确认删除" aria-label="确认删除" ${isDangerDialogConfirmed() ? "" : "disabled"}>确认删除</button>
+                    <button class="btn" id="danger-dialog-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
+                    <button class="btn danger" id="danger-dialog-confirm" title="${escapeAttr(t("xdatahub.ui.app.common.confirm_delete", "Confirm Delete"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.confirm_delete", "Confirm Delete"))}" ${isDangerDialogConfirmed() ? "" : "disabled"}>${escapeHtml(t("xdatahub.ui.app.common.confirm_delete", "Confirm Delete"))}</button>
                 </div>
             </div>
         </div>
@@ -4012,7 +4227,7 @@ function renderDbDeleteDialog() {
         const critical = isDbCriticalEffective(item);
         const builtin = !!item.is_critical_builtin;
         const locked = critical && !appState.unlockCritical;
-        const purposeLabel = String(item.purpose || "数据库");
+        const purposeLabel = String(item.purpose || t("xdatahub.ui.app.text.h_f4dbbc63a5", "Database"));
         const purposeIcon = dbPurposeIconName(purposeLabel);
         const rowClass = builtin
             ? "critical-builtin"
@@ -4028,14 +4243,14 @@ function renderDbDeleteDialog() {
                 </label>
                 <div class="db-delete-meta db-delete-segment db-delete-segment-middle">
                     <span class="chip">${iconSvg(purposeIcon, purposeLabel, "xdatahub-icon chip-icon")} ${escapeHtml(purposeLabel)}</span>
-                    <span class="chip">${escapeHtml(`${Number(item.record_count || 0)} 条`)}</span>
+                    <span class="chip">${escapeHtml(t("xdatahub.ui.app.db.record_count", "{count} records", { count: Number(item.record_count || 0) }))}</span>
                 </div>
                 ${
                     builtin
-                        ? '<span class="db-critical-mark db-delete-segment db-delete-segment-right db-critical-mark-disabled">内置关键库</span>'
+                        ? `<span class="db-critical-mark db-delete-segment db-delete-segment-right db-critical-mark-disabled">${escapeHtml(t("xdatahub.ui.app.text.h_aec1dd262b", "Built-in Critical DB"))}</span>`
                         : `<label class="db-critical-mark db-delete-segment db-delete-segment-right">
                             <input type="checkbox" data-db-critical-mark="${escapeAttr(item.name)}" ${overrideChecked ? "checked" : ""}>
-                            <span>标记关键</span>
+                            <span>${escapeHtml(t("xdatahub.ui.app.db.mark_critical", "Mark Critical"))}</span>
                         </label>`
                 }
             </div>
@@ -4045,40 +4260,40 @@ function renderDbDeleteDialog() {
         <div class="db-delete-overlay" id="db-delete-overlay">
             <div class="db-delete-dialog" role="dialog" aria-modal="true">
                 <div class="db-delete-head">
-                    <div class="db-delete-title">${iconSvg("triangle-alert", "警告", "xdatahub-icon dialog-title-icon")} 清除数据</div>
+                    <div class="db-delete-title">${iconSvg("triangle-alert", t("xdatahub.ui.app.dialog.warning", "Warning"), "xdatahub-icon dialog-title-icon")} ${escapeHtml(t("xdatahub.ui.app.db.clear_data", "Clear Data"))}</div>
                     <label class="db-delete-unlock db-delete-unlock-top">
                         <input type="checkbox" id="db-delete-unlock-critical" ${appState.unlockCritical ? "" : "checked"}>
-                        <span>锁定关键数据库</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.db.lock_critical", "Lock critical databases"))}</span>
                     </label>
                 </div>
                 <div class="db-delete-mode-switch">
-                    <button class="btn ${isDeleteMode ? "" : "active"}" id="btn-clear-mode-records" title="切换到清空历史记录模式" aria-label="切换到清空历史记录模式">${iconSvg("database", "清空历史记录", "xdatahub-icon btn-icon")} 清空历史记录</button>
-                    <button class="btn ${isDeleteMode ? "active" : ""}" id="btn-clear-mode-delete" title="切换到删除数据库文件模式" aria-label="切换到删除数据库文件模式">${iconSvg("trash-2", "删除数据库文件", "xdatahub-icon btn-icon")} 删除数据库文件</button>
+                    <button class="btn ${isDeleteMode ? "" : "active"}" id="btn-clear-mode-records" title="${escapeAttr(t("xdatahub.ui.app.db.mode_records_title", "Switch to clear-history mode"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.db.mode_records_title", "Switch to clear-history mode"))}">${iconSvg("database", t("xdatahub.ui.app.db.mode_records", "Clear History"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.db.mode_records", "Clear History"))}</button>
+                    <button class="btn ${isDeleteMode ? "active" : ""}" id="btn-clear-mode-delete" title="${escapeAttr(t("xdatahub.ui.app.db.mode_delete_files_title", "Switch to delete-database-files mode"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.db.mode_delete_files_title", "Switch to delete-database-files mode"))}">${iconSvg("trash-2", t("xdatahub.ui.app.db.mode_delete_files", "Delete Database Files"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.db.mode_delete_files", "Delete Database Files"))}</button>
                 </div>
-                <div class="db-delete-desc">请选择要操作的数据库。关键数据库默认受保护（锁定）。此操作不可恢复，请谨慎确认。</div>
+                <div class="db-delete-desc">${escapeHtml(t("xdatahub.ui.app.db.desc", "Select databases to process. Critical databases are protected by default. This action cannot be undone."))}</div>
                 <div class="db-delete-tools">
-                    <button class="btn" id="btn-db-select-all" title="全选数据库文件" aria-label="全选数据库文件">${iconSvg("check", "全选", "xdatahub-icon btn-icon")} 全选</button>
-                    <button class="btn" id="btn-db-clear-selection" title="清空已选数据库文件" aria-label="清空已选数据库文件">${iconSvg("x", "清空选择", "xdatahub-icon btn-icon")} 清空选择</button>
-                    <button class="btn" id="btn-db-refresh-list" title="刷新数据库列表" aria-label="刷新数据库列表" ${refreshLocked || appState.dbDeleteLoading || appState.dbRefreshInFlight ? "disabled" : ""}>${iconSvg("refresh-cw", "刷新", "xdatahub-icon btn-icon")} 刷新</button>
+                    <button class="btn" id="btn-db-select-all" title="${escapeAttr(t("xdatahub.ui.app.aria.h_819c78323a", "Select all database files"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_819c78323a", "Select all database files"))}">${iconSvg("check", t("xdatahub.ui.app.aria.h_3e44b2a933", "Select All"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_3e44b2a933", "Select All"))}</button>
+                    <button class="btn" id="btn-db-clear-selection" title="${escapeAttr(t("xdatahub.ui.app.db.clear_selected_files", "Clear selected database files"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.db.clear_selected_files", "Clear selected database files"))}">${iconSvg("x", t("xdatahub.ui.app.db.clear_selection", "Clear Selection"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.db.clear_selection", "Clear Selection"))}</button>
+                    <button class="btn" id="btn-db-refresh-list" title="${escapeAttr(t("xdatahub.ui.app.aria.h_630c2252df", "Refresh database list"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_630c2252df", "Refresh database list"))}" ${refreshLocked || appState.dbDeleteLoading || appState.dbRefreshInFlight ? "disabled" : ""}>${iconSvg("refresh-cw", t("xdatahub.ui.app.text.h_38108eaa1d", "Refresh"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_38108eaa1d", "Refresh"))}</button>
                 </div>
                 <div class="db-delete-list">
-                    ${rows || '<div class="status">暂无数据库文件</div>'}
+                    ${rows || `<div class="status">${escapeHtml(t("xdatahub.ui.app.status.h_e38b7aec78", "No database files"))}</div>`}
                 </div>
                 <div class="db-delete-summary">${
                     isDeleteMode
-                        ? `将删除 ${selectedCount} 个文件（关键 ${criticalCount} 个）`
-                        : `将清空 ${selectedCount} 个数据库的历史记录（关键 ${criticalCount} 个）`
+                        ? t("xdatahub.ui.app.db.summary_delete_with_critical", "Will delete {selected} files (critical: {critical})", { selected: selectedCount, critical: criticalCount })
+                        : t("xdatahub.ui.app.db.summary_clear_with_critical", "Will clear history in {selected} databases (critical: {critical})", { selected: selectedCount, critical: criticalCount })
                 }</div>
-                <div class="db-delete-confirm-hint">确认操作：请在下方输入 <code>YES</code>。</div>
+                <div class="db-delete-confirm-hint">${escapeHtml(t("xdatahub.ui.app.db.confirm_yes_hint", "Confirm operation: type YES below."))}</div>
                 <div class="db-delete-confirm-row">
-                    <span>确认口令：</span>
+                    <span>${escapeHtml(t("xdatahub.ui.app.dialog.confirm_phrase", "Confirmation phrase:"))}</span>
                     <input id="db-delete-confirm-yes" value="${escapeAttr(appState.confirmYes)}" autocomplete="off">
                 </div>
                 ${
                     needSecondYes
-                        ? `<div class="db-delete-confirm-hint">检测到关键库：请再次输入 <code>YES</code> 进行二次确认。</div>
+                        ? `<div class="db-delete-confirm-hint">${escapeHtml(t("xdatahub.ui.app.db.confirm_yes_second_hint", "Critical databases detected: type YES again for second confirmation."))}</div>
                         <div class="db-delete-confirm-row">
-                            <span>关键库二次口令：</span>
+                            <span>${escapeHtml(t("xdatahub.ui.app.db.confirm_phrase_second", "Second confirmation phrase:"))}</span>
                             <input id="db-delete-confirm-yes-critical" value="${escapeAttr(appState.confirmYesCritical)}" autocomplete="off">
                         </div>`
                         : ""
@@ -4094,12 +4309,12 @@ function renderDbDeleteDialog() {
                         : ""
                 }
                 <div class="db-delete-actions">
-                    <button class="btn" id="db-delete-cancel" title="取消" aria-label="取消">${iconSvg("x", "取消", "xdatahub-icon btn-icon")} 取消</button>
-                    <button class="btn danger" id="db-delete-submit" title="${isDeleteMode ? "确认删除所选文件" : "确认清空所选历史"}" aria-label="${isDeleteMode ? "确认删除所选文件" : "确认清空所选历史"}" ${submitDisabled ? "disabled" : ""}>
+                    <button class="btn" id="db-delete-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${iconSvg("x", t("xdatahub.ui.app.common.cancel", "Cancel"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
+                    <button class="btn danger" id="db-delete-submit" title="${escapeAttr(isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history"))}" aria-label="${escapeAttr(isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history"))}" ${submitDisabled ? "disabled" : ""}>
                         ${
                             appState.dbDeleteLoading
-                                ? `${iconSvg("refresh-cw", isDeleteMode ? "删除中" : "清空中", "xdatahub-icon btn-icon")} ${isDeleteMode ? "删除中..." : "清空中..."}`
-                                : `${iconSvg("triangle-alert", isDeleteMode ? "确认删除所选文件" : "确认清空所选历史", "xdatahub-icon btn-icon")} ${isDeleteMode ? "确认删除所选文件" : "确认清空所选历史"}`
+                                ? `${iconSvg("refresh-cw", isDeleteMode ? t("xdatahub.ui.app.db.deleting", "Deleting") : t("xdatahub.ui.app.db.clearing", "Clearing"), "xdatahub-icon btn-icon")} ${isDeleteMode ? t("xdatahub.ui.app.db.deleting_ellipsis", "Deleting...") : t("xdatahub.ui.app.db.clearing_ellipsis", "Clearing...")}`
+                                : `${iconSvg("triangle-alert", isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history"), "xdatahub-icon btn-icon")} ${isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history")}`
                         }
                     </button>
                 </div>
@@ -4110,28 +4325,91 @@ function renderDbDeleteDialog() {
 
 function renderStatus() {
     if (appState.loading) {
-        return '<div class="status">加载中...</div>';
+        return `<div class="status">${escapeHtml(t("xdatahub.ui.app.status.h_514c33af5c", "Loading..."))}</div>`;
     }
     if (appState.error) {
         return `<div class="status error">${escapeHtml(appState.error)}</div>`;
     }
     if (appState.items.length === 0) {
-        return '<div class="status">暂无数据，可尝试刷新索引或调整筛选条件</div>';
+        return `<div class="status">${escapeHtml(t("xdatahub.ui.app.status.h_56016b8700", "No data"))}</div>`;
     }
     return "";
 }
 
+function renderLocaleSwitcher() {
+    const switchText = t("xdatahub.ui.app.locale.switch", "Switch Language");
+    return `
+        <div class="locale-switcher">
+            <button
+                class="btn locale-switcher-toggle"
+                id="btn-locale-switch"
+                title="${escapeAttr(switchText)}"
+                aria-label="${escapeAttr(switchText)}"
+                aria-expanded="${appState.localeSwitcherOpen ? "true" : "false"}"
+            >
+                ${iconSvg("languages", switchText, "xdatahub-icon btn-icon")}
+            </button>
+        </div>
+    `;
+}
+
+function renderLocaleSwitcherOverlay() {
+    if (!appState.localeSwitcherOpen) {
+        return "";
+    }
+    const zhActive = appState.localePreviewLang === "zh";
+    const enActive = appState.localePreviewLang === "en";
+    return `
+        <div class="locale-switcher-overlay" id="locale-switcher-overlay">
+            <div
+                class="locale-switcher-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="${escapeAttr(t("xdatahub.ui.app.locale.select_title", "Select Language"))}"
+            >
+                <div class="locale-switcher-title">${escapeHtml(t("xdatahub.ui.app.locale.select_title", "Select Language"))}</div>
+                <button
+                    class="btn locale-option${zhActive ? " active" : ""}"
+                    id="btn-locale-option-zh"
+                    title="${escapeAttr(t("xdatahub.ui.app.locale.zh", "Chinese"))}"
+                    aria-label="${escapeAttr(t("xdatahub.ui.app.locale.zh", "Chinese"))}"
+                    role="menuitemradio"
+                    aria-checked="${zhActive ? "true" : "false"}"
+                >
+                    🇨🇳 ${escapeHtml(t("xdatahub.ui.app.locale.zh", "Chinese"))}
+                </button>
+                <button
+                    class="btn locale-option${enActive ? " active" : ""}"
+                    id="btn-locale-option-en"
+                    title="${escapeAttr(t("xdatahub.ui.app.locale.en", "English"))}"
+                    aria-label="${escapeAttr(t("xdatahub.ui.app.locale.en", "English"))}"
+                    role="menuitemradio"
+                    aria-checked="${enActive ? "true" : "false"}"
+                >
+                    🇺🇸 ${escapeHtml(t("xdatahub.ui.app.locale.en", "English"))}
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 function renderHistoryLayout() {
     const state = currentTabState();
+    const prevText = t("xdatahub.ui.app.aria.h_b41561d807", "Previous");
+    const nextText = t("xdatahub.ui.app.aria.h_67a246a344", "Next");
+    const pageJumpText = t("xdatahub.ui.app.pagination.jump", "Jump");
     return `
         <div class="panel list-panel history-list-panel collapsed-fill" style="width:100%">
             <div class="list" id="list" data-list-tab="history">${renderListRows()}${renderStatus()}</div>
             <div class="pagination">
-                <button class="btn" id="page-prev" title="上一页" aria-label="上一页" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", "上一页", "xdatahub-icon btn-icon")} 上一页</button>
+                <button class="btn" id="page-prev" title="${escapeAttr(prevText)}" aria-label="${escapeAttr(prevText)}" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", prevText, "xdatahub-icon btn-icon")} ${escapeHtml(prevText)}</button>
                 <span>${state.page} / ${appState.totalPages}</span>
-                <button class="btn" id="page-next" title="下一页" aria-label="下一页" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", "下一页", "xdatahub-icon btn-icon")} 下一页</button>
-                <span>跳页</span>
-                <input id="page-jump" type="number" min="1" max="${appState.totalPages}" value="${state.page}" style="width:88px;">
+                <button class="btn" id="page-next" title="${escapeAttr(nextText)}" aria-label="${escapeAttr(nextText)}" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", nextText, "xdatahub-icon btn-icon")} ${escapeHtml(nextText)}</button>
+                <span>${escapeHtml(pageJumpText)}</span>
+                <div class="page-jump-wrap">
+                    <input id="page-jump" type="number" min="1" max="${appState.totalPages}" value="${state.page}" style="width:60px;">
+                </div>
+                <div class="pagination-locale-anchor">${renderLocaleSwitcher()}</div>
             </div>
         </div>
     `;
@@ -4146,6 +4424,7 @@ function syncTopActionBarUi() {
     bar.outerHTML = renderTopActionBar();
     updateTopActionBarCompactMode();
     scheduleTopActionBarCompactUpdate();
+    syncDocumentLocaleMeta();
 }
 
 function syncLockBannerUi() {
@@ -4155,7 +4434,11 @@ function syncLockBannerUi() {
         return;
     }
     banner.classList.toggle("show", !!appState.lockState.readonly);
-    banner.textContent = `执行中，仅可只读浏览（状态：${appState.lockState.state}）`;
+    banner.textContent = t(
+        "xdatahub.ui.app.lock.readonly_with_state",
+        `Read-only while running (state: ${appState.lockState.state})`,
+        { state: appState.lockState.state }
+    );
 }
 
 function renderShell() {
@@ -4170,7 +4453,11 @@ function renderShell() {
     );
     return `
         <div class="lock-banner ${showLock}">
-            执行中，仅可只读浏览（状态：${escapeHtml(appState.lockState.state)}）
+            ${escapeHtml(t(
+                "xdatahub.ui.app.lock.readonly_with_state",
+                `Read-only while running (state: ${appState.lockState.state})`,
+                { state: appState.lockState.state }
+            ))}
         </div>
         <div class="workspace ${sidebarOpen ? "filters-expanded" : "filters-collapsed"}">
             ${renderTopActionBar()}
@@ -4184,11 +4471,14 @@ function renderShell() {
                     ${renderMediaExplorerBar()}
                     <div class="media-grid" id="list" data-list-tab="${tab}">${renderMediaGrid()}</div>
                     <div class="pagination">
-                        <button class="btn" id="page-prev" title="上一页" aria-label="上一页" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", "上一页", "xdatahub-icon btn-icon")} 上一页</button>
+                        <button class="btn" id="page-prev" title="${escapeAttr(t("xdatahub.ui.app.aria.h_b41561d807", "Previous"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_b41561d807", "Previous"))}" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", t("xdatahub.ui.app.aria.h_b41561d807", "Previous"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_b41561d807", "Previous"))}</button>
                         <span>${state.page} / ${appState.totalPages}</span>
-                        <button class="btn" id="page-next" title="下一页" aria-label="下一页" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", "下一页", "xdatahub-icon btn-icon")} 下一页</button>
-                        <span>跳页</span>
-                        <input id="page-jump" type="number" min="1" max="${appState.totalPages}" value="${state.page}" style="width:88px;">
+                        <button class="btn" id="page-next" title="${escapeAttr(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", t("xdatahub.ui.app.aria.h_67a246a344", "Next"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}</button>
+                        <span>${escapeHtml(t("xdatahub.ui.app.pagination.jump", "Jump"))}</span>
+                        <div class="page-jump-wrap">
+                            <input id="page-jump" type="number" min="1" max="${appState.totalPages}" value="${state.page}" style="width:60px;">
+                        </div>
+                        <div class="pagination-locale-anchor">${renderLocaleSwitcher()}</div>
                     </div>
                 </div>
                 `
@@ -4221,6 +4511,19 @@ function renderOverlays() {
     syncOverlayById("danger-dialog-overlay", renderDangerDialog());
     syncOverlayById("db-delete-overlay", renderDbDeleteDialog());
     syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
+    syncOverlayById("locale-switcher-overlay", renderLocaleSwitcherOverlay());
+}
+
+function syncLocaleSwitcherUi() {
+    const toggleBtn = document.getElementById("btn-locale-switch");
+    if (toggleBtn instanceof HTMLButtonElement) {
+        toggleBtn.setAttribute(
+            "aria-expanded",
+            appState.localeSwitcherOpen ? "true" : "false"
+        );
+    }
+    syncOverlayById("locale-switcher-overlay", renderLocaleSwitcherOverlay());
+    syncDocumentLocaleMeta();
 }
 
 // 渲染策略（强约束）：
@@ -4243,6 +4546,7 @@ function render() {
     const focusState = captureFocusState();
     root.innerHTML = renderShell();
     renderOverlays();
+    syncDocumentLocaleMeta();
 
     bindEvents();
     if (appState.imagePreview.open) {
@@ -4487,22 +4791,39 @@ async function handleDelegatedPrimaryButtonClick(event) {
     if (!(button instanceof HTMLButtonElement)) {
         return false;
     }
+    const buttonRect = button.getBoundingClientRect();
     const buttonId = button.id;
     if (!buttonId) {
         return false;
     }
     switch (buttonId) {
     case "btn-refresh-inline":
-        await runActionButtonAsync(doRefresh, "刷新失败", true);
+        await runActionButtonAsync(
+            doRefresh,
+            t("xdatahub.ui.app.error.refresh_failed", "Refresh Failed"),
+            true
+        );
         return true;
     case "btn-clean-invalid":
-        await runActionButtonAsync(doCleanupInvalid, "清理失败", true);
+        await runActionButtonAsync(
+            doCleanupInvalid,
+            t("xdatahub.ui.app.error.cleanup_failed", "Cleanup Failed"),
+            true
+        );
         return true;
     case "btn-clear-index":
-        await runActionButtonAsync(doClearIndex, "重建失败", true);
+        await runActionButtonAsync(
+            doClearIndex,
+            t("xdatahub.ui.app.error.rebuild_failed", "Rebuild Failed"),
+            true
+        );
         return true;
     case "btn-clear-data":
-        await runActionButtonAsync(doClearRecords, "数据处理失败", true);
+        await runActionButtonAsync(
+            doClearRecords,
+            t("xdatahub.ui.app.error.data_process_failed", "Data processing failed"),
+            true
+        );
         return true;
     case "btn-open-settings":
         openSettingsDialogFromAction();
@@ -4585,6 +4906,35 @@ async function handleDelegatedPrimaryButtonClick(event) {
     case "page-next":
         changePage(currentTabState().page + 1);
         return true;
+    case "btn-locale-switch":
+        if (appState.localeSwitcherOpen) {
+            appState.localeSwitcherOpen = false;
+            syncLocaleSwitcherUi();
+            return true;
+        }
+        appState.localeSwitcherOpen = true;
+        syncLocaleSwitcherUi();
+        return true;
+    case "btn-locale-option-zh":
+        appState.localePreviewLang = "zh";
+        writeUiLocalePreference("zh");
+        window.parent?.postMessage?.({
+            type: "xdatahub:ui-locale",
+            locale: "zh",
+        }, "*");
+        appState.localeSwitcherOpen = false;
+        render();
+        return true;
+    case "btn-locale-option-en":
+        appState.localePreviewLang = "en";
+        writeUiLocalePreference("en");
+        window.parent?.postMessage?.({
+            type: "xdatahub:ui-locale",
+            locale: "en",
+        }, "*");
+        appState.localeSwitcherOpen = false;
+        render();
+        return true;
     case "btn-toggle-filters-sidebar":
         appState.filtersSidebarOpen = !appState.filtersSidebarOpen;
         saveGlobalFiltersSidebarState();
@@ -4604,6 +4954,8 @@ async function handleDelegatedPrimaryButtonClick(event) {
         await handleCopyButton(button);
         return true;
     case "settings-dialog-cancel":
+        restoreThemeFromSavedSettings();
+        restoreMediaCardSizeFromSavedSettings();
         appState.settingsDialogOpen = false;
         appState.settingsDraft = null;
         document.getElementById("settings-dialog-overlay")
@@ -4623,6 +4975,9 @@ async function handleDelegatedPrimaryButtonClick(event) {
             } else {
                 renderOverlays();
             }
+        } else {
+            restoreThemeFromSavedSettings();
+            restoreMediaCardSizeFromSavedSettings();
         }
         return true;
     }
@@ -4726,6 +5081,8 @@ function handleDelegatedOverlayBackdropClick(event) {
         return false;
     }
     if (target.id === "settings-dialog-overlay") {
+        restoreThemeFromSavedSettings();
+        restoreMediaCardSizeFromSavedSettings();
         appState.settingsDialogOpen = false;
         appState.settingsDraft = null;
         target.classList.add("is-hidden");
@@ -4850,11 +5207,20 @@ function handleDelegatedMediaCardClick(event) {
         openImagePreview(kind, previewUrl, title, {
             unsupported: unsupported || audioUnsupported || imageUnsupported,
             unsupportedMessage: unsupported
-                ? "该视频在当前浏览器中不支持此格式或编码，或仅含音频轨道。"
+                ? t(
+                    "xdatahub.ui.app.media.unsupported_video_codec",
+                    "This video format or codec is not supported in the current browser, or the file contains audio track only."
+                )
                 : audioUnsupported
-                    ? "该音频在当前浏览器中不支持此格式或编码。"
+                    ? t(
+                        "xdatahub.ui.app.media.unsupported_audio_codec",
+                        "This audio format or codec is not supported in the current browser."
+                    )
                     : imageUnsupported
-                        ? "该图片在当前浏览器中不支持此格式或编码。"
+                        ? t(
+                            "xdatahub.ui.app.media.unsupported_image_codec",
+                            "This image format or codec is not supported in the current browser."
+                        )
                     : "",
         });
     });
@@ -4950,7 +5316,10 @@ async function handleDelegatedDbCriticalMarkChange(event) {
         await fetchDbFileList();
         reconcileSelectedDbFiles();
     } catch (error) {
-        appState.dbDeleteError = error.message || "更新关键标记失败";
+        appState.dbDeleteError = error.message || t(
+            "xdatahub.ui.app.error.update_critical_mark_failed",
+            "Failed to update critical mark"
+        );
     }
     refreshDbDeleteDialogOverlay();
     return true;
@@ -5030,6 +5399,37 @@ function ensureSettingsDraftState() {
     }
 }
 
+function applySettingsThemePreview(mode) {
+    const normalized = normalizeThemeMode(mode);
+    applyThemeMode(normalized);
+    notifyParentThemeMode(normalized);
+}
+
+function restoreThemeFromSavedSettings() {
+    applySettingsThemePreview(appState.settings?.themeMode);
+}
+
+function applyMediaCardSizePreview(preset) {
+    if (!isMediaTab(appState.activeTab)) {
+        return;
+    }
+    const normalized = normalizeMediaCardSizePreset(preset);
+    const panel = root?.querySelector?.(".media-grid-panel");
+    if (!(panel instanceof HTMLElement)) {
+        return;
+    }
+    panel.classList.remove(
+        "media-card-size-compact",
+        "media-card-size-standard",
+        "media-card-size-large"
+    );
+    panel.classList.add(`media-card-size-${normalized}`);
+}
+
+function restoreMediaCardSizeFromSavedSettings() {
+    applyMediaCardSizePreview(appState.settings?.mediaCardSizePreset);
+}
+
 function handleDelegatedGlobalChange(event) {
     const target = event.target;
     if (
@@ -5084,12 +5484,14 @@ function handleDelegatedGlobalChange(event) {
             ensureSettingsDraftState();
             appState.settingsDraft.mediaCardSizePreset =
                 normalizeMediaCardSizePreset(target.value);
+            applyMediaCardSizePreview(appState.settingsDraft.mediaCardSizePreset);
         }
         return true;
     case "setting-theme-mode":
         if (target instanceof HTMLSelectElement) {
             ensureSettingsDraftState();
             appState.settingsDraft.themeMode = normalizeThemeMode(target.value);
+            applySettingsThemePreview(appState.settingsDraft.themeMode);
         }
         return true;
     case "danger-clear-db-target":
@@ -5163,6 +5565,16 @@ function installRootDelegatedHandlers() {
             return;
         }
         handleDelegatedMediaCardClick(event);
+        const clickTarget = event.target;
+        if (
+            appState.localeSwitcherOpen
+            && clickTarget instanceof HTMLElement
+            && !clickTarget.closest(".locale-switcher")
+            && !clickTarget.closest(".locale-switcher-dialog")
+        ) {
+            appState.localeSwitcherOpen = false;
+            syncLocaleSwitcherUi();
+        }
     });
     root.addEventListener("dragstart", (event) => {
         handleDelegatedMediaCardDragstart(event);
@@ -5468,7 +5880,7 @@ function renderPayloadNode(value, depth = 0) {
     if (type === "array") {
         const items = value;
         if (items.length === 0) {
-            return '<div class="payload-row"><span class="payload-empty">空数组 []</span></div>';
+            return `<div class="payload-row"><span class="payload-empty">${escapeHtml(t("xdatahub.ui.app.text.h_83a7a4af34", "Empty Array []"))}</span></div>`;
         }
         const limit = 50;
         items.slice(0, limit).forEach((entry, index) => {
@@ -5480,14 +5892,16 @@ function renderPayloadNode(value, depth = 0) {
             `);
         });
         if (items.length > limit) {
-            rows.push(`<div class="payload-row"><span class="payload-empty">还有 ${items.length - limit} 项未展开</span></div>`);
+            rows.push(
+                `<div class="payload-row"><span class="payload-empty">${escapeHtml(t("xdatahub.ui.app.payload.more_items", "{count} more items not expanded", { count: items.length - limit }))}</span></div>`
+            );
         }
         return rows.join("");
     }
 
     const entries = Object.entries(value);
     if (entries.length === 0) {
-        return '<div class="payload-row"><span class="payload-empty">空对象 {}</span></div>';
+        return `<div class="payload-row"><span class="payload-empty">${escapeHtml(t("xdatahub.ui.app.text.h_b536a95a40", "Empty Object {}"))}</span></div>`;
     }
     const limit = 50;
     entries.slice(0, limit).forEach(([key, entry]) => {
@@ -5499,7 +5913,9 @@ function renderPayloadNode(value, depth = 0) {
         `);
     });
     if (entries.length > limit) {
-        rows.push(`<div class="payload-row"><span class="payload-empty">还有 ${entries.length - limit} 个字段未展开</span></div>`);
+        rows.push(
+            `<div class="payload-row"><span class="payload-empty">${escapeHtml(t("xdatahub.ui.app.payload.more_fields", "{count} more fields not expanded", { count: entries.length - limit }))}</span></div>`
+        );
     }
     return rows.join("");
 }
@@ -5618,7 +6034,7 @@ async function handleCopyButton(button) {
     const target = button?.getAttribute("data-copy-target") || "payload";
     const item = selectedItem();
     if (!item) {
-        setCopyNotice("无可复制内容", true);
+        setCopyNotice(t("xdatahub.ui.app.text.h_3286eb7260", "Nothing to copy"), true);
         return;
     }
     const payloadInfo = normalizePayloadValue(item?.extra?.payload);
@@ -5627,9 +6043,9 @@ async function handleCopyButton(button) {
         : buildPayloadCopyText(payloadInfo);
     try {
         await copyText(text);
-        setCopyNotice("已复制");
+        setCopyNotice(t("xdatahub.ui.app.text.h_e381a5763d", "Copied"));
     } catch {
-        setCopyNotice("复制失败", true);
+        setCopyNotice(t("xdatahub.ui.app.common.copy_failed", "Copy Failed"), true);
     }
 }
 
@@ -5653,17 +6069,17 @@ function setRowCopyFeedback(button) {
     }
     const textEl = button.querySelector(".row-copy-btn-text");
     if (textEl instanceof HTMLElement) {
-        textEl.textContent = "已复制";
+        textEl.textContent = t("xdatahub.ui.app.text.h_e381a5763d", "Copied");
     } else {
-        button.textContent = "已复制";
+        button.textContent = t("xdatahub.ui.app.text.h_e381a5763d", "Copied");
     }
     button.classList.add("copied");
     const timer = window.setTimeout(() => {
         const resetTextEl = button.querySelector(".row-copy-btn-text");
         if (resetTextEl instanceof HTMLElement) {
-            resetTextEl.textContent = "复制";
+            resetTextEl.textContent = t("xdatahub.ui.app.text.h_4edd1d0087", "Copy");
         } else {
-            button.textContent = "复制";
+            button.textContent = t("xdatahub.ui.app.text.h_4edd1d0087", "Copy");
         }
         button.classList.remove("copied");
         delete button.dataset.copyTimer;
@@ -5923,6 +6339,8 @@ window.addEventListener("keydown", (event) => {
     }
     if (event.key === "Escape" && appState.settingsDialogOpen) {
         event.preventDefault();
+        restoreThemeFromSavedSettings();
+        restoreMediaCardSizeFromSavedSettings();
         appState.settingsDialogOpen = false;
         appState.settingsDraft = null;
         const overlay = document.getElementById("settings-dialog-overlay");
@@ -6027,6 +6445,14 @@ async function init() {
     if (!root) {
         return;
     }
+    uiLocaleZhDict = await fetchUiLocaleDict("zh");
+    uiLocaleEnDict = await fetchUiLocaleDict("en");
+    appState.localePreviewLang = readUiLocalePreference();
+    syncDocumentLocaleMeta();
+    window.parent?.postMessage?.({
+        type: "xdatahub:ui-locale",
+        locale: appState.localePreviewLang,
+    }, "*");
     installRootDelegatedHandlers();
     updateIframeHotkeySpec(DEFAULT_TOGGLE_HOTKEY_SPEC);
     const queryTab = new URLSearchParams(window.location.search).get("tab");
