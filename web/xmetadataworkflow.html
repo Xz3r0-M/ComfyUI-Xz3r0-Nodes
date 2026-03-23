@@ -89,13 +89,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XMetadataWorkflow</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260323-01">
     <style>
-        /*
-           颜色规范：
-           1) 本文件必须引用 ./xdatahub-color-tokens.css 作为颜色变量来源。
-           2) 默认禁止在本文件直接硬编码颜色值；如需硬编码，必须由用户明确要求。
-        */
         :root {
             --bg-primary: #1e1e1e;
             --bg-secondary: #252525;
@@ -116,24 +110,24 @@
             --border-tertiary: #555;
             --border-param: #3a3a3a;
 
-            --text-primary: var(--xdh-text-standard);
-            --text-secondary: var(--xdh-text-secondary);
-            --text-tertiary: var(--xdh-text-secondary);
-            --text-muted: var(--xdh-text-secondary);
-            --text-dim: var(--xdh-text-secondary);
-            --text-placeholder: var(--xdh-text-secondary);
-            --text-hint: var(--xdh-text-emphasis);
-            --text-file-placeholder: var(--xdh-text-secondary);
+            --text-primary: #fff;
+            --text-secondary: #ddd;
+            --text-tertiary: #ddd;
+            --text-muted: #ddd;
+            --text-dim: #ddd;
+            --text-placeholder: #ddd;
+            --text-hint: #ffffff;
+            --text-file-placeholder: #ffffff;
 
-            --accent: var(--btn-active-color);
-            --accent-hover: rgba(var(--btn-hover-glow-rgb), 0.08);
+            --accent: #ff69b4;
+            --accent-hover: rgba(123, 104, 238, 0.05);
 
             --connection-line: #555;
             --resize-handle: #555;
 
             --shadow-node: rgba(0, 0, 0, 0.3);
             --shadow-node-hover: rgba(0, 0, 0, 0.4);
-            --shadow-selected: rgba(var(--btn-hover-glow-rgb), 0.4);
+            --shadow-selected: rgba(200, 200, 200, 0.6);
 
             --dot-pattern: #2a2a2a;
 
@@ -161,24 +155,24 @@
             --border-tertiary: #bbb;
             --border-param: #e0e0e0;
 
-            --text-primary: var(--xdh-text-standard);
-            --text-secondary: var(--xdh-text-secondary);
-            --text-tertiary: var(--xdh-text-secondary);
-            --text-muted: var(--xdh-text-secondary);
-            --text-dim: var(--xdh-text-secondary);
-            --text-placeholder: var(--xdh-text-secondary);
-            --text-hint: var(--xdh-text-emphasis);
-            --text-file-placeholder: var(--xdh-text-secondary);
+            --text-primary: #1a1a1a;
+            --text-secondary: #1a1a1a;
+            --text-tertiary: #1a1a1a;
+            --text-muted: #1a1a1a;
+            --text-dim: #1a1a1a;
+            --text-placeholder: #1a1a1a;
+            --text-hint: #1a1a1a;
+            --text-file-placeholder: #1a1a1a;
 
-            --accent: var(--btn-active-color);
-            --accent-hover: rgba(var(--btn-hover-glow-rgb), 0.12);
+            --accent: #ff69b4;
+            --accent-hover: rgba(255, 105, 180, 0.1);
 
             --connection-line: #aaa;
             --resize-handle: #bbb;
 
             --shadow-node: rgba(0, 0, 0, 0.1);
             --shadow-node-hover: rgba(0, 0, 0, 0.15);
-            --shadow-selected: rgba(var(--btn-hover-glow-rgb), 0.4);
+            --shadow-selected: rgba(255, 105, 180, 0.4);
 
             --dot-pattern: #bbbbbb;
 
@@ -942,7 +936,7 @@
         .selection-box {
             position: absolute;
             border: 2px dashed var(--accent);
-            background: rgba(var(--btn-hover-glow-rgb), 0.1);
+            background: rgba(255, 105, 180, 0.1);
             pointer-events: none;
             z-index: 100;
             display: none;
@@ -950,8 +944,7 @@
 
         .node.multi-selected {
             border-color: var(--accent) !important;
-            box-shadow: 0 0 15px rgba(var(--btn-hover-glow-rgb), 0.5),
-                0 0 30px rgba(var(--btn-hover-glow-rgb), 0.3) !important;
+            box-shadow: 0 0 15px rgba(255, 105, 180, 0.5), 0 0 30px rgba(255, 105, 180, 0.3) !important;
         }
 
         .header-actions {
@@ -4696,7 +4689,7 @@
 
         /**
          * 将十六进制颜色转换为 RGB 对象
-         * @param {string} hex - 十六进制颜色值（如 #RRGGBB）
+         * @param {string} hex - 十六进制颜色值（如 #ff69b4）
          * @returns {Object} 包含 r, g, b 属性的对象
          */
         function hexToRgb(hex) {

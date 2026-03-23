@@ -5,7 +5,7 @@
  * 功能概述:
  * ---------
  * 为 ComfyUI 提供一个可拖拽、可调整大小的浮动窗口容器，
- * 用于嵌入 XMetadataWorkflow 等网页工具。
+ * 用于嵌入 XDataHub 数据浏览网页工具。
  *
  * 核心功能:
  * ---------
@@ -20,7 +20,7 @@
  *    - 支持 ComfyUI 设置面板配置
  *
  * 3. 内容加载:
- *    - 通过 iframe 加载 XMetadataWorkflow.html
+ *    - 通过 iframe 加载 XDataHub 内部页面
  *    - 完全隔离的浏览环境
  *
  * 4. 界面特性:
@@ -40,7 +40,7 @@
  * 文件结构:
  * ---------
  * - xdatahub.js: 窗口管理逻辑（此文件）
- * - XMetadataWorkflow.html: 窗口内加载的网页内容
+ * - xdatahub_app.html: 窗口内加载的网页内容
  *
  * @author Xz3r0
  * @project ComfyUI-Xz3r0-Nodes
@@ -107,7 +107,6 @@ const HOST_TABS = [
     { id: "image", icon: "image", text: "图片" },
     { id: "video", icon: "video", text: "视频" },
     { id: "audio", icon: "audio-lines", text: "音频" },
-    { id: "workflow", icon: "workflow", text: "工作流元数据" },
 ];
 const XDATAHUB_ASSET_VER = "20260323-71";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
@@ -1265,12 +1264,7 @@ const XDataHub = {
             + `&v=${XDATAHUB_ASSET_VER}`
         );
 
-        const workflowFrame = document.createElement("iframe");
-        workflowFrame.className = "xz3r0-datahub-window-frame";
-        workflowFrame.src = `/extensions/ComfyUI-Xz3r0-Nodes/xmetadataworkflow.html?v=${XDATAHUB_ASSET_VER}`;
-
         frameStack.appendChild(dataFrame);
-        frameStack.appendChild(workflowFrame);
         content.appendChild(hostTabs);
         content.appendChild(frameStack);
 
@@ -1295,7 +1289,6 @@ const XDataHub = {
         };
         const updateIframePointerEvents = (value) => {
             dataFrame.style.pointerEvents = value;
-            workflowFrame.style.pointerEvents = value;
         };
         const postThemeModeToDataFrame = () => {
             if (!dataFrame.contentWindow) {
@@ -1356,10 +1349,8 @@ const XDataHub = {
                 button.classList.toggle("active", id === tabId);
             });
             updateHostTabIndicator();
-            const isWorkflow = tabId === "workflow";
-            workflowFrame.classList.toggle("active", isWorkflow);
-            dataFrame.classList.toggle("active", !isWorkflow);
-            if (!isWorkflow && dataFrame.contentWindow) {
+            dataFrame.classList.add("active");
+            if (dataFrame.contentWindow) {
                 dataFrame.contentWindow.postMessage(
                     { type: "xdatahub:set-tab", tab: tabId },
                     "*"
@@ -2180,7 +2171,6 @@ const XDataHub = {
             isVisible: true,
             windowEl,
             dataFrame,
-            workflowFrame,
             setHostTab,
             applyThemeMode(mode) {
                 const normalized = normalizeThemeMode(mode);
