@@ -44,6 +44,11 @@
  *
  * @author Xz3r0
  * @project ComfyUI-Xz3r0-Nodes
+ *
+ * 颜色规范（强约束）:
+ * 1) 本文件默认必须引用 `xdatahub-color-tokens.css`。
+ * 2) 默认禁止在本文件直接硬编码颜色值；如需硬编码，必须由用户明确要求。
+ * 3) 文本与边框命名必须镜像：standard/hover/active/emphasis。
  */
 
 import { app } from "../../scripts/app.js";
@@ -59,9 +64,15 @@ const OPEN_LAYOUT_OPTION_DEFAULT = "默认（居中 75%）";
 const OPEN_LAYOUT_OPTION_LEFT = "左靠边";
 const OPEN_LAYOUT_OPTION_RIGHT = "右靠边";
 const OPEN_LAYOUT_OPTION_MAXIMIZED = "最大化";
+const CLOSE_BEHAVIOR_SETTING_ID = "Xz3r0.XDataHub.WindowCloseBehavior";
+const CLOSE_BEHAVIOR_OPTION_HIDE = "隐藏（重开更快）";
+const CLOSE_BEHAVIOR_OPTION_DESTROY = "销毁（更省内存）";
+const WINDOW_STATE_STORAGE_KEY = "Xz3r0.XDataHub.WindowState.v1";
+const WINDOW_STATE_VERSION = 1;
 let hotkeySpec = DEFAULT_HOTKEY_SPEC;
 let hotkeySettingInitialized = false;
 let defaultOpenLayout = "center";
+let closeBehavior = "hide";
 let xdataHubRef = null;
 
 // ============================================
@@ -98,7 +109,53 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", text: "音频" },
     { id: "workflow", icon: "workflow", text: "工作流元数据" },
 ];
-const XDATAHUB_ASSET_VER = "20260322-85";
+const XDATAHUB_ASSET_VER = "20260323-71";
+const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
+const XDATAHUB_THEME_CSS_HREF =
+    "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
+    + `?v=${XDATAHUB_ASSET_VER}`;
+const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light"]);
+let currentThemeMode = "dark";
+
+function normalizeThemeMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    return XDATAHUB_THEME_MODE_VALUES.has(mode) ? mode : "dark";
+}
+
+function ensureColorTokensStylesheet() {
+    if (document.getElementById(XDATAHUB_THEME_CSS_ID)) {
+        return;
+    }
+    const link = document.createElement("link");
+    link.id = XDATAHUB_THEME_CSS_ID;
+    link.rel = "stylesheet";
+    link.href = XDATAHUB_THEME_CSS_HREF;
+    document.head.appendChild(link);
+}
+
+function applyThemeMode(mode) {
+    const normalized = normalizeThemeMode(mode);
+    if (normalized === currentThemeMode) {
+        return;
+    }
+    currentThemeMode = normalized;
+    xdataHubRef?.instance?.applyThemeMode?.(currentThemeMode);
+}
+
+async function syncThemeModeFromSettings() {
+    try {
+        const response = await fetch("/xz3r0/xdatahub/settings");
+        const payload = await response.json();
+        if (response.ok && payload?.status === "success") {
+            applyThemeMode(payload?.settings?.theme_mode);
+            return currentThemeMode;
+        }
+    } catch {
+        // 忽略拉取失败，保留本地默认值 dark。
+    }
+    applyThemeMode(currentThemeMode);
+    return currentThemeMode;
+}
 
 function iconUrl(name) {
     return `/extensions/ComfyUI-Xz3r0-Nodes/icons/${name}.svg`;
@@ -115,7 +172,7 @@ function applyMenuButtonIcon() {
     menuButton.element.classList.add("xz3r0-datahub-menu-btn");
     menuButton.element.innerHTML = `
         <span class="xz3r0-datahub-menu-content">
-            ${iconHtml("infinity", t("menuTooltip"), "xz3r0-icon xz3r0-menu-icon")}
+            ${iconHtml("infinity-bold", t("menuTooltip"), "xz3r0-icon xz3r0-menu-icon")}
         </span>
     `;
 }
@@ -221,6 +278,24 @@ function readDefaultOpenLayoutFromSettings() {
         OPEN_LAYOUT_SETTING_ID
     ) || OPEN_LAYOUT_OPTION_DEFAULT;
     return normalizeDefaultOpenLayout(currentValue);
+}
+
+function normalizeCloseBehavior(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (
+        text === CLOSE_BEHAVIOR_OPTION_DESTROY.toLowerCase()
+        || text === "destroy"
+    ) {
+        return "destroy";
+    }
+    return "hide";
+}
+
+function readCloseBehaviorFromSettings() {
+    const currentValue = app.extensionManager?.setting?.get(
+        CLOSE_BEHAVIOR_SETTING_ID
+    ) || CLOSE_BEHAVIOR_OPTION_HIDE;
+    return normalizeCloseBehavior(currentValue);
 }
 
 function applyDefaultOpenLayoutToOpenWindow() {
@@ -352,6 +427,22 @@ app.registerExtension({
             }
         },
         {
+            id: CLOSE_BEHAVIOR_SETTING_ID,
+            name: "XDataHub close button behavior",
+            type: "combo",
+            options: [
+                CLOSE_BEHAVIOR_OPTION_HIDE,
+                CLOSE_BEHAVIOR_OPTION_DESTROY
+            ],
+            defaultValue: CLOSE_BEHAVIOR_OPTION_HIDE,
+            tooltip: "Hide: faster reopen, higher memory. Destroy: lower memory, slower reopen.",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
+            category: ["♾️ Xz3r0", "XDataHub", "Window"],
+            onChange: (value) => {
+                closeBehavior = normalizeCloseBehavior(value);
+            }
+        },
+        {
             id: HOTKEY_SETTING_ID,
             name: "XDataHub toggle hotkey",
             type: "text",
@@ -368,6 +459,7 @@ app.registerExtension({
                         DEFAULT_HOTKEY_SPEC
                     );
                 }
+                xdataHubRef?.instance?.postHotkeySpecToDataFrame?.();
                 if (!hotkeySettingInitialized) {
                     hotkeySettingInitialized = true;
                     return;
@@ -389,59 +481,20 @@ app.registerExtension({
     async setup() {
         hotkeySpec = readHotkeySpecFromSettings();
         defaultOpenLayout = readDefaultOpenLayoutFromSettings();
+        closeBehavior = readCloseBehaviorFromSettings();
+        ensureColorTokensStylesheet();
+        await syncThemeModeFromSettings();
 
         // 创建并注入窗口样式
         const style = document.createElement("style");
         style.textContent = `
             .xz3r0-datahub-window {
-                /* 窗口内颜色变量入口：
-                   新增/调整颜色请先在此定义变量，避免在样式规则中写硬编码颜色。 */
-                /* 语义主色 */
-                --btn-active-color: #ff69b4;
-                --btn-hover-glow-rgb: 255, 105, 180;
-                --btn-hover-glow: inset 0 0 0 1px
-                    rgba(var(--btn-hover-glow-rgb), 0.32),
-                    0 0 14px rgba(var(--btn-hover-glow-rgb), 0.32);
-                /* 窗口层背景/边框/阴影 */
-                --window-theme-bg-main: #1f1f1f; /* 主题背景主色（窗口主要区域） */
-                --window-shell-bg: var(--comfy-menu-bg, #1e1e1e);
-                --window-header-bg: #ffffff;
-                --window-content-bg: var(--window-theme-bg-main);
-                --window-tabs-bg: #2b2b2b;
-                --window-tab-item-bg: rgba(255, 255, 255, 0.02);
-                --window-tabs-rail-bg: rgba(255, 255, 255, 0.03);
-                --window-tabs-rail-border: rgba(255, 255, 255, 0.1);
-                --window-tab-inactive-compact-bg: rgba(255, 255, 255, 0.015);
-                --window-tab-inactive-compact-border: rgba(255, 255, 255, 0.16);
-                --window-border: var(--border, #3d3d3d);
-                --window-shell-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-                /* 文本/控件色 */
-                --window-title-text: #1f2430;
-                --window-control-text: #1f2430;
-                --window-tab-text: #e6ebf2;
-                --window-tab-hover-text: #f3f7ff;
-                --window-opacity-text: #000000;
-                --window-opacity-track: var(--border-color, #3d3d3d);
-                --window-opacity-thumb: #1f2430;
-                --window-opacity-thumb-hover: #ff69b4;
-                /* 图标滤镜 */
-                --icon-filter-unified: brightness(0) saturate(100%)
-                    invert(14%) sepia(11%) saturate(1195%)
-                    hue-rotate(181deg) brightness(95%) contrast(94%);
-                --icon-filter-unified-active: brightness(0) saturate(100%)
-                    invert(61%) sepia(70%) saturate(1107%)
-                    hue-rotate(287deg) brightness(103%) contrast(101%);
-                --icon-filter-tab: brightness(0) saturate(100%)
-                    invert(92%) sepia(13%) saturate(234%)
-                    hue-rotate(181deg) brightness(98%) contrast(96%);
-                --icon-filter-tab-active: brightness(0) saturate(100%)
-                    invert(61%) sepia(70%) saturate(1107%)
-                    hue-rotate(287deg) brightness(103%) contrast(101%);
                 position: fixed;
                 z-index: ${WINDOW_Z_INDEX_DEFAULT};
                 background: var(--window-shell-bg);
                 border: 1px solid var(--window-border);
-                border-radius: 8px;
+                border-top-color: var(--window-top-border);
+                border-radius: 0;
                 box-shadow: var(--window-shell-shadow);
                 display: flex;
                 flex-direction: column;
@@ -453,7 +506,7 @@ app.registerExtension({
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 8px 12px;
+                padding: 5.25px 10px;
                 background: var(--window-header-bg);
                 border-bottom: 1px solid var(--window-border);
                 cursor: grab;
@@ -472,13 +525,13 @@ app.registerExtension({
                 gap: 6px;
                 font-weight: 600;
                 color: var(--window-title-text);
-                font-size: 13px;
+                font-size: 14px;
             }
             .xz3r0-datahub-window-title .xz3r0-title-icon {
                 width: 16px;
                 height: 16px;
                 display: block;
-                filter: var(--icon-filter-unified);
+                filter: var(--window-icon-filter, var(--icon-color-filter));
             }
             .xz3r0-datahub-menu-btn .xz3r0-datahub-menu-content {
                 display: inline-flex;
@@ -486,18 +539,20 @@ app.registerExtension({
                 justify-content: center;
             }
             .xz3r0-datahub-menu-btn .xz3r0-menu-icon {
-                width: 14px;
-                height: 14px;
+                width: 17px;
+                height: 17px;
                 display: block;
-                filter: var(--icon-filter-unified);
+                filter: var(--icon-color-filter-brand-pink);
             }
             .xz3r0-datahub-window-controls {
                 display: flex;
-                gap: 6px;
+                gap: 4px;
+                position: relative;
+                z-index: 10030;
             }
             .xz3r0-datahub-window-btn {
-                width: 30px;
-                height: 30px;
+                width: 26.25px;
+                height: 26.25px;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
@@ -509,13 +564,16 @@ app.registerExtension({
                 transition: all 0.2s;
             }
             .xz3r0-datahub-window-btn .xz3r0-icon {
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
                 display: block;
-                filter: var(--icon-filter-unified);
+                filter: var(--window-icon-filter, var(--icon-color-filter));
             }
             .xz3r0-datahub-window-btn:hover .xz3r0-icon {
-                filter: var(--icon-filter-unified-active);
+                filter: var(
+                    --window-icon-filter-hover,
+                    var(--icon-color-filter-active)
+                );
             }
             .xz3r0-datahub-window-content {
                 flex: 1;
@@ -524,6 +582,7 @@ app.registerExtension({
                 display: flex;
                 flex-direction: column;
                 background: var(--window-content-bg);
+                border-radius: 0;
             }
             .xz3r0-datahub-window-content iframe {
                 width: 100%;
@@ -533,15 +592,17 @@ app.registerExtension({
             .xz3r0-datahub-window-host-tabs {
                 display: flex;
                 gap: 6px;
-                padding: 4px 10px 8px 10px;
-                background: transparent;
+                padding: 6px 10px 8px 10px;
+                background: var(--window-tabs-rail-bg);
+                box-shadow: inset 0 -1px 0 var(--window-tabs-rail-border);
                 flex-shrink: 0;
                 overflow: hidden;
                 justify-content: center;
                 position: relative;
+                align-items: center;
             }
             .xz3r0-datahub-window.compact-tabs .xz3r0-datahub-window-host-tabs {
-                padding: 4px 8px 8px 8px;
+                padding: 6px 8px 8px 8px;
                 justify-content: flex-start;
             }
             .xz3r0-datahub-window.compact-tabs
@@ -558,9 +619,9 @@ app.registerExtension({
                 height: 1px;
                 background: linear-gradient(
                     90deg,
-                    rgba(255, 255, 255, 0.05) 0%,
-                    rgba(255, 255, 255, 0.14) 50%,
-                    rgba(255, 255, 255, 0.05) 100%
+                    var(--window-tabs-divider-start) 0%,
+                    var(--window-tabs-divider-mid) 50%,
+                    var(--window-tabs-divider-start) 100%
                 );
                 pointer-events: none;
             }
@@ -595,10 +656,10 @@ app.registerExtension({
                 align-items: center;
                 justify-content: center;
                 box-sizing: border-box;
-                border: 1px solid var(--window-border);
+                border: 1px solid var(--window-tab-item-border);
                 background: var(--window-tab-item-bg);
                 color: var(--window-tab-text);
-                border-radius: 6px;
+                border-radius: 10px;
                 height: 32px;
                 padding: 6px 10px;
                 cursor: pointer;
@@ -611,9 +672,35 @@ app.registerExtension({
                     color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
                 position: relative;
                 z-index: 1;
+                overflow: hidden;
+                backdrop-filter: blur(var(--window-tab-blur));
+                -webkit-backdrop-filter: blur(var(--window-tab-blur));
+                box-shadow: none;
+            }
+            .xz3r0-datahub-window-host-tab::before {
+                content: "";
+                position: absolute;
+                left: 1px;
+                right: 1px;
+                top: 1px;
+                height: 46%;
+                border-radius: 9px 9px 12px 12px;
+                background: linear-gradient(
+                    180deg,
+                    var(--window-tab-gloss-start) 0%,
+                    var(--window-tab-gloss-mid) 45%,
+                    var(--window-tab-gloss-end) 100%
+                );
+                opacity: 0;
+                z-index: 0;
+                pointer-events: none;
+                transition: opacity 70ms ease-out;
+            }
+            .xz3r0-datahub-window-host-tab.active::before {
+                opacity: 0.9;
             }
             .xz3r0-datahub-window-host-tab:not(.active) {
-                border-color: var(--window-border);
+                border-color: var(--window-tab-item-border);
             }
             .xz3r0-datahub-window-host-tab-icon {
                 display: inline-flex;
@@ -621,12 +708,14 @@ app.registerExtension({
                 justify-content: center;
                 line-height: 1;
                 margin-right: 4px;
+                position: relative;
+                z-index: 1;
             }
             .xz3r0-datahub-window-host-tab-icon .xz3r0-icon {
                 width: 14px;
                 height: 14px;
                 display: block;
-                filter: var(--icon-filter-tab);
+                filter: var(--icon-color-filter);
             }
             .xz3r0-datahub-window-host-tab.active
             .xz3r0-datahub-window-host-tab-icon .xz3r0-icon {
@@ -634,20 +723,35 @@ app.registerExtension({
             }
             .xz3r0-datahub-window-host-tab-text {
                 display: inline;
+                position: relative;
+                z-index: 1;
             }
-            .xz3r0-datahub-window-host-tab:hover {
+            @keyframes xz3r0TabBorderBreath {
+                0%, 100% {
+                    border-color: var(--window-tab-item-border);
+                }
+                50% {
+                    border-color: var(--border-hover);
+                }
+            }
+            .xz3r0-datahub-window-host-tab:not(.active):hover {
                 color: var(--window-tab-hover-text);
-                border-color: var(--window-border);
-                background: rgba(var(--btn-hover-glow-rgb), 0.12);
-                box-shadow: inset 0 0 0 1px rgba(var(--btn-hover-glow-rgb), 0.2);
+                border-color: var(--window-tab-item-border);
+                background: var(--window-tab-hover-bg);
+                box-shadow: none;
+                animation: xz3r0TabBorderBreath 1.15s ease-in-out infinite;
             }
             .xz3r0-datahub-window-host-tab.active {
-                border-color: var(--btn-active-color);
-                color: var(--btn-active-color);
+                border-color: var(--border-active);
+                color: var(--text-active);
                 font-weight: 700;
-                background: rgba(var(--btn-hover-glow-rgb), 0.2);
-                box-shadow: var(--btn-hover-glow);
-                transform: translateY(-1px);
+                background: linear-gradient(
+                    180deg,
+                    var(--window-tab-active-bg-start) 0%,
+                    var(--window-tab-active-bg-end) 100%
+                );
+                box-shadow: var(--window-tab-active-shadow);
+                animation: none;
             }
             .xz3r0-datahub-window.compact-tabs .xz3r0-datahub-window-host-tab {
                 width: auto;
@@ -671,7 +775,7 @@ app.registerExtension({
                 height: 0;
                 border-left: 4px solid transparent;
                 border-right: 4px solid transparent;
-                border-top: 6px solid rgba(var(--btn-hover-glow-rgb), 0.9);
+                border-top: 6px solid var(--window-tab-active-arrow);
                 transform: translateX(-50%);
                 pointer-events: none;
             }
@@ -702,10 +806,9 @@ app.registerExtension({
                 position: absolute;
                 z-index: 10001;
             }
-            .xz3r0-resize-handle-n {
+            .xz3r0-resize-handle-n-left,
+            .xz3r0-resize-handle-n-right {
                 top: -8px;
-                left: 16px;
-                right: 16px;
                 height: 16px;
                 cursor: ns-resize;
             }
@@ -743,6 +846,15 @@ app.registerExtension({
                 width: 24px;
                 height: 24px;
                 cursor: nesw-resize;
+                /* 角点命中做成外侧 L 形，避免压住标题栏按钮中心区域 */
+                clip-path: polygon(
+                    0 0,
+                    100% 0,
+                    100% 100%,
+                    58% 100%,
+                    58% 42%,
+                    0 42%
+                );
             }
             .xz3r0-resize-handle-sw {
                 bottom: -8px;
@@ -767,25 +879,31 @@ app.registerExtension({
                 transform: translateX(-50%);
             }
             .xz3r0-opacity-label {
-                font-size: 11px;
+                font-size: 12px;
                 color: var(--window-opacity-text);
                 font-weight: 700;
             }
             .xz3r0-opacity-slider {
-                width: 80px;
-                height: 4px;
+                width: 84px;
+                height: 16px;
                 -webkit-appearance: none;
                 appearance: none;
-                background: var(--window-opacity-track);
-                border-radius: 2px;
+                background: transparent;
+                border-radius: 999px;
                 outline: none;
                 cursor: pointer;
+            }
+            .xz3r0-opacity-slider::-webkit-slider-runnable-track {
+                height: 4px;
+                background: var(--window-opacity-track);
+                border-radius: 999px;
             }
             .xz3r0-opacity-slider::-webkit-slider-thumb {
                 -webkit-appearance: none;
                 appearance: none;
-                width: 12px;
-                height: 12px;
+                width: 13px;
+                height: 13px;
+                margin-top: -4.5px;
                 background: var(--window-opacity-thumb);
                 border-radius: 50%;
                 cursor: pointer;
@@ -795,23 +913,30 @@ app.registerExtension({
                 background: var(--window-opacity-thumb-hover);
             }
             .xz3r0-opacity-slider::-moz-range-thumb {
-                width: 12px;
-                height: 12px;
+                width: 13px;
+                height: 13px;
                 background: var(--window-opacity-thumb);
                 border-radius: 50%;
                 cursor: pointer;
                 border: none;
                 transition: background 0.2s;
             }
+            .xz3r0-opacity-slider::-moz-range-track {
+                height: 4px;
+                background: var(--window-opacity-track);
+                border-radius: 999px;
+            }
             .xz3r0-opacity-slider::-moz-range-thumb:hover {
                 background: var(--window-opacity-thumb-hover);
             }
             .xz3r0-opacity-value {
-                font-size: 11px;
+                font-size: 12px;
                 color: var(--window-opacity-text);
                 font-weight: 700;
-                min-width: 32px;
+                display: inline-block;
+                width: 4ch;
                 text-align: right;
+                font-variant-numeric: tabular-nums;
             }
         `;
         document.head.appendChild(style);
@@ -823,7 +948,7 @@ app.registerExtension({
                 menuButton = new ComfyButton({
                     action: () => XDataHub.toggle(),
                     tooltip: t('menuTooltip'),
-                    content: iconHtml("infinity", t("menuTooltip")),
+                    content: iconHtml("infinity-bold", t("menuTooltip")),
                 });
                 app.menu.settingsGroup.append(menuButton);
                 applyMenuButtonIcon();
@@ -846,22 +971,83 @@ const XDataHub = {
 
     /**
      * 加载窗口位置和大小状态
-     * 当前实现返回 null，窗口始终使用默认居中位置
      * 注：透明度设置单独使用 localStorage 保存
-     * @returns {null} 始终返回 null，使用默认状态
+     * @returns {Object|null} 窗口状态对象或 null
      */
     loadState() {
-        return null;
+        try {
+            const raw = localStorage.getItem(WINDOW_STATE_STORAGE_KEY);
+            if (!raw) {
+                return null;
+            }
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object") {
+                return null;
+            }
+            if (parsed.version !== WINDOW_STATE_VERSION) {
+                return null;
+            }
+            const toFiniteNumber = (value) => {
+                const num = Number(value);
+                return Number.isFinite(num) ? num : null;
+            };
+            const dockSide = parsed.dockSide === "left" || parsed.dockSide === "right"
+                ? parsed.dockSide
+                : null;
+            const left = toFiniteNumber(parsed.left);
+            const top = toFiniteNumber(parsed.top);
+            const width = toFiniteNumber(parsed.width);
+            const height = toFiniteNumber(parsed.height);
+            if (left === null || top === null || width === null || height === null) {
+                return null;
+            }
+            return {
+                version: WINDOW_STATE_VERSION,
+                left,
+                top,
+                width,
+                height,
+                dockSide,
+                isMaximized: parsed.isMaximized === true,
+            };
+        } catch {
+            return null;
+        }
     },
 
     /**
      * 保存窗口位置和大小状态
-     * 当前实现为空，不保存窗口位置和大小
      * 注：透明度设置单独使用 localStorage 保存
      * @param {Object} state - 窗口状态对象
      */
     saveState(state) {
-        // 当前不保存窗口位置和大小
+        if (!state || typeof state !== "object") {
+            return;
+        }
+        try {
+            const payload = {
+                version: WINDOW_STATE_VERSION,
+                left: Number(state.left),
+                top: Number(state.top),
+                width: Number(state.width),
+                height: Number(state.height),
+                dockSide: state.dockSide === "left" || state.dockSide === "right"
+                    ? state.dockSide
+                    : null,
+                isMaximized: state.isMaximized === true,
+            };
+            if (
+                !Number.isFinite(payload.left)
+                || !Number.isFinite(payload.top)
+                || !Number.isFinite(payload.width)
+                || !Number.isFinite(payload.height)
+            ) {
+                return;
+            }
+            localStorage.setItem(WINDOW_STATE_STORAGE_KEY, JSON.stringify(payload));
+        } catch {
+            // 忽略 localStorage 写入失败
+        }
     },
 
     /**
@@ -870,7 +1056,11 @@ const XDataHub = {
      */
     toggle() {
         if (this.instance && this.instance.isVisible) {
-            this.instance.hide();
+            if (closeBehavior === "destroy") {
+                this.instance.destroy();
+            } else {
+                this.instance.hide();
+            }
         } else {
             this.show();
         }
@@ -899,46 +1089,105 @@ const XDataHub = {
 
         const RESIZE_MIN_WIDTH = 400;
         const RESIZE_MIN_HEIGHT = 300;
+        const persistedState = XDataHub.loadState();
         let initialDockSide = null;
+        let initialMaximized = false;
 
-        if (defaultOpenLayout === "left" || defaultOpenLayout === "right") {
-            const targetLeft = defaultOpenLayout === "right"
-                ? Math.max(0, window.innerWidth - RESIZE_MIN_WIDTH)
+        const clampValue = (value, min, max) => {
+            return Math.max(min, Math.min(value, max));
+        };
+        const clampLayoutToViewport = (layout) => {
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const minWidth = Math.min(RESIZE_MIN_WIDTH, viewportWidth);
+            const minHeight = Math.min(RESIZE_MIN_HEIGHT, viewportHeight);
+            const width = clampValue(
+                Number(layout.width),
+                minWidth,
+                viewportWidth
+            );
+            const height = clampValue(
+                Number(layout.height),
+                minHeight,
+                viewportHeight
+            );
+            const maxLeft = Math.max(0, viewportWidth - width);
+            const maxTop = Math.max(0, viewportHeight - height);
+            const left = clampValue(Number(layout.left), 0, maxLeft);
+            const top = clampValue(Number(layout.top), 0, maxTop);
+            return { left, top, width, height };
+        };
+        const applyLayout = (layout) => {
+            windowEl.style.left = `${layout.left}px`;
+            windowEl.style.top = `${layout.top}px`;
+            windowEl.style.width = `${layout.width}px`;
+            windowEl.style.height = `${layout.height}px`;
+        };
+        const applyDockLayout = (side) => {
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const dockWidth = Math.min(RESIZE_MIN_WIDTH, viewportWidth);
+            const left = side === "right"
+                ? Math.max(0, viewportWidth - dockWidth)
                 : 0;
+            applyLayout({
+                left,
+                top: 0,
+                width: dockWidth,
+                height: viewportHeight,
+            });
+        };
+        const applyMaximizedLayout = () => {
+            applyLayout({
+                left: 0,
+                top: 0,
+                width: window.innerWidth,
+                height: window.innerHeight,
+            });
+        };
+
+        if (persistedState) {
+            initialDockSide = persistedState.dockSide;
+            initialMaximized = persistedState.isMaximized === true;
+            if (initialMaximized) {
+                applyMaximizedLayout();
+            } else if (initialDockSide) {
+                applyDockLayout(initialDockSide);
+            } else {
+                applyLayout(clampLayoutToViewport(persistedState));
+            }
+        } else if (defaultOpenLayout === "left" || defaultOpenLayout === "right") {
             initialDockSide = defaultOpenLayout;
-            windowEl.style.left = `${targetLeft}px`;
-            windowEl.style.top = "0px";
-            windowEl.style.width = `${RESIZE_MIN_WIDTH}px`;
-            windowEl.style.height = `${window.innerHeight}px`;
+            applyDockLayout(defaultOpenLayout);
         } else if (defaultOpenLayout === "maximized") {
-            windowEl.style.left = "0px";
-            windowEl.style.top = "0px";
-            windowEl.style.width = `${window.innerWidth}px`;
-            windowEl.style.height = `${window.innerHeight}px`;
+            initialMaximized = true;
+            applyMaximizedLayout();
         } else {
             // 默认尺寸：首次按当前视口 75% 打开（保持最小尺寸约束）
-            const defaultWidth = Math.max(
-                RESIZE_MIN_WIDTH,
-                Math.floor(window.innerWidth * 0.75)
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const minWidth = Math.min(RESIZE_MIN_WIDTH, viewportWidth);
+            const minHeight = Math.min(RESIZE_MIN_HEIGHT, viewportHeight);
+            const defaultWidth = clampValue(
+                Math.floor(viewportWidth * 0.75),
+                minWidth,
+                viewportWidth
             );
-            const defaultHeight = Math.max(
-                RESIZE_MIN_HEIGHT,
-                Math.floor(window.innerHeight * 0.75)
+            const defaultHeight = clampValue(
+                Math.floor(viewportHeight * 0.75),
+                minHeight,
+                viewportHeight
             );
 
             // 居中显示
-            const centerLeft = Math.max(
-                0,
-                (window.innerWidth - defaultWidth) / 2
-            );
-            const centerTop = Math.max(
-                0,
-                (window.innerHeight - defaultHeight) / 2
-            );
-            windowEl.style.left = `${centerLeft}px`;
-            windowEl.style.top = `${centerTop}px`;
-            windowEl.style.width = `${defaultWidth}px`;
-            windowEl.style.height = `${defaultHeight}px`;
+            const centerLeft = Math.max(0, (viewportWidth - defaultWidth) / 2);
+            const centerTop = Math.max(0, (viewportHeight - defaultHeight) / 2);
+            applyLayout({
+                left: centerLeft,
+                top: centerTop,
+                width: defaultWidth,
+                height: defaultHeight,
+            });
         }
 
         const header = document.createElement("div");
@@ -1010,7 +1259,11 @@ const XDataHub = {
 
         const dataFrame = document.createElement("iframe");
         dataFrame.className = "xz3r0-datahub-window-frame";
-        dataFrame.src = `/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app.html?tab=history&v=${XDATAHUB_ASSET_VER}`;
+        dataFrame.src = (
+            "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app.html"
+            + `?tab=history&theme=${encodeURIComponent(currentThemeMode)}`
+            + `&v=${XDATAHUB_ASSET_VER}`
+        );
 
         const workflowFrame = document.createElement("iframe");
         workflowFrame.className = "xz3r0-datahub-window-frame";
@@ -1044,14 +1297,60 @@ const XDataHub = {
             dataFrame.style.pointerEvents = value;
             workflowFrame.style.pointerEvents = value;
         };
+        const postThemeModeToDataFrame = () => {
+            if (!dataFrame.contentWindow) {
+                return;
+            }
+            dataFrame.contentWindow.postMessage(
+                {
+                    type: "xdatahub:theme-mode",
+                    theme_mode: currentThemeMode,
+                },
+                "*"
+            );
+        };
+        const postHotkeySpecToDataFrame = () => {
+            if (!dataFrame.contentWindow) {
+                return;
+            }
+            dataFrame.contentWindow.postMessage(
+                {
+                    type: "xdatahub:hotkey-spec",
+                    hotkey_spec: hotkeySpec,
+                },
+                "*"
+            );
+        };
+        const postSharedStateToDataFrame = () => {
+            postThemeModeToDataFrame();
+            postHotkeySpecToDataFrame();
+        };
         const updateHostTabCompactMode = () => {
+            if (windowEl.style.display === "none") {
+                return;
+            }
+            if (hostTabs.clientWidth <= 0) {
+                return;
+            }
             windowEl.classList.remove("compact-tabs");
             const needsCompactByLayout = hostTabs.scrollWidth > hostTabs.clientWidth;
             const isCompact = needsCompactByLayout;
             windowEl.classList.toggle("compact-tabs", isCompact);
             requestAnimationFrame(updateHostTabIndicator);
         };
-        const setHostTab = (tabId) => {
+        const scheduleVisibleLayoutSync = () => {
+            const syncLayout = () => {
+                updateHostTabCompactMode();
+                updateResizeHandleLayout();
+            };
+            requestAnimationFrame(syncLayout);
+            requestAnimationFrame(() => requestAnimationFrame(syncLayout));
+        };
+        const setHostTab = (tabId, options = {}) => {
+            const force = options.force === true;
+            if (!force && tabId === activeHostTab) {
+                return;
+            }
             activeHostTab = tabId;
             hostTabButtons.forEach((button, id) => {
                 button.classList.toggle("active", id === tabId);
@@ -1065,6 +1364,7 @@ const XDataHub = {
                     { type: "xdatahub:set-tab", tab: tabId },
                     "*"
                 );
+                postSharedStateToDataFrame();
             }
         };
 
@@ -1076,6 +1376,10 @@ const XDataHub = {
                 <span class="xz3r0-datahub-window-host-tab-icon">${iconHtml(tab.icon, tab.text)}</span>
                 <span class="xz3r0-datahub-window-host-tab-text">${tab.text}</span>
             `;
+            button.addEventListener("pointerdown", (e) => {
+                if (e.button !== 0) return;
+                setHostTab(tab.id);
+            });
             button.addEventListener("click", () => setHostTab(tab.id));
             hostTabs.appendChild(button);
             hostTabButtons.set(tab.id, button);
@@ -1085,30 +1389,39 @@ const XDataHub = {
         windowEl.appendChild(header);
         windowEl.appendChild(content);
         document.body.appendChild(windowEl);
+        windowEl.setAttribute("data-theme", currentThemeMode);
+        dataFrame.addEventListener("load", postSharedStateToDataFrame);
         updateHostTabCompactMode();
-        setHostTab(activeHostTab);
+        setHostTab(activeHostTab, { force: true });
 
         // 创建拉伸手柄
         const resizeHandles = [
-            { class: 'xz3r0-resize-handle-n', direction: 'n' },
-            { class: 'xz3r0-resize-handle-s', direction: 's' },
-            { class: 'xz3r0-resize-handle-w', direction: 'w' },
-            { class: 'xz3r0-resize-handle-e', direction: 'e' },
-            { class: 'xz3r0-resize-handle-nw', direction: 'nw' },
-            { class: 'xz3r0-resize-handle-ne', direction: 'ne' },
-            { class: 'xz3r0-resize-handle-sw', direction: 'sw' },
-            { class: 'xz3r0-resize-handle-se', direction: 'se' }
+            { key: 'n-left', class: 'xz3r0-resize-handle-n-left', direction: 'n' },
+            { key: 'n-right', class: 'xz3r0-resize-handle-n-right', direction: 'n' },
+            { key: 's', class: 'xz3r0-resize-handle-s', direction: 's' },
+            { key: 'w', class: 'xz3r0-resize-handle-w', direction: 'w' },
+            { key: 'e', class: 'xz3r0-resize-handle-e', direction: 'e' },
+            { key: 'nw', class: 'xz3r0-resize-handle-nw', direction: 'nw' },
+            { key: 'ne', class: 'xz3r0-resize-handle-ne', direction: 'ne' },
+            { key: 'sw', class: 'xz3r0-resize-handle-sw', direction: 'sw' },
+            { key: 'se', class: 'xz3r0-resize-handle-se', direction: 'se' }
         ];
         const EDGE_SNAP_THRESHOLD = 4;
         const HANDLE_INSET = 2;
+        const CONTROL_GUARD_PAD_X = 10;
+        const CONTROL_GUARD_PAD_Y = 6;
+        const TOP_HANDLE_HEIGHT = 16;
+        const CORNER_HANDLE_SIZE = 24;
+        const TOP_HANDLE_MIN_SEGMENT_WIDTH = 8;
         const resizeHandleElements = new Map();
 
-        resizeHandles.forEach(({ class: className, direction }) => {
+        resizeHandles.forEach(({ key, class: className, direction }) => {
             const handle = document.createElement('div');
             handle.className = `xz3r0-resize-handle ${className}`;
             handle.dataset.direction = direction;
+            handle.dataset.key = key;
             windowEl.appendChild(handle);
-            resizeHandleElements.set(direction, handle);
+            resizeHandleElements.set(key, handle);
         });
 
         const computeWindowEdgeState = () => {
@@ -1123,7 +1436,9 @@ const XDataHub = {
 
         const updateResizeHandleLayout = () => {
             const edge = computeWindowEdgeState();
-            resizeHandleElements.forEach((handle, direction) => {
+            resizeHandleElements.forEach((handle) => {
+                const direction = handle.dataset.direction || "";
+                const key = handle.dataset.key || "";
                 handle.style.left = direction.includes("w")
                     ? edge.left
                         ? `${HANDLE_INSET}px`
@@ -1144,7 +1459,77 @@ const XDataHub = {
                         ? `${HANDLE_INSET}px`
                         : ""
                     : "";
+                if (key === "n-left" || key === "n-right") {
+                    handle.style.height = `${TOP_HANDLE_HEIGHT}px`;
+                }
             });
+
+            const nLeftHandle = resizeHandleElements.get("n-left");
+            const nRightHandle = resizeHandleElements.get("n-right");
+            if (nLeftHandle && nRightHandle) {
+                const windowRect = windowEl.getBoundingClientRect();
+                const controlsRect = controls.getBoundingClientRect();
+                const minX = 16;
+                const maxX = Math.max(minX, windowRect.width - 16);
+
+                const guardedLeft = Math.max(
+                    minX,
+                    Math.min(
+                        maxX,
+                        controlsRect.left - windowRect.left - CONTROL_GUARD_PAD_X
+                    )
+                );
+                const guardedRight = Math.max(
+                    minX,
+                    Math.min(
+                        maxX,
+                        controlsRect.right - windowRect.left + CONTROL_GUARD_PAD_X
+                    )
+                );
+
+                const applyTopSegment = (handle, startX, endX) => {
+                    const width = Math.max(0, endX - startX);
+                    if (width < TOP_HANDLE_MIN_SEGMENT_WIDTH) {
+                        handle.style.display = "none";
+                        return;
+                    }
+                    handle.style.display = "block";
+                    handle.style.left = `${startX}px`;
+                    handle.style.right = "";
+                    handle.style.width = `${width}px`;
+                    handle.style.top = edge.top
+                        ? `${HANDLE_INSET}px`
+                        : "";
+                    handle.style.bottom = "";
+                };
+
+                applyTopSegment(nLeftHandle, minX, guardedLeft);
+                applyTopSegment(nRightHandle, guardedRight, maxX);
+            }
+
+            const neHandle = resizeHandleElements.get("ne");
+            if (neHandle) {
+                const controlsRect = controls.getBoundingClientRect();
+                const windowRect = windowEl.getBoundingClientRect();
+                const controlsTopInWindow = controlsRect.top - windowRect.top;
+                const guardTouchesTopHandle = controlsTopInWindow
+                    <= (TOP_HANDLE_HEIGHT + CONTROL_GUARD_PAD_Y);
+                const outwardOffset = Math.round(CORNER_HANDLE_SIZE * 0.58);
+                const safeOuterOffset = guardTouchesTopHandle
+                    ? outwardOffset + CONTROL_GUARD_PAD_Y
+                    : outwardOffset;
+
+                neHandle.style.width = `${CORNER_HANDLE_SIZE}px`;
+                neHandle.style.height = `${CORNER_HANDLE_SIZE}px`;
+                neHandle.style.right = edge.right
+                    ? `${HANDLE_INSET}px`
+                    : `-${safeOuterOffset}px`;
+                neHandle.style.top = edge.top
+                    ? `${HANDLE_INSET}px`
+                    : `-${safeOuterOffset}px`;
+                neHandle.style.left = "";
+                neHandle.style.bottom = "";
+            }
         };
         updateResizeHandleLayout();
 
@@ -1165,7 +1550,7 @@ const XDataHub = {
         let resizeStartLeft, resizeStartTop;
 
         // 最大化状态变量
-        let isMaximized = defaultOpenLayout === "maximized";
+        let isMaximized = initialMaximized;
         let preMaximizeState = null;
         let isAltPressed = false;
         let dockSide = initialDockSide;
@@ -1174,11 +1559,16 @@ const XDataHub = {
          * 保存窗口状态
          */
         const persistWindowState = () => {
+            if (windowEl.offsetWidth <= 0 || windowEl.offsetHeight <= 0) {
+                return;
+            }
             XDataHub.saveState({
-                left: windowEl.style.left,
-                top: windowEl.style.top,
-                width: windowEl.style.width,
-                height: windowEl.style.height
+                left: windowEl.offsetLeft,
+                top: windowEl.offsetTop,
+                width: windowEl.offsetWidth,
+                height: windowEl.offsetHeight,
+                dockSide,
+                isMaximized,
             });
         };
 
@@ -1262,6 +1652,7 @@ const XDataHub = {
             updateHostTabCompactMode();
             updateResizeHandleLayout();
             updateDockButtonVisual();
+            persistWindowState();
         };
 
         /**
@@ -1287,6 +1678,7 @@ const XDataHub = {
             updateHostTabCompactMode();
             updateResizeHandleLayout();
             updateDockButtonVisual();
+            persistWindowState();
         };
 
         /**
@@ -1411,6 +1803,9 @@ const XDataHub = {
          * 窗口尺寸变化时保持最大化窗口贴合视口
          */
         const handleWindowResize = () => {
+            if (windowEl.style.display === "none") {
+                return;
+            }
             if (isMaximized) {
                 windowEl.style.width = `${window.innerWidth}px`;
                 windowEl.style.height = `${window.innerHeight}px`;
@@ -1493,6 +1888,7 @@ const XDataHub = {
             updateHostTabCompactMode();
             updateResizeHandleLayout();
             updateDockButtonVisual();
+            persistWindowState();
         };
 
         /**
@@ -1502,12 +1898,12 @@ const XDataHub = {
          * @param {number} y - 目标 Y 坐标
          */
         const updatePosition = (x, y) => {
-            // 窗口左边不能小于0（不能超出屏幕左边缘）
+            // 窗口左边不能小于 0（不能超出屏幕左边缘）
             // 窗口右边不能大于屏幕宽度（不能超出屏幕右边缘）
             const maxLeft = window.innerWidth - windowEl.offsetWidth;
             const newLeft = Math.max(0, Math.min(maxLeft, x));
 
-            // 窗口顶部不能小于0（不能超出屏幕上边缘）
+            // 窗口顶部不能小于 0（不能超出屏幕上边缘）
             // 窗口底部不能大于屏幕高度（不能超出屏幕下边缘）
             const maxTop = window.innerHeight - windowEl.offsetHeight;
             const newTop = Math.max(0, Math.min(maxTop, y));
@@ -1574,10 +1970,10 @@ const XDataHub = {
                 }
                 if (resizeDirection.includes('w')) {
                     // 限制左边不超出屏幕
-                    // 向左拉伸时，dx为负值，窗口宽度增加，left减小
+                    // 向左拉伸时，dx 为负值，窗口宽度增加，left 减小
                     // 限制条件：newLeft >= 0 且 newWidth >= RESIZE_MIN_WIDTH
-                    // dx的最小值（最负）受限于：resizeStartLeft + dx >= 0 即 dx >= -resizeStartLeft
-                    // dx的最大值（最正）受限于：resizeStartWidth - dx >= RESIZE_MIN_WIDTH 即 dx <= resizeStartWidth - RESIZE_MIN_WIDTH
+                    // dx 的最小值（最负）受限于：resizeStartLeft + dx >= 0 即 dx >= -resizeStartLeft
+                    // dx 的最大值（最正）受限于：resizeStartWidth - dx >= RESIZE_MIN_WIDTH 即 dx <= resizeStartWidth - RESIZE_MIN_WIDTH
                     const minDx = -resizeStartLeft;  // 不能向左超过屏幕左边缘
                     const maxDx = resizeStartWidth - RESIZE_MIN_WIDTH;  // 不能小于最小宽度
                     const clampedDx = Math.max(minDx, Math.min(dx, maxDx));
@@ -1591,10 +1987,10 @@ const XDataHub = {
                 }
                 if (resizeDirection.includes('n')) {
                     // 限制顶边不超出屏幕
-                    // 向上拉伸时，dy为负值，窗口高度增加，top减小
+                    // 向上拉伸时，dy 为负值，窗口高度增加，top 减小
                     // 限制条件：newTop >= 0 且 newHeight >= RESIZE_MIN_HEIGHT
-                    // dy的最小值（最负）受限于：resizeStartTop + dy >= 0 即 dy >= -resizeStartTop
-                    // dy的最大值（最正）受限于：resizeStartHeight - dy >= RESIZE_MIN_HEIGHT 即 dy <= resizeStartHeight - RESIZE_MIN_HEIGHT
+                    // dy 的最小值（最负）受限于：resizeStartTop + dy >= 0 即 dy >= -resizeStartTop
+                    // dy 的最大值（最正）受限于：resizeStartHeight - dy >= RESIZE_MIN_HEIGHT 即 dy <= resizeStartHeight - RESIZE_MIN_HEIGHT
                     const minDy = -resizeStartTop;  // 不能向上超过屏幕顶部
                     const maxDy = resizeStartHeight - RESIZE_MIN_HEIGHT;  // 不能小于最小高度
                     const clampedDy = Math.max(minDy, Math.min(dy, maxDy));
@@ -1727,7 +2123,7 @@ const XDataHub = {
             e.stopPropagation();
         });
 
-        // 当失去指针捕获时，重置 Alt+拖拽状态
+        // 当失去指针捕获时，重置 Alt+ 拖拽状态
         windowEl.addEventListener('lostpointercapture', () => {
             stopDragging(true);
         });
@@ -1786,22 +2182,31 @@ const XDataHub = {
             dataFrame,
             workflowFrame,
             setHostTab,
+            applyThemeMode(mode) {
+                const normalized = normalizeThemeMode(mode);
+                windowEl.setAttribute("data-theme", normalized);
+                postThemeModeToDataFrame();
+            },
+            postHotkeySpecToDataFrame() {
+                postHotkeySpecToDataFrame();
+            },
 
             /**
              * 显示窗口
              */
             show() {
-                if (!this.isVisible) {
-                    this.applyDefaultOpenLayout();
-                }
                 windowEl.style.display = "flex";
                 this.isVisible = true;
+                handleWindowResize();
+                scheduleVisibleLayoutSync();
             },
 
             /**
              * 隐藏窗口
              */
             hide() {
+                resetInteractionState(true);
+                persistWindowState();
                 windowEl.style.display = "none";
                 this.isVisible = false;
             },
@@ -1815,6 +2220,7 @@ const XDataHub = {
              * 移除事件监听和 DOM 元素，清理资源
              */
             destroy() {
+                persistWindowState();
                 resetInteractionState(false);
                 isAltPressed = false;
                 updateIframePointerEvents("auto");
@@ -1824,13 +2230,20 @@ const XDataHub = {
                 document.removeEventListener("keyup", handleKeyUp);
                 window.removeEventListener("blur", handleWindowBlur);
                 window.removeEventListener("resize", handleWindowResize);
+                dataFrame.removeEventListener("load", postSharedStateToDataFrame);
                 windowEl.remove();
                 XDataHub.instance = null;
             }
         };
 
         // 关闭按钮事件
-        closeBtn.addEventListener("click", () => state.hide());
+        closeBtn.addEventListener("click", () => {
+            if (closeBehavior === "destroy") {
+                state.destroy();
+            } else {
+                state.hide();
+            }
+        });
 
         // 靠左停靠按钮事件
         dockLeftBtn.addEventListener("click", () => toggleDockSide());
@@ -1866,4 +2279,20 @@ const XDataHub = {
 };
 xdataHubRef = XDataHub;
 
+window.addEventListener("message", (event) => {
+    const payload = event.data;
+    if (!payload || typeof payload !== "object") {
+        return;
+    }
+    if (payload.type === "xdatahub:theme-mode") {
+        applyThemeMode(payload.theme_mode);
+        return;
+    }
+    if (payload.type === "xdatahub:toggle-window-request") {
+        if (!windowEnabled) {
+            return;
+        }
+        XDataHub.toggle();
+    }
+});
 

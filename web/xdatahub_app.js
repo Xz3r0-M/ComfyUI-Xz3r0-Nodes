@@ -1,3 +1,9 @@
+/*
+ * 颜色规范（强约束）:
+ * 1) 本文件默认必须引用 ./xdatahub-color-tokens.css。
+ * 2) 默认禁止在本文件直接硬编码颜色值；如需硬编码，必须由用户明确要求。
+ */
+
 const TABS = [
     { id: "history", label: "历史数据" },
     { id: "image", label: "图片" },
@@ -51,6 +57,8 @@ const appState = {
         kind: "image",
         url: "",
         title: "",
+        unsupported: false,
+        unsupportedMessage: "",
         scale: 1,
         offsetX: 0,
         offsetY: 0,
@@ -130,11 +138,14 @@ const appState = {
         showMediaChipSize: true,
         videoPreviewAutoplay: false,
         videoPreviewMuted: true,
+        videoPreviewLoop: false,
         audioPreviewAutoplay: false,
         audioPreviewMuted: false,
+        audioPreviewLoop: false,
         mediaSortBy: "mtime",
         mediaSortOrder: "desc",
         mediaCardSizePreset: "standard",
+        themeMode: "dark",
     },
     videoLoadQueue: [],
     videoActiveLoads: 0,
@@ -145,13 +156,16 @@ const appState = {
     mediaListenerRegistry: new WeakMap(),
     mediaQueueRebuildTimer: 0,
 };
+let rootDelegatedHandlersInstalled = false;
 let historyRowExtraLayoutRaf = 0;
 let topActionCompactRaf = 0;
+let renderCount = 0;
 
 const tabStates = {};
 for (const tab of TABS) {
     tabStates[tab.id] = loadTabState(tab.id);
 }
+const scrollTopByTab = loadScrollTopByTab();
 appState.filtersSidebarOpen = loadGlobalFiltersSidebarState();
 
 const root = document.getElementById("app");
@@ -168,6 +182,8 @@ const MEDIA_CARD_SIZE_PRESET_VALUES = new Set([
     "standard",
     "large",
 ]);
+const THEME_MODE_VALUES = new Set(["dark", "light"]);
+const DEFAULT_TOGGLE_HOTKEY_SPEC = "Alt + X";
 const VIDEO_SCHEDULER_MAX_CONCURRENCY = 2;
 const VIDEO_SCHEDULER_BATCH_SIZE = 4;
 const VIDEO_SCHEDULER_BATCH_DELAY_MS = 120;
@@ -175,19 +191,21 @@ const VIDEO_SCHEDULER_TIME_BUDGET_MS = 8;
 const VIDEO_LOAD_TIMEOUT_MS = 2200;
 const MEDIA_NAV_STACK_LIMIT = 60;
 const ICON_BASE_PATH = "/extensions/ComfyUI-Xz3r0-Nodes/icons";
+let iframeHotkeySpec = DEFAULT_TOGGLE_HOTKEY_SPEC;
+let iframeHotkeyCombo = null;
 const DB_ACCENT_PALETTE = [
-    "var(--db-accent-01)",
-    "var(--db-accent-02)",
-    "var(--db-accent-03)",
-    "var(--db-accent-04)",
-    "var(--db-accent-05)",
-    "var(--db-accent-06)",
-    "var(--db-accent-07)",
-    "var(--db-accent-08)",
-    "var(--db-accent-09)",
-    "var(--db-accent-10)",
-    "var(--db-accent-11)",
-    "var(--db-accent-12)",
+    "var(--db-palette-01)",
+    "var(--db-palette-02)",
+    "var(--db-palette-03)",
+    "var(--db-palette-04)",
+    "var(--db-palette-05)",
+    "var(--db-palette-06)",
+    "var(--db-palette-07)",
+    "var(--db-palette-08)",
+    "var(--db-palette-09)",
+    "var(--db-palette-10)",
+    "var(--db-palette-11)",
+    "var(--db-palette-12)",
 ];
 // 设计说明：
 // 1) 视频继续使用分批调度，目的是限制首帧解码并发，避免大目录下
@@ -234,10 +252,59 @@ function loadTabState(tab) {
 }
 
 function saveTabState(tab) {
+    if (
+        scrollTopByTab
+        && Object.prototype.hasOwnProperty.call(scrollTopByTab, tab)
+    ) {
+        tabStates[tab].scrollTop = Number(scrollTopByTab[tab] || 0);
+    }
     sessionStorage.setItem(
         `xdatahub.tab.${tab}`,
         JSON.stringify(tabStates[tab])
     );
+}
+
+function normalizeScrollTop(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) {
+        return 0;
+    }
+    return Math.floor(n);
+}
+
+function loadScrollTopByTab() {
+    const fallback = {
+        history: normalizeScrollTop(tabStates.history?.scrollTop),
+        image: normalizeScrollTop(tabStates.image?.scrollTop),
+        video: normalizeScrollTop(tabStates.video?.scrollTop),
+        audio: normalizeScrollTop(tabStates.audio?.scrollTop),
+    };
+    try {
+        const raw = sessionStorage.getItem("xdatahub.scroll_top_by_tab");
+        if (!raw) {
+            return fallback;
+        }
+        const parsed = JSON.parse(raw);
+        return {
+            history: normalizeScrollTop(parsed?.history ?? fallback.history),
+            image: normalizeScrollTop(parsed?.image ?? fallback.image),
+            video: normalizeScrollTop(parsed?.video ?? fallback.video),
+            audio: normalizeScrollTop(parsed?.audio ?? fallback.audio),
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+function saveScrollTopByTab() {
+    try {
+        sessionStorage.setItem(
+            "xdatahub.scroll_top_by_tab",
+            JSON.stringify(scrollTopByTab)
+        );
+    } catch {
+        // ignore sessionStorage write errors
+    }
 }
 
 function apiUrl(path, query = {}) {
@@ -312,7 +379,7 @@ function hashDbNameU32(dbName) {
 function getDbAccentColor(dbName) {
     const key = normalizeDbColorKey(dbName);
     if (!key) {
-        return "var(--db-accent-default)";
+        return "var(--db-palette-default)";
     }
     const index = hashDbNameU32(key) % DB_ACCENT_PALETTE.length;
     return DB_ACCENT_PALETTE[index];
@@ -391,6 +458,7 @@ function normalizeSettings(value) {
     const cardSizePresetRaw = String(
         raw.media_card_size_preset || ""
     ).trim().toLowerCase();
+    const themeModeRaw = String(raw.theme_mode || "").trim().toLowerCase();
     return {
         showMediaChipType:
             raw.show_media_chip_type !== undefined
@@ -420,6 +488,12 @@ function normalizeSettings(value) {
                 : raw.media_preview_muted !== undefined
                     ? raw.media_preview_muted !== false
                     : true,
+        videoPreviewLoop:
+            raw.video_preview_loop !== undefined
+                ? raw.video_preview_loop === true
+                : raw.media_preview_loop !== undefined
+                    ? raw.media_preview_loop === true
+                    : false,
         audioPreviewAutoplay:
             raw.audio_preview_autoplay !== undefined
                 ? raw.audio_preview_autoplay === true
@@ -432,6 +506,12 @@ function normalizeSettings(value) {
                 : raw.media_preview_muted !== undefined
                     ? raw.media_preview_muted !== false
                     : false,
+        audioPreviewLoop:
+            raw.audio_preview_loop !== undefined
+                ? raw.audio_preview_loop === true
+                : raw.media_preview_loop !== undefined
+                    ? raw.media_preview_loop === true
+                    : false,
         mediaSortBy: MEDIA_SORT_BY_VALUES.has(sortByRaw)
             ? sortByRaw
             : "mtime",
@@ -441,6 +521,9 @@ function normalizeSettings(value) {
         mediaCardSizePreset: MEDIA_CARD_SIZE_PRESET_VALUES.has(cardSizePresetRaw)
             ? cardSizePresetRaw
             : "standard",
+        themeMode: THEME_MODE_VALUES.has(themeModeRaw)
+            ? themeModeRaw
+            : "dark",
     };
 }
 
@@ -453,6 +536,7 @@ function cloneSettings(settings) {
     const cardSizePreset = String(
         raw.mediaCardSizePreset || ""
     ).trim().toLowerCase();
+    const themeMode = String(raw.themeMode || "").trim().toLowerCase();
     return {
         showMediaChipType: raw.showMediaChipType !== false,
         showMediaChipResolution: raw.showMediaChipResolution !== false,
@@ -466,6 +550,10 @@ function cloneSettings(settings) {
             raw.videoPreviewMuted !== undefined
                 ? raw.videoPreviewMuted !== false
                 : raw.mediaPreviewMuted !== false,
+        videoPreviewLoop:
+            raw.videoPreviewLoop !== undefined
+                ? raw.videoPreviewLoop === true
+                : raw.mediaPreviewLoop === true,
         audioPreviewAutoplay:
             raw.audioPreviewAutoplay !== undefined
                 ? raw.audioPreviewAutoplay === true
@@ -476,6 +564,10 @@ function cloneSettings(settings) {
                 : raw.mediaPreviewMuted !== undefined
                     ? raw.mediaPreviewMuted !== false
                     : false,
+        audioPreviewLoop:
+            raw.audioPreviewLoop !== undefined
+                ? raw.audioPreviewLoop === true
+                : raw.mediaPreviewLoop === true,
         mediaSortBy: MEDIA_SORT_BY_VALUES.has(sortBy) ? sortBy : "mtime",
         mediaSortOrder: MEDIA_SORT_ORDER_VALUES.has(sortOrder)
             ? sortOrder
@@ -483,7 +575,150 @@ function cloneSettings(settings) {
         mediaCardSizePreset: MEDIA_CARD_SIZE_PRESET_VALUES.has(cardSizePreset)
             ? cardSizePreset
             : "standard",
+        themeMode: THEME_MODE_VALUES.has(themeMode) ? themeMode : "dark",
     };
+}
+
+function normalizeThemeMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    if (THEME_MODE_VALUES.has(mode)) {
+        return mode;
+    }
+    return "dark";
+}
+
+function parseHotkeySpec(spec) {
+    const raw = String(spec || "").trim();
+    if (!raw) {
+        return null;
+    }
+    const tokens = raw
+        .split("+")
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean);
+    if (!tokens.length) {
+        return null;
+    }
+    const combo = {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+        key: "",
+    };
+    const keyAlias = {
+        esc: "escape",
+        return: "enter",
+        spacebar: "space",
+        cmd: "meta",
+        command: "meta",
+        win: "meta",
+        windows: "meta",
+    };
+    for (const tokenRaw of tokens) {
+        const token = keyAlias[tokenRaw] || tokenRaw;
+        if (token === "ctrl" || token === "control") {
+            combo.ctrl = true;
+            continue;
+        }
+        if (token === "alt" || token === "option") {
+            combo.alt = true;
+            continue;
+        }
+        if (token === "shift") {
+            combo.shift = true;
+            continue;
+        }
+        if (token === "meta") {
+            combo.meta = true;
+            continue;
+        }
+        combo.key = token;
+    }
+    if (!combo.key) {
+        return null;
+    }
+    return combo;
+}
+
+function normalizeHotkeyKey(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (!key) {
+        return "";
+    }
+    if (key === " ") {
+        return "space";
+    }
+    if (key === "esc") {
+        return "escape";
+    }
+    return key;
+}
+
+function updateIframeHotkeySpec(spec) {
+    const normalized = String(spec || "").trim() || DEFAULT_TOGGLE_HOTKEY_SPEC;
+    const parsed = parseHotkeySpec(normalized);
+    iframeHotkeySpec = parsed ? normalized : DEFAULT_TOGGLE_HOTKEY_SPEC;
+    iframeHotkeyCombo = parsed
+        || parseHotkeySpec(DEFAULT_TOGGLE_HOTKEY_SPEC);
+}
+
+function isToggleHotkeyEvent(event) {
+    if (!iframeHotkeyCombo || !event) {
+        return false;
+    }
+    const key = normalizeHotkeyKey(event.key);
+    if (!key || key !== iframeHotkeyCombo.key) {
+        return false;
+    }
+    return (
+        event.ctrlKey === iframeHotkeyCombo.ctrl
+        && event.altKey === iframeHotkeyCombo.alt
+        && event.shiftKey === iframeHotkeyCombo.shift
+        && event.metaKey === iframeHotkeyCombo.meta
+    );
+}
+
+function handleIframeToggleHotkey(event) {
+    if (!event || event.isComposing || event.repeat) {
+        return;
+    }
+    if (!isToggleHotkeyEvent(event)) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+        window.parent?.postMessage(
+            { type: "xdatahub:toggle-window-request" },
+            "*"
+        );
+    } catch {
+        // 忽略通知失败，不影响其他交互。
+    }
+}
+
+function notifyParentThemeMode(mode) {
+    try {
+        window.parent?.postMessage(
+            {
+                type: "xdatahub:theme-mode",
+                theme_mode: normalizeThemeMode(mode),
+            },
+            "*"
+        );
+    } catch {
+        // 忽略跨窗口通知失败，避免影响主流程。
+    }
+}
+
+function applyThemeMode(mode) {
+    const target = document.body;
+    if (!target) {
+        return;
+    }
+    const normalized = normalizeThemeMode(mode);
+    target.setAttribute("data-theme", normalized);
 }
 
 async function fetchSettings() {
@@ -493,13 +728,14 @@ async function fetchSettings() {
         "xdatahub-settings"
     );
     appState.settings = normalizeSettings(data.settings || {});
+    applyThemeMode(appState.settings.themeMode);
     appState.settingsError = "";
 }
 
 async function updateSettings(partial) {
     appState.settingsSaving = true;
     appState.settingsError = "";
-    render();
+    refreshSettingsDialogOverlay();
     try {
         const body = {
             show_media_chip_type:
@@ -520,12 +756,18 @@ async function updateSettings(partial) {
             video_preview_muted:
                 partial?.videoPreviewMuted
                 ?? appState.settings.videoPreviewMuted,
+            video_preview_loop:
+                partial?.videoPreviewLoop
+                ?? appState.settings.videoPreviewLoop,
             audio_preview_autoplay:
                 partial?.audioPreviewAutoplay
                 ?? appState.settings.audioPreviewAutoplay,
             audio_preview_muted:
                 partial?.audioPreviewMuted
                 ?? appState.settings.audioPreviewMuted,
+            audio_preview_loop:
+                partial?.audioPreviewLoop
+                ?? appState.settings.audioPreviewLoop,
             media_sort_by:
                 partial?.mediaSortBy
                 ?? appState.settings.mediaSortBy,
@@ -535,14 +777,20 @@ async function updateSettings(partial) {
             media_card_size_preset:
                 partial?.mediaCardSizePreset
                 ?? appState.settings.mediaCardSizePreset,
+            theme_mode:
+                partial?.themeMode
+                ?? appState.settings.themeMode,
         };
         const data = await apiPost("/xz3r0/xdatahub/settings", body);
         appState.settings = normalizeSettings(data.settings || {});
+        applyThemeMode(appState.settings.themeMode);
+        notifyParentThemeMode(appState.settings.themeMode);
     } catch (error) {
         appState.settingsError = error.message || "保存设置失败";
     } finally {
         appState.settingsSaving = false;
-        render();
+        refreshSettingsDialogOverlay();
+        syncTopActionBarUi();
     }
 }
 
@@ -556,6 +804,17 @@ function abortRequest(key) {
 
 function currentTabState() {
     return tabStates[appState.activeTab];
+}
+
+function getListTabId(listElement) {
+    if (!(listElement instanceof HTMLElement)) {
+        return appState.activeTab;
+    }
+    const raw = String(listElement.dataset.listTab || "").trim();
+    if (TABS.some((item) => item.id === raw)) {
+        return raw;
+    }
+    return appState.activeTab;
 }
 
 function isMediaTab(tab) {
@@ -847,6 +1106,9 @@ function historyLayoutState() {
 
 function setError(message) {
     appState.error = message || "";
+    if (!appState.loading) {
+        syncListStatusUi();
+    }
 }
 
 function normalizeLockState(lock) {
@@ -886,11 +1148,16 @@ function clearDetailResources() {
 }
 
 async function loadList(options = {}) {
+    const cause = String(options.cause || "data-change").trim().toLowerCase();
+    const isUiOnly = cause === "ui-only";
+    const shouldReleaseMountedMedia = !isUiOnly;
     const tab = appState.activeTab;
-    stopVideoScheduler(true);
+    if (!isUiOnly) {
+        stopVideoScheduler(shouldReleaseMountedMedia);
+    }
     appState.loading = true;
     setError("");
-    render();
+    syncListLoadingUi();
 
     const state = currentTabState();
     try {
@@ -957,7 +1224,7 @@ async function loadList(options = {}) {
                     keyword: state.filters.keyword,
                     start: state.filters.start,
                     end: state.filters.end,
-                    validate_page: options.validatePage ? 1 : 0,
+                    validate_page: options.validatePage !== false ? 1 : 0,
                     include_datetime: showDatetimeChip ? 1 : 0,
                     include_size: showSizeChip ? 1 : 0,
                     include_resolution: showResolutionChip ? 1 : 0,
@@ -987,10 +1254,100 @@ async function loadList(options = {}) {
         }
     } finally {
         appState.loading = false;
-        render();
+        syncListContentUi();
         restoreListScroll();
         refreshDependentWarnings();
     }
+}
+
+function syncListLoadingUi() {
+    if (!root) {
+        return;
+    }
+    const list = document.getElementById("list");
+    if (!(list instanceof HTMLElement)) {
+        return;
+    }
+    list.innerHTML = renderStatus();
+}
+
+function syncListStatusUi() {
+    if (!root) {
+        return;
+    }
+    const list = document.getElementById("list");
+    if (!(list instanceof HTMLElement)) {
+        return;
+    }
+    if (appState.loading || appState.error || appState.items.length === 0) {
+        list.innerHTML = renderStatus();
+    }
+}
+
+function syncPaginationUi() {
+    const prev = document.getElementById("page-prev");
+    const next = document.getElementById("page-next");
+    const jump = document.getElementById("page-jump");
+    const pagination = prev?.closest(".pagination");
+    const pageInfo = pagination?.querySelector("span");
+    const state = currentTabState();
+    if (prev instanceof HTMLButtonElement) {
+        prev.disabled = state.page <= 1;
+    }
+    if (next instanceof HTMLButtonElement) {
+        next.disabled = state.page >= appState.totalPages;
+    }
+    if (jump instanceof HTMLInputElement) {
+        jump.value = String(state.page);
+        jump.max = String(appState.totalPages);
+    }
+    if (pageInfo instanceof HTMLElement) {
+        pageInfo.textContent = `${state.page} / ${appState.totalPages}`;
+    }
+}
+
+function syncMediaExplorerBarUi() {
+    const bar = document.querySelector(".media-explorer-bar");
+    if (!(bar instanceof HTMLElement)) {
+        return;
+    }
+    bar.outerHTML = renderMediaExplorerBar();
+}
+
+function syncListContentUi() {
+    if (!root) {
+        return;
+    }
+    const list = document.getElementById("list");
+    if (!(list instanceof HTMLElement)) {
+        render();
+        return;
+    }
+    const isMedia = isMediaTab(appState.activeTab);
+    const inMediaShell = list.classList.contains("media-grid");
+    const inHistoryShell = list.classList.contains("list");
+    if ((isMedia && !inMediaShell) || (!isMedia && !inHistoryShell)) {
+        render();
+        return;
+    }
+    if (isMedia) {
+        list.dataset.listTab = appState.activeTab;
+        syncMediaExplorerBarUi();
+        list.innerHTML = renderMediaGrid();
+        setupMediaResolutionObservers();
+        if (appState.activeTab === "video") {
+            setupVideoCardScheduler();
+        } else {
+            stopVideoScheduler(false);
+        }
+    } else {
+        list.dataset.listTab = "history";
+        list.innerHTML = `${renderListRows()}${renderStatus()}`;
+    }
+    syncPaginationUi();
+    syncTopActionBarUi();
+    syncLockBannerUi();
+    renderOverlays();
 }
 
 async function loadScopedFacetsByDb(dbName) {
@@ -1036,7 +1393,11 @@ function restoreListScroll() {
     if (!list) {
         return;
     }
-    list.scrollTop = currentTabState().scrollTop || 0;
+    const tabId = getListTabId(list);
+    const top = Object.prototype.hasOwnProperty.call(scrollTopByTab, tabId)
+        ? normalizeScrollTop(scrollTopByTab[tabId])
+        : normalizeScrollTop(tabStates[tabId]?.scrollTop);
+    list.scrollTop = top;
 }
 
 function captureFocusState() {
@@ -1077,13 +1438,28 @@ function restoreFocusState(focusState) {
     }
 }
 
-function syncListScroll() {
-    const list = document.getElementById("list");
+function syncListScroll(force = false, tabIdOverride = "", listOverride = null) {
+    const list = listOverride instanceof HTMLElement
+        ? listOverride
+        : document.getElementById("list");
     if (!list) {
         return;
     }
-    currentTabState().scrollTop = list.scrollTop;
-    saveTabState(appState.activeTab);
+    if (!force && appState.loading) {
+        return;
+    }
+    const tabIdRaw = String(tabIdOverride || "").trim();
+    const tabId = TABS.some((item) => item.id === tabIdRaw)
+        ? tabIdRaw
+        : getListTabId(list);
+    if (!tabStates[tabId]) {
+        tabStates[tabId] = cloneDefaultState();
+    }
+    const nextTop = normalizeScrollTop(list.scrollTop);
+    scrollTopByTab[tabId] = nextTop;
+    tabStates[tabId].scrollTop = nextTop;
+    saveScrollTopByTab();
+    saveTabState(tabId);
 }
 
 function selectedItem() {
@@ -1143,6 +1519,7 @@ function switchTab(tab) {
     if (appState.activeTab === tab) {
         return;
     }
+    syncListScroll(true);
     clearDetailResources();
     closeImagePreview();
     appState.compactActionsMenuOpen = false;
@@ -1185,10 +1562,11 @@ function resetSearchLock() {
 function lockSearchButton(ms = SEARCH_LOCK_MS) {
     resetSearchLock();
     appState.searchLockedUntil = Date.now() + ms;
+    syncSearchButtonUi();
     appState.searchLockTimer = window.setTimeout(() => {
         appState.searchLockedUntil = 0;
         appState.searchLockTimer = 0;
-        render();
+        syncSearchButtonUi();
     }, ms);
 }
 
@@ -1213,7 +1591,7 @@ function lockDataActions(ms = DATA_ACTION_LOCK_MS) {
     appState.dataActionLockTimer = window.setTimeout(() => {
         appState.dataActionLockedUntil = 0;
         appState.dataActionLockTimer = 0;
-        render();
+        syncTopActionBarUi();
     }, ms);
 }
 
@@ -1230,12 +1608,13 @@ function runSearchNow() {
     }
     appState.searchInFlight = true;
     lockSearchButton();
+    syncSearchButtonUi();
     const state = currentTabState();
     state.page = 1;
     saveTabState(appState.activeTab);
     loadList().finally(() => {
         appState.searchInFlight = false;
-        render();
+        syncSearchButtonUi();
     });
 }
 
@@ -1245,6 +1624,14 @@ function scheduleSearchReload() {
         appState.searchDebounceTimer = 0;
         runSearchNow();
     }, SEARCH_DEBOUNCE_MS);
+}
+
+function syncSearchButtonUi() {
+    const button = document.getElementById("btn-apply-filters");
+    if (!(button instanceof HTMLButtonElement)) {
+        return;
+    }
+    button.disabled = isSearchLocked() || appState.searchInFlight;
 }
 
 const debouncedLayoutRefresh = debounce(() => {
@@ -1297,11 +1684,14 @@ function openImagePreview(kind, url, title) {
     if (!url) {
         return;
     }
+    const options = arguments[3] || {};
     appState.imagePreview = {
         open: true,
         kind: kind || "image",
         url,
         title: title || "",
+        unsupported: !!options.unsupported,
+        unsupportedMessage: String(options.unsupportedMessage || ""),
         scale: 1,
         offsetX: 0,
         offsetY: 0,
@@ -1313,18 +1703,32 @@ function openImagePreview(kind, url, title) {
         dragOriginX: 0,
         dragOriginY: 0,
     };
-    render();
+    mountImageLightbox();
 }
 
 function closeImagePreview() {
     if (!appState.imagePreview.open) {
         return;
     }
+    const audioPlayer = document.getElementById("audio-lightbox-player");
+    if (audioPlayer instanceof HTMLMediaElement) {
+        try {
+            audioPlayer.pause();
+        } catch {}
+    }
+    const videoPlayer = document.getElementById("video-lightbox-player");
+    if (videoPlayer instanceof HTMLMediaElement) {
+        try {
+            videoPlayer.pause();
+        } catch {}
+    }
     appState.imagePreview = {
         open: false,
         kind: "image",
         url: "",
         title: "",
+        unsupported: false,
+        unsupportedMessage: "",
         scale: 1,
         offsetX: 0,
         offsetY: 0,
@@ -1336,6 +1740,86 @@ function closeImagePreview() {
         dragOriginX: 0,
         dragOriginY: 0,
     };
+    unmountImageLightbox();
+}
+
+function updateLastOpenedMediaCardClass(card) {
+    if (!root) {
+        return;
+    }
+    root.querySelectorAll(".media-card-last-opened").forEach((node) => {
+        node.classList.remove("media-card-last-opened");
+    });
+    if (card instanceof HTMLElement) {
+        card.classList.add("media-card-last-opened");
+    }
+}
+
+function bindImageLightboxEvents() {
+    document.getElementById("image-lightbox-close")?.addEventListener("click", () => {
+        closeImagePreview();
+    });
+    document.getElementById("image-lightbox-close-btn")?.addEventListener("click", () => {
+        closeImagePreview();
+    });
+    const previewVideo = document.getElementById("video-lightbox-player");
+    if (previewVideo instanceof HTMLVideoElement) {
+        const markPreviewUnsupported = () => {
+            appState.imagePreview.unsupported = true;
+            appState.imagePreview.unsupportedMessage =
+                "该视频在当前浏览器中不支持此格式或编码，或仅含音频轨道。";
+            mountImageLightbox();
+        };
+        previewVideo.addEventListener("error", () => {
+            markPreviewUnsupported();
+        }, { once: true });
+        previewVideo.addEventListener("loadedmetadata", () => {
+            if (
+                previewVideo.videoWidth <= 0
+                || previewVideo.videoHeight <= 0
+            ) {
+                markPreviewUnsupported();
+            }
+        }, { once: true });
+    }
+    const previewAudio = document.getElementById("audio-lightbox-player");
+    if (previewAudio instanceof HTMLAudioElement) {
+        previewAudio.addEventListener("error", () => {
+            appState.imagePreview.unsupported = true;
+            appState.imagePreview.unsupportedMessage =
+                "该音频在当前浏览器中不支持此格式或编码。";
+            markCurrentMediaCardUnsupported("audio");
+            mountImageLightbox();
+        }, { once: true });
+    }
+}
+
+function mountImageLightbox() {
+    if (!root || !appState.imagePreview.open) {
+        return;
+    }
+    const nextHtml = renderImagePreview();
+    if (!nextHtml) {
+        return;
+    }
+    const current = document.getElementById("image-lightbox");
+    if (current instanceof HTMLElement) {
+        current.outerHTML = nextHtml;
+    } else {
+        root.insertAdjacentHTML("beforeend", nextHtml);
+    }
+    bindImageLightboxEvents();
+    setupImagePreviewEvents();
+    syncImagePreviewTransform();
+}
+
+function unmountImageLightbox() {
+    const lightbox = document.getElementById("image-lightbox");
+    if (lightbox instanceof HTMLElement) {
+        lightbox.remove();
+        return;
+    }
+    // 兜底：若节点意外丢失，保持现有逻辑可恢复。
     render();
 }
 
@@ -1416,6 +1900,13 @@ function setupImagePreviewEvents() {
         preview.offsetY = 0;
         syncImagePreviewTransform();
     });
+    image.addEventListener("error", () => {
+        appState.imagePreview.unsupported = true;
+        appState.imagePreview.unsupportedMessage =
+            "该图片在当前浏览器中不支持此格式或编码。";
+        markCurrentMediaCardUnsupported("image");
+        mountImageLightbox();
+    }, { once: true });
 
     stage.addEventListener("wheel", (event) => {
         event.preventDefault();
@@ -1523,6 +2014,46 @@ function selectedCriticalDbCount() {
     ).length;
 }
 
+function refreshDbDeleteDialogOverlay() {
+    if (!appState.dbDeleteDialogOpen) {
+        return;
+    }
+    syncOverlayById("db-delete-overlay", renderDbDeleteDialog());
+}
+
+function refreshSettingsDialogOverlay() {
+    if (!appState.settingsDialogOpen) {
+        return;
+    }
+    syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
+}
+
+function buildDbDeleteSummaryText() {
+    const selectedCount = appState.selectedDbFiles.length;
+    const criticalCount = selectedCriticalDbCount();
+    if (appState.clearDataMode === "delete") {
+        return `将删除 ${selectedCount} 个文件（关键 ${criticalCount} 个）`;
+    }
+    return `将清空 ${selectedCount} 个数据库的历史记录（关键 ${criticalCount} 个）`;
+}
+
+function syncDbDeleteSelectionUi() {
+    if (!appState.dbDeleteDialogOpen) {
+        return;
+    }
+    const summary = document.querySelector(".db-delete-summary");
+    if (summary instanceof HTMLElement) {
+        summary.textContent = buildDbDeleteSummaryText();
+    }
+    const submit = document.getElementById("db-delete-submit");
+    if (submit instanceof HTMLButtonElement) {
+        const disabled = appState.clearDataMode === "delete"
+            ? (!canSubmitDbDelete() || appState.dbDeleteLoading)
+            : (!canSubmitRecordsCleanup() || appState.dbDeleteLoading);
+        submit.disabled = disabled;
+    }
+}
+
 function dbPurposeIconName(purpose) {
     const text = String(purpose || "").trim();
     if (!text) {
@@ -1586,7 +2117,7 @@ function lockDbRefreshButton(ms = DB_LIST_REFRESH_LOCK_MS) {
     appState.dbRefreshLockTimer = window.setTimeout(() => {
         appState.dbRefreshLockedUntil = 0;
         appState.dbRefreshLockTimer = 0;
-        render();
+        refreshDbDeleteDialogOverlay();
     }, ms);
 }
 
@@ -1603,7 +2134,7 @@ async function runDbListRefreshNow() {
     }
     appState.dbRefreshInFlight = true;
     lockDbRefreshButton();
-    render();
+    refreshDbDeleteDialogOverlay();
     appState.dbDeleteError = "";
     try {
         await fetchDbFileList();
@@ -1612,7 +2143,7 @@ async function runDbListRefreshNow() {
         appState.dbDeleteError = error.message || "刷新数据库列表失败";
     } finally {
         appState.dbRefreshInFlight = false;
-        render();
+        refreshDbDeleteDialogOverlay();
     }
 }
 
@@ -1638,7 +2169,7 @@ function closeDbDeleteDialog() {
     resetDbRefreshLock();
     resetDbRefreshDebounce();
     appState.dbRefreshInFlight = false;
-    render();
+    syncOverlayById("db-delete-overlay", "");
 }
 
 async function fetchDbFileList() {
@@ -1672,14 +2203,14 @@ async function openDbDeleteDialog() {
     resetDbRefreshLock();
     resetDbRefreshDebounce();
     appState.dbRefreshInFlight = false;
-    render();
+    refreshDbDeleteDialogOverlay();
     try {
         await fetchDbFileList();
     } catch (error) {
         appState.dbDeleteError = error.message || "加载数据库列表失败";
     } finally {
         appState.dbDeleteLoading = false;
-        render();
+        refreshDbDeleteDialogOverlay();
     }
 }
 
@@ -1719,7 +2250,7 @@ async function submitDbDelete() {
     appState.dbDeleteLoading = true;
     appState.dbDeleteError = "";
     appState.dbDeleteResult = "";
-    render();
+    refreshDbDeleteDialogOverlay();
     try {
         const result = await apiPost(
             "/xz3r0/xdatahub/records/db-files/delete",
@@ -1747,7 +2278,7 @@ async function submitDbDelete() {
         appState.dbDeleteError = error.message || "删除失败";
     } finally {
         appState.dbDeleteLoading = false;
-        render();
+        refreshDbDeleteDialogOverlay();
     }
 }
 
@@ -1758,7 +2289,7 @@ async function submitRecordsCleanup() {
     appState.dbDeleteLoading = true;
     appState.dbDeleteError = "";
     appState.dbDeleteResult = "";
-    render();
+    refreshDbDeleteDialogOverlay();
     try {
         const targets = [...appState.selectedDbFiles];
         let deleted = 0;
@@ -1793,7 +2324,7 @@ async function submitRecordsCleanup() {
         appState.dbDeleteError = error.message || "清空历史失败";
     } finally {
         appState.dbDeleteLoading = false;
-        render();
+        refreshDbDeleteDialogOverlay();
     }
 }
 
@@ -1918,9 +2449,7 @@ function renderFilters() {
                 <button class="${searchBtnClass}" id="btn-apply-filters" ${searchDisabled ? "disabled" : ""}>${searchBtnText}</button>
             </div>
         </div>
-        <div class="filters-sidebar-footer">
-            
-        </div>
+        <div class="filters-sidebar-footer"></div>
     `;
     if (!sidebarOpen) {
         return "";
@@ -2032,6 +2561,23 @@ function closeCompactActionsMenu(shouldRender = false) {
     appState.compactActionsMenuOpen = false;
     if (shouldRender) {
         render();
+    }
+}
+
+function syncCompactActionsUi() {
+    const menu = document.getElementById("compact-actions-menu");
+    const backdrop = document.getElementById("compact-actions-backdrop");
+    const show = !!appState.compactActionsMenuOpen;
+    menu?.classList.toggle("show", show);
+    if (!show) {
+        backdrop?.remove();
+        return;
+    }
+    if (!backdrop && root) {
+        root.insertAdjacentHTML(
+            "beforeend",
+            '<button class="compact-actions-backdrop" id="compact-actions-backdrop" aria-label="关闭紧凑操作"></button>'
+        );
     }
 }
 
@@ -2187,105 +2733,25 @@ function updateDateRangeToggleVisual() {
 
 function setDateRangePanelOpen(open, shouldRender = false) {
     appState.dateRangePanelOpen = !!open;
-    if (shouldRender) {
+    const panel = document.getElementById("date-range-panel");
+    const backdrop = document.getElementById("date-range-backdrop");
+    if ((!panel || !backdrop) && shouldRender) {
         render();
         return;
     }
-    const panel = document.getElementById("date-range-panel");
-    const backdrop = document.getElementById("date-range-backdrop");
     panel?.classList.toggle("show", appState.dateRangePanelOpen);
     backdrop?.classList.toggle("show", appState.dateRangePanelOpen);
     updateDateRangeToggleVisual();
 }
 
-function bindActionButtons() {
-    const bind = (id, handler) => {
-        document.getElementById(id)?.addEventListener("click", handler);
-    };
-    const handleAsync = async (fn, errorText, useDataActionLock = false) => {
-        if (useDataActionLock && isDataActionLocked()) {
-            return;
-        }
-        try {
-            if (useDataActionLock) {
-                appState.dataActionInFlight = true;
-                // 先把按钮锁定态渲染出来，再进入确认/请求流程，
-                // 避免用户感知到“点击后短暂未锁定”的空窗。
-                render();
-            }
-            closeCompactActionsMenu(false);
-            const actionDone = await fn();
-            if (useDataActionLock && actionDone !== false) {
-                lockDataActions();
-            }
-        } catch (error) {
-            setError(error.message || errorText);
-        } finally {
-            if (useDataActionLock) {
-                appState.dataActionInFlight = false;
-            }
-            render();
-        }
-    };
-    bind("btn-refresh-inline", async () => {
-        await handleAsync(doRefresh, "刷新失败", true);
-    });
-    bind("btn-clean-invalid", async () => {
-        await handleAsync(doCleanupInvalid, "清理失败", true);
-    });
-    bind("btn-clear-index", async () => {
-        await handleAsync(doClearIndex, "重建失败", true);
-    });
-    bind("btn-clear-data", async () => {
-        await handleAsync(doClearRecords, "数据处理失败", true);
-    });
-    bind("btn-open-settings", () => {
-        closeCompactActionsMenu(true);
-        appState.settingsDialogOpen = true;
-        appState.settingsError = "";
-        appState.settingsDraft = cloneSettings(appState.settings);
-        const overlay = document.getElementById("settings-dialog-overlay");
-        overlay?.classList.remove("is-hidden");
-        const typeInput = document.getElementById(
-            "setting-show-media-chip-type"
-        );
-        const resInput = document.getElementById(
-            "setting-show-media-chip-resolution"
-        );
-        const dtInput = document.getElementById(
-            "setting-show-media-chip-datetime"
-        );
-        const sizeInput = document.getElementById(
-            "setting-show-media-chip-size"
-        );
-        if (typeInput instanceof HTMLInputElement) {
-            typeInput.checked = !!appState.settingsDraft.showMediaChipType;
-        }
-        if (resInput instanceof HTMLInputElement) {
-            resInput.checked = !!appState.settingsDraft.showMediaChipResolution;
-        }
-        if (dtInput instanceof HTMLInputElement) {
-            dtInput.checked = !!appState.settingsDraft.showMediaChipDatetime;
-        }
-        if (sizeInput instanceof HTMLInputElement) {
-            sizeInput.checked = !!appState.settingsDraft.showMediaChipSize;
-        }
-    });
-    bind("btn-toggle-compact-actions", () => {
-        appState.dateRangePanelOpen = false;
-        appState.compactActionsMenuOpen = !appState.compactActionsMenuOpen;
+function syncHistoryDetailRawUi() {
+    const container = document.querySelector(".record-detail");
+    const item = selectedItem();
+    if (!(container instanceof HTMLElement) || !item) {
         render();
-    });
-    bind("compact-actions-backdrop", () => {
-        closeCompactActionsMenu(true);
-    });
-    bind("btn-toggle-date-range", () => {
-        appState.compactActionsMenuOpen = false;
-        setDateRangePanelOpen(!appState.dateRangePanelOpen, false);
-    });
-    bind("date-range-backdrop", () => {
-        closeDateRangePanel(false);
-    });
+        return;
+    }
+    container.outerHTML = renderHistoryDetail(item);
 }
 
 function clearVideoSchedulerTimer() {
@@ -2343,6 +2809,173 @@ function renderVideoPlaceholderHtml() {
     );
 }
 
+function renderVideoUnsupportedHtml() {
+    return (
+        '<div class="video-card-placeholder is-unsupported" '
+        + 'data-video-placeholder="1" data-video-unsupported="1">'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</span>`
+        + '<span class="media-unsupported-text">不支持的格式或编码</span>'
+        + "</div>"
+    );
+}
+
+function renderAudioUnsupportedHtml() {
+    return (
+        '<div class="audio-card-hint is-unsupported" '
+        + 'data-audio-unsupported="1">'
+        + `<div class="audio-card-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon audio-icon-svg")}</div>`
+        + "<div>不支持的格式或编码</div>"
+        + "</div>"
+    );
+}
+
+function renderImageUnsupportedHtml() {
+    return (
+        '<div class="video-card-placeholder is-unsupported" '
+        + 'data-image-placeholder="1" data-image-unsupported="1">'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</span>`
+        + '<span class="media-unsupported-text">不支持的图片格式或编码</span>'
+        + "</div>"
+    );
+}
+
+function guessVideoMimeFromUrl(urlText) {
+    const text = String(urlText || "").toLowerCase();
+    const clean = text.split("?")[0].split("#")[0];
+    if (clean.endsWith(".mp4") || clean.endsWith(".m4v")) {
+        return "video/mp4";
+    }
+    if (clean.endsWith(".webm")) {
+        return "video/webm";
+    }
+    if (clean.endsWith(".ogv") || clean.endsWith(".ogg")) {
+        return "video/ogg";
+    }
+    if (clean.endsWith(".mov")) {
+        return "video/quicktime";
+    }
+    if (clean.endsWith(".mkv")) {
+        return "video/x-matroska";
+    }
+    if (clean.endsWith(".avi")) {
+        return "video/x-msvideo";
+    }
+    if (clean.endsWith(".wmv")) {
+        return "video/x-ms-wmv";
+    }
+    if (clean.endsWith(".flv")) {
+        return "video/x-flv";
+    }
+    return "";
+}
+
+function guessAudioMimeFromUrl(urlText) {
+    const text = String(urlText || "").toLowerCase();
+    const clean = text.split("?")[0].split("#")[0];
+    if (clean.endsWith(".mp3")) {
+        return "audio/mpeg";
+    }
+    if (clean.endsWith(".m4a") || clean.endsWith(".aac")) {
+        return "audio/mp4";
+    }
+    if (clean.endsWith(".wav")) {
+        return "audio/wav";
+    }
+    if (clean.endsWith(".flac")) {
+        return "audio/flac";
+    }
+    if (clean.endsWith(".ogg") || clean.endsWith(".oga")) {
+        return "audio/ogg";
+    }
+    if (clean.endsWith(".opus")) {
+        return "audio/opus";
+    }
+    if (clean.endsWith(".wma")) {
+        return "audio/x-ms-wma";
+    }
+    if (clean.endsWith(".amr")) {
+        return "audio/amr";
+    }
+    return "";
+}
+
+function isLikelyUnsupportedVideo(urlText) {
+    const mime = guessVideoMimeFromUrl(urlText);
+    if (!mime) {
+        return false;
+    }
+    const probe = document.createElement("video");
+    if (!(probe instanceof HTMLVideoElement)) {
+        return false;
+    }
+    const result = String(probe.canPlayType(mime || "") || "").trim();
+    return !result;
+}
+
+function isLikelyUnsupportedAudio(urlText) {
+    const mime = guessAudioMimeFromUrl(urlText);
+    if (!mime) {
+        return false;
+    }
+    const probe = document.createElement("audio");
+    if (!(probe instanceof HTMLAudioElement)) {
+        return false;
+    }
+    const result = String(probe.canPlayType(mime || "") || "").trim();
+    return !result;
+}
+
+function escapeCssSelectorValue(value) {
+    const text = String(value || "");
+    if (typeof window.CSS?.escape === "function") {
+        return window.CSS.escape(text);
+    }
+    return text.replace(/["\\]/g, "\\$&");
+}
+
+function markCurrentMediaCardUnsupported(kind) {
+    if (!root) {
+        return;
+    }
+    const mediaItemId = String(
+        currentTabState()?.lastOpenedMediaId || ""
+    ).trim();
+    if (!mediaItemId) {
+        return;
+    }
+    const card = root.querySelector(
+        `.media-card[data-media-item-id="${escapeCssSelectorValue(mediaItemId)}"]`
+    );
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    markMediaCardUnsupported(card, kind);
+}
+
+function markMediaCardUnsupported(card, kind) {
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    const thumb = card.querySelector(".media-thumb");
+    if (!(thumb instanceof HTMLElement)) {
+        return;
+    }
+    if (kind === "video") {
+        card.setAttribute("data-video-unsupported", "1");
+        thumb.innerHTML = renderVideoUnsupportedHtml();
+        return;
+    }
+    if (kind === "audio") {
+        card.setAttribute("data-audio-unsupported", "1");
+        thumb.innerHTML = renderAudioUnsupportedHtml();
+        return;
+    }
+    if (kind === "image") {
+        card.setAttribute("data-image-unsupported", "1");
+        thumb.innerHTML = renderImageUnsupportedHtml();
+    }
+}
+
 function buildRankedMediaQueue(mediaType, stateMap) {
     if (!root) {
         return [];
@@ -2365,7 +2998,12 @@ function buildRankedMediaQueue(mediaType, stateMap) {
         .filter((item) => item.id && item.url)
         .filter((item) => {
             const state = stateMap.get(item.id);
-            return state !== "loaded" && state !== "loading";
+            return (
+                state !== "loaded"
+                && state !== "loading"
+                && state !== "error"
+                && state !== "unsupported"
+            );
         })
         .sort((a, b) => {
             if (a.visible !== b.visible) {
@@ -2492,6 +3130,18 @@ function mountVideoPreview(item, seq, onDone) {
         onDone?.();
         return false;
     }
+    const markUnsupported = () => {
+        appState.videoCardStateMap.set(id, "unsupported");
+        card.setAttribute("data-video-unsupported", "1");
+        thumb.innerHTML = renderVideoUnsupportedHtml();
+    };
+    const isVideoVisualTrackUsable = (videoEl) => {
+        return (
+            videoEl instanceof HTMLVideoElement
+            && videoEl.videoWidth > 0
+            && videoEl.videoHeight > 0
+        );
+    };
     let settled = false;
     const settle = (state) => {
         if (settled) {
@@ -2521,6 +3171,12 @@ function mountVideoPreview(item, seq, onDone) {
             `video-meta:${id}`,
             "loadedmetadata",
             () => {
+                if (!isVideoVisualTrackUsable(existing)) {
+                    markUnsupported();
+                    settle("unsupported");
+                    return;
+                }
+                card.removeAttribute("data-video-unsupported");
                 bindResolutionProbeForVideo(existing, resolutionKey);
                 settle("loaded");
             }
@@ -2529,10 +3185,16 @@ function mountVideoPreview(item, seq, onDone) {
             existing,
             `video-error:${id}`,
             "error",
-            () => settle("error")
+            () => {
+                markUnsupported();
+                settle("unsupported");
+            }
         );
         const watchdog = window.setTimeout(
-            () => settle("error"),
+            () => {
+                markUnsupported();
+                settle("unsupported");
+            },
             VIDEO_LOAD_TIMEOUT_MS
         );
         appState.videoWatchdogMap.set(id, watchdog);
@@ -2540,7 +3202,12 @@ function mountVideoPreview(item, seq, onDone) {
     }
     const urlText = String(url || "");
     if (!urlText) {
-        appState.videoCardStateMap.set(id, "error");
+        markUnsupported();
+        onDone?.();
+        return false;
+    }
+    if (isLikelyUnsupportedVideo(urlText)) {
+        markUnsupported();
         onDone?.();
         return false;
     }
@@ -2557,6 +3224,12 @@ function mountVideoPreview(item, seq, onDone) {
         `video-meta:${id}`,
         "loadedmetadata",
         () => {
+            if (!isVideoVisualTrackUsable(video)) {
+                markUnsupported();
+                settle("unsupported");
+                return;
+            }
+            card.removeAttribute("data-video-unsupported");
             bindResolutionProbeForVideo(video, resolutionKey);
             settle("loaded");
         }
@@ -2565,10 +3238,16 @@ function mountVideoPreview(item, seq, onDone) {
         video,
         `video-error:${id}`,
         "error",
-        () => settle("error")
+        () => {
+            markUnsupported();
+            settle("unsupported");
+        }
     );
     const watchdog = window.setTimeout(
-        () => settle("error"),
+        () => {
+            markUnsupported();
+            settle("unsupported");
+        },
         VIDEO_LOAD_TIMEOUT_MS
     );
     appState.videoWatchdogMap.set(id, watchdog);
@@ -2613,6 +3292,8 @@ function runVideoSchedulerTick(seq) {
             !next.card?.isConnected
             || appState.videoCardStateMap.get(next.id) === "loaded"
             || appState.videoCardStateMap.get(next.id) === "loading"
+            || appState.videoCardStateMap.get(next.id) === "error"
+            || appState.videoCardStateMap.get(next.id) === "unsupported"
         ) {
             continue;
         }
@@ -2669,7 +3350,7 @@ function renderListRows() {
             const recordId = String(item.extra?.record_id || "");
             const dbName = String(item.extra?.db_name || "");
             const dbAccent = getDbAccentColor(dbName);
-            const rowStyle = ` style="--db-accent:${escapeAttr(dbAccent)}"`;
+            const rowStyle = ` style="--db-palette:${escapeAttr(dbAccent)}"`;
             const activeClass = String(item.id) === String(selectedId) ? " active" : "";
             let idDbChipHtml = "";
             if (recordId && dbName) {
@@ -2836,6 +3517,13 @@ function renderMediaGrid() {
                         ? "video"
                         : "audio-lines"
             );
+            const isVideoUnsupported = (
+                mediaType === "video"
+                && appState.videoCardStateMap.get(mediaItemId) === "unsupported"
+            );
+            const audioLikelyUnsupported = mediaType === "audio"
+                ? isLikelyUnsupportedAudio(fileUrl)
+                : false;
             const previewAttrs = (
                 mediaType === "image"
                 || mediaType === "audio"
@@ -2860,12 +3548,24 @@ function renderMediaGrid() {
             } else if (mediaType === "video") {
                 // 设计说明：视频保持分批调度，先渲染占位，后按队列挂载
                 // <video> 以控制首帧解码并发。
-                previewHtml = renderVideoPlaceholderHtml();
+                previewHtml = isVideoUnsupported
+                    ? renderVideoUnsupportedHtml()
+                    : renderVideoPlaceholderHtml();
             } else {
-                previewHtml = `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("audio-lines", "音频", "xdatahub-icon audio-icon-svg")}</div><div>点击打开播放器</div></div>`;
+                previewHtml = audioLikelyUnsupported
+                    ? renderAudioUnsupportedHtml()
+                    : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("audio-lines", "音频", "xdatahub-icon audio-icon-svg")}</div><div>点击打开播放器</div></div>`;
             }
+            const unsupportedAttr = isVideoUnsupported
+                ? ' data-video-unsupported="1"'
+                : "";
+            const audioUnsupportedAttr = (
+                mediaType === "audio" && audioLikelyUnsupported
+            )
+                ? ' data-audio-unsupported="1"'
+                : "";
             return `
-                <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}>
+                <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${audioUnsupportedAttr}>
                     <div class="media-thumb">${previewHtml}</div>
                         <div class="media-meta">
                             <div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || "(无标题)")}</div>
@@ -2965,11 +3665,21 @@ function renderSettingsDialog() {
                 <div class="settings-section">
                     <div class="settings-section-title">${iconSvg("layout-grid", "卡片布局", "xdatahub-icon chip-icon")} 卡片布局</div>
                     <div class="danger-dialog-input-wrap settings-select-row">
-                        <span>卡片大小:</span>
+                        <span>卡片大小：</span>
                         <select id="setting-media-card-size-preset" ${appState.settingsSaving ? "disabled" : ""}>
                             <option value="compact" ${draft.mediaCardSizePreset === "compact" ? "selected" : ""}>紧凑</option>
                             <option value="standard" ${draft.mediaCardSizePreset === "standard" ? "selected" : ""}>标准</option>
                             <option value="large" ${draft.mediaCardSizePreset === "large" ? "selected" : ""}>宽大</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-section-title">${iconSvg("palette", "外观主题", "xdatahub-icon chip-icon")} 外观主题</div>
+                    <div class="danger-dialog-input-wrap settings-select-row">
+                        <span>主题模式：</span>
+                        <select id="setting-theme-mode" ${appState.settingsSaving ? "disabled" : ""}>
+                            <option value="dark" ${draft.themeMode === "dark" ? "selected" : ""}>暗黑模式</option>
+                            <option value="light" ${draft.themeMode === "light" ? "selected" : ""}>明亮模式</option>
                         </select>
                     </div>
                 </div>
@@ -2982,7 +3692,7 @@ function renderSettingsDialog() {
                             ${draft.videoPreviewAutoplay ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>默认打开视频时自动播放</span>
+                        <span>视频自动播放</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -2991,8 +3701,18 @@ function renderSettingsDialog() {
                             ${draft.videoPreviewMuted ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>默认静音打开视频</span>
+                        <span>视频静音</span>
                     </label>
+                    <label class="cleanup-all-toggle settings-toggle-row">
+                        <input
+                            type="checkbox"
+                            id="setting-video-preview-loop"
+                            ${draft.videoPreviewLoop ? "checked" : ""}
+                            ${appState.settingsSaving ? "disabled" : ""}
+                        >
+                        <span>视频循环</span>
+                    </label>
+                    <hr class="settings-divider" aria-hidden="true">
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
                             type="checkbox"
@@ -3000,7 +3720,7 @@ function renderSettingsDialog() {
                             ${draft.audioPreviewAutoplay ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>默认打开音频时自动播放</span>
+                        <span>音频自动播放</span>
                     </label>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3009,7 +3729,16 @@ function renderSettingsDialog() {
                             ${draft.audioPreviewMuted ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>默认静音打开音频</span>
+                        <span>音频静音</span>
+                    </label>
+                    <label class="cleanup-all-toggle settings-toggle-row">
+                        <input
+                            type="checkbox"
+                            id="setting-audio-preview-loop"
+                            ${draft.audioPreviewLoop ? "checked" : ""}
+                            ${appState.settingsSaving ? "disabled" : ""}
+                        >
+                        <span>音频循环</span>
                     </label>
                 </div>
                 ${
@@ -3078,7 +3807,15 @@ function renderImagePreview() {
                 <div class="image-lightbox-body ${isAudio ? "audio" : isVideo ? "video" : "image"}">
                     ${
                         isImage
-                            ? `<div class="image-lightbox-stage" id="image-lightbox-stage">
+                            ? appState.imagePreview.unsupported
+                                ? `<div class="media-lightbox media-lightbox-image media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">不支持的格式或编码</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || "该图片无法在当前浏览器中解码显示。")}</div>
+                        </div>
+                    </div>`
+                                : `<div class="image-lightbox-stage" id="image-lightbox-stage">
                         <img
                             id="image-lightbox-image"
                             src="${escapeAttr(appState.imagePreview.url)}"
@@ -3090,7 +3827,15 @@ function renderImagePreview() {
                     }
                     ${
                         isAudio
-                            ? `<div class="media-lightbox media-lightbox-audio">
+                            ? appState.imagePreview.unsupported
+                                ? `<div class="media-lightbox media-lightbox-audio media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">不支持的格式或编码</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || "该音频无法在当前浏览器中解码播放。")}</div>
+                        </div>
+                    </div>`
+                                : `<div class="media-lightbox media-lightbox-audio">
                         <div class="audio-lightbox-icon">${iconSvg("audio-lines", "音频", "xdatahub-icon audio-lightbox-icon-svg")}</div>
                         <audio
                             id="audio-lightbox-player"
@@ -3099,13 +3844,22 @@ function renderImagePreview() {
                             preload="metadata"
                             ${appState.settings.audioPreviewAutoplay ? "autoplay" : ""}
                             ${appState.settings.audioPreviewMuted ? "muted" : ""}
+                            ${appState.settings.audioPreviewLoop ? "loop" : ""}
                         ></audio>
                     </div>`
                             : ""
                     }
                     ${
                         isVideo
-                            ? `<div class="media-lightbox media-lightbox-video">
+                            ? appState.imagePreview.unsupported
+                                ? `<div class="media-lightbox media-lightbox-video media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", "不支持", "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">不支持的格式或编码</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.unsupportedMessage || "该视频无法在当前浏览器中解码播放。")}</div>
+                        </div>
+                    </div>`
+                                : `<div class="media-lightbox media-lightbox-video">
                         <video
                             id="video-lightbox-player"
                             src="${escapeAttr(appState.imagePreview.url)}"
@@ -3113,6 +3867,7 @@ function renderImagePreview() {
                             preload="metadata"
                             ${appState.settings.videoPreviewAutoplay ? "autoplay" : ""}
                             ${appState.settings.videoPreviewMuted ? "muted" : ""}
+                            ${appState.settings.videoPreviewLoop ? "loop" : ""}
                             playsinline
                         ></video>
                     </div>`
@@ -3207,7 +3962,7 @@ function renderDangerDialog() {
         }
         scopeHtml = `
             <div class="danger-dialog-input-wrap">
-                <span>目标数据库:</span>
+                <span>目标数据库：</span>
                 <select id="danger-clear-db-target" ${deleteAll ? "disabled" : ""}>
                     <option value="">请选择数据库</option>
                     ${dbOptions
@@ -3228,7 +3983,7 @@ function renderDangerDialog() {
                 <div class="danger-dialog-msg">${escapeHtml(message)}</div>
                 ${scopeHtml}
                 <div class="danger-dialog-input-wrap">
-                    <span>确认口令:</span>
+                    <span>确认口令：</span>
                     <input id="danger-dialog-input" autocomplete="off" placeholder="请输入 YES" value="${escapeAttr(dialog.input)}">
                 </div>
                 <div class="danger-dialog-actions">
@@ -3316,14 +4071,14 @@ function renderDbDeleteDialog() {
                 }</div>
                 <div class="db-delete-confirm-hint">确认操作：请在下方输入 <code>YES</code>。</div>
                 <div class="db-delete-confirm-row">
-                    <span>确认口令:</span>
+                    <span>确认口令：</span>
                     <input id="db-delete-confirm-yes" value="${escapeAttr(appState.confirmYes)}" autocomplete="off">
                 </div>
                 ${
                     needSecondYes
                         ? `<div class="db-delete-confirm-hint">检测到关键库：请再次输入 <code>YES</code> 进行二次确认。</div>
                         <div class="db-delete-confirm-row">
-                            <span>关键库二次口令:</span>
+                            <span>关键库二次口令：</span>
                             <input id="db-delete-confirm-yes-critical" value="${escapeAttr(appState.confirmYesCritical)}" autocomplete="off">
                         </div>`
                         : ""
@@ -3370,7 +4125,7 @@ function renderHistoryLayout() {
     const state = currentTabState();
     return `
         <div class="panel list-panel history-list-panel collapsed-fill" style="width:100%">
-            <div class="list" id="list">${renderListRows()}${renderStatus()}</div>
+            <div class="list" id="list" data-list-tab="history">${renderListRows()}${renderStatus()}</div>
             <div class="pagination">
                 <button class="btn" id="page-prev" title="上一页" aria-label="上一页" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", "上一页", "xdatahub-icon btn-icon")} 上一页</button>
                 <span>${state.page} / ${appState.totalPages}</span>
@@ -3382,12 +4137,28 @@ function renderHistoryLayout() {
     `;
 }
 
-function render() {
-    if (!root) {
+function syncTopActionBarUi() {
+    const bar = document.querySelector(".top-action-bar");
+    if (!(bar instanceof HTMLElement)) {
+        render();
         return;
     }
-    syncListScroll();
-    const focusState = captureFocusState();
+    bar.outerHTML = renderTopActionBar();
+    updateTopActionBarCompactMode();
+    scheduleTopActionBarCompactUpdate();
+}
+
+function syncLockBannerUi() {
+    const banner = document.querySelector(".lock-banner");
+    if (!(banner instanceof HTMLElement)) {
+        render();
+        return;
+    }
+    banner.classList.toggle("show", !!appState.lockState.readonly);
+    banner.textContent = `执行中，仅可只读浏览（状态：${appState.lockState.state}）`;
+}
+
+function renderShell() {
     const tab = appState.activeTab;
     const state = currentTabState();
     const readonly = appState.lockState.readonly;
@@ -3397,9 +4168,9 @@ function render() {
     const mediaCardSizePreset = normalizeMediaCardSizePreset(
         appState.settings.mediaCardSizePreset
     );
-    root.innerHTML = `
+    return `
         <div class="lock-banner ${showLock}">
-            执行中，仅可只读浏览（状态: ${escapeHtml(appState.lockState.state)}）
+            执行中，仅可只读浏览（状态：${escapeHtml(appState.lockState.state)}）
         </div>
         <div class="workspace ${sidebarOpen ? "filters-expanded" : "filters-collapsed"}">
             ${renderTopActionBar()}
@@ -3411,7 +4182,7 @@ function render() {
                         ? `
                 <div class="panel media-grid-panel media-card-size-${mediaCardSizePreset}">
                     ${renderMediaExplorerBar()}
-                    <div class="media-grid" id="list">${renderMediaGrid()}</div>
+                    <div class="media-grid" id="list" data-list-tab="${tab}">${renderMediaGrid()}</div>
                     <div class="pagination">
                         <button class="btn" id="page-prev" title="上一页" aria-label="上一页" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", "上一页", "xdatahub-icon btn-icon")} 上一页</button>
                         <span>${state.page} / ${appState.totalPages}</span>
@@ -3429,13 +4200,56 @@ function render() {
                 </div>
             </div>
         </div>
-        ${renderImagePreview()}
-        ${renderDangerDialog()}
-        ${renderDbDeleteDialog()}
-        ${renderSettingsDialog()}
     `;
+}
+
+function syncOverlayById(id, html) {
+    const existing = document.getElementById(id);
+    if (!html) {
+        existing?.remove();
+        return;
+    }
+    if (existing instanceof HTMLElement) {
+        existing.outerHTML = html;
+    } else if (root) {
+        root.insertAdjacentHTML("beforeend", html);
+    }
+}
+
+function renderOverlays() {
+    syncOverlayById("image-lightbox", renderImagePreview());
+    syncOverlayById("danger-dialog-overlay", renderDangerDialog());
+    syncOverlayById("db-delete-overlay", renderDbDeleteDialog());
+    syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
+}
+
+// 渲染策略（强约束）：
+// 1) 常规交互默认禁止直接整页 render()。
+// 2) 优先调用局部同步函数（topbar/list/overlay/detail/lock banner）。
+// 3) 只有结构变更或关键节点缺失时，才允许整页 render() 兜底。
+function render() {
+    if (!root) {
+        return;
+    }
+    renderCount += 1;
+    window.__XDATAHUB_RENDER_COUNT = renderCount;
+    if (window.__XDATAHUB_DEBUG_RENDER === true) {
+        console.count("[xdatahub] render()");
+    }
+    const listBefore = document.getElementById("list");
+    if (listBefore && getListTabId(listBefore) === appState.activeTab) {
+        syncListScroll(true);
+    }
+    const focusState = captureFocusState();
+    root.innerHTML = renderShell();
+    renderOverlays();
 
     bindEvents();
+    if (appState.imagePreview.open) {
+        bindImageLightboxEvents();
+        setupImagePreviewEvents();
+        syncImagePreviewTransform();
+    }
     updateTopActionBarCompactMode();
     scheduleTopActionBarCompactUpdate();
     restoreListScroll();
@@ -3463,495 +4277,339 @@ function scheduleTopActionBarCompactUpdate() {
     });
 }
 
-function bindEvents() {
-    if (appState.activeTab !== "video") {
-        stopVideoScheduler(false);
+function handleDelegatedMediaFolderClick(event) {
+    const card = event.target?.closest?.(".media-folder-card[data-folder-path]");
+    if (!(card instanceof HTMLElement)) {
+        return false;
     }
-    const list = document.getElementById("list");
-    if (list) {
-        list.addEventListener("scroll", () => {
-            syncListScroll();
-            if (appState.activeTab === "video") {
-                scheduleMediaQueueRebuild();
-            }
-        });
-    }
-
     if (!isMediaTab(appState.activeTab)) {
-        root.querySelectorAll("[data-item-id]").forEach((row) => {
-            row.addEventListener("click", () => {
-                const itemId = row.dataset.itemId || "";
-                currentTabState().selectedId = itemId;
-                saveTabState(appState.activeTab);
-                const item = appState.items.find((entry) => entry.id === itemId);
-                if (item) {
-                    appState.selectedItemCache.set(appState.activeTab, item);
-                }
-                clearDetailResources();
-                render();
-            });
-        });
-        root.querySelectorAll(".row-copy-btn").forEach((button) => {
-            button.addEventListener("click", async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const text = String(
-                    button.getAttribute("data-copy-preview") || ""
-                ).trim();
-                if (!text) {
-                    return;
-                }
-                try {
-                    await navigator.clipboard.writeText(text);
-                } catch {
-                    try {
-                        const temp = document.createElement("textarea");
-                        temp.value = text;
-                        temp.style.position = "fixed";
-                        temp.style.opacity = "0";
-                        document.body.appendChild(temp);
-                        temp.select();
-                        document.execCommand("copy");
-                        temp.remove();
-                    } catch {}
-                }
-                flashButton(button);
-                setRowCopyFeedback(button);
-            });
-        });
+        return false;
     }
-    if (isMediaTab(appState.activeTab)) {
-        root.querySelectorAll(".media-folder-card[data-folder-path]").forEach((card) => {
-            card.addEventListener("click", () => {
-                const folderPath = card.getAttribute("data-folder-path") || "";
-                if (!folderPath) {
-                    return;
-                }
-                setMediaDirectoryFromPath(folderPath);
-                loadList();
-            });
-        });
-        root.querySelectorAll(".media-card[data-preview-url]").forEach((card) => {
-            card.addEventListener("click", () => {
-                const mediaItemId = String(
-                    card.getAttribute("data-media-item-id") || ""
-                ).trim();
-                if (mediaItemId) {
-                    const state = currentTabState();
-                    state.lastOpenedMediaId = mediaItemId;
-                    state.lastOpenedMediaUrl = String(
-                        card.getAttribute("data-preview-url") || ""
-                    );
-                    saveTabState(appState.activeTab);
-                    render();
-                }
-                const kind = card.getAttribute("data-preview-kind") || "image";
-                const url = card.getAttribute("data-preview-url") || "";
-                const title = card.getAttribute("data-preview-title") || "";
-                requestAnimationFrame(() => {
-                    openImagePreview(kind, url, title);
-                });
-            });
-        });
-        root.querySelectorAll(".media-card[data-drag-media='1']").forEach((card) => {
-            card.addEventListener("dragstart", (event) => {
-                const dataTransfer = event.dataTransfer;
-                if (!dataTransfer) {
-                    event.preventDefault();
-                    return;
-                }
-                const rawPreferredUrl = String(
-                    card.getAttribute("data-drag-url-preferred") || ""
-                );
-                const rawFallbackUrl = String(
-                    card.getAttribute("data-drag-url-fallback") || ""
-                );
-                const mediaType = String(
-                    card.getAttribute("data-drag-media-type") || ""
-                ).toLowerCase();
-                const preferredUrl = toAbsoluteUrl(rawPreferredUrl);
-                const fallbackUrl = toAbsoluteUrl(rawFallbackUrl);
-                const primaryUrl = preferredUrl || fallbackUrl;
-                if (!primaryUrl) {
-                    event.preventDefault();
-                    return;
-                }
-                const title = String(
-                    card.getAttribute("data-drag-title")
-                    || (mediaType === "audio" ? "audio" : "video")
-                );
-                const uriValues = [primaryUrl];
-                if (fallbackUrl && fallbackUrl !== primaryUrl) {
-                    uriValues.push(fallbackUrl);
-                }
-                const mime = mediaType === "audio"
-                    ? "audio/*"
-                    : mediaType === "video"
-                        ? "video/*"
-                        : "application/octet-stream";
-                dataTransfer.effectAllowed = "copy";
-                try {
-                    dataTransfer.setData("text/uri-list", uriValues.join("\r\n"));
-                } catch {}
-                try {
-                    dataTransfer.setData("text/plain", primaryUrl);
-                } catch {}
-                try {
-                    dataTransfer.setData("text/x-moz-url", `${primaryUrl}\n${title}`);
-                } catch {}
-                try {
-                    dataTransfer.setData(
-                        "DownloadURL",
-                        `${mime}:${title}:${primaryUrl}`
-                    );
-                } catch {}
-            });
-        });
-        setupMediaResolutionObservers();
-        if (appState.activeTab === "video") {
-            setupVideoCardScheduler();
-        } else {
-            stopVideoScheduler(false);
-        }
-
-        document.getElementById("btn-media-root-output")?.addEventListener("click", () => {
-            const state = currentTabState();
-            if (normalizeMediaRoot(state.mediaRoot) === "output") {
-                return;
-            }
-            setMediaDirectoryFromPath("output");
-            loadList();
-        });
-        document.getElementById("btn-media-root-input")?.addEventListener("click", () => {
-            const state = currentTabState();
-            if (normalizeMediaRoot(state.mediaRoot) === "input") {
-                return;
-            }
-            setMediaDirectoryFromPath("input");
-            loadList();
-        });
-        document.getElementById("btn-media-up")?.addEventListener("click", () => {
-            const state = currentTabState();
-            ensureMediaNavState(state);
-            const target = state.mediaBackStack.pop();
-            if (!target) {
-                return;
-            }
-            pushMediaNavEntry(state.mediaForwardStack, mediaDirectoryFromState(state));
-            setMediaDirectoryFromPath(target, {
-                recordHistory: false,
-                clearForward: false,
-            });
-            saveTabState(appState.activeTab);
-            loadList();
-        });
-        document.getElementById("btn-media-forward")?.addEventListener("click", () => {
-            const state = currentTabState();
-            ensureMediaNavState(state);
-            const target = state.mediaForwardStack.pop();
-            if (!target) {
-                return;
-            }
-            pushMediaNavEntry(state.mediaBackStack, mediaDirectoryFromState(state));
-            setMediaDirectoryFromPath(target, {
-                recordHistory: false,
-                clearForward: false,
-            });
-            saveTabState(appState.activeTab);
-            loadList();
-        });
+    const folderPath = card.getAttribute("data-folder-path") || "";
+    if (!folderPath) {
+        return true;
     }
+    setMediaDirectoryFromPath(folderPath);
+    loadList({ cause: "data-change" });
+    return true;
+}
 
-    const prev = document.getElementById("page-prev");
-    const next = document.getElementById("page-next");
-    prev?.addEventListener("click", () => changePage(currentTabState().page - 1));
-    next?.addEventListener("click", () => changePage(currentTabState().page + 1));
-
-    const jump = document.getElementById("page-jump");
-    jump?.addEventListener("input", () => debouncedJumpPage(jump.value));
-    jump?.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-            debouncedJumpPage(jump.value);
+function openDatePickerInput(input) {
+    if (!(input instanceof HTMLInputElement)) {
+        return;
+    }
+    if (typeof input.showPicker === "function") {
+        try {
+            input.showPicker();
+            return;
+        } catch {
+            // 回退到 focus
         }
-    });
+    }
+    input.focus();
+}
 
-    bindActionButtons();
-    document.getElementById("btn-toggle-filters-sidebar")?.addEventListener("click", () => {
+function handleDelegatedFacetToggleClick(event) {
+    const button = event.target?.closest?.("[data-facet-toggle]");
+    if (!(button instanceof HTMLElement)) {
+        return false;
+    }
+    const fieldId = button.getAttribute("data-facet-toggle") || "";
+    if (!fieldId) {
+        return true;
+    }
+    const isOpen = appState.facetDropdown.open
+        && appState.facetDropdown.fieldId === fieldId;
+    if (isOpen) {
+        closeFacetDropdown(true);
+        return true;
+    }
+    openFacetDropdown(fieldId);
+    render();
+    return true;
+}
+
+function handleDelegatedFacetOptionClick(event) {
+    const button = event.target?.closest?.("[data-facet-option]");
+    if (!(button instanceof HTMLElement)) {
+        return false;
+    }
+    const fieldId = button.getAttribute("data-facet-option") || "";
+    const value = button.getAttribute("data-facet-value") || "";
+    const input = document.getElementById(fieldId);
+    if (!(input instanceof HTMLInputElement)) {
+        return true;
+    }
+    input.value = value;
+    if (fieldId === "filter-data-type") {
+        currentTabState().filters.dataType = value;
+    } else if (fieldId === "filter-source") {
+        currentTabState().filters.source = value;
+    } else if (fieldId === "filter-db-name") {
+        currentTabState().filters.dbName = value;
+        debouncedScopedFacetReload(value);
+    }
+    saveTabState(appState.activeTab);
+    closeFacetDropdown(true);
+    refreshDependentWarnings();
+    return true;
+}
+
+function handleDelegatedDatePickerButtonClick(event) {
+    const button = event.target?.closest?.(".date-picker-btn");
+    if (!(button instanceof HTMLElement)) {
+        return false;
+    }
+    const targetId = button.getAttribute("data-picker-target");
+    if (!targetId) {
+        return true;
+    }
+    openDatePickerInput(document.getElementById(targetId));
+    return true;
+}
+
+function handleDelegatedDateInputClick(event) {
+    const input = event.target?.closest?.("#filter-start, #filter-end");
+    if (!(input instanceof HTMLInputElement)) {
+        return false;
+    }
+    openDatePickerInput(input);
+    return true;
+}
+
+function handleDelegatedDateInputKeydown(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+        return false;
+    }
+    if (target.id !== "filter-start" && target.id !== "filter-end") {
+        return false;
+    }
+    if (event.key !== "Enter" && event.key !== " ") {
+        return false;
+    }
+    event.preventDefault();
+    openDatePickerInput(target);
+    return true;
+}
+
+function applyFiltersFromUi() {
+    if (isSearchLocked()) {
+        return;
+    }
+    scheduleSearchReload();
+}
+
+async function runActionButtonAsync(fn, errorText, useDataActionLock = false) {
+    if (useDataActionLock && isDataActionLocked()) {
+        return;
+    }
+    let hasError = false;
+    try {
+        if (useDataActionLock) {
+            appState.dataActionInFlight = true;
+            // 仅刷新顶部动作区，避免整页重绘。
+            syncTopActionBarUi();
+        }
+        closeCompactActionsMenu(false);
+        const actionDone = await fn();
+        if (useDataActionLock && actionDone !== false) {
+            lockDataActions();
+        }
+    } catch (error) {
+        hasError = true;
+        setError(error.message || errorText);
+    } finally {
+        if (useDataActionLock) {
+            appState.dataActionInFlight = false;
+        }
+        if (hasError) {
+            render();
+            return;
+        }
+        if (useDataActionLock) {
+            syncTopActionBarUi();
+        }
+    }
+}
+
+function openSettingsDialogFromAction() {
+    closeCompactActionsMenu(false);
+    closeDateRangePanel(false);
+    const compactBackdrop = document.getElementById("compact-actions-backdrop");
+    compactBackdrop?.remove();
+    const dateBackdrop = document.getElementById("date-range-backdrop");
+    dateBackdrop?.classList.remove("show");
+    appState.settingsDialogOpen = true;
+    appState.settingsError = "";
+    appState.settingsDraft = cloneSettings(appState.settings);
+    const overlay = document.getElementById("settings-dialog-overlay");
+    overlay?.classList.remove("is-hidden");
+    const typeInput = document.getElementById(
+        "setting-show-media-chip-type"
+    );
+    const resInput = document.getElementById(
+        "setting-show-media-chip-resolution"
+    );
+    const dtInput = document.getElementById(
+        "setting-show-media-chip-datetime"
+    );
+    const sizeInput = document.getElementById(
+        "setting-show-media-chip-size"
+    );
+    if (typeInput instanceof HTMLInputElement) {
+        typeInput.checked = !!appState.settingsDraft.showMediaChipType;
+    }
+    if (resInput instanceof HTMLInputElement) {
+        resInput.checked = !!appState.settingsDraft.showMediaChipResolution;
+    }
+    if (dtInput instanceof HTMLInputElement) {
+        dtInput.checked = !!appState.settingsDraft.showMediaChipDatetime;
+    }
+    if (sizeInput instanceof HTMLInputElement) {
+        sizeInput.checked = !!appState.settingsDraft.showMediaChipSize;
+    }
+}
+
+function syncFiltersSidebarUi() {
+    const workspace = document.querySelector(".workspace");
+    const sidebarOpen = !!appState.filtersSidebarOpen;
+    if (workspace instanceof HTMLElement) {
+        workspace.classList.toggle("filters-expanded", sidebarOpen);
+        workspace.classList.toggle("filters-collapsed", !sidebarOpen);
+    }
+    const button = document.getElementById("btn-toggle-filters-sidebar");
+    button?.classList.toggle("active", sidebarOpen);
+}
+
+async function handleDelegatedPrimaryButtonClick(event) {
+    const button = event.target?.closest?.("button[id]");
+    if (!(button instanceof HTMLButtonElement)) {
+        return false;
+    }
+    const buttonId = button.id;
+    if (!buttonId) {
+        return false;
+    }
+    switch (buttonId) {
+    case "btn-refresh-inline":
+        await runActionButtonAsync(doRefresh, "刷新失败", true);
+        return true;
+    case "btn-clean-invalid":
+        await runActionButtonAsync(doCleanupInvalid, "清理失败", true);
+        return true;
+    case "btn-clear-index":
+        await runActionButtonAsync(doClearIndex, "重建失败", true);
+        return true;
+    case "btn-clear-data":
+        await runActionButtonAsync(doClearRecords, "数据处理失败", true);
+        return true;
+    case "btn-open-settings":
+        openSettingsDialogFromAction();
+        return true;
+    case "btn-toggle-compact-actions":
+        appState.dateRangePanelOpen = false;
+        appState.compactActionsMenuOpen = !appState.compactActionsMenuOpen;
+        setDateRangePanelOpen(false, false);
+        syncCompactActionsUi();
+        return true;
+    case "btn-toggle-date-range":
+        appState.compactActionsMenuOpen = false;
+        setDateRangePanelOpen(!appState.dateRangePanelOpen, false);
+        return true;
+    case "btn-media-root-output": {
+        if (!isMediaTab(appState.activeTab)) {
+            return true;
+        }
+        const state = currentTabState();
+        if (normalizeMediaRoot(state.mediaRoot) === "output") {
+            return true;
+        }
+        setMediaDirectoryFromPath("output");
+        loadList();
+        return true;
+    }
+    case "btn-media-root-input": {
+        if (!isMediaTab(appState.activeTab)) {
+            return true;
+        }
+        const state = currentTabState();
+        if (normalizeMediaRoot(state.mediaRoot) === "input") {
+            return true;
+        }
+        setMediaDirectoryFromPath("input");
+        loadList();
+        return true;
+    }
+    case "btn-media-up": {
+        if (!isMediaTab(appState.activeTab)) {
+            return true;
+        }
+        const state = currentTabState();
+        ensureMediaNavState(state);
+        const target = state.mediaBackStack.pop();
+        if (!target) {
+            return true;
+        }
+        pushMediaNavEntry(state.mediaForwardStack, mediaDirectoryFromState(state));
+        setMediaDirectoryFromPath(target, {
+            recordHistory: false,
+            clearForward: false,
+        });
+        saveTabState(appState.activeTab);
+        loadList();
+        return true;
+    }
+    case "btn-media-forward": {
+        if (!isMediaTab(appState.activeTab)) {
+            return true;
+        }
+        const state = currentTabState();
+        ensureMediaNavState(state);
+        const target = state.mediaForwardStack.pop();
+        if (!target) {
+            return true;
+        }
+        pushMediaNavEntry(state.mediaBackStack, mediaDirectoryFromState(state));
+        setMediaDirectoryFromPath(target, {
+            recordHistory: false,
+            clearForward: false,
+        });
+        saveTabState(appState.activeTab);
+        loadList();
+        return true;
+    }
+    case "page-prev":
+        changePage(currentTabState().page - 1);
+        return true;
+    case "page-next":
+        changePage(currentTabState().page + 1);
+        return true;
+    case "btn-toggle-filters-sidebar":
         appState.filtersSidebarOpen = !appState.filtersSidebarOpen;
         saveGlobalFiltersSidebarState();
         render();
-    });
-
-    const keyword = document.getElementById("filter-keyword");
-    keyword?.addEventListener("input", () => {
-        currentTabState().filters.keyword = keyword.value;
-        saveTabState(appState.activeTab);
-    });
-
-    const dtype = document.getElementById("filter-data-type");
-    dtype?.addEventListener("input", () => {
-        currentTabState().filters.dataType = dtype.value;
-        saveTabState(appState.activeTab);
-        refreshDependentWarnings();
-    });
-    const source = document.getElementById("filter-source");
-    source?.addEventListener("input", () => {
-        currentTabState().filters.source = source.value;
-        saveTabState(appState.activeTab);
-        refreshDependentWarnings();
-    });
-    const dbName = document.getElementById("filter-db-name");
-    dbName?.addEventListener("input", () => {
-        currentTabState().filters.dbName = dbName.value;
-        saveTabState(appState.activeTab);
-        debouncedScopedFacetReload(dbName.value);
-        refreshDependentWarnings();
-    });
-    [dtype, source, dbName].forEach((inputEl) => {
-        inputEl?.addEventListener("focus", () => {
-            openFacetDropdown(inputEl.id);
-            render();
-        });
-    });
-
-    const start = document.getElementById("filter-start");
-    const end = document.getElementById("filter-end");
-    start?.addEventListener("input", () => {
-        currentTabState().filters.start = start.value;
-        saveTabState(appState.activeTab);
-        updateDateRangeToggleVisual();
-    });
-    end?.addEventListener("input", () => {
-        currentTabState().filters.end = end.value;
-        saveTabState(appState.activeTab);
-        updateDateRangeToggleVisual();
-    });
-
-    const applyFilters = () => {
-        if (isSearchLocked()) {
-            return;
-        }
-        scheduleSearchReload();
-    };
-    document.getElementById("btn-apply-filters")?.addEventListener("click", () => {
-        flashButton(document.getElementById("btn-apply-filters"));
-        applyFilters();
-    });
-
-    [keyword, dtype, source, dbName, start, end].forEach((inputEl) => {
-        inputEl?.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                applyFilters();
-            }
-        });
-    });
-    root.querySelectorAll("[data-facet-toggle]").forEach((button) => {
-        button.addEventListener("click", () => {
-            const fieldId = button.getAttribute("data-facet-toggle") || "";
-            if (!fieldId) {
-                return;
-            }
-            const isOpen = appState.facetDropdown.open
-                && appState.facetDropdown.fieldId === fieldId;
-            if (isOpen) {
-                closeFacetDropdown(true);
-                return;
-            }
-            openFacetDropdown(fieldId);
-            render();
-        });
-    });
-    root.querySelectorAll("[data-facet-option]").forEach((button) => {
-        button.addEventListener("click", () => {
-            const fieldId = button.getAttribute("data-facet-option") || "";
-            const value = button.getAttribute("data-facet-value") || "";
-            const input = document.getElementById(fieldId);
-            if (!(input instanceof HTMLInputElement)) {
-                return;
-            }
-            input.value = value;
-            if (fieldId === "filter-data-type") {
-                currentTabState().filters.dataType = value;
-            } else if (fieldId === "filter-source") {
-                currentTabState().filters.source = value;
-            } else if (fieldId === "filter-db-name") {
-                currentTabState().filters.dbName = value;
-                debouncedScopedFacetReload(value);
-            }
-            saveTabState(appState.activeTab);
-            closeFacetDropdown(true);
-            refreshDependentWarnings();
-        });
-    });
-    document.getElementById("facet-backdrop")?.addEventListener("click", () => {
-        closeFacetDropdown(true);
-    });
-
-    const openDatePickerInput = (input) => {
-        if (!(input instanceof HTMLInputElement)) {
-            return;
-        }
-        if (typeof input.showPicker === "function") {
-            try {
-                input.showPicker();
-                return;
-            } catch {
-                // 回退到 focus
-            }
-        }
-        input.focus();
-    };
-
-    root.querySelectorAll(".date-picker-btn").forEach((button) => {
-        button.addEventListener("click", () => {
-            const targetId = button.getAttribute("data-picker-target");
-            if (!targetId) {
-                return;
-            }
-            openDatePickerInput(document.getElementById(targetId));
-        });
-    });
-
-    ["filter-start", "filter-end"].forEach((inputId) => {
-        const input = document.getElementById(inputId);
-        if (!(input instanceof HTMLInputElement)) {
-            return;
-        }
-        input.addEventListener("click", () => {
-            openDatePickerInput(input);
-        });
-        input.addEventListener("keydown", (event) => {
-            if (event.key !== "Enter" && event.key !== " ") {
-                return;
-            }
-            event.preventDefault();
-            openDatePickerInput(input);
-        });
-    });
-
-    document.getElementById("image-lightbox-close")?.addEventListener("click", () => {
-        closeImagePreview();
-    });
-    document.getElementById("image-lightbox-close-btn")?.addEventListener("click", () => {
-        closeImagePreview();
-    });
-
-    const copyPayloadBtn = document.getElementById("btn-copy-payload");
-    copyPayloadBtn?.addEventListener("click", async () => {
-        await handleCopyButton(copyPayloadBtn);
-    });
-    const copyRecordBtn = document.getElementById("btn-copy-record");
-    copyRecordBtn?.addEventListener("click", async () => {
-        await handleCopyButton(copyRecordBtn);
-    });
-    document.getElementById("btn-toggle-raw")?.addEventListener("click", () => {
-        flashButton(document.getElementById("btn-toggle-raw"));
+        return true;
+    case "btn-apply-filters":
+        flashButton(button);
+        applyFiltersFromUi();
+        return true;
+    case "btn-toggle-raw":
+        flashButton(button);
         appState.historyDetailRaw = !appState.historyDetailRaw;
-        render();
-    });
-    document.getElementById("settings-dialog-overlay")?.addEventListener("click", (event) => {
-        if (event.target?.id !== "settings-dialog-overlay") {
-            return;
-        }
+        syncHistoryDetailRawUi();
+        return true;
+    case "btn-copy-payload":
+    case "btn-copy-record":
+        await handleCopyButton(button);
+        return true;
+    case "settings-dialog-cancel":
         appState.settingsDialogOpen = false;
         appState.settingsDraft = null;
-        const overlay = document.getElementById("settings-dialog-overlay");
-        overlay?.classList.add("is-hidden");
-    });
-    document.getElementById("settings-dialog-cancel")?.addEventListener("click", () => {
-        appState.settingsDialogOpen = false;
-        appState.settingsDraft = null;
-        const overlay = document.getElementById("settings-dialog-overlay");
-        overlay?.classList.add("is-hidden");
-    });
-    document.getElementById("setting-show-media-chip-type")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.showMediaChipType = checked;
-    });
-    document.getElementById("setting-show-media-chip-resolution")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.showMediaChipResolution = checked;
-    });
-    document.getElementById("setting-show-media-chip-datetime")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.showMediaChipDatetime = checked;
-    });
-    document.getElementById("setting-show-media-chip-size")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.showMediaChipSize = checked;
-    });
-    document.getElementById("setting-video-preview-autoplay")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.videoPreviewAutoplay = checked;
-    });
-    document.getElementById("setting-video-preview-muted")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.videoPreviewMuted = checked;
-    });
-    document.getElementById("setting-audio-preview-autoplay")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.audioPreviewAutoplay = checked;
-    });
-    document.getElementById("setting-audio-preview-muted")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const checked = !!event.target?.checked;
-        appState.settingsDraft.audioPreviewMuted = checked;
-    });
-    document.getElementById("btn-media-sort-cycle")?.addEventListener("click", async () => {
-        const currentBy = normalizeMediaSortBy(appState.settings.mediaSortBy);
-        const currentOrder = normalizeMediaSortOrder(
-            appState.settings.mediaSortOrder
-        );
-        const next = nextMediaSortCombo(currentBy, currentOrder);
-        await applyMediaSortSettings(next.by, next.order);
-    });
-    document.getElementById("btn-history-sort-cycle")?.addEventListener("click", async () => {
-        if (appState.activeTab !== "history") {
-            return;
-        }
-        const state = currentTabState();
-        const current = normalizeHistorySortOrder(state.historySortOrder);
-        state.historySortOrder = current === "desc" ? "asc" : "desc";
-        state.page = 1;
-        saveTabState("history");
-        await loadList();
-    });
-    document.getElementById("setting-media-card-size-preset")?.addEventListener("change", (event) => {
-        if (!appState.settingsDraft) {
-            appState.settingsDraft = cloneSettings(appState.settings);
-        }
-        const target = event.target;
-        if (!(target instanceof HTMLSelectElement)) {
-            return;
-        }
-        appState.settingsDraft.mediaCardSizePreset =
-            normalizeMediaCardSizePreset(target.value);
-    });
-    document.getElementById("settings-dialog-save")?.addEventListener("click", async () => {
+        document.getElementById("settings-dialog-overlay")
+            ?.classList.add("is-hidden");
+        return true;
+    case "settings-dialog-save": {
         const draft = cloneSettings(appState.settingsDraft || appState.settings);
         await updateSettings(draft);
         if (!appState.settingsError) {
@@ -3963,100 +4621,60 @@ function bindEvents() {
                 saveTabState(appState.activeTab);
                 await loadList();
             } else {
-                render();
+                renderOverlays();
             }
         }
-    });
-    document.getElementById("danger-dialog-overlay")?.addEventListener("click", (event) => {
-        if (event.target?.id === "danger-dialog-overlay") {
-            closeDangerConfirm(false);
+        return true;
+    }
+    case "btn-media-sort-cycle": {
+        const currentBy = normalizeMediaSortBy(appState.settings.mediaSortBy);
+        const currentOrder = normalizeMediaSortOrder(
+            appState.settings.mediaSortOrder
+        );
+        const next = nextMediaSortCombo(currentBy, currentOrder);
+        await applyMediaSortSettings(next.by, next.order);
+        return true;
+    }
+    case "btn-history-sort-cycle": {
+        if (appState.activeTab !== "history") {
+            return true;
         }
-    });
-    document.getElementById("danger-dialog-cancel")?.addEventListener("click", () => {
+        const state = currentTabState();
+        const current = normalizeHistorySortOrder(state.historySortOrder);
+        state.historySortOrder = current === "desc" ? "asc" : "desc";
+        state.page = 1;
+        saveTabState("history");
+        await loadList();
+        return true;
+    }
+    case "danger-dialog-cancel":
         closeDangerConfirm(false);
-    });
-    document.getElementById("danger-dialog-confirm")?.addEventListener("click", () => {
-        if (!isDangerDialogConfirmed()) {
-            return;
-        }
-        closeDangerConfirm(true);
-    });
-    const dangerInput = document.getElementById("danger-dialog-input");
-    dangerInput?.addEventListener("input", () => {
-        appState.dangerDialog.input = dangerInput.value;
-        const confirmBtn = document.getElementById("danger-dialog-confirm");
-        if (confirmBtn instanceof HTMLButtonElement) {
-            confirmBtn.disabled = !isDangerDialogConfirmed();
-        }
-    });
-    dangerInput?.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && isDangerDialogConfirmed()) {
-            event.preventDefault();
+        return true;
+    case "danger-dialog-confirm":
+        if (isDangerDialogConfirmed()) {
             closeDangerConfirm(true);
         }
-    });
-    const dangerClearDb = document.getElementById("danger-clear-db-target");
-    const dangerClearAll = document.getElementById("danger-clear-all");
-    dangerClearDb?.addEventListener("change", () => {
-        if (!(dangerClearDb instanceof HTMLSelectElement)) {
-            return;
-        }
-        appState.dangerDialog.meta = {
-            ...appState.dangerDialog.meta,
-            dbName: dangerClearDb.value,
-        };
-        currentTabState().cleanupDbName = dangerClearDb.value;
-        saveTabState(appState.activeTab);
-        const confirmBtn = document.getElementById("danger-dialog-confirm");
-        if (confirmBtn instanceof HTMLButtonElement) {
-            confirmBtn.disabled = !isDangerDialogConfirmed();
-        }
-    });
-    dangerClearAll?.addEventListener("change", () => {
-        if (!(dangerClearAll instanceof HTMLInputElement)) {
-            return;
-        }
-        appState.dangerDialog.meta = {
-            ...appState.dangerDialog.meta,
-            deleteAll: dangerClearAll.checked,
-        };
-        currentTabState().cleanupDeleteAll = dangerClearAll.checked;
-        saveTabState(appState.activeTab);
-        render();
-    });
-    document.getElementById("db-delete-overlay")?.addEventListener("click", (event) => {
-        if (event.target?.id === "db-delete-overlay") {
-            closeDbDeleteDialog();
-        }
-    });
-    document.getElementById("db-delete-cancel")?.addEventListener("click", () => {
+        return true;
+    case "db-delete-cancel":
         closeDbDeleteDialog();
-    });
-    document.getElementById("db-delete-unlock-critical")?.addEventListener("change", (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) {
-            return;
-        }
-        appState.unlockCritical = !target.checked;
-        render();
-    });
-    document.getElementById("btn-clear-mode-records")?.addEventListener("click", () => {
+        return true;
+    case "btn-clear-mode-records":
         appState.clearDataMode = "records";
         appState.dbDeleteError = "";
         appState.dbDeleteResult = "";
         appState.confirmYes = "";
         appState.confirmYesCritical = "";
-        render();
-    });
-    document.getElementById("btn-clear-mode-delete")?.addEventListener("click", () => {
+        refreshDbDeleteDialogOverlay();
+        return true;
+    case "btn-clear-mode-delete":
         appState.clearDataMode = "delete";
         appState.dbDeleteError = "";
         appState.dbDeleteResult = "";
         appState.confirmYes = "";
         appState.confirmYesCritical = "";
-        render();
-    });
-    document.getElementById("btn-db-select-all")?.addEventListener("click", () => {
+        refreshDbDeleteDialogOverlay();
+        return true;
+    case "btn-db-select-all": {
         const selected = appState.dbFileList
             .filter((item) => {
                 if (!isDbCriticalEffective(item)) {
@@ -4066,75 +4684,581 @@ function bindEvents() {
             })
             .map((item) => item.name);
         appState.selectedDbFiles = selected;
-        render();
-    });
-    document.getElementById("btn-db-clear-selection")?.addEventListener("click", () => {
+        root?.querySelectorAll("[data-db-file-check]").forEach((el) => {
+            if (!(el instanceof HTMLInputElement)) {
+                return;
+            }
+            const name = el.getAttribute("data-db-file-check") || "";
+            el.checked = isDbSelected(name);
+        });
+        syncDbDeleteSelectionUi();
+        return true;
+    }
+    case "btn-db-clear-selection":
         appState.selectedDbFiles = [];
-        render();
-    });
-    document.getElementById("btn-db-refresh-list")?.addEventListener("click", async () => {
-        if (isDbRefreshLocked()) {
-            return;
-        }
-        scheduleDbListRefresh();
-    });
-    document.getElementById("db-delete-confirm-yes")?.addEventListener("input", (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) {
-            return;
-        }
-        appState.confirmYes = target.value;
-        const btn = document.getElementById("db-delete-submit");
-        if (btn instanceof HTMLButtonElement) {
-            btn.disabled = !canSubmitDbDelete() || appState.dbDeleteLoading;
-        }
-    });
-    document.getElementById("db-delete-confirm-yes-critical")?.addEventListener("input", (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) {
-            return;
-        }
-        appState.confirmYesCritical = target.value;
-        const btn = document.getElementById("db-delete-submit");
-        if (btn instanceof HTMLButtonElement) {
-            btn.disabled = !canSubmitDbDelete() || appState.dbDeleteLoading;
-        }
-    });
-    root.querySelectorAll("[data-db-file-check]").forEach((el) => {
-        el.addEventListener("change", (event) => {
-            const target = event.target;
-            if (!(target instanceof HTMLInputElement)) {
-                return;
+        root?.querySelectorAll("[data-db-file-check]").forEach((el) => {
+            if (el instanceof HTMLInputElement) {
+                el.checked = false;
             }
-            const name = target.getAttribute("data-db-file-check") || "";
-            toggleDbFileSelected(name);
-            render();
         });
-    });
-    root.querySelectorAll("[data-db-critical-mark]").forEach((el) => {
-        el.addEventListener("change", async (event) => {
-            const target = event.target;
-            if (!(target instanceof HTMLInputElement)) {
-                return;
-            }
-            const name = target.getAttribute("data-db-critical-mark") || "";
-            await toggleCriticalOverride(name, target.checked);
-            await fetchDbFileList();
-            reconcileSelectedDbFiles();
-            render();
-        });
-    });
-    document.getElementById("db-delete-submit")?.addEventListener("click", async () => {
+        syncDbDeleteSelectionUi();
+        return true;
+    case "btn-db-refresh-list":
+        if (!isDbRefreshLocked()) {
+            scheduleDbListRefresh();
+        }
+        return true;
+    case "db-delete-submit":
         if (appState.clearDataMode === "delete") {
             await submitDbDelete();
         } else {
             await submitRecordsCleanup();
         }
-    });
+        return true;
+    default:
+        return false;
+    }
+}
 
-    setupImagePreviewEvents();
-    if (appState.imagePreview.kind === "image") {
-        syncImagePreviewTransform();
+function handleDelegatedOverlayBackdropClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+    if (target.id === "settings-dialog-overlay") {
+        appState.settingsDialogOpen = false;
+        appState.settingsDraft = null;
+        target.classList.add("is-hidden");
+        return true;
+    }
+    if (target.id === "danger-dialog-overlay") {
+        closeDangerConfirm(false);
+        return true;
+    }
+    if (target.id === "db-delete-overlay") {
+        closeDbDeleteDialog();
+        return true;
+    }
+    if (target.id === "compact-actions-backdrop") {
+        closeCompactActionsMenu(true);
+        return true;
+    }
+    if (target.id === "date-range-backdrop") {
+        closeDateRangePanel(false);
+        return true;
+    }
+    return false;
+}
+
+async function handleDelegatedHistoryRowCopy(event) {
+    const button = event.target?.closest?.(".row-copy-btn");
+    if (!(button instanceof HTMLElement)) {
+        return false;
+    }
+    if (isMediaTab(appState.activeTab)) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const text = String(
+        button.getAttribute("data-copy-preview") || ""
+    ).trim();
+    if (!text) {
+        return true;
+    }
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch {
+        try {
+            const temp = document.createElement("textarea");
+            temp.value = text;
+            temp.style.position = "fixed";
+            temp.style.opacity = "0";
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand("copy");
+            temp.remove();
+        } catch {}
+    }
+    flashButton(button);
+    setRowCopyFeedback(button);
+    return true;
+}
+
+function handleDelegatedHistoryRowSelect(event) {
+    const row = event.target?.closest?.("[data-item-id]");
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+    if (isMediaTab(appState.activeTab)) {
+        return false;
+    }
+    const itemId = row.dataset.itemId || "";
+    currentTabState().selectedId = itemId;
+    saveTabState(appState.activeTab);
+    const item = appState.items.find((entry) => entry.id === itemId);
+    if (item) {
+        appState.selectedItemCache.set(appState.activeTab, item);
+    }
+    clearDetailResources();
+    render();
+    return true;
+}
+
+function handleDelegatedMediaCardClick(event) {
+    const card = event.target?.closest?.(".media-card[data-preview-url]");
+    if (!(card instanceof HTMLElement)) {
+        return false;
+    }
+    if (!isMediaTab(appState.activeTab)) {
+        return false;
+    }
+    if (event.target?.closest?.(".media-folder-card")) {
+        return false;
+    }
+    const mediaItemId = String(
+        card.getAttribute("data-media-item-id") || ""
+    ).trim();
+    const previewUrl = String(
+        card.getAttribute("data-preview-url") || ""
+    );
+    if (mediaItemId) {
+        const state = currentTabState();
+        state.lastOpenedMediaId = mediaItemId;
+        state.lastOpenedMediaUrl = previewUrl;
+        saveTabState(appState.activeTab);
+    }
+    updateLastOpenedMediaCardClass(card);
+    const kind = card.getAttribute("data-preview-kind") || "image";
+    const title = card.getAttribute("data-preview-title") || "";
+    const unsupported = (
+        kind === "video"
+        && card.getAttribute("data-video-unsupported") === "1"
+    );
+    const imageUnsupported = (
+        kind === "image"
+        && card.getAttribute("data-image-unsupported") === "1"
+    );
+    const audioUnsupported = (
+        kind === "audio"
+        && (
+            card.getAttribute("data-audio-unsupported") === "1"
+            || isLikelyUnsupportedAudio(previewUrl)
+        )
+    );
+    requestAnimationFrame(() => {
+        openImagePreview(kind, previewUrl, title, {
+            unsupported: unsupported || audioUnsupported || imageUnsupported,
+            unsupportedMessage: unsupported
+                ? "该视频在当前浏览器中不支持此格式或编码，或仅含音频轨道。"
+                : audioUnsupported
+                    ? "该音频在当前浏览器中不支持此格式或编码。"
+                    : imageUnsupported
+                        ? "该图片在当前浏览器中不支持此格式或编码。"
+                    : "",
+        });
+    });
+    return true;
+}
+
+function handleDelegatedMediaCardDragstart(event) {
+    const card = event.target?.closest?.(".media-card[data-drag-media='1']");
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    if (!isMediaTab(appState.activeTab)) {
+        return;
+    }
+    const dataTransfer = event.dataTransfer;
+    if (!dataTransfer) {
+        event.preventDefault();
+        return;
+    }
+    const rawPreferredUrl = String(
+        card.getAttribute("data-drag-url-preferred") || ""
+    );
+    const rawFallbackUrl = String(
+        card.getAttribute("data-drag-url-fallback") || ""
+    );
+    const mediaType = String(
+        card.getAttribute("data-drag-media-type") || ""
+    ).toLowerCase();
+    const preferredUrl = toAbsoluteUrl(rawPreferredUrl);
+    const fallbackUrl = toAbsoluteUrl(rawFallbackUrl);
+    const primaryUrl = preferredUrl || fallbackUrl;
+    if (!primaryUrl) {
+        event.preventDefault();
+        return;
+    }
+    const title = String(
+        card.getAttribute("data-drag-title")
+        || (mediaType === "audio" ? "audio" : "video")
+    );
+    const uriValues = [primaryUrl];
+    if (fallbackUrl && fallbackUrl !== primaryUrl) {
+        uriValues.push(fallbackUrl);
+    }
+    const mime = mediaType === "audio"
+        ? "audio/*"
+        : mediaType === "video"
+            ? "video/*"
+            : "application/octet-stream";
+    dataTransfer.effectAllowed = "copy";
+    try {
+        dataTransfer.setData("text/uri-list", uriValues.join("\r\n"));
+    } catch {}
+    try {
+        dataTransfer.setData("text/plain", primaryUrl);
+    } catch {}
+    try {
+        dataTransfer.setData("text/x-moz-url", `${primaryUrl}\n${title}`);
+    } catch {}
+    try {
+        dataTransfer.setData(
+            "DownloadURL",
+            `${mime}:${title}:${primaryUrl}`
+        );
+    } catch {}
+}
+
+function handleDelegatedDbFileCheckChange(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+        return false;
+    }
+    if (!target.matches("[data-db-file-check]")) {
+        return false;
+    }
+    const name = target.getAttribute("data-db-file-check") || "";
+    toggleDbFileSelected(name);
+    syncDbDeleteSelectionUi();
+    return true;
+}
+
+async function handleDelegatedDbCriticalMarkChange(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+        return false;
+    }
+    if (!target.matches("[data-db-critical-mark]")) {
+        return false;
+    }
+    const name = target.getAttribute("data-db-critical-mark") || "";
+    appState.dbDeleteError = "";
+    try {
+        await toggleCriticalOverride(name, target.checked);
+        await fetchDbFileList();
+        reconcileSelectedDbFiles();
+    } catch (error) {
+        appState.dbDeleteError = error.message || "更新关键标记失败";
+    }
+    refreshDbDeleteDialogOverlay();
+    return true;
+}
+
+function handleDelegatedGlobalInput(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+        return false;
+    }
+    switch (target.id) {
+    case "page-jump":
+        debouncedJumpPage(target.value);
+        return true;
+    case "filter-keyword":
+        currentTabState().filters.keyword = target.value;
+        saveTabState(appState.activeTab);
+        return true;
+    case "filter-data-type":
+        currentTabState().filters.dataType = target.value;
+        saveTabState(appState.activeTab);
+        refreshDependentWarnings();
+        return true;
+    case "filter-source":
+        currentTabState().filters.source = target.value;
+        saveTabState(appState.activeTab);
+        refreshDependentWarnings();
+        return true;
+    case "filter-db-name":
+        currentTabState().filters.dbName = target.value;
+        saveTabState(appState.activeTab);
+        debouncedScopedFacetReload(target.value);
+        refreshDependentWarnings();
+        return true;
+    case "filter-start":
+        currentTabState().filters.start = target.value;
+        saveTabState(appState.activeTab);
+        updateDateRangeToggleVisual();
+        return true;
+    case "filter-end":
+        currentTabState().filters.end = target.value;
+        saveTabState(appState.activeTab);
+        updateDateRangeToggleVisual();
+        return true;
+    case "danger-dialog-input": {
+        appState.dangerDialog.input = target.value;
+        const confirmBtn = document.getElementById("danger-dialog-confirm");
+        if (confirmBtn instanceof HTMLButtonElement) {
+            confirmBtn.disabled = !isDangerDialogConfirmed();
+        }
+        return true;
+    }
+    case "db-delete-confirm-yes": {
+        appState.confirmYes = target.value;
+        const btn = document.getElementById("db-delete-submit");
+        if (btn instanceof HTMLButtonElement) {
+            btn.disabled = !canSubmitDbDelete() || appState.dbDeleteLoading;
+        }
+        return true;
+    }
+    case "db-delete-confirm-yes-critical": {
+        appState.confirmYesCritical = target.value;
+        const btn = document.getElementById("db-delete-submit");
+        if (btn instanceof HTMLButtonElement) {
+            btn.disabled = !canSubmitDbDelete() || appState.dbDeleteLoading;
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+function ensureSettingsDraftState() {
+    if (!appState.settingsDraft) {
+        appState.settingsDraft = cloneSettings(appState.settings);
+    }
+}
+
+function handleDelegatedGlobalChange(event) {
+    const target = event.target;
+    if (
+        !(target instanceof HTMLInputElement)
+        && !(target instanceof HTMLSelectElement)
+    ) {
+        return false;
+    }
+    switch (target.id) {
+    case "setting-show-media-chip-type":
+        ensureSettingsDraftState();
+        appState.settingsDraft.showMediaChipType = !!target.checked;
+        return true;
+    case "setting-show-media-chip-resolution":
+        ensureSettingsDraftState();
+        appState.settingsDraft.showMediaChipResolution = !!target.checked;
+        return true;
+    case "setting-show-media-chip-datetime":
+        ensureSettingsDraftState();
+        appState.settingsDraft.showMediaChipDatetime = !!target.checked;
+        return true;
+    case "setting-show-media-chip-size":
+        ensureSettingsDraftState();
+        appState.settingsDraft.showMediaChipSize = !!target.checked;
+        return true;
+    case "setting-video-preview-autoplay":
+        ensureSettingsDraftState();
+        appState.settingsDraft.videoPreviewAutoplay = !!target.checked;
+        return true;
+    case "setting-video-preview-muted":
+        ensureSettingsDraftState();
+        appState.settingsDraft.videoPreviewMuted = !!target.checked;
+        return true;
+    case "setting-video-preview-loop":
+        ensureSettingsDraftState();
+        appState.settingsDraft.videoPreviewLoop = !!target.checked;
+        return true;
+    case "setting-audio-preview-autoplay":
+        ensureSettingsDraftState();
+        appState.settingsDraft.audioPreviewAutoplay = !!target.checked;
+        return true;
+    case "setting-audio-preview-muted":
+        ensureSettingsDraftState();
+        appState.settingsDraft.audioPreviewMuted = !!target.checked;
+        return true;
+    case "setting-audio-preview-loop":
+        ensureSettingsDraftState();
+        appState.settingsDraft.audioPreviewLoop = !!target.checked;
+        return true;
+    case "setting-media-card-size-preset":
+        if (target instanceof HTMLSelectElement) {
+            ensureSettingsDraftState();
+            appState.settingsDraft.mediaCardSizePreset =
+                normalizeMediaCardSizePreset(target.value);
+        }
+        return true;
+    case "setting-theme-mode":
+        if (target instanceof HTMLSelectElement) {
+            ensureSettingsDraftState();
+            appState.settingsDraft.themeMode = normalizeThemeMode(target.value);
+        }
+        return true;
+    case "danger-clear-db-target":
+        if (target instanceof HTMLSelectElement) {
+            appState.dangerDialog.meta = {
+                ...appState.dangerDialog.meta,
+                dbName: target.value,
+            };
+            currentTabState().cleanupDbName = target.value;
+            saveTabState(appState.activeTab);
+            const confirmBtn = document.getElementById("danger-dialog-confirm");
+            if (confirmBtn instanceof HTMLButtonElement) {
+                confirmBtn.disabled = !isDangerDialogConfirmed();
+            }
+        }
+        return true;
+    case "danger-clear-all":
+        if (target instanceof HTMLInputElement) {
+            appState.dangerDialog.meta = {
+                ...appState.dangerDialog.meta,
+                deleteAll: target.checked,
+            };
+            currentTabState().cleanupDeleteAll = target.checked;
+            saveTabState(appState.activeTab);
+            render();
+        }
+        return true;
+    case "db-delete-unlock-critical":
+        if (target instanceof HTMLInputElement) {
+            appState.unlockCritical = !target.checked;
+            refreshDbDeleteDialogOverlay();
+        }
+        return true;
+    default:
+        return false;
+    }
+}
+
+function installRootDelegatedHandlers() {
+    if (!root || rootDelegatedHandlersInstalled) {
+        return;
+    }
+    root.addEventListener("click", async (event) => {
+        if (handleDelegatedOverlayBackdropClick(event)) {
+            return;
+        }
+        if (handleDelegatedFacetToggleClick(event)) {
+            return;
+        }
+        if (handleDelegatedFacetOptionClick(event)) {
+            return;
+        }
+        if (event.target?.id === "facet-backdrop") {
+            closeFacetDropdown(true);
+            return;
+        }
+        if (handleDelegatedDatePickerButtonClick(event)) {
+            return;
+        }
+        handleDelegatedDateInputClick(event);
+        if (await handleDelegatedPrimaryButtonClick(event)) {
+            return;
+        }
+        if (await handleDelegatedHistoryRowCopy(event)) {
+            return;
+        }
+        if (handleDelegatedHistoryRowSelect(event)) {
+            return;
+        }
+        if (handleDelegatedMediaFolderClick(event)) {
+            return;
+        }
+        handleDelegatedMediaCardClick(event);
+    });
+    root.addEventListener("dragstart", (event) => {
+        handleDelegatedMediaCardDragstart(event);
+    });
+    root.addEventListener("error", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLImageElement)) {
+            return;
+        }
+        if (target.id === "image-lightbox-image") {
+            return;
+        }
+        const card = target.closest(".media-card[data-media-type='image']");
+        if (!(card instanceof HTMLElement)) {
+            return;
+        }
+        markMediaCardUnsupported(card, "image");
+    }, true);
+    root.addEventListener("keydown", (event) => {
+        const target = event.target;
+        if (target instanceof HTMLInputElement && event.key === "Enter") {
+            if (target.id === "page-jump") {
+                debouncedJumpPage(target.value);
+                return;
+            }
+            if (
+                target.id === "filter-keyword"
+                || target.id === "filter-data-type"
+                || target.id === "filter-source"
+                || target.id === "filter-db-name"
+                || target.id === "filter-start"
+                || target.id === "filter-end"
+            ) {
+                event.preventDefault();
+                applyFiltersFromUi();
+                return;
+            }
+            if (target.id === "danger-dialog-input" && isDangerDialogConfirmed()) {
+                event.preventDefault();
+                closeDangerConfirm(true);
+                return;
+            }
+        }
+        handleDelegatedDateInputKeydown(event);
+    });
+    root.addEventListener("input", (event) => {
+        handleDelegatedGlobalInput(event);
+    });
+    root.addEventListener("focusin", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+        if (
+            target.id === "filter-data-type"
+            || target.id === "filter-source"
+            || target.id === "filter-db-name"
+        ) {
+            openFacetDropdown(target.id);
+            render();
+        }
+    });
+    root.addEventListener("change", async (event) => {
+        if (handleDelegatedDbFileCheckChange(event)) {
+            return;
+        }
+        if (await handleDelegatedDbCriticalMarkChange(event)) {
+            return;
+        }
+        handleDelegatedGlobalChange(event);
+    });
+    rootDelegatedHandlersInstalled = true;
+}
+
+function bindEvents() {
+    if (appState.activeTab !== "video") {
+        stopVideoScheduler(false);
+    }
+    const list = document.getElementById("list");
+    if (list) {
+        list.addEventListener("scroll", () => {
+            const listTabCurrent = getListTabId(list);
+            syncListScroll(false, listTabCurrent, list);
+            if (listTabCurrent === "video") {
+                scheduleMediaQueueRebuild();
+            }
+        });
+    }
+
+    if (isMediaTab(appState.activeTab)) {
+        setupMediaResolutionObservers();
+        if (appState.activeTab === "video") {
+            setupVideoCardScheduler();
+        } else {
+            stopVideoScheduler(false);
+        }
     }
 
 }
@@ -4461,12 +5585,31 @@ function setCopyNotice(text, isError = false) {
     }
     appState.copyNotice.text = text;
     appState.copyNotice.error = !!isError;
-    render();
+    const syncNoticeUi = () => {
+        const actions = document.querySelector(".record-detail-actions");
+        if (!(actions instanceof HTMLElement)) {
+            render();
+            return;
+        }
+        let notice = actions.querySelector(".copy-notice");
+        if (!appState.copyNotice.text) {
+            notice?.remove();
+            return;
+        }
+        if (!(notice instanceof HTMLElement)) {
+            notice = document.createElement("span");
+            notice.className = "copy-notice";
+            actions.appendChild(notice);
+        }
+        notice.textContent = appState.copyNotice.text;
+        notice.classList.toggle("error", !!appState.copyNotice.error);
+    };
+    syncNoticeUi();
     appState.copyNotice.timer = setTimeout(() => {
         appState.copyNotice.text = "";
         appState.copyNotice.error = false;
         appState.copyNotice.timer = 0;
-        render();
+        syncNoticeUi();
     }, 1800);
 }
 
@@ -4556,7 +5699,7 @@ function beginHistorySplitDrag(event) {
     const up = () => {
         setHistoryLayoutState({ splitRatio: lastRatio });
         endHistorySplitDrag();
-        render();
+        scheduleHistoryRowExtraHeaderLayout();
     };
     appState.splitDrag.move = move;
     appState.splitDrag.up = up;
@@ -4739,7 +5882,8 @@ async function pollLockStatus() {
     try {
         const lock = await apiGet("/xz3r0/xdatahub/lock/status", {}, "lock-status");
         if (applyLockState(lock)) {
-            render();
+            syncLockBannerUi();
+            syncTopActionBarUi();
         }
     } catch {
         // 忽略锁状态拉取失败，避免影响主流程。
@@ -4868,6 +6012,14 @@ window.addEventListener("message", (event) => {
             return;
         }
         switchTab(tab);
+        return;
+    }
+    if (payload.type === "xdatahub:theme-mode") {
+        applyThemeMode(payload.theme_mode);
+        return;
+    }
+    if (payload.type === "xdatahub:hotkey-spec") {
+        updateIframeHotkeySpec(payload.hotkey_spec);
     }
 });
 
@@ -4875,10 +6027,17 @@ async function init() {
     if (!root) {
         return;
     }
+    installRootDelegatedHandlers();
+    updateIframeHotkeySpec(DEFAULT_TOGGLE_HOTKEY_SPEC);
     const queryTab = new URLSearchParams(window.location.search).get("tab");
+    const queryTheme = new URLSearchParams(window.location.search).get("theme");
     if (queryTab && TABS.some((item) => item.id === queryTab)) {
         appState.activeTab = queryTab;
     }
+    if (queryTheme) {
+        applyThemeMode(queryTheme);
+    }
+    window.addEventListener("keydown", handleIframeToggleHotkey, true);
     window.addEventListener("resize", scheduleTopActionBarCompactUpdate);
     window.addEventListener("resize", debouncedLayoutRefresh);
     setupWsLockSync();
@@ -4887,6 +6046,7 @@ async function init() {
         await fetchSettings();
     } catch {
         appState.settings = normalizeSettings({});
+        applyThemeMode(appState.settings.themeMode);
         appState.settingsError = "";
     }
     await pollLockStatus();

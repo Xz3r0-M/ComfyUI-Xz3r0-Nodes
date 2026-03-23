@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mimetypes
 import os
 import sqlite3
 import threading
 import time
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,8 @@ FILE_WRITE_RETRY_DELAY_S = 0.05
 MEDIA_SORT_BY_VALUES = {"mtime", "name", "size"}
 MEDIA_SORT_ORDER_VALUES = {"asc", "desc"}
 MEDIA_CARD_SIZE_PRESET_VALUES = {"compact", "standard", "large"}
+THEME_MODE_VALUES = {"dark", "light"}
+MEDIA_STREAM_CHUNK_SIZE = 256 * 1024
 
 MEDIA_TYPE_EXT = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"},
@@ -56,6 +60,128 @@ ERROR_TEXT = {
     "resource_busy": "资源忙，执行中仅允许只读浏览",
     "internal_error": "系统繁忙，请稍后重试",
 }
+
+
+def _infer_media_content_type(path: Path, media_type: str | None) -> str:
+    guessed, _ = mimetypes.guess_type(str(path))
+    if guessed:
+        return guessed
+    fallback = {
+        "image": "image/*",
+        "video": "video/*",
+        "audio": "audio/*",
+    }
+    return fallback.get(str(media_type or "").lower(), "application/octet-stream")
+
+
+def _is_client_disconnect_error(exc: BaseException) -> bool:
+    return isinstance(
+        exc,
+        (
+            ConnectionError,
+            ConnectionResetError,
+            ConnectionAbortedError,
+            BrokenPipeError,
+            asyncio.CancelledError,
+        ),
+    )
+
+
+def _parse_range_header(
+    range_value: str,
+    file_size: int,
+) -> tuple[int, int] | None:
+    raw = str(range_value or "").strip().lower()
+    if not raw.startswith("bytes="):
+        return None
+    spec = raw[len("bytes="):].split(",", 1)[0].strip()
+    if "-" not in spec:
+        return None
+    start_text, end_text = spec.split("-", 1)
+    if not start_text and not end_text:
+        return None
+    try:
+        if not start_text:
+            suffix_len = int(end_text)
+            if suffix_len <= 0:
+                return None
+            start = max(0, file_size - suffix_len)
+            end = file_size - 1
+        else:
+            start = int(start_text)
+            end = int(end_text) if end_text else file_size - 1
+    except Exception:
+        return None
+    if start < 0 or end < start or start >= file_size:
+        return None
+    end = min(end, file_size - 1)
+    return (start, end)
+
+
+async def _stream_media_file_response(
+    request: web.Request,
+    path: Path,
+    media_type: str | None,
+) -> web.StreamResponse:
+    stat = path.stat()
+    file_size = int(stat.st_size)
+    content_type = _infer_media_content_type(path, media_type)
+    range_value = request.headers.get("Range")
+    span = (
+        _parse_range_header(range_value, file_size)
+        if range_value
+        else None
+    )
+
+    if range_value and span is None:
+        return web.Response(
+            status=416,
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+
+    if span is None:
+        start = 0
+        end = file_size - 1
+        status = 200
+    else:
+        start, end = span
+        status = 206
+
+    content_length = max(0, end - start + 1)
+    resp = web.StreamResponse(status=status)
+    resp.headers["Content-Type"] = content_type
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Content-Length"] = str(content_length)
+    if status == 206:
+        resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+
+    await resp.prepare(request)
+    if request.method == "HEAD" or content_length <= 0:
+        await resp.write_eof()
+        return resp
+
+    with path.open("rb") as handle:
+        handle.seek(start)
+        remaining = content_length
+        while remaining > 0:
+            chunk = handle.read(min(MEDIA_STREAM_CHUNK_SIZE, remaining))
+            if not chunk:
+                break
+            try:
+                await resp.write(chunk)
+            except Exception as exc:
+                if _is_client_disconnect_error(exc):
+                    return resp
+                raise
+            remaining -= len(chunk)
+
+    try:
+        await resp.write_eof()
+    except Exception as exc:
+        if _is_client_disconnect_error(exc):
+            return resp
+        raise
+    return resp
 
 
 def json_error(code: str, status: int = 400) -> web.Response:
@@ -1096,11 +1222,14 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "show_media_chip_size": True,
         "video_preview_autoplay": False,
         "video_preview_muted": True,
+        "video_preview_loop": False,
         "audio_preview_autoplay": False,
         "audio_preview_muted": False,
+        "audio_preview_loop": False,
         "media_sort_by": "mtime",
         "media_sort_order": "desc",
         "media_card_size_preset": "standard",
+        "theme_mode": "dark",
     }
 
 
@@ -1135,11 +1264,17 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         shared_muted = parse_bool(value.get("media_preview_muted"))
         patch["video_preview_muted"] = shared_muted
         patch["audio_preview_muted"] = shared_muted
+    if "media_preview_loop" in value:
+        shared_loop = parse_bool(value.get("media_preview_loop"))
+        patch["video_preview_loop"] = shared_loop
+        patch["audio_preview_loop"] = shared_loop
     for key in (
         "video_preview_autoplay",
         "video_preview_muted",
+        "video_preview_loop",
         "audio_preview_autoplay",
         "audio_preview_muted",
+        "audio_preview_loop",
     ):
         if key in value:
             patch[key] = parse_bool(value.get(key))
@@ -1159,6 +1294,10 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         ).strip().lower()
         if preset in MEDIA_CARD_SIZE_PRESET_VALUES:
             patch["media_card_size_preset"] = preset
+    if "theme_mode" in value:
+        theme_mode = str(value.get("theme_mode") or "").strip().lower()
+        if theme_mode in THEME_MODE_VALUES:
+            patch["theme_mode"] = theme_mode
     return patch
 
 
@@ -2065,7 +2204,30 @@ async def api_media_file(request: web.Request) -> web.Response:
             return json_error("permission_denied", 403)
         return json_error("file_not_found", 404)
 
-    return web.FileResponse(path=resolved)
+    try:
+        return await _stream_media_file_response(
+            request=request,
+            path=resolved,
+            media_type=str(row["media_type"] or ""),
+        )
+    except PermissionError:
+        return json_error("permission_denied", 403)
+    except FileNotFoundError:
+        return json_error("file_not_found", 404)
+    except Exception as exc:
+        if _is_client_disconnect_error(exc):
+            LOGGER.info(
+                "[xdatahub] media stream client disconnected: id=%s, err=%s",
+                file_id,
+                type(exc).__name__,
+            )
+            return web.Response(status=204)
+        LOGGER.exception(
+            "[xdatahub] media file stream failed: id=%s, err=%s",
+            file_id,
+            type(exc).__name__,
+        )
+        return json_error("internal_error", 500)
 
 
 register_lock_listener()
