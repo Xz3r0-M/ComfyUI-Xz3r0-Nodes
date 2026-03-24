@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260324-118">
+    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260324-207">
     <style>
         /*
            颜色规范：
@@ -345,8 +345,9 @@
         }
 
         input,
-        select {
-            background: var(--surface-input);
+        select,
+        textarea {
+            background: var(--xdh-input-bg);
             color: var(--text-standard);
             border: 1px solid var(--border-standard);
             border-radius: 6px;
@@ -397,6 +398,9 @@
             min-width: 0;
             width: 100%;
             padding-right: 30px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .facet-toggle-btn {
@@ -408,7 +412,7 @@
             border: 0;
             border-left: 1px solid var(--border-standard);
             border-radius: 0 6px 6px 0;
-            background: var(--surface-input);
+            background: var(--xdh-input-bg);
             color: var(--text-emphasis);
             padding: 0;
             line-height: 1;
@@ -424,13 +428,13 @@
         }
 
         .facet-menu {
-            position: absolute;
-            top: calc(100% + 4px);
+            position: fixed;
+            top: 0;
             left: 0;
-            right: 0;
             z-index: 14;
-            max-height: none;
-            overflow: visible;
+            max-height: 280px;
+            overflow-y: auto;
+            overflow-x: hidden;
             border: 1px solid var(--border-standard);
             border-radius: 8px;
             background: var(--bg-panel);
@@ -447,6 +451,9 @@
             color: var(--text-standard);
             border-radius: 6px;
             padding: 6px 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             cursor: pointer;
             transition: border-color 120ms ease, background-color 120ms ease,
                 color 120ms ease, box-shadow 120ms ease;
@@ -505,6 +512,9 @@
             width: 100%;
             min-width: 0;
             padding-right: 30px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .date-picker-btn {
@@ -516,7 +526,7 @@
             border: 0;
             border-left: 1px solid var(--border-standard);
             border-radius: 0 6px 6px 0;
-            background: var(--surface-input);
+            background: var(--xdh-input-bg);
             color: var(--text-emphasis);
             padding: 0;
             line-height: 1;
@@ -996,21 +1006,20 @@
             flex-direction: column;
             gap: 4px;
             position: relative;
-            transition: border-color 120ms ease, background-color 120ms ease,
-                box-shadow 120ms ease;
+            z-index: 0;
+            transition: border-color 120ms ease, background-color 120ms ease;
         }
 
         .row:not(.active):hover {
-            background: var(--hover-accent-bg);
-            box-shadow:
-                inset 0 0 0 1px var(--hover-accent-bg),
-                0 4px 12px var(--theme-bg-main);
+            background: transparent;
+            box-shadow: inset 0 0 0 2px var(--border-hover);
+            z-index: 1;
         }
 
         .row.active {
-            border-left: 3px solid var(--border-active);
             background: transparent;
-            box-shadow: inset 0 0 0 1px var(--border-active);
+            box-shadow: inset 0 0 0 2px var(--xdh-history-row-active-border);
+            z-index: 2;
         }
 
         .row.active::before {
@@ -1019,8 +1028,8 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 1px;
-            background: var(--border-active);
+            height: 2px;
+            background: var(--xdh-history-row-active-border);
             pointer-events: none;
         }
 
@@ -1054,6 +1063,7 @@
             border: 1px solid var(--border-standard);
             border-radius: 999px;
             overflow: hidden;
+            flex-wrap: nowrap;
             background: transparent;
             min-width: 0;
             max-width: 100%;
@@ -1110,6 +1120,9 @@
             min-width: 0;
             padding: 7px 9px;
             color: var(--xdh-history-content-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .row-content-line .xdatahub-icon {
@@ -1317,6 +1330,8 @@
             position: absolute;
             inset: 0;
             background: var(--overlay-dialog);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             opacity: 0;
             transition: opacity 160ms ease;
         }
@@ -1539,7 +1554,7 @@
             min-width: 0;
             max-width: 100%;
             border: 1px solid var(--border-standard);
-            border-radius: 999px;
+            border-radius: 8px;
             padding: 5px 10px;
             color: var(--text-emphasis);
             background: var(--bg);
@@ -1896,6 +1911,10 @@
             height: 12px;
         }
 
+        body[data-theme="light"] .row-copy-btn-inline .btn-icon {
+            filter: var(--xdh-inner-icon-filter);
+        }
+
         .row-copy-btn-inline .btn-text {
             color: var(--text-standard);
         }
@@ -1917,7 +1936,7 @@
 
         .row-copy-btn-inline:not(:disabled):not(.clicked):not(.copied):hover {
             border-color: transparent;
-            border-left-color: var(--xdh-history-content-border);
+            border-left-color: var(--border-hover);
             color: var(--text-standard);
             background: var(--hover-accent-bg);
             box-shadow: none;
@@ -1973,7 +1992,8 @@
             position: absolute;
             inset: 0;
             background: var(--overlay-dialog);
-            backdrop-filter: blur(1px);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
 
         .image-lightbox-content {
@@ -2044,10 +2064,10 @@
             min-width: 0;
             display: flex;
             align-items: stretch;
-            border: 1px solid var(--border-standard);
-            border-radius: 999px;
+            border: 1px solid var(--xdh-history-content-border);
+            border-radius: 8px;
             overflow: hidden;
-            background: var(--bg-panel);
+            background: var(--xdh-history-content-bg);
         }
 
         .image-lightbox-body {
@@ -2094,6 +2114,8 @@
             inset: 0;
             z-index: 12000;
             background: var(--overlay-dialog);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2214,6 +2236,8 @@
             inset: 0;
             z-index: 12100;
             background: var(--overlay-dialog);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2476,8 +2500,7 @@
 
         .image-lightbox-close-btn {
             border: 0;
-            border-left: 1px solid var(--border-standard);
-            border-radius: 0;
+            border-radius: 0 8px 8px 0;
             color: var(--text-standard);
             background: transparent;
             box-shadow: none;
@@ -2485,13 +2508,33 @@
             flex: 0 0 auto;
             font-weight: 600;
             padding: 0 12px;
+            position: relative;
+        }
+
+        .image-lightbox-close-btn::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 1px;
+            background: var(--xdh-history-content-border);
+            pointer-events: none;
         }
 
         .image-lightbox-close-btn:not(:disabled):hover {
             color: var(--text-standard);
-            background: transparent;
-            border-left-color: var(--border-standard);
+            background: var(--hover-accent-bg);
             box-shadow: none;
+        }
+
+        .btn.image-lightbox-close-btn:not(:disabled):not(.active):hover {
+            border: 0;
+            box-shadow: none;
+        }
+
+        .image-lightbox-close-btn:not(:disabled):hover::before {
+            background: var(--border-hover);
         }
 
         .image-lightbox-title {
@@ -2499,6 +2542,7 @@
             min-width: 0;
             max-width: 100%;
             padding: 0 14px;
+            background: transparent;
             color: var(--text-emphasis);
             font-size: 13px;
             text-align: center;
@@ -2756,6 +2800,8 @@
             align-items: center;
             justify-content: center;
             background: var(--overlay-dialog);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
 
         .locale-switcher-dialog {
@@ -2788,6 +2834,23 @@
             border-color: var(--border-active);
             box-shadow: inset 0 0 0 1px var(--border-active);
             color: var(--text-active);
+        }
+        .locale-switcher-actions {
+            display: flex;
+            justify-content: stretch;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .locale-switcher-actions .btn {
+            flex: 1 1 0;
+            min-width: 0;
+            width: 0;
+            justify-content: center;
+            height: 32px;
+            min-height: 32px;
+            line-height: 1;
+            box-sizing: border-box;
         }
 
         .preview-box {
@@ -2969,7 +3032,7 @@
 </head>
 <body>
     <div class="app" id="app"></div>
-    <script type="module" src="./xdatahub_app.js?v=20260324-118"></script>
+    <script type="module" src="./xdatahub_app.js?v=20260324-207"></script>
 </body>
 </html>
 

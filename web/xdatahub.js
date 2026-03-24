@@ -110,7 +110,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260324-118";
+const XDATAHUB_ASSET_VER = "20260324-207";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -473,7 +473,7 @@ app.registerExtension({
             defaultValue: OPEN_LAYOUT_VALUE_CENTER,
             tooltip: "Default window layout when opening XDataHub.",
             // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "Window"],
+            category: ["♾️ Xz3r0", "XDataHub", "OpenLayout"],
             onChange: (value) => {
                 defaultOpenLayout = normalizeDefaultOpenLayout(value);
                 applyDefaultOpenLayoutToOpenWindow();
@@ -487,7 +487,7 @@ app.registerExtension({
             defaultValue: CLOSE_BEHAVIOR_VALUE_HIDE,
             tooltip: "Hide: faster reopen, higher memory. Destroy: lower memory, slower reopen.",
             // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "Window"],
+            category: ["♾️ Xz3r0", "XDataHub", "CloseBehavior"],
             onChange: (value) => {
                 closeBehavior = normalizeCloseBehavior(value);
             }
@@ -546,10 +546,9 @@ app.registerExtension({
                 position: fixed;
                 z-index: ${WINDOW_Z_INDEX_DEFAULT};
                 background: var(--theme-bg-main);
-                border: 1px solid var(--border-standard);
-                border-top-color: var(--border-standard);
+                border: none;
                 border-radius: 0;
-                box-shadow: var(--shadow-none);
+                box-shadow: var(--xdh-window-shadow);
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -560,7 +559,7 @@ app.registerExtension({
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                padding: 5.1px 10px;
+                padding: 5.2px 10px;
                 background: var(--xdh-window-header-bg);
                 border-bottom: 1px solid var(--border-standard);
                 cursor: grab;
@@ -591,9 +590,86 @@ app.registerExtension({
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
+                gap: 6px;
             }
             .xz3r0-datahub-menu-btn {
+                position: relative;
+                padding: 2px 8px;
+                border-radius: 999px;
+                border: 1px solid transparent;
                 background: transparent !important;
+                overflow: hidden;
+                isolation: isolate;
+                box-shadow:
+                    inset 0 1px 0 transparent,
+                    inset 0 -1px 0 transparent,
+                    inset 0 0 0 1px transparent;
+                transition: border-color 150ms ease,
+                    background-color 150ms ease,
+                    box-shadow 150ms ease,
+                    transform 150ms ease;
+            }
+            .xz3r0-datahub-menu-btn::after {
+                content: "";
+                position: absolute;
+                top: 0;
+                left: -45%;
+                width: 45%;
+                height: 100%;
+                background: linear-gradient(
+                    120deg,
+                    transparent 0%,
+                    var(--hover-accent-bg) 50%,
+                    transparent 100%
+                );
+                opacity: 0;
+                transform: translateX(0);
+                pointer-events: none;
+                z-index: 0;
+            }
+            .xz3r0-datahub-menu-btn:hover::after {
+                animation: xdhMenuSweep 720ms ease-in-out;
+            }
+            @keyframes xdhMenuSweep {
+                0% {
+                    opacity: 0;
+                    transform: translateX(0);
+                }
+                20% {
+                    opacity: 0.65;
+                }
+                80% {
+                    opacity: 0.35;
+                }
+                100% {
+                    opacity: 0;
+                    transform: translateX(260%);
+                }
+            }
+            .xz3r0-datahub-menu-btn:hover {
+                border-color: var(--border-hover);
+                background: var(--hover-accent-bg) !important;
+                box-shadow:
+                    inset 0 1px 0 var(--border-hover),
+                    inset 0 -1px 0 var(--border-hover),
+                    inset 0 0 0 1px var(--border-hover),
+                    inset 0 0 8px var(--btn-active-color);
+                transform: translateY(-1px) scale(1.02);
+            }
+            .xz3r0-datahub-menu-btn:active {
+                border-color: var(--border-hover);
+                background: var(--hover-accent-bg) !important;
+                box-shadow:
+                    inset 0 1px 0 var(--border-hover),
+                    inset 0 -1px 0 var(--border-hover),
+                    inset 0 0 0 1px var(--border-hover),
+                    inset 0 0 10px var(--btn-active-color),
+                    inset 0 2px 6px rgba(0, 0, 0, 0.12);
+                transform: translateY(0) scale(0.98);
+            }
+            .xz3r0-datahub-menu-btn:focus-visible {
+                outline: 2px solid var(--border-hover);
+                outline-offset: 2px;
             }
             .xz3r0-datahub-menu-btn .xz3r0-menu-icon {
                 width: 17px;
@@ -657,7 +733,7 @@ app.registerExtension({
             .xz3r0-datahub-window-host-tabs {
                 display: flex;
                 gap: 6px;
-                padding: 6px 10px 8px 10px;
+                padding: 10px 10px 10px 10px;
                 background: var(--xdh-tab-strip-bg);
                 box-shadow: inset 0 -1px 0 var(--xdh-tab-strip-divider);
                 flex-shrink: 0;
@@ -667,7 +743,7 @@ app.registerExtension({
                 align-items: center;
             }
             .xz3r0-datahub-window.compact-tabs .xz3r0-datahub-window-host-tabs {
-                padding: 6px 8px 8px 8px;
+                padding: 10px 8px 10px 8px;
                 justify-content: flex-start;
             }
             .xz3r0-datahub-window.compact-tabs
@@ -940,7 +1016,7 @@ app.registerExtension({
                 width: 13px;
                 height: 13px;
                 margin-top: -4.5px;
-                background: var(--text-standard);
+                background: var(--xdh-icon-color);
                 border-radius: 50%;
                 cursor: pointer;
                 transition: background 0.2s;
@@ -951,7 +1027,7 @@ app.registerExtension({
             .xz3r0-opacity-slider::-moz-range-thumb {
                 width: 13px;
                 height: 13px;
-                background: var(--text-standard);
+                background: var(--xdh-icon-color);
                 border-radius: 50%;
                 cursor: pointer;
                 border: none;
@@ -1357,6 +1433,15 @@ const XDataHub = {
         const postSharedStateToDataFrame = () => {
             postThemeModeToDataFrame();
             postHotkeySpecToDataFrame();
+        };
+        const postCloseFacetToDataFrame = () => {
+            if (!dataFrame.contentWindow) {
+                return;
+            }
+            dataFrame.contentWindow.postMessage(
+                { type: "xdatahub:close-facet" },
+                "*"
+            );
         };
         const updateHostTabCompactMode = () => {
             if (windowEl.style.display === "none") {
@@ -2088,6 +2173,7 @@ const XDataHub = {
 
         // 标题栏拖拽事件 - 使用 pointer 事件保持一致性
         header.addEventListener("pointerdown", (e) => {
+            postCloseFacetToDataFrame();
             if (e.target.closest(".xz3r0-datahub-window-btn")) return;
             if (e.target.closest(".xz3r0-opacity-control")) return;
             // 只有左键点击才触发拖拽
@@ -2161,6 +2247,12 @@ const XDataHub = {
         document.addEventListener('keydown', handleKeyDown);
         document.addEventListener('keyup', handleKeyUp);
         window.addEventListener('blur', handleWindowBlur);
+        windowEl.addEventListener("pointerdown", (e) => {
+            if (e.target.closest("iframe")) {
+                return;
+            }
+            postCloseFacetToDataFrame();
+        }, true);
 
         windowEl.addEventListener('pointerdown', (e) => {
             // 检查是否按住 Alt 键且是左键点击
@@ -2195,6 +2287,7 @@ const XDataHub = {
         // 拉伸手柄事件 - 使用 pointer 事件确保捕获能正常工作
         windowEl.querySelectorAll('.xz3r0-resize-handle').forEach(handle => {
             handle.addEventListener('pointerdown', (e) => {
+                postCloseFacetToDataFrame();
                 // 只有左键点击才触发拉伸
                 if (e.button !== 0) return;
 

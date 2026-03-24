@@ -12,33 +12,36 @@
 body[data-theme="dark"],
 body:not([data-theme]) {
     /* Core */
-    --xdh-brand-pink: #ff69b4;
+    --xdh-brand-pink: #EA005E;
     --xdh-neutral-base: #353535;
     --xdh-neutral-surface: #353535;
     --xdh-neutral-text: #dddddd;
+    --xdh-icon-color: #dddddd;
 
     /* Semantic */
     --theme-bg-main: #353535;
     --bg: #353535;
     --bg-panel: #353535;
     --surface-input: #222222;
+    --xdh-input-bg: #222222;
 
     --text-standard: var(--xdh-neutral-text);
     --text-emphasis: var(--xdh-neutral-text);
     --text-active: var(--xdh-neutral-text);
 
     --border-standard: #666666;
-    --border-hover: #666666;
+    --border-hover: var(--xdh-brand-pink);
     --border-active: #666666;
 
     --btn-active-color: var(--xdh-brand-pink);
-    --hover-accent-bg: #ff69b41a; /* 主题粉色 10% */
+    --hover-accent-bg: #EA005E33; /* 主题粉色 20% */
     --active-highlight-bg: #ffffff14;
     --btn-hover-glow-soft: 0 0 0 1px var(--btn-active-color);
     --btn-hover-glow: 0 0 0 1px var(--btn-active-color),
         0 0 10px var(--btn-active-color);
     --btn-hover-glow-strong: var(--btn-hover-glow);
     --btn-press-glow-inset: inset 0 0 0 1px var(--btn-active-color);
+    --xdh-window-shadow: 0 10px 22px rgba(0, 0, 0, 0.7);
 
     --state-danger-text-standard: var(--text-active);
     --state-danger-border-standard: var(--border-standard);
@@ -50,7 +53,7 @@ body:not([data-theme]) {
     --state-warn-bg-standard: var(--btn-active-color);
     --state-warn-bg-hover: var(--hover-accent-bg);
 
-    --overlay-dialog: #00000080; /* 弹窗外背景 50% 透明度 */
+    --overlay-dialog: rgba(0, 0, 0, 0.01); /* 弹窗外背景近乎透明 */
 
     --scrollbar-size: 12px;
     --scrollbar-track: var(--xdh-neutral-surface);
@@ -64,18 +67,21 @@ body:not([data-theme]) {
     --xdh-window-header-bg: #171718;
     --xdh-tab-strip-bg: #333333;
     --xdh-tab-strip-divider: #666666;
-    --xdh-history-content-bg: var(--surface-input);
+    --xdh-history-content-bg: var(--xdh-input-bg);
     --xdh-history-content-border: #666666;
+    --xdh-history-row-active-border: var(--xdh-brand-pink);
+    --xdh-lightbox-title-bg: transparent;
+    --xdh-lightbox-title-border: var(--border-standard);
     --xdh-history-content-text: var(--text-standard);
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
-        invert(40%);
+        invert(87%);
     --app-shell-padding: 4px 8px 8px 8px;
 
-    --icon-color-filter: brightness(0) saturate(100%) invert(40%);
-    --icon-color-filter-active: brightness(0) saturate(100%) invert(40%);
-    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(40%);
+    --icon-color-filter: brightness(0) saturate(100%) invert(87%);
+    --icon-color-filter-active: brightness(0) saturate(100%) invert(87%);
+    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(87%);
     --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
-        invert(40%);
+        invert(87%);
     --icon-db-mask-url: url("/extensions/ComfyUI-Xz3r0-Nodes/icons/database.svg");
 
     /*
@@ -103,21 +109,23 @@ body[data-theme="light"] {
     --xdh-neutral-base: #ffffff;
     --xdh-neutral-surface: #ffffff;
     --xdh-neutral-text: #111111;
+    --xdh-icon-color: #222222;
 
     --theme-bg-main: #ffffff;
     --bg: #ffffff;
     --bg-panel: #ffffff;
     --surface-input: #ffffff;
+    --xdh-input-bg: #d4d4d4;
 
-    --text-standard: #111111;
-    --text-emphasis: #111111;
-    --text-active: #111111;
+    --text-standard: #555555;
+    --text-emphasis: #555555;
+    --text-active: #555555;
 
     --border-standard: #c8c8c8;
     --border-hover: var(--xdh-brand-pink);
     --border-active: var(--xdh-brand-pink);
 
-    --overlay-dialog: #00000080;
+    --overlay-dialog: rgba(0, 0, 0, 0.01);
     --scrollbar-track: #ffffff;
     --scrollbar-thumb: #c8c8c8;
     --scrollbar-thumb-hover: var(--xdh-brand-pink);
@@ -125,38 +133,44 @@ body[data-theme="light"] {
     --xdh-window-header-bg: #ffffff;
     --xdh-tab-strip-bg: #ffffff;
     --xdh-tab-strip-divider: #c8c8c8;
-    --xdh-history-content-bg: #c9c9c9;
+    --xdh-window-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+    --xdh-history-content-bg: var(--xdh-input-bg);
     --xdh-history-content-border: #999999;
-    --xdh-history-content-text: #222222;
+    --xdh-history-row-active-border: var(--xdh-brand-pink);
+    --xdh-lightbox-title-bg: #d4d4d4;
+    --xdh-lightbox-title-border: #999999;
+    --xdh-history-content-text: #000000;
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
         invert(80%);
 
-    --icon-color-filter: brightness(0) saturate(100%) invert(0%);
-    --icon-color-filter-active: brightness(0) saturate(100%) invert(0%);
-    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(0%);
+    --icon-color-filter: brightness(0) saturate(100%) invert(13%);
+    --icon-color-filter-active: brightness(0) saturate(100%) invert(13%);
+    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(13%);
     --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
-        invert(0%);
+        invert(13%);
 }
 
 .xz3r0-datahub-window[data-theme="light"] {
     --xdh-neutral-base: #ffffff;
     --xdh-neutral-surface: #ffffff;
     --xdh-neutral-text: #111111;
+    --xdh-icon-color: #222222;
 
     --theme-bg-main: #ffffff;
     --bg: #ffffff;
     --bg-panel: #ffffff;
     --surface-input: #ffffff;
+    --xdh-input-bg: #d4d4d4;
 
-    --text-standard: #111111;
-    --text-emphasis: #111111;
-    --text-active: #111111;
+    --text-standard: #555555;
+    --text-emphasis: #555555;
+    --text-active: #555555;
 
     --border-standard: #c8c8c8;
     --border-hover: var(--xdh-brand-pink);
     --border-active: var(--xdh-brand-pink);
 
-    --overlay-dialog: #00000080;
+    --overlay-dialog: rgba(0, 0, 0, 0.01);
     --scrollbar-track: #ffffff;
     --scrollbar-thumb: #c8c8c8;
     --scrollbar-thumb-hover: var(--xdh-brand-pink);
@@ -164,15 +178,19 @@ body[data-theme="light"] {
     --xdh-window-header-bg: #ffffff;
     --xdh-tab-strip-bg: #ffffff;
     --xdh-tab-strip-divider: #c8c8c8;
-    --xdh-history-content-bg: #c9c9c9;
+    --xdh-window-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+    --xdh-history-content-bg: var(--xdh-input-bg);
     --xdh-history-content-border: #999999;
-    --xdh-history-content-text: #222222;
+    --xdh-history-row-active-border: var(--xdh-brand-pink);
+    --xdh-lightbox-title-bg: #d4d4d4;
+    --xdh-lightbox-title-border: #999999;
+    --xdh-history-content-text: #000000;
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
         invert(80%);
 
-    --icon-color-filter: brightness(0) saturate(100%) invert(0%);
-    --icon-color-filter-active: brightness(0) saturate(100%) invert(0%);
-    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(0%);
+    --icon-color-filter: brightness(0) saturate(100%) invert(13%);
+    --icon-color-filter-active: brightness(0) saturate(100%) invert(13%);
+    --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(13%);
     --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
-        invert(0%);
+        invert(13%);
 }

@@ -97,6 +97,7 @@ const appState = {
     facetDropdown: {
         open: false,
         fieldId: "",
+        anchor: null,
     },
     dangerDialog: {
         open: false,
@@ -130,6 +131,8 @@ const appState = {
     settingsSaving: false,
     settingsError: "",
     localeSwitcherOpen: false,
+    localeSelectionPending: false,
+    localeSelectionOriginal: "",
     localePreviewLang: "en",
     settingsDraft: null,
     settings: {
@@ -147,6 +150,7 @@ const appState = {
         mediaSortOrder: "desc",
         mediaCardSizePreset: "standard",
         themeMode: "dark",
+        uiLocale: "",
     },
     videoLoadQueue: [],
     videoActiveLoads: 0,
@@ -197,7 +201,6 @@ const VIDEO_SCHEDULER_TIME_BUDGET_MS = 8;
 const VIDEO_LOAD_TIMEOUT_MS = 2200;
 const MEDIA_NAV_STACK_LIMIT = 60;
 const ICON_BASE_PATH = "/extensions/ComfyUI-Xz3r0-Nodes/icons";
-const UI_LOCALE_STORAGE_KEY = "xdatahub.ui.locale";
 let iframeHotkeySpec = DEFAULT_TOGGLE_HOTKEY_SPEC;
 let iframeHotkeyCombo = null;
 const DB_ACCENT_PALETTE = [
@@ -273,20 +276,7 @@ function syncDocumentLocaleMeta() {
 }
 
 function readUiLocalePreference() {
-    try {
-        const raw = localStorage.getItem(UI_LOCALE_STORAGE_KEY);
-        return normalizeUiLocale(raw || appState.localePreviewLang || "en");
-    } catch {
-        return normalizeUiLocale(appState.localePreviewLang || "en");
-    }
-}
-
-function writeUiLocalePreference(locale) {
-    try {
-        localStorage.setItem(UI_LOCALE_STORAGE_KEY, normalizeUiLocale(locale));
-    } catch {
-        // ignore localStorage write errors
-    }
+    return normalizeUiLocale(appState.localePreviewLang || "en");
 }
 
 async function fetchUiLocaleDict(locale) {
@@ -490,6 +480,8 @@ async function apiPost(path, body = {}) {
 
 function normalizeSettings(value) {
     const raw = value && typeof value === "object" ? value : {};
+    const uiLocaleRaw = String(raw.ui_locale || "").trim().toLowerCase();
+    const uiLocale = uiLocaleRaw ? normalizeUiLocale(uiLocaleRaw) : "";
     const legacy = raw.show_media_card_info;
     const legacyDefault = legacy !== false;
     const sortByRaw = String(raw.media_sort_by || "").trim().toLowerCase();
@@ -565,6 +557,7 @@ function normalizeSettings(value) {
         themeMode: THEME_MODE_VALUES.has(themeModeRaw)
             ? themeModeRaw
             : "dark",
+        uiLocale,
     };
 }
 
@@ -578,6 +571,7 @@ function cloneSettings(settings) {
         raw.mediaCardSizePreset || ""
     ).trim().toLowerCase();
     const themeMode = String(raw.themeMode || "").trim().toLowerCase();
+    const uiLocale = String(raw.uiLocale || "").trim().toLowerCase();
     return {
         showMediaChipType: raw.showMediaChipType !== false,
         showMediaChipResolution: raw.showMediaChipResolution !== false,
@@ -617,6 +611,7 @@ function cloneSettings(settings) {
             ? cardSizePreset
             : "standard",
         themeMode: THEME_MODE_VALUES.has(themeMode) ? themeMode : "dark",
+        uiLocale: uiLocale ? normalizeUiLocale(uiLocale) : "",
     };
 }
 
@@ -823,6 +818,11 @@ async function updateSettings(partial) {
                 partial?.themeMode
                 ?? appState.settings.themeMode,
         };
+        if (partial?.uiLocale) {
+            body.ui_locale = partial.uiLocale;
+        } else if (appState.settings.uiLocale) {
+            body.ui_locale = appState.settings.uiLocale;
+        }
         const data = await apiPost("/xz3r0/xdatahub/settings", body);
         appState.settings = normalizeSettings(data.settings || {});
         applyThemeMode(appState.settings.themeMode);
@@ -1398,6 +1398,39 @@ function syncListContentUi() {
     renderOverlays();
 }
 
+function syncHistorySelectionUi() {
+    const list = document.getElementById("list");
+    if (!(list instanceof HTMLElement)) {
+        return false;
+    }
+    if (list.dataset.listTab !== "history" || !list.classList.contains("list")) {
+        return false;
+    }
+    const selectedId = String(currentTabState().selectedId || "").trim();
+    if (!selectedId) {
+        return false;
+    }
+    const escapedId = (
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+            ? CSS.escape(selectedId)
+            : selectedId.replaceAll("\"", "\\\"")
+    );
+    const selector = `.row[data-item-id="${escapedId}"]`;
+    const currentActive = list.querySelector(".row.active");
+    const nextActive = list.querySelector(selector);
+    if (currentActive instanceof HTMLElement && currentActive !== nextActive) {
+        currentActive.classList.remove("active");
+    }
+    if (nextActive instanceof HTMLElement && nextActive !== currentActive) {
+        nextActive.classList.add("active");
+    }
+    const detail = document.querySelector(".record-detail");
+    if (detail instanceof HTMLElement) {
+        detail.outerHTML = renderDetail();
+    }
+    return true;
+}
+
 async function loadScopedFacetsByDb(dbName) {
     const key = normalizeFacetKey(dbName);
     if (!key || !isDbNameMatched(dbName)) {
@@ -1561,40 +1594,82 @@ function closeFacetDropdown(shouldRender = false) {
     if (!appState.facetDropdown.open && !appState.facetDropdown.fieldId) {
         return;
     }
-    appState.facetDropdown = { open: false, fieldId: "" };
+    appState.facetDropdown = { open: false, fieldId: "", anchor: null };
     if (shouldRender) {
         render();
     }
 }
 
+function computeFacetAnchor(fieldId) {
+    const input = document.getElementById(fieldId);
+    const shell = input?.closest?.(".facet-input-shell");
+    const rect = shell?.getBoundingClientRect?.();
+    if (!rect) {
+        return null;
+    }
+    const top = rect.bottom + 4;
+    const left = rect.left;
+    const width = rect.width;
+    const maxHeight = Math.max(140, window.innerHeight - top - 12);
+    return { top, left, width, maxHeight };
+}
+
 function openFacetDropdown(fieldId) {
-    appState.facetDropdown = { open: true, fieldId };
+    appState.facetDropdown = {
+        open: true,
+        fieldId,
+        anchor: computeFacetAnchor(fieldId)
+    };
+}
+
+function updateFacetDropdownAnchor(shouldRender = false) {
+    if (!appState.facetDropdown.open) {
+        return;
+    }
+    const anchor = computeFacetAnchor(
+        appState.facetDropdown.fieldId
+    );
+    if (!anchor || anchor.maxHeight < 120) {
+        closeFacetDropdown(true);
+        return;
+    }
+    appState.facetDropdown.anchor = anchor;
+    const menu = document.querySelector(
+        `.facet-menu[data-facet-menu="${appState.facetDropdown.fieldId}"]`
+    );
+    if (menu instanceof HTMLElement) {
+        menu.style.top = `${Math.round(anchor.top)}px`;
+        menu.style.left = `${Math.round(anchor.left)}px`;
+        menu.style.width = `${Math.round(anchor.width)}px`;
+        menu.style.maxHeight = `${Math.round(anchor.maxHeight)}px`;
+        return;
+    }
+    if (shouldRender) {
+        render();
+    }
 }
 
 function renderFacetInput(fieldId, label, value, placeholder, options) {
     const wrapClass = "facet-field-wrap";
-    const isOpen = appState.facetDropdown.open
-        && appState.facetDropdown.fieldId === fieldId;
-    const menuHtml = isOpen
-        ? `<div class="facet-menu" data-facet-menu="${fieldId}">
-            <button class="facet-option facet-option-all" type="button" data-facet-option="${fieldId}" data-facet-value="">${escapeHtml(t("xdatahub.ui.app.facet.all", "All"))}</button>
-            ${
-                options.length
-                    ? options.map((option) =>
-                        `<button class="facet-option" type="button" data-facet-option="${fieldId}" data-facet-value="${escapeAttr(option)}">${escapeHtml(option)}</button>`
-                    ).join("")
-                    : ""
-            }
-        </div>`
-        : "";
+    const normalizedValue = String(value || "");
+    const optionSet = new Set(options.map((item) => String(item)));
+    const mergedOptions = [];
+    if (normalizedValue && !optionSet.has(normalizedValue)) {
+        mergedOptions.push(normalizedValue);
+    }
+    mergedOptions.push(...options);
+    const optionsHtml = mergedOptions.map((option) => {
+        const optionValue = String(option);
+        const selected = optionValue === normalizedValue ? "selected" : "";
+        return `<option value="${escapeAttr(optionValue)}" ${selected}>${escapeHtml(optionValue)}</option>`;
+    }).join("");
     return `<div class="field">
         <span>${label}:</span>
         <div class="${wrapClass}">
-            <div class="facet-input-shell">
-                <input id="${fieldId}" value="${escapeHtml(value)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off">
-                <button class="facet-toggle-btn" type="button" data-facet-toggle="${fieldId}" title="${escapeAttr(t("xdatahub.ui.app.aria.h_5a73750f04", "Expand options"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_5a73750f04", "Expand options"))}">▾</button>
-            </div>
-            ${menuHtml}
+            <select id="${fieldId}" title="${escapeAttr(normalizedValue)}">
+                <option value="">${escapeHtml(t("xdatahub.ui.app.facet.all", "All"))}</option>
+                ${optionsHtml}
+            </select>
         </div>
     </div>`;
 }
@@ -1728,6 +1803,9 @@ const debouncedLayoutRefresh = debounce(() => {
     }
     render();
 }, 120);
+const debouncedFacetDropdownReposition = debounce(() => {
+    updateFacetDropdownAnchor(false);
+}, 80);
 
 async function doRefresh() {
     if (isMediaTab(appState.activeTab)) {
@@ -2181,6 +2259,24 @@ function dbPurposeIconName(purpose) {
     return "database";
 }
 
+function localizeDbPurposeLabel(purpose) {
+    const raw = String(purpose || "").trim();
+    const text = raw.toLowerCase();
+    if (!text) {
+        return t("xdatahub.ui.app.text.h_f4dbbc63a5", "Database");
+    }
+    if (text === "media index db") {
+        return t("xdatahub.ui.app.db.purpose.media_index", "Media Index DB");
+    }
+    if (text === "records db") {
+        return t("xdatahub.ui.app.db.purpose.records", "Records DB");
+    }
+    if (text === "other db") {
+        return t("xdatahub.ui.app.db.purpose.other", "Other DB");
+    }
+    return raw;
+}
+
 function canSubmitDbDelete() {
     if (!appState.selectedDbFiles.length) {
         return false;
@@ -2551,7 +2647,7 @@ function renderFilters() {
                 <span>${escapeHtml(t("xdatahub.ui.app.filters.start", "Start"))}:</span>
                 <div class="datetime-field">
                     <div class="date-input-shell">
-                        <input id="filter-start" type="datetime-local" value="${escapeHtml(state.filters.start)}">
+                        <input id="filter-start" type="datetime-local" value="${escapeHtml(state.filters.start)}" title="${escapeAttr(state.filters.start)}">
                         <button class="date-picker-btn" type="button" data-picker-target="filter-start" title="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}">${iconSvg("calendar", t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"), "xdatahub-icon date-picker-icon")}</button>
                     </div>
                 </div>
@@ -2560,7 +2656,7 @@ function renderFilters() {
                 <span>${escapeHtml(t("xdatahub.ui.app.filters.end", "End"))}:</span>
                 <div class="datetime-field">
                     <div class="date-input-shell">
-                        <input id="filter-end" type="datetime-local" value="${escapeHtml(state.filters.end)}">
+                        <input id="filter-end" type="datetime-local" value="${escapeHtml(state.filters.end)}" title="${escapeAttr(state.filters.end)}">
                         <button class="date-picker-btn" type="button" data-picker-target="filter-end" title="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}">${iconSvg("calendar", t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"), "xdatahub-icon date-picker-icon")}</button>
                     </div>
                 </div>
@@ -2572,7 +2668,7 @@ function renderFilters() {
         <div class="filters-sidebar-body">
             <div class="field keyword-field">
                 <span>${escapeHtml(isHistory ? t("xdatahub.ui.app.text.h_83b27410a4", "Extra Header") : t("xdatahub.ui.app.text.h_1275f6feb7", "Filename"))}:</span>
-                <input id="filter-keyword" value="${escapeHtml(state.filters.keyword)}" placeholder="${escapeAttr(isHistory ? t("xdatahub.ui.app.placeholder.h_5825819325", "Extra header keyword") : t("xdatahub.ui.app.placeholder.h_cc1b21e800", "Keyword"))}">
+                <input id="filter-keyword" value="${escapeHtml(state.filters.keyword)}" placeholder="${escapeAttr(isHistory ? t("xdatahub.ui.app.placeholder.h_5825819325", "Extra header keyword") : t("xdatahub.ui.app.placeholder.h_cc1b21e800", "Keyword"))}" title="${escapeAttr(state.filters.keyword)}">
             </div>
             ${dbField}
             ${typeField}
@@ -3518,13 +3614,13 @@ function renderListRows() {
                     <span class="row-id-db-group">
                         <span class="chip row-id-chip">${escapeHtml(recordId)}</span>
                         <span class="row-id-db-sep" aria-hidden="true"></span>
-                        <span class="chip row-db-chip"><span class="chip-icon chip-icon-db" aria-hidden="true"></span> ${escapeHtml(dbName)}</span>
+                        <span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span> ${escapeHtml(dbName)}</span>
                     </span>
                 `;
             } else if (recordId) {
                 idDbChipHtml = `<span class="chip row-id-chip">${escapeHtml(recordId)}</span>`;
             } else if (dbName) {
-                idDbChipHtml = `<span class="chip row-db-chip"><span class="chip-icon chip-icon-db" aria-hidden="true"></span> ${escapeHtml(dbName)}</span>`;
+                idDbChipHtml = `<span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span> ${escapeHtml(dbName)}</span>`;
             }
             return `
                 <div class="row${activeClass}" data-item-id="${escapeHtml(item.id)}"${rowStyle}>
@@ -3534,7 +3630,7 @@ function renderListRows() {
                         </div>
                     </div>
                     <div class="row-content-line">
-                        <div class="row-title row-content-text">${escapeHtml(contentPreview || noContentText)}</div>
+                        <div class="row-title row-content-text" title="${escapeAttr(contentPreview || noContentText)}">${escapeHtml(contentPreview || noContentText)}</div>
                         <button
                             class="btn row-copy-btn row-copy-btn-inline"
                             type="button"
@@ -3793,6 +3889,27 @@ function renderSettingsDialog() {
             <div class="danger-dialog settings-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(settingsTitle)}">
                 <div class="danger-dialog-title settings-dialog-title">${iconSvg("settings", t("xdatahub.ui.app.settings.title", "Settings"), "xdatahub-icon dialog-title-icon")} ${escapeHtml(settingsPanel)}</div>
                 <div class="settings-section">
+                    <div class="settings-section-title">${iconSvg("palette", t("xdatahub.ui.app.text.h_9bcf436eac", "Appearance Theme"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_9bcf436eac", "Appearance Theme"))}</div>
+                    <div class="danger-dialog-input-wrap settings-select-row">
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.theme_mode", "Theme mode:"))}</span>
+                        <select id="setting-theme-mode" ${appState.settingsSaving ? "disabled" : ""}>
+                            <option value="dark" ${draft.themeMode === "dark" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.theme.dark", "Dark"))}</option>
+                            <option value="light" ${draft.themeMode === "light" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.theme.light", "Light"))}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-section-title">${iconSvg("layout-grid", t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"))}</div>
+                    <div class="danger-dialog-input-wrap settings-select-row">
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.card_size", "Card size:"))}</span>
+                        <select id="setting-media-card-size-preset" ${appState.settingsSaving ? "disabled" : ""}>
+                            <option value="compact" ${draft.mediaCardSizePreset === "compact" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.compact", "Compact"))}</option>
+                            <option value="standard" ${draft.mediaCardSizePreset === "standard" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.standard", "Standard"))}</option>
+                            <option value="large" ${draft.mediaCardSizePreset === "large" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.large", "Large"))}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="settings-section">
                     <div class="settings-section-title">${iconSvg("tags", t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"))}</div>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
@@ -3830,27 +3947,6 @@ function renderSettingsDialog() {
                         >
                         <span>${escapeHtml(t("xdatahub.ui.app.settings.show_chip_size", "Show file size chip"))}</span>
                     </label>
-                </div>
-                <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("layout-grid", t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"))}</div>
-                    <div class="danger-dialog-input-wrap settings-select-row">
-                        <span>${escapeHtml(t("xdatahub.ui.app.settings.card_size", "Card size:"))}</span>
-                        <select id="setting-media-card-size-preset" ${appState.settingsSaving ? "disabled" : ""}>
-                            <option value="compact" ${draft.mediaCardSizePreset === "compact" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.compact", "Compact"))}</option>
-                            <option value="standard" ${draft.mediaCardSizePreset === "standard" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.standard", "Standard"))}</option>
-                            <option value="large" ${draft.mediaCardSizePreset === "large" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.large", "Large"))}</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("palette", t("xdatahub.ui.app.text.h_9bcf436eac", "Appearance Theme"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_9bcf436eac", "Appearance Theme"))}</div>
-                    <div class="danger-dialog-input-wrap settings-select-row">
-                        <span>${escapeHtml(t("xdatahub.ui.app.settings.theme_mode", "Theme mode:"))}</span>
-                        <select id="setting-theme-mode" ${appState.settingsSaving ? "disabled" : ""}>
-                            <option value="dark" ${draft.themeMode === "dark" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.theme.dark", "Dark"))}</option>
-                            <option value="light" ${draft.themeMode === "light" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.theme.light", "Light"))}</option>
-                        </select>
-                    </div>
                 </div>
                 <div class="settings-section">
                     <div class="settings-section-title">${iconSvg("audio-lines", t("xdatahub.ui.app.text.h_5cbb6e4131", "Media Playback"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_5cbb6e4131", "Media Playback"))}</div>
@@ -4000,7 +4096,7 @@ function renderImagePreview() {
             <div class="image-lightbox-content">
                 <div class="image-lightbox-head">
                     <div class="image-lightbox-head-pill">
-                        <div class="image-lightbox-title">${escapeHtml(title)}</div>
+                        <div class="image-lightbox-title" title="${escapeAttr(title)}">${escapeHtml(title)}</div>
                         <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.shell.btn.close", "Close"))}</button>
                     </div>
                 </div>
@@ -4227,8 +4323,9 @@ function renderDbDeleteDialog() {
         const critical = isDbCriticalEffective(item);
         const builtin = !!item.is_critical_builtin;
         const locked = critical && !appState.unlockCritical;
-        const purposeLabel = String(item.purpose || t("xdatahub.ui.app.text.h_f4dbbc63a5", "Database"));
-        const purposeIcon = dbPurposeIconName(purposeLabel);
+        const purposeRaw = String(item.purpose || "").trim();
+        const purposeLabel = localizeDbPurposeLabel(purposeRaw);
+        const purposeIcon = dbPurposeIconName(purposeRaw || purposeLabel);
         const rowClass = builtin
             ? "critical-builtin"
             : critical
@@ -4239,7 +4336,7 @@ function renderDbDeleteDialog() {
             <div class="db-delete-row ${rowClass}">
                 <label class="db-delete-select db-delete-segment db-delete-segment-left">
                     <input type="checkbox" data-db-file-check="${escapeAttr(item.name)}" ${checked} ${locked ? "disabled" : ""}>
-                    <span class="db-delete-name">${escapeHtml(item.name)}</span>
+                    <span class="db-delete-name" title="${escapeAttr(item.name)}">${escapeHtml(item.name)}</span>
                 </label>
                 <div class="db-delete-meta db-delete-segment db-delete-segment-middle">
                     <span class="chip">${iconSvg(purposeIcon, purposeLabel, "xdatahub-icon chip-icon")} ${escapeHtml(purposeLabel)}</span>
@@ -4357,8 +4454,15 @@ function renderLocaleSwitcherOverlay() {
     if (!appState.localeSwitcherOpen) {
         return "";
     }
-    const zhActive = appState.localePreviewLang === "zh";
-    const enActive = appState.localePreviewLang === "en";
+    const pending = appState.localeSelectionPending;
+    const zhActive = !pending && appState.localePreviewLang === "zh";
+    const enActive = !pending && appState.localePreviewLang === "en";
+    const confirmText = t("xdatahub.ui.app.common.confirm", "Confirm");
+    const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
+    // NOTE: Keep "中文" label in English UI intentionally; do not "fix" to "Chinese".
+    const zhDisplayLabel = appState.localePreviewLang === "en"
+        ? "中文"
+        : t("xdatahub.ui.app.locale.zh", "Chinese");
     return `
         <div class="locale-switcher-overlay" id="locale-switcher-overlay">
             <div
@@ -4367,7 +4471,7 @@ function renderLocaleSwitcherOverlay() {
                 aria-modal="true"
                 aria-label="${escapeAttr(t("xdatahub.ui.app.locale.select_title", "Select Language"))}"
             >
-                <div class="locale-switcher-title">${escapeHtml(t("xdatahub.ui.app.locale.select_title", "Select Language"))}</div>
+                <div class="locale-switcher-title">${iconSvg("languages", t("xdatahub.ui.app.locale.select_title", "Select Language"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.locale.select_title", "Select Language"))}</div>
                 <button
                     class="btn locale-option${zhActive ? " active" : ""}"
                     id="btn-locale-option-zh"
@@ -4376,7 +4480,7 @@ function renderLocaleSwitcherOverlay() {
                     role="menuitemradio"
                     aria-checked="${zhActive ? "true" : "false"}"
                 >
-                    🇨🇳 ${escapeHtml(t("xdatahub.ui.app.locale.zh", "Chinese"))}
+                    🇨🇳 ${escapeHtml(zhDisplayLabel)}
                 </button>
                 <button
                     class="btn locale-option${enActive ? " active" : ""}"
@@ -4388,6 +4492,10 @@ function renderLocaleSwitcherOverlay() {
                 >
                     🇺🇸 ${escapeHtml(t("xdatahub.ui.app.locale.en", "English"))}
                 </button>
+                <div class="locale-switcher-actions">
+                    <button class="btn primary" id="btn-locale-confirm" type="button">${iconSvg("check", confirmText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmText)}</button>
+                    <button class="btn" id="btn-locale-cancel" type="button">${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
+                </div>
             </div>
         </div>
     `;
@@ -4524,6 +4632,25 @@ function syncLocaleSwitcherUi() {
     }
     syncOverlayById("locale-switcher-overlay", renderLocaleSwitcherOverlay());
     syncDocumentLocaleMeta();
+}
+
+function openLocaleSwitcher() {
+    appState.localeSelectionOriginal = appState.localePreviewLang;
+    appState.localeSwitcherOpen = true;
+    syncLocaleSwitcherUi();
+}
+
+function closeLocaleSwitcher(confirmed) {
+    appState.localeSwitcherOpen = false;
+    if (!confirmed && appState.localeSelectionOriginal) {
+        appState.localePreviewLang = appState.localeSelectionOriginal;
+        syncDocumentLocaleMeta();
+        window.parent?.postMessage?.({
+            type: "xdatahub:ui-locale",
+            locale: appState.localePreviewLang,
+        }, "*");
+    }
+    syncLocaleSwitcherUi();
 }
 
 // 渲染策略（强约束）：
@@ -4908,33 +5035,42 @@ async function handleDelegatedPrimaryButtonClick(event) {
         return true;
     case "btn-locale-switch":
         if (appState.localeSwitcherOpen) {
-            appState.localeSwitcherOpen = false;
-            syncLocaleSwitcherUi();
+            closeLocaleSwitcher(false);
             return true;
         }
-        appState.localeSwitcherOpen = true;
-        syncLocaleSwitcherUi();
+        openLocaleSwitcher();
         return true;
     case "btn-locale-option-zh":
         appState.localePreviewLang = "zh";
-        writeUiLocalePreference("zh");
+        appState.settings.uiLocale = "zh";
+        appState.localeSelectionPending = false;
         window.parent?.postMessage?.({
             type: "xdatahub:ui-locale",
             locale: "zh",
         }, "*");
-        appState.localeSwitcherOpen = false;
-        render();
+        syncLocaleSwitcherUi();
         return true;
     case "btn-locale-option-en":
         appState.localePreviewLang = "en";
-        writeUiLocalePreference("en");
+        appState.settings.uiLocale = "en";
+        appState.localeSelectionPending = false;
         window.parent?.postMessage?.({
             type: "xdatahub:ui-locale",
             locale: "en",
         }, "*");
-        appState.localeSwitcherOpen = false;
-        render();
+        syncLocaleSwitcherUi();
         return true;
+    case "btn-locale-cancel":
+        closeLocaleSwitcher(false);
+        return true;
+    case "btn-locale-confirm": {
+        const locale = appState.localePreviewLang || "en";
+        appState.settings.uiLocale = locale;
+        appState.localeSelectionPending = false;
+        closeLocaleSwitcher(true);
+        void updateSettings({ uiLocale: locale });
+        return true;
+    }
     case "btn-toggle-filters-sidebar":
         appState.filtersSidebarOpen = !appState.filtersSidebarOpen;
         saveGlobalFiltersSidebarState();
@@ -5158,7 +5294,9 @@ function handleDelegatedHistoryRowSelect(event) {
         appState.selectedItemCache.set(appState.activeTab, item);
     }
     clearDetailResources();
-    render();
+    if (!syncHistorySelectionUi()) {
+        render();
+    }
     return true;
 }
 
@@ -5327,7 +5465,8 @@ async function handleDelegatedDbCriticalMarkChange(event) {
 
 function handleDelegatedGlobalInput(event) {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
+    if (!(target instanceof HTMLInputElement)
+        && !(target instanceof HTMLSelectElement)) {
         return false;
     }
     switch (target.id) {
@@ -5336,31 +5475,37 @@ function handleDelegatedGlobalInput(event) {
         return true;
     case "filter-keyword":
         currentTabState().filters.keyword = target.value;
+        target.title = target.value;
         saveTabState(appState.activeTab);
         return true;
     case "filter-data-type":
         currentTabState().filters.dataType = target.value;
+        target.title = target.value;
         saveTabState(appState.activeTab);
         refreshDependentWarnings();
         return true;
     case "filter-source":
         currentTabState().filters.source = target.value;
+        target.title = target.value;
         saveTabState(appState.activeTab);
         refreshDependentWarnings();
         return true;
     case "filter-db-name":
         currentTabState().filters.dbName = target.value;
+        target.title = target.value;
         saveTabState(appState.activeTab);
         debouncedScopedFacetReload(target.value);
         refreshDependentWarnings();
         return true;
     case "filter-start":
         currentTabState().filters.start = target.value;
+        target.title = target.value;
         saveTabState(appState.activeTab);
         updateDateRangeToggleVisual();
         return true;
     case "filter-end":
         currentTabState().filters.end = target.value;
+        target.title = target.value;
         saveTabState(appState.activeTab);
         updateDateRangeToggleVisual();
         return true;
@@ -5397,6 +5542,48 @@ function ensureSettingsDraftState() {
     if (!appState.settingsDraft) {
         appState.settingsDraft = cloneSettings(appState.settings);
     }
+}
+
+function handleFacetFocusIn(event) {
+    if (!appState.facetDropdown.open) {
+        return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    if (
+        target.closest(".facet-menu")
+        || target.closest(".facet-input-shell")
+        || target.closest(".facet-toggle-btn")
+    ) {
+        return;
+    }
+    closeFacetDropdown(true);
+}
+
+function handleFacetWindowBlur() {
+    if (appState.facetDropdown.open) {
+        closeFacetDropdown(true);
+    }
+}
+
+function handleFacetPointerDown(event) {
+    if (!appState.facetDropdown.open) {
+        return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    if (
+        target.closest(".facet-menu")
+        || target.closest(".facet-input-shell")
+        || target.closest(".facet-toggle-btn")
+    ) {
+        return;
+    }
+    closeFacetDropdown(true);
 }
 
 function applySettingsThemePreview(mode) {
@@ -5572,8 +5759,7 @@ function installRootDelegatedHandlers() {
             && !clickTarget.closest(".locale-switcher")
             && !clickTarget.closest(".locale-switcher-dialog")
         ) {
-            appState.localeSwitcherOpen = false;
-            syncLocaleSwitcherUi();
+            closeLocaleSwitcher(false);
         }
     });
     root.addEventListener("dragstart", (event) => {
@@ -6438,6 +6624,11 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:hotkey-spec") {
         updateIframeHotkeySpec(payload.hotkey_spec);
+        return;
+    }
+    if (payload.type === "xdatahub:close-facet") {
+        closeFacetDropdown(true);
+        return;
     }
 });
 
@@ -6464,8 +6655,12 @@ async function init() {
         applyThemeMode(queryTheme);
     }
     window.addEventListener("keydown", handleIframeToggleHotkey, true);
+    window.addEventListener("focusin", handleFacetFocusIn, true);
+    window.addEventListener("pointerdown", handleFacetPointerDown, true);
+    window.addEventListener("blur", handleFacetWindowBlur, true);
     window.addEventListener("resize", scheduleTopActionBarCompactUpdate);
     window.addEventListener("resize", debouncedLayoutRefresh);
+    window.addEventListener("resize", debouncedFacetDropdownReposition);
     setupWsLockSync();
     appState.lockPollTimer = window.setInterval(pollLockStatus, 2000);
     try {
@@ -6474,6 +6669,18 @@ async function init() {
         appState.settings = normalizeSettings({});
         applyThemeMode(appState.settings.themeMode);
         appState.settingsError = "";
+    }
+    if (appState.settings.uiLocale) {
+        appState.localePreviewLang = appState.settings.uiLocale;
+        appState.localeSelectionPending = false;
+        syncDocumentLocaleMeta();
+        window.parent?.postMessage?.({
+            type: "xdatahub:ui-locale",
+            locale: appState.localePreviewLang,
+        }, "*");
+    } else {
+        appState.localeSelectionPending = true;
+        openLocaleSwitcher();
     }
     await pollLockStatus();
     await loadList();

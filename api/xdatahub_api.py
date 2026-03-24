@@ -44,6 +44,7 @@ MEDIA_SORT_BY_VALUES = {"mtime", "name", "size"}
 MEDIA_SORT_ORDER_VALUES = {"asc", "desc"}
 MEDIA_CARD_SIZE_PRESET_VALUES = {"compact", "standard", "large"}
 THEME_MODE_VALUES = {"dark", "light"}
+UI_LOCALE_VALUES = {"zh", "en"}
 MEDIA_STREAM_CHUNK_SIZE = 256 * 1024
 
 MEDIA_TYPE_EXT = {
@@ -1370,6 +1371,12 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()
         if theme_mode in THEME_MODE_VALUES:
             patch["theme_mode"] = theme_mode
+    if "ui_locale" in value:
+        raw_locale = str(value.get("ui_locale") or "").strip()
+        if raw_locale:
+            locale = normalize_locale_code(raw_locale)
+            if locale in UI_LOCALE_VALUES:
+                patch["ui_locale"] = locale
     return patch
 
 
