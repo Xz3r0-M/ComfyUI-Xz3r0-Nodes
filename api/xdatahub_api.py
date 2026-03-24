@@ -15,9 +15,11 @@ import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import server
 from aiohttp import web
+from PIL import Image, UnidentifiedImageError
 
 try:
     import folder_paths  # type: ignore
@@ -25,9 +27,27 @@ except Exception:  # pragma: no cover
     folder_paths = None
 
 try:
-    from ..xz3r0_utils import get_critical_db_names, get_logger
+    from ..xz3r0_utils import (
+        ensure_unique_filename,
+        get_critical_db_names,
+        get_logger,
+        sanitize_path_component,
+    )
+    from ..xz3r0_utils.xdatahub_bridge import (
+        get_latest_image,
+        update_latest_image,
+    )
 except ImportError:
-    from xz3r0_utils import get_critical_db_names, get_logger
+    from xz3r0_utils import (
+        ensure_unique_filename,
+        get_critical_db_names,
+        get_logger,
+        sanitize_path_component,
+    )
+    from xz3r0_utils.xdatahub_bridge import (
+        get_latest_image,
+        update_latest_image,
+    )
 
 LOGGER = get_logger(__name__)
 
@@ -46,6 +66,10 @@ MEDIA_CARD_SIZE_PRESET_VALUES = {"compact", "standard", "large"}
 THEME_MODE_VALUES = {"dark", "light"}
 UI_LOCALE_VALUES = {"zh", "en"}
 MEDIA_STREAM_CHUNK_SIZE = 256 * 1024
+IMAGE_VALIDATE_CACHE_MAX = 512
+IMAGE_VALIDATE_CACHE_TTL_S = 30.0
+IMAGE_VALIDATE_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
+IMAGE_VALIDATE_LOCK = threading.Lock()
 
 MEDIA_TYPE_EXT = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"},
@@ -58,8 +82,10 @@ ERROR_TEXT = {
     "permission_denied": "Permission denied",
     "file_corrupted": "File corrupted or unreadable",
     "quota_exceeded": "Limit exceeded, request rejected",
+    "invalid_payload": "Invalid payload",
     "resource_busy": "Resource is busy, read-only mode only",
     "internal_error": "System busy, please retry later",
+    "unsupported_media_type": "Unsupported media type",
 }
 
 
@@ -249,6 +275,111 @@ def parse_iso(value: str | None) -> float | None:
         return dt.timestamp()
     except Exception:
         return None
+
+
+def _resolve_view_file_url(
+    file_url: str,
+) -> tuple[Path, str, str] | None:
+    raw = str(file_url or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        parsed = None
+    path = parsed.path if parsed else raw
+    if path != "/view":
+        return None
+    query = parse_qs(parsed.query if parsed else "")
+    filename = unquote(query.get("filename", [""])[0]).strip()
+    if not filename:
+        return None
+    if filename[0] == "/" or ".." in filename:
+        return None
+    file_type = unquote(query.get("type", [""])[0]).strip().lower()
+    if file_type not in {"input", "output", "temp"}:
+        return None
+    subfolder = unquote(query.get("subfolder", [""])[0]).strip()
+    if folder_paths is None:
+        return None
+    if file_type == "input":
+        root = folder_paths.get_input_directory()
+    elif file_type == "output":
+        root = folder_paths.get_output_directory()
+    else:
+        root = folder_paths.get_temp_directory()
+    root_abs = os.path.abspath(root)
+    candidate = root
+    if subfolder:
+        candidate = os.path.join(candidate, subfolder)
+        try:
+            if os.path.commonpath((os.path.abspath(candidate), root_abs)) != root_abs:
+                return None
+        except Exception:
+            return None
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(candidate, safe_name)
+    return Path(file_path), safe_name, subfolder
+
+
+def _image_validate_cache_key(path: Path) -> tuple[str, int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (str(path), int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _get_image_validation_cached(
+    path: Path,
+) -> tuple[bool, str | None] | None:
+    key = _image_validate_cache_key(path)
+    if key is None:
+        return None
+    now = time.time()
+    with IMAGE_VALIDATE_LOCK:
+        entry = IMAGE_VALIDATE_CACHE.get(key)
+        if not entry:
+            return None
+        if now - float(entry.get("ts", 0)) > IMAGE_VALIDATE_CACHE_TTL_S:
+            IMAGE_VALIDATE_CACHE.pop(key, None)
+            return None
+        return bool(entry.get("ok")), entry.get("code")
+
+
+def _set_image_validation_cache(
+    path: Path,
+    ok: bool,
+    code: str | None,
+) -> None:
+    key = _image_validate_cache_key(path)
+    if key is None:
+        return
+    now = time.time()
+    with IMAGE_VALIDATE_LOCK:
+        IMAGE_VALIDATE_CACHE[key] = {
+            "ok": ok,
+            "code": code,
+            "ts": now,
+        }
+        if len(IMAGE_VALIDATE_CACHE) <= IMAGE_VALIDATE_CACHE_MAX:
+            return
+        oldest_key = min(
+            IMAGE_VALIDATE_CACHE,
+            key=lambda k: float(IMAGE_VALIDATE_CACHE[k].get("ts", 0)),
+        )
+        IMAGE_VALIDATE_CACHE.pop(oldest_key, None)
+
+
+def _validate_image_with_pillow(path: Path) -> tuple[bool, str | None]:
+    try:
+        with Image.open(path) as img:
+            img.verify()
+        return True, None
+    except UnidentifiedImageError:
+        return False, "unsupported_media_type"
+    except Exception:
+        return False, "file_corrupted"
 
 
 def utc_now_iso() -> str:
@@ -2326,6 +2457,313 @@ async def api_media_file(request: web.Request) -> web.Response:
             type(exc).__name__,
         )
         return json_error("internal_error", 500)
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/send")
+async def api_media_send(request: web.Request) -> web.Response:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    try:
+        media_id = int(str(payload.get("media_id") or ""))
+    except Exception:
+        return json_error(request, "file_not_found", 404)
+
+    def _read(conn: sqlite3.Connection):
+        return conn.execute(
+            "SELECT id, real_path, rel_path, filename, media_type "
+            "FROM media_index WHERE id = ? AND valid = 1",
+            (media_id,),
+        ).fetchone()
+
+    try:
+        row = STORE._retry_read(_read)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media send read failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    if row is None:
+        return json_error(request, "file_not_found", 404)
+
+    media_type = str(row["media_type"] or "").lower()
+    if media_type != "image":
+        return json_error(request, "unsupported_media_type", 400)
+
+    try:
+        with STORE._connect() as conn:
+            resolved = STORE.resolve_runtime_path(conn, row)
+    except sqlite3.Error as exc:
+        LOGGER.exception(
+            "[xdatahub] media send resolve failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+
+    if resolved is None:
+        roots = comfy_dirs()
+        located = locate_media_entry(row, roots)
+        LOGGER.info(
+            "[xdatahub] media send denied: id=%s, reason=%s",
+            media_id,
+            located.get("status"),
+        )
+        if located.get("status") == "blocked":
+            return json_error(request, "permission_denied", 403)
+        return json_error(request, "file_not_found", 404)
+
+    file_url = f"/xz3r0/xdatahub/media/file?id={media_id}"
+
+    try:
+        update_latest_image(
+            media_id=media_id,
+            path=Path(resolved),
+            title=str(row["filename"] or ""),
+            file_url=file_url,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media send cache failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response(
+        {
+            "status": "success",
+            "media_id": media_id,
+            "title": str(row["filename"] or ""),
+            "file_url": file_url,
+        }
+    )
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/upload")
+async def api_media_upload(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        reader = await request.multipart()
+    except Exception:
+        reader = None
+    if reader is None:
+        return json_error(request, "invalid_payload", 400)
+    field = await reader.next()
+    if field is None or field.name != "file":
+        return json_error(request, "invalid_payload", 400)
+    filename = str(field.filename or "").strip()
+    content_type = str(
+        field.headers.get("Content-Type") or ""
+    ).lower()
+    ext = Path(filename).suffix.lower()
+    if (
+        not content_type.startswith("image/")
+        and ext not in MEDIA_TYPE_EXT["image"]
+    ):
+        return json_error(request, "unsupported_media_type", 400)
+
+    if ext not in MEDIA_TYPE_EXT["image"]:
+        ext_map = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/bmp": ".bmp",
+            "image/gif": ".gif",
+        }
+        ext = ext_map.get(content_type, ".png")
+
+    safe_stem = (
+        sanitize_path_component(Path(filename).stem)
+        or "xdatahub"
+    )
+    if folder_paths is not None:
+        input_root = Path(
+            folder_paths.get_input_directory()
+        )
+        subfolder = "xdatahub_uploads"
+        target_dir = input_root / subfolder
+    else:
+        input_root = data_root()
+        subfolder = ""
+        target_dir = input_root / "xdatahub_uploads"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        final_name = ensure_unique_filename(
+            target_dir,
+            safe_stem,
+            ext,
+        )
+    except Exception:
+        return json_error(request, "internal_error", 500)
+    target_path = target_dir / final_name
+
+    try:
+        with target_path.open("wb") as handle:
+            while True:
+                chunk = await field.read_chunk()
+                if not chunk:
+                    break
+                handle.write(chunk)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media upload failed: %s",
+            type(exc).__name__,
+        )
+        try:
+            target_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return json_error(request, "internal_error", 500)
+
+    if subfolder:
+        file_url = (
+            f"/view?filename={quote(final_name)}"
+            f"&type=input&subfolder={quote(subfolder)}"
+        )
+    else:
+        file_url = ""
+
+    try:
+        update_latest_image(
+            media_id=0,
+            path=target_path,
+            title=final_name,
+            file_url=file_url,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media upload cache failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+
+    return web.json_response(
+        {
+            "status": "success",
+            "media_id": 0,
+            "title": final_name,
+            "file_url": file_url,
+        }
+    )
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/send-view")
+async def api_media_send_view(request: web.Request) -> web.Response:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    file_url = str(payload.get("file_url") or "").strip()
+    result = _resolve_view_file_url(file_url)
+    if result is None:
+        return json_error(request, "invalid_payload", 400)
+    resolved, filename, _subfolder = result
+    if not resolved.exists():
+        return json_error(request, "file_not_found", 404)
+
+    try:
+        update_latest_image(
+            media_id=0,
+            path=resolved,
+            title=filename,
+            file_url=file_url,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media send-view cache failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+
+    return web.json_response(
+        {
+            "status": "success",
+            "media_id": 0,
+            "title": filename,
+            "file_url": file_url,
+        }
+    )
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/media/validate-view"
+)
+async def api_media_validate_view(request: web.Request) -> web.Response:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    file_url = str(payload.get("file_url") or "").strip()
+    result = _resolve_view_file_url(file_url)
+    if result is None:
+        return json_error(request, "invalid_payload", 400)
+    resolved, filename, _subfolder = result
+    if not resolved.exists():
+        return json_error(request, "file_not_found", 404)
+
+    cached = _get_image_validation_cached(resolved)
+    if cached is not None:
+        ok, code = cached
+        if ok:
+            return web.json_response(
+                {
+                    "status": "success",
+                    "valid": True,
+                    "title": filename,
+                    "file_url": file_url,
+                }
+            )
+        return json_error(
+            request,
+            code or "file_corrupted",
+            415 if code == "unsupported_media_type" else 400,
+        )
+
+    ok, code = _validate_image_with_pillow(resolved)
+    _set_image_validation_cache(resolved, ok, code)
+    if ok:
+        return web.json_response(
+            {
+                "status": "success",
+                "valid": True,
+                "title": filename,
+                "file_url": file_url,
+            }
+        )
+    return json_error(
+        request,
+        code or "file_corrupted",
+        415 if code == "unsupported_media_type" else 400,
+    )
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/media/latest")
+async def api_media_latest(request: web.Request) -> web.Response:
+    snapshot = get_latest_image()
+    if snapshot is None:
+        return web.json_response(
+            {
+                "status": "success",
+                "media_id": None,
+                "title": "",
+                "file_url": "",
+            }
+        )
+    media_id = int(snapshot.media_id)
+    file_url = str(snapshot.file_url or "")
+    if not file_url and media_id > 0:
+        file_url = f"/xz3r0/xdatahub/media/file?id={media_id}"
+    return web.json_response(
+        {
+            "status": "success",
+            "media_id": media_id,
+            "title": str(snapshot.title or ""),
+            "file_url": file_url,
+        }
+    )
 
 
 register_lock_listener()

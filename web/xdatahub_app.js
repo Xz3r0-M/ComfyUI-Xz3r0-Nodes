@@ -55,6 +55,7 @@ const appState = {
         open: false,
         kind: "image",
         url: "",
+        viewUrl: "",
         title: "",
         unsupported: false,
         unsupportedMessage: "",
@@ -130,6 +131,20 @@ const appState = {
     settingsDialogOpen: false,
     settingsSaving: false,
     settingsError: "",
+    nodeSendDialogOpen: false,
+    nodeSendLoading: false,
+    nodeSendNodesLoading: false,
+    nodeSendValidateLoading: false,
+    nodeSendNodes: [],
+    nodeSendFileUrl: "",
+    nodeSendTitle: "",
+    nodeSendSortKey: "id",
+    nodeSendSortDir: "asc",
+    nodeSendRequestId: "",
+    nodeSendRequestTimer: 0,
+    nodeSendValidateId: "",
+    nodeSendValidateTimer: 0,
+    nodeSendError: "",
     localeSwitcherOpen: false,
     localeSelectionPending: false,
     localeSelectionOriginal: "",
@@ -167,6 +182,8 @@ let topActionCompactRaf = 0;
 let renderCount = 0;
 let uiLocaleZhDict = {};
 let uiLocaleEnDict = {};
+let mediaSendProximityRaf = 0;
+let mediaSendProximityPayload = null;
 
 const tabStates = {};
 for (const tab of TABS) {
@@ -374,8 +391,7 @@ function normalizeDbColorKey(dbName) {
     return String(dbName || "").trim().toLowerCase();
 }
 
-function hashDbNameU32(dbName) {
-    const key = normalizeDbColorKey(dbName);
+function hashColorKeyU32(key) {
     if (!key) {
         return 0;
     }
@@ -387,13 +403,46 @@ function hashDbNameU32(dbName) {
     return hash >>> 0;
 }
 
+function hashDbNameU32(dbName) {
+    const key = normalizeDbColorKey(dbName);
+    return hashColorKeyU32(key);
+}
+
 function getDbAccentColor(dbName) {
     const key = normalizeDbColorKey(dbName);
     if (!key) {
         return "var(--db-palette-default)";
     }
-    const index = hashDbNameU32(key) % DB_ACCENT_PALETTE.length;
+    const index = hashDbNameU32(dbName) % DB_ACCENT_PALETTE.length;
     return DB_ACCENT_PALETTE[index];
+}
+
+function normalizeNodeColorKey(nodeKey) {
+    return String(nodeKey || "").trim().toLowerCase();
+}
+
+function hashNodeKeyU32(nodeKey) {
+    const key = normalizeNodeColorKey(nodeKey);
+    return hashColorKeyU32(key);
+}
+
+function getNodeAccentColor(nodeKey) {
+    const key = normalizeNodeColorKey(nodeKey);
+    if (!key) {
+        return "var(--db-palette-default)";
+    }
+    const index = hashNodeKeyU32(key) % DB_ACCENT_PALETTE.length;
+    return DB_ACCENT_PALETTE[index];
+}
+
+function resolveNodeAccentColor(node) {
+    const paletteSize = DB_ACCENT_PALETTE.length;
+    const index = Number(node?.accent_index);
+    if (Number.isFinite(index) && paletteSize > 0) {
+        const safeIndex = ((index % paletteSize) + paletteSize) % paletteSize;
+        return DB_ACCENT_PALETTE[safeIndex];
+    }
+    return getNodeAccentColor(node?.id);
 }
 
 function buildComfyViewUrlFromEntryPath(entryPath, fallbackFilename = "") {
@@ -1851,6 +1900,7 @@ function openImagePreview(kind, url, title) {
         open: true,
         kind: kind || "image",
         url,
+        viewUrl: String(options.viewUrl || ""),
         title: title || "",
         unsupported: !!options.unsupported,
         unsupportedMessage: String(options.unsupportedMessage || ""),
@@ -1888,6 +1938,7 @@ function closeImagePreview() {
         open: false,
         kind: "image",
         url: "",
+        viewUrl: "",
         title: "",
         unsupported: false,
         unsupportedMessage: "",
@@ -2200,6 +2251,170 @@ function refreshSettingsDialogOverlay() {
         return;
     }
     syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
+}
+
+function refreshNodeSendDialogOverlay() {
+    if (!appState.nodeSendDialogOpen) {
+        return;
+    }
+    syncOverlayById("node-send-overlay", renderNodeSendDialog());
+}
+
+function syncNodeSendLoading() {
+    appState.nodeSendLoading = (
+        appState.nodeSendNodesLoading
+        || appState.nodeSendValidateLoading
+    );
+}
+
+function clearNodeSendRequestTimer() {
+    if (appState.nodeSendRequestTimer) {
+        window.clearTimeout(appState.nodeSendRequestTimer);
+        appState.nodeSendRequestTimer = 0;
+    }
+}
+
+function clearNodeSendValidateTimer() {
+    if (appState.nodeSendValidateTimer) {
+        window.clearTimeout(appState.nodeSendValidateTimer);
+        appState.nodeSendValidateTimer = 0;
+    }
+}
+
+function requestXImageGetNodes() {
+    const requestId = `ximageget_${Date.now()}_${Math.random()
+        .toString(16)
+        .slice(2)}`;
+    appState.nodeSendRequestId = requestId;
+    appState.nodeSendNodesLoading = true;
+    syncNodeSendLoading();
+    clearNodeSendRequestTimer();
+    window.parent?.postMessage?.(
+        {
+            type: "xdatahub:request_ximageget_nodes",
+            request_id: requestId,
+        },
+        "*"
+    );
+    appState.nodeSendRequestTimer = window.setTimeout(() => {
+        if (appState.nodeSendRequestId !== requestId) {
+            return;
+        }
+        appState.nodeSendRequestId = "";
+        appState.nodeSendNodesLoading = false;
+        syncNodeSendLoading();
+        if (!appState.nodeSendError) {
+            appState.nodeSendError = t(
+                "xdatahub.ui.app.media.send_dialog_error",
+                "Failed to load node list"
+            );
+        }
+        refreshNodeSendDialogOverlay();
+    }, 1500);
+}
+
+async function requestNodeSendValidation(fileUrl) {
+    const requestId = `ximageget_validate_${Date.now()}_${Math.random()
+        .toString(16)
+        .slice(2)}`;
+    appState.nodeSendValidateId = requestId;
+    appState.nodeSendValidateLoading = true;
+    syncNodeSendLoading();
+    clearNodeSendValidateTimer();
+    appState.nodeSendValidateTimer = window.setTimeout(() => {
+        if (appState.nodeSendValidateId !== requestId) {
+            return;
+        }
+        appState.nodeSendValidateId = "";
+        appState.nodeSendValidateLoading = false;
+        syncNodeSendLoading();
+        if (!appState.nodeSendError) {
+            appState.nodeSendError = t(
+                "xdatahub.ui.app.media.send_dialog_error",
+                "Failed to load node list"
+            );
+        }
+        refreshNodeSendDialogOverlay();
+    }, 1500);
+    try {
+        await apiPost("/xz3r0/xdatahub/media/validate-view", {
+            file_url: fileUrl,
+        });
+        if (appState.nodeSendValidateId !== requestId) {
+            return;
+        }
+        appState.nodeSendValidateId = "";
+        appState.nodeSendValidateLoading = false;
+        clearNodeSendValidateTimer();
+        syncNodeSendLoading();
+        if (!appState.nodeSendError) {
+            refreshNodeSendDialogOverlay();
+        }
+    } catch (error) {
+        if (appState.nodeSendValidateId !== requestId) {
+            return;
+        }
+        appState.nodeSendValidateId = "";
+        appState.nodeSendValidateLoading = false;
+        clearNodeSendValidateTimer();
+        appState.nodeSendError = String(error?.message || "");
+        appState.nodeSendNodes = [];
+        syncNodeSendLoading();
+        refreshNodeSendDialogOverlay();
+    }
+}
+
+function openNodeSendDialog(fileUrl, title) {
+    appState.nodeSendDialogOpen = true;
+    appState.nodeSendFileUrl = String(fileUrl || "");
+    appState.nodeSendTitle = String(title || "");
+    appState.nodeSendNodes = [];
+    appState.nodeSendError = "";
+    appState.nodeSendNodesLoading = true;
+    appState.nodeSendValidateLoading = true;
+    syncNodeSendLoading();
+    requestXImageGetNodes();
+    if (appState.nodeSendFileUrl) {
+        requestNodeSendValidation(appState.nodeSendFileUrl);
+    } else {
+        appState.nodeSendValidateLoading = false;
+        syncNodeSendLoading();
+    }
+    refreshNodeSendDialogOverlay();
+}
+
+function closeNodeSendDialog() {
+    appState.nodeSendDialogOpen = false;
+    appState.nodeSendFileUrl = "";
+    appState.nodeSendTitle = "";
+    appState.nodeSendNodes = [];
+    appState.nodeSendError = "";
+    appState.nodeSendLoading = false;
+    appState.nodeSendNodesLoading = false;
+    appState.nodeSendValidateLoading = false;
+    appState.nodeSendRequestId = "";
+    appState.nodeSendValidateId = "";
+    clearNodeSendRequestTimer();
+    clearNodeSendValidateTimer();
+    syncOverlayById("node-send-overlay", "");
+}
+
+function applyNodeSendNodesResponse(payload) {
+    const requestId = String(payload?.request_id || "");
+    if (!requestId || requestId !== appState.nodeSendRequestId) {
+        return;
+    }
+    clearNodeSendRequestTimer();
+    appState.nodeSendRequestId = "";
+    appState.nodeSendNodesLoading = false;
+    syncNodeSendLoading();
+    const nodes = Array.isArray(payload?.nodes)
+        ? payload.nodes
+        : [];
+    appState.nodeSendNodes = nodes.filter(
+        (item) => Number.isFinite(Number(item?.id))
+    );
+    refreshNodeSendDialogOverlay();
 }
 
 function buildDbDeleteSummaryText() {
@@ -3691,6 +3906,10 @@ function renderMediaGrid() {
     const untitledText = t("xdatahub.ui.app.title.h_8f9548eaa5", "(Untitled)");
     const audioText = t("xdatahub.ui.app.text.h_461189f186", "Audio");
     const tapToPlayText = t("xdatahub.ui.app.media.tap_to_open_player", "Click to open player");
+    const sendToNodeText = t(
+        "xdatahub.ui.app.media.send_to_node",
+        "Send to node"
+    );
     const showTypeChip = appState.settings.showMediaChipType !== false;
     const showResolutionChip =
         appState.settings.showMediaChipResolution !== false;
@@ -3791,11 +4010,19 @@ function renderMediaGrid() {
             )
                 ? `data-preview-kind="${escapeAttr(mediaType)}" data-preview-url="${escapeAttr(fileUrl)}" data-preview-title="${escapeAttr(item.title || "")}"`
                 : "";
+            const viewUrl = mediaFileUrl
+                ? buildComfyViewUrlFromEntryPath(
+                    item.path || "",
+                    item.title || ""
+                )
+                : "";
             const dragAttrs = (
-                (mediaType === "video" || mediaType === "audio")
+                (mediaType === "video"
+                    || mediaType === "audio"
+                    || mediaType === "image")
                 && mediaFileUrl
             )
-                ? ` draggable="true" data-drag-media="1" data-drag-url-fallback="${escapeAttr(mediaFileUrl)}" data-drag-url-preferred="${escapeAttr(buildComfyViewUrlFromEntryPath(item.path || "", item.title || ""))}" data-drag-media-type="${escapeAttr(mediaType)}" data-drag-title="${escapeAttr(item.title || "")}"`
+                ? ` draggable="true" data-drag-media="1" data-drag-url-fallback="${escapeAttr(mediaFileUrl)}" data-drag-url-preferred="${escapeAttr(viewUrl)}" data-drag-media-type="${escapeAttr(mediaType)}" data-drag-title="${escapeAttr(item.title || "")}"`
                 : "";
             const resolutionAttr = canShowResolutionChip
                 ? ` data-resolution-key="${escapeAttr(resolutionKey)}"`
@@ -3824,9 +4051,16 @@ function renderMediaGrid() {
             )
                 ? ' data-audio-unsupported="1"'
                 : "";
+            const sendFileUrl = mediaType === "image" ? viewUrl : "";
+            const sendDisabled = !sendFileUrl;
+            const sendBtnHtml = mediaType === "image"
+                ? `<button class="media-send-btn ${sendDisabled ? "disabled" : ""}" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendFileUrl)}" data-media-title="${escapeAttr(item.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}" ${sendDisabled ? "disabled" : ""}>
+                        ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")}
+                    </button>`
+                : "";
             return `
                 <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${audioUnsupportedAttr}>
-                    <div class="media-thumb">${previewHtml}</div>
+                    <div class="media-thumb">${previewHtml}${sendBtnHtml}</div>
                         <div class="media-meta">
                             <div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || untitledText)}</div>
                             ${
@@ -4090,6 +4324,18 @@ function renderImagePreview() {
         "This video cannot be decoded for playback in the current browser."
     );
     const audioText = t("xdatahub.ui.app.text.h_461189f186", "Audio");
+    const sendToNodeText = t(
+        "xdatahub.ui.app.media.send_to_node",
+        "Send to node"
+    );
+    const sendViewUrl = String(appState.imagePreview.viewUrl || "");
+    const sendRowHtml = (isImage && sendViewUrl)
+        ? `<div class="image-lightbox-send-row">
+                <button class="btn image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendViewUrl)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
+                    ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")} ${escapeHtml(sendToNodeText)}
+                </button>
+            </div>`
+        : "";
     return `
         <div class="image-lightbox" id="image-lightbox">
             <div class="image-lightbox-backdrop" id="image-lightbox-close"></div>
@@ -4100,6 +4346,7 @@ function renderImagePreview() {
                         <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.shell.btn.close", "Close"))}</button>
                     </div>
                 </div>
+                ${sendRowHtml}
                 <div class="image-lightbox-body ${isAudio ? "audio" : isVideo ? "video" : "image"}">
                     ${
                         isImage
@@ -4614,11 +4861,129 @@ function syncOverlayById(id, html) {
     }
 }
 
+function renderNodeSendDialog() {
+    if (!appState.nodeSendDialogOpen) {
+        return "";
+    }
+    const titleText = t(
+        "xdatahub.ui.app.media.send_dialog_title",
+        "Send to node"
+    );
+    const hintText = t(
+        "xdatahub.ui.app.media.send_dialog_hint",
+        "Select a target XImageGet node"
+    );
+    const loadingText = t(
+        "xdatahub.ui.app.media.send_dialog_loading",
+        "Loading nodes..."
+    );
+    const emptyText = t(
+        "xdatahub.ui.app.media.send_dialog_empty",
+        "No XImageGet nodes found"
+    );
+    const sortLabelText = t(
+        "xdatahub.ui.app.media.send_dialog_sort",
+        "Sort by"
+    );
+    const sortIdText = t(
+        "xdatahub.ui.app.media.send_dialog_sort_seq",
+        "Sequence"
+    );
+    const sortNameText = t(
+        "xdatahub.ui.app.media.send_dialog_sort_name",
+        "Name"
+    );
+    const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
+    const nodes = appState.nodeSendNodes || [];
+    const subtitle = appState.nodeSendTitle
+        ? `<div class="node-send-subtitle">${escapeHtml(appState.nodeSendTitle)}</div>`
+        : "";
+    const errorText = appState.nodeSendError;
+    let bodyHtml = "";
+    const sortKey = appState.nodeSendSortKey === "name" ? "name" : "id";
+    const sortDir = appState.nodeSendSortDir === "desc" ? "desc" : "asc";
+    const sortArrow = sortDir === "asc" ? "↑" : "↓";
+    if (appState.nodeSendLoading) {
+        bodyHtml = `<div class="node-send-hint">${escapeHtml(loadingText)}</div>`;
+    } else if (errorText) {
+        bodyHtml = `<div class="node-send-hint is-error">${escapeHtml(errorText)}</div>`;
+    } else if (!nodes.length) {
+        bodyHtml = `<div class="node-send-hint">${escapeHtml(emptyText)}</div>`;
+    } else {
+        const sortedNodes = [...nodes].sort((a, b) => {
+            if (sortKey === "name") {
+                const aName = String(a?.title || "").toLowerCase();
+                const bName = String(b?.title || "").toLowerCase();
+                if (aName !== bName) {
+                    return sortDir === "asc"
+                        ? aName.localeCompare(bName)
+                        : bName.localeCompare(aName);
+                }
+            }
+            const aId = Number(a?.id);
+            const bId = Number(b?.id);
+            if (Number.isFinite(aId) && Number.isFinite(bId)) {
+                return sortDir === "asc" ? aId - bId : bId - aId;
+            }
+            return sortDir === "asc"
+                ? String(a?.id || "").localeCompare(String(b?.id || ""))
+                : String(b?.id || "").localeCompare(String(a?.id || ""));
+        });
+        const sortBar = `
+            <div class="node-send-sort">
+                <span class="node-send-sort-label">${escapeHtml(sortLabelText)}</span>
+                <button class="btn node-send-sort-btn ${sortKey === "id" ? "active" : ""}" data-node-send-sort="id" title="${escapeAttr(sortIdText)}" aria-label="${escapeAttr(sortIdText)}">
+                    ${escapeHtml(sortIdText)}${sortKey === "id" ? ` ${sortArrow}` : ""}
+                </button>
+                <button class="btn node-send-sort-btn ${sortKey === "name" ? "active" : ""}" data-node-send-sort="name" title="${escapeAttr(sortNameText)}" aria-label="${escapeAttr(sortNameText)}">
+                    ${escapeHtml(sortNameText)}${sortKey === "name" ? ` ${sortArrow}` : ""}
+                </button>
+            </div>
+        `;
+        const rows = sortedNodes.map((item) => {
+            const nodeId = Number.isFinite(Number(item.id))
+                ? String(item.id)
+                : "--";
+            const nodeTitle = String(item.title || "XImageGet");
+            const label = `${nodeTitle} #${nodeId}`;
+            const accent = resolveNodeAccentColor(item);
+            const rowStyle = ` style="--node-palette:${escapeAttr(accent)}"`;
+            return `
+                <button class="btn node-send-option" data-node-send-id="${escapeAttr(item.id)}"${rowStyle} title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
+                    <span class="node-send-seq">
+                        <span class="node-send-seq-chip">${escapeHtml(nodeId)}</span>
+                        <span class="node-send-swatch" aria-hidden="true"></span>
+                    </span>
+                    <span class="node-send-name" title="${escapeAttr(nodeTitle)}">${escapeHtml(nodeTitle)}</span>
+                </button>
+            `;
+        }).join("");
+        bodyHtml = `
+            <div class="node-send-hint">${escapeHtml(hintText)}</div>
+            ${sortBar}
+            <div class="node-send-list">${rows}</div>
+        `;
+    }
+    return `
+        <div class="node-send-overlay" id="node-send-overlay">
+            <div class="node-send-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(titleText)}">
+                <div class="node-send-title">${iconSvg("send", titleText, "xdatahub-icon dialog-title-icon")} ${escapeHtml(titleText)}</div>
+                ${subtitle}
+                <div class="node-send-body">${bodyHtml}</div>
+                <div class="node-send-actions">
+                    <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}">${escapeHtml(cancelText)}</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderOverlays() {
     syncOverlayById("image-lightbox", renderImagePreview());
     syncOverlayById("danger-dialog-overlay", renderDangerDialog());
     syncOverlayById("db-delete-overlay", renderDbDeleteDialog());
     syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
+    syncOverlayById("node-send-overlay", renderNodeSendDialog());
     syncOverlayById("locale-switcher-overlay", renderLocaleSwitcherOverlay());
 }
 
@@ -5232,6 +5597,10 @@ function handleDelegatedOverlayBackdropClick(event) {
         closeDbDeleteDialog();
         return true;
     }
+    if (target.id === "node-send-overlay") {
+        closeNodeSendDialog();
+        return true;
+    }
     if (target.id === "compact-actions-backdrop") {
         closeCompactActionsMenu(true);
         return true;
@@ -5342,6 +5711,9 @@ function handleDelegatedMediaCardClick(event) {
         )
     );
     requestAnimationFrame(() => {
+        const viewUrl = String(
+            card.getAttribute("data-drag-url-preferred") || ""
+        );
         openImagePreview(kind, previewUrl, title, {
             unsupported: unsupported || audioUnsupported || imageUnsupported,
             unsupportedMessage: unsupported
@@ -5360,8 +5732,189 @@ function handleDelegatedMediaCardClick(event) {
                             "This image format or codec is not supported in the current browser."
                         )
                     : "",
+            viewUrl,
         });
     });
+    return true;
+}
+
+async function handleDelegatedMediaSend(event) {
+    const button = event.target?.closest?.("[data-media-send='1']");
+    if (!(button instanceof HTMLElement)) {
+        return false;
+    }
+    if (!isMediaTab(appState.activeTab)) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const fileUrl = String(button.getAttribute("data-media-send-url") || "");
+    if (!fileUrl) {
+        return true;
+    }
+    const title = String(button.getAttribute("data-media-title") || "");
+    openNodeSendDialog(fileUrl, title);
+    flashButton(button);
+    return true;
+}
+
+function handleDelegatedMediaSendProximity(event) {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+        return;
+    }
+    const card = target.closest(".media-card");
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    if (!isMediaTab(appState.activeTab)) {
+        return;
+    }
+    const button = card.querySelector(".media-send-btn");
+    if (!(button instanceof HTMLElement)) {
+        return;
+    }
+    if (button.hasAttribute("disabled")) {
+        return;
+    }
+    mediaSendProximityPayload = {
+        button,
+        x: event.clientX,
+        y: event.clientY,
+    };
+    if (mediaSendProximityRaf) {
+        return;
+    }
+    mediaSendProximityRaf = requestAnimationFrame(() => {
+        mediaSendProximityRaf = 0;
+        const payload = mediaSendProximityPayload;
+        mediaSendProximityPayload = null;
+        if (!payload) {
+            return;
+        }
+        applyMediaSendProximity(
+            payload.button,
+            payload.x,
+            payload.y
+        );
+    });
+}
+
+function handleDelegatedMediaSendProximityOut(event) {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+        return;
+    }
+    const card = target.closest(".media-card");
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    const related = event.relatedTarget;
+    if (related instanceof Node && card.contains(related)) {
+        return;
+    }
+    resetMediaSendProximity(card);
+}
+
+function applyMediaSendProximity(button, x, y) {
+    const card = button.closest(".media-card");
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    const cardRect = card.getBoundingClientRect();
+    const rect = button.getBoundingClientRect();
+    const dx = x < rect.left
+        ? rect.left - x
+        : x > rect.right
+            ? x - rect.right
+            : 0;
+    const dy = y < rect.top
+        ? rect.top - y
+        : y > rect.bottom
+            ? y - rect.bottom
+            : 0;
+    const distance = Math.sqrt((dx * dx) + (dy * dy));
+    const maxDistance = Math.max(rect.height * 6, 120);
+    const raw = 1 - (distance / maxDistance);
+    const clamped = Math.min(1, Math.max(0, raw));
+    const minOpacity = 0.15;
+    const baseOpacity = minOpacity + ((1 - minOpacity) * clamped);
+    const fadeLimit = cardRect.top + (cardRect.height * 0.95);
+    const fadeRange = cardRect.height * 0.95;
+    const verticalRaw = fadeRange > 0
+        ? 1 - ((y - cardRect.top) / fadeRange)
+        : 0;
+    const verticalClamped = Math.min(1, Math.max(0, verticalRaw));
+    const verticalFactor = Math.min(
+        1,
+        Math.pow(verticalClamped, 0.35) * 1.4
+    );
+    const opacity = baseOpacity * verticalFactor;
+    button.style.setProperty("--send-proximity", opacity.toFixed(3));
+}
+
+function resetMediaSendProximity(card) {
+    const button = card.querySelector(".media-send-btn");
+    if (!(button instanceof HTMLElement)) {
+        return;
+    }
+    button.style.removeProperty("--send-proximity");
+}
+
+function handleDelegatedNodeSend(event) {
+    const cancelBtn = event.target?.closest?.("#node-send-cancel");
+    if (cancelBtn instanceof HTMLElement) {
+        closeNodeSendDialog();
+        return true;
+    }
+    const option = event.target?.closest?.("[data-node-send-id]");
+    if (!(option instanceof HTMLElement)) {
+        return false;
+    }
+    if (appState.nodeSendLoading || appState.nodeSendError) {
+        return true;
+    }
+    const nodeId = Number(option.getAttribute("data-node-send-id") || "");
+    if (!Number.isFinite(nodeId)) {
+        return true;
+    }
+    const fileUrl = String(appState.nodeSendFileUrl || "");
+    if (!fileUrl) {
+        return true;
+    }
+    window.parent?.postMessage?.(
+        {
+            type: "xdatahub:send_to_node",
+            data: {
+                node_id: nodeId,
+                file_url: fileUrl,
+                title: appState.nodeSendTitle || "",
+            },
+        },
+        "*"
+    );
+    closeNodeSendDialog();
+    return true;
+}
+
+function handleDelegatedNodeSendSort(event) {
+    const button = event.target?.closest?.("[data-node-send-sort]");
+    if (!(button instanceof HTMLElement)) {
+        return false;
+    }
+    const key = String(button.getAttribute("data-node-send-sort") || "");
+    if (key !== "id" && key !== "name") {
+        return true;
+    }
+    if (appState.nodeSendSortKey === key) {
+        appState.nodeSendSortDir = appState.nodeSendSortDir === "desc"
+            ? "asc"
+            : "desc";
+    } else {
+        appState.nodeSendSortKey = key;
+        appState.nodeSendSortDir = "asc";
+    }
+    refreshNodeSendDialogOverlay();
     return true;
 }
 
@@ -5381,46 +5934,44 @@ function handleDelegatedMediaCardDragstart(event) {
     const rawPreferredUrl = String(
         card.getAttribute("data-drag-url-preferred") || ""
     );
-    const rawFallbackUrl = String(
-        card.getAttribute("data-drag-url-fallback") || ""
-    );
     const mediaType = String(
         card.getAttribute("data-drag-media-type") || ""
     ).toLowerCase();
     const preferredUrl = toAbsoluteUrl(rawPreferredUrl);
-    const fallbackUrl = toAbsoluteUrl(rawFallbackUrl);
-    const primaryUrl = preferredUrl || fallbackUrl;
-    if (!primaryUrl) {
+    if (!preferredUrl) {
         event.preventDefault();
         return;
     }
     const title = String(
         card.getAttribute("data-drag-title")
-        || (mediaType === "audio" ? "audio" : "video")
+        || (mediaType === "audio"
+            ? "audio"
+            : mediaType === "video"
+                ? "video"
+                : "image")
     );
-    const uriValues = [primaryUrl];
-    if (fallbackUrl && fallbackUrl !== primaryUrl) {
-        uriValues.push(fallbackUrl);
-    }
+    const uriValues = [preferredUrl];
     const mime = mediaType === "audio"
         ? "audio/*"
         : mediaType === "video"
             ? "video/*"
-            : "application/octet-stream";
+            : mediaType === "image"
+                ? "image/*"
+                : "application/octet-stream";
     dataTransfer.effectAllowed = "copy";
     try {
         dataTransfer.setData("text/uri-list", uriValues.join("\r\n"));
     } catch {}
     try {
-        dataTransfer.setData("text/plain", primaryUrl);
+        dataTransfer.setData("text/plain", preferredUrl);
     } catch {}
     try {
-        dataTransfer.setData("text/x-moz-url", `${primaryUrl}\n${title}`);
+        dataTransfer.setData("text/x-moz-url", `${preferredUrl}\n${title}`);
     } catch {}
     try {
         dataTransfer.setData(
             "DownloadURL",
-            `${mime}:${title}:${primaryUrl}`
+            `${mime}:${title}:${preferredUrl}`
         );
     } catch {}
 }
@@ -5725,6 +6276,12 @@ function installRootDelegatedHandlers() {
         if (handleDelegatedOverlayBackdropClick(event)) {
             return;
         }
+        if (handleDelegatedNodeSend(event)) {
+            return;
+        }
+        if (handleDelegatedNodeSendSort(event)) {
+            return;
+        }
         if (handleDelegatedFacetToggleClick(event)) {
             return;
         }
@@ -5751,6 +6308,9 @@ function installRootDelegatedHandlers() {
         if (handleDelegatedMediaFolderClick(event)) {
             return;
         }
+        if (await handleDelegatedMediaSend(event)) {
+            return;
+        }
         handleDelegatedMediaCardClick(event);
         const clickTarget = event.target;
         if (
@@ -5765,6 +6325,15 @@ function installRootDelegatedHandlers() {
     root.addEventListener("dragstart", (event) => {
         handleDelegatedMediaCardDragstart(event);
     });
+    root.addEventListener("pointermove", (event) => {
+        handleDelegatedMediaSendProximity(event);
+    }, { passive: true });
+    root.addEventListener("pointerover", (event) => {
+        handleDelegatedMediaSendProximity(event);
+    }, { passive: true });
+    root.addEventListener("pointerout", (event) => {
+        handleDelegatedMediaSendProximityOut(event);
+    }, { passive: true });
     root.addEventListener("error", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLImageElement)) {
@@ -6493,6 +7062,11 @@ async function pollLockStatus() {
 }
 
 window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && appState.nodeSendDialogOpen) {
+        event.preventDefault();
+        closeNodeSendDialog();
+        return;
+    }
     if (event.key === "Escape" && appState.dbDeleteDialogOpen) {
         event.preventDefault();
         closeDbDeleteDialog();
@@ -6616,6 +7190,10 @@ window.addEventListener("message", (event) => {
             return;
         }
         switchTab(tab);
+        return;
+    }
+    if (payload.type === "xdatahub:ximageget_nodes") {
+        applyNodeSendNodesResponse(payload);
         return;
     }
     if (payload.type === "xdatahub:theme-mode") {

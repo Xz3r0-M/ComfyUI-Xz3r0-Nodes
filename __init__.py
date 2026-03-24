@@ -43,6 +43,7 @@ from .xnode.xstringgroup import XStringGroup
 from .xnode.xstringwrap import XStringWrap
 from .xnode.xaudiosave import XAudioSave
 from .xnode.xdatasave import XDataSave
+from .xnode.ximageget import XImageGet
 from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
 from .xnode.xlatentload import XLatentLoad
@@ -87,6 +88,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XStringWrap,
     XAudioSave,
     XDataSave,
+    XImageGet,
     XImageResize,
     XImageSave,
     XLatentLoad,

@@ -110,7 +110,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260324-207";
+const XDATAHUB_ASSET_VER = "20260325-052";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -538,6 +538,14 @@ app.registerExtension({
         closeBehavior = readCloseBehaviorFromSettings();
         ensureColorTokensStylesheet();
         await syncThemeModeFromSettings();
+        try {
+            const mod = await import("./ximageget_extension.js");
+            const init = mod?.initXImageGetExtension
+                || globalThis.__ximageget_extension_init__;
+            if (typeof init === "function") {
+                init();
+            }
+        } catch {}
 
         // 创建并注入窗口样式
         const style = document.createElement("style");

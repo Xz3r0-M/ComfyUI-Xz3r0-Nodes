@@ -688,6 +688,17 @@
       }
     }
   },
+  "XImageGet": {
+    "display_name": "XImageGet",
+    "description": "从 XDataHub 获取最新发送的图片。",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "XDataHub 最近发送的图片"
+      }
+    }
+  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "高级图像/遮罩保存节点，支持自定义文件名、子文件夹和日期时间占位符。",

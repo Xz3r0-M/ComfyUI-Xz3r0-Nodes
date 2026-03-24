@@ -688,6 +688,17 @@
       }
     }
   },
+  "XImageGet": {
+    "display_name": "XImageGet",
+    "description": "Load the latest image sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Image",
+        "tooltip": "Latest image received from XDataHub"
+      }
+    }
+  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "Advanced image/mask saving node with custom filename, subfolder support, and datetime placeholders.",
