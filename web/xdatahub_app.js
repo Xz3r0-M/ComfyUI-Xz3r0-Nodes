@@ -11,6 +11,33 @@ const TABS = [
     { id: "audio" },
 ];
 
+function createDefaultImagePreviewState() {
+    return {
+        open: false,
+        kind: "image",
+        url: "",
+        viewUrl: "",
+        title: "",
+        mediaItemId: "",
+        permissionDenied: false,
+        permissionDeniedMessage: "",
+        missing: false,
+        missingMessage: "",
+        unsupported: false,
+        unsupportedMessage: "",
+        scale: 1,
+        offsetX: 0,
+        offsetY: 0,
+        naturalWidth: 0,
+        naturalHeight: 0,
+        dragging: false,
+        dragStartX: 0,
+        dragStartY: 0,
+        dragOriginX: 0,
+        dragOriginY: 0,
+    };
+}
+
 const DEFAULT_STATE = {
     page: 1,
     pageSize: 50,
@@ -51,25 +78,7 @@ const appState = {
     requests: new Map(),
     lockPollTimer: 0,
     lockWs: null,
-    imagePreview: {
-        open: false,
-        kind: "image",
-        url: "",
-        viewUrl: "",
-        title: "",
-        unsupported: false,
-        unsupportedMessage: "",
-        scale: 1,
-        offsetX: 0,
-        offsetY: 0,
-        naturalWidth: 0,
-        naturalHeight: 0,
-        dragging: false,
-        dragStartX: 0,
-        dragStartY: 0,
-        dragOriginX: 0,
-        dragOriginY: 0,
-    },
+    imagePreview: createDefaultImagePreviewState(),
     mediaResolutionCache: new Map(),
     copyNotice: {
         text: "",
@@ -136,6 +145,8 @@ const appState = {
     nodeSendNodesLoading: false,
     nodeSendValidateLoading: false,
     nodeSendNodes: [],
+    nodeSendSelectedIds: [],
+    nodeSendSending: false,
     nodeSendFileUrl: "",
     nodeSendTitle: "",
     nodeSendSortKey: "id",
@@ -350,6 +361,10 @@ function iconSvg(name, label = "", className = "xdatahub-icon") {
     return `<img class="${className}" src="${ICON_BASE_PATH}/${name}.svg" alt="${escapeAttr(label)}" aria-hidden="true">`;
 }
 
+function iconMask(name, label = "", className = "xdatahub-mask-icon") {
+    return `<span class="${className}" style="--mask-icon:url('${ICON_BASE_PATH}/${name}.svg')" aria-hidden="true" title="${escapeAttr(label)}"></span>`;
+}
+
 function loadGlobalFiltersSidebarState() {
     try {
         const raw = sessionStorage.getItem("xdatahub.filtersSidebarOpen");
@@ -384,6 +399,38 @@ function toAbsoluteUrl(url) {
         return new URL(url, window.location.origin).toString();
     } catch {
         return String(url);
+    }
+}
+
+const MEDIA_MISSING_STATUS = new Set([404, 410]);
+const MEDIA_PERMISSION_STATUS = new Set([401, 403]);
+
+async function probeMediaFailure(url) {
+    const absolute = toAbsoluteUrl(url);
+    if (!absolute) {
+        return "";
+    }
+    try {
+        let response = await fetch(absolute, {
+            method: "HEAD",
+            cache: "no-store",
+        });
+        if (response.status === 405 || response.status === 501) {
+            response = await fetch(absolute, {
+                method: "GET",
+                cache: "no-store",
+                headers: { Range: "bytes=0-0" },
+            });
+        }
+        if (MEDIA_PERMISSION_STATUS.has(response.status)) {
+            return "permission";
+        }
+        if (MEDIA_MISSING_STATUS.has(response.status)) {
+            return "missing";
+        }
+        return "";
+    } catch {
+        return "";
     }
 }
 
@@ -1891,18 +1938,105 @@ async function applyMediaSortSettings(sortBy, sortOrder) {
     }
 }
 
+function currentPreviewMediaEntries() {
+    if (!isMediaTab(appState.activeTab) || !Array.isArray(appState.items)) {
+        return [];
+    }
+    return appState.items
+        .filter((item) => item?.kind !== "folder")
+        .map((item) => {
+            const mediaType = String(
+                item?.extra?.media_type || mediaTypeOfTab(appState.activeTab)
+            );
+            const fileUrl = String(item?.extra?.file_url || "");
+            return {
+                kind: mediaType,
+                url: fileUrl,
+                title: String(item?.title || ""),
+                mediaItemId: String(item?.id || "").trim(),
+                viewUrl: fileUrl
+                    ? buildComfyViewUrlFromEntryPath(
+                        item?.path || "",
+                        item?.title || ""
+                    )
+                    : "",
+            };
+        })
+        .filter((item) => item.url);
+}
+
+function currentPreviewMediaNav() {
+    const entries = currentPreviewMediaEntries();
+    if (!entries.length) {
+        return { index: -1, prev: null, next: null };
+    }
+    const preview = appState.imagePreview;
+    const mediaItemId = String(preview.mediaItemId || "").trim();
+    let index = entries.findIndex((item) =>
+        mediaItemId
+            ? item.mediaItemId === mediaItemId
+            : item.url === preview.url
+    );
+    if (index < 0 && preview.url) {
+        index = entries.findIndex((item) => item.url === preview.url);
+    }
+    return {
+        index,
+        prev: index > 0 ? entries[index - 1] : null,
+        next: index >= 0 && index < entries.length - 1
+            ? entries[index + 1]
+            : null,
+    };
+}
+
+function openAdjacentPreview(direction) {
+    if (!appState.imagePreview.open) {
+        return false;
+    }
+    const nav = currentPreviewMediaNav();
+    const target = direction < 0 ? nav.prev : nav.next;
+    if (!target) {
+        return false;
+    }
+    const targetCard = findMediaCardByIdentity(target.mediaItemId, target.url);
+    openImagePreview(
+        target.kind,
+        target.url,
+        target.title,
+        buildPreviewOptionsFromCard(targetCard, target)
+    );
+    if (target.mediaItemId) {
+        const state = currentTabState();
+        state.lastOpenedMediaId = target.mediaItemId;
+        state.lastOpenedMediaUrl = target.url;
+        saveTabState(appState.activeTab);
+    }
+    updateLastOpenedMediaCardClass(targetCard);
+    return true;
+}
+
 function openImagePreview(kind, url, title) {
     if (!url) {
         return;
     }
     const options = arguments[3] || {};
+    const missing = !!options.missing;
+    const permissionDenied = !missing && !!options.permissionDenied;
+    const unsupported = !missing && !permissionDenied && !!options.unsupported;
     appState.imagePreview = {
         open: true,
         kind: kind || "image",
         url,
         viewUrl: String(options.viewUrl || ""),
         title: title || "",
-        unsupported: !!options.unsupported,
+        mediaItemId: String(options.mediaItemId || "").trim(),
+        permissionDenied,
+        permissionDeniedMessage: String(
+            options.permissionDeniedMessage || ""
+        ),
+        missing,
+        missingMessage: String(options.missingMessage || ""),
+        unsupported,
         unsupportedMessage: String(options.unsupportedMessage || ""),
         scale: 1,
         offsetX: 0,
@@ -1934,25 +2068,7 @@ function closeImagePreview() {
             videoPlayer.pause();
         } catch {}
     }
-    appState.imagePreview = {
-        open: false,
-        kind: "image",
-        url: "",
-        viewUrl: "",
-        title: "",
-        unsupported: false,
-        unsupportedMessage: "",
-        scale: 1,
-        offsetX: 0,
-        offsetY: 0,
-        naturalWidth: 0,
-        naturalHeight: 0,
-        dragging: false,
-        dragStartX: 0,
-        dragStartY: 0,
-        dragOriginX: 0,
-        dragOriginY: 0,
-    };
+    appState.imagePreview = createDefaultImagePreviewState();
     unmountImageLightbox();
 }
 
@@ -1968,7 +2084,148 @@ function updateLastOpenedMediaCardClass(card) {
     }
 }
 
+function findMediaCardByIdentity(mediaItemId, url) {
+    if (!root) {
+        return null;
+    }
+    const itemId = String(mediaItemId || "").trim();
+    if (itemId) {
+        const safeItemId = typeof CSS !== "undefined" && CSS.escape
+            ? CSS.escape(itemId)
+            : itemId.replaceAll("\"", "\\\"");
+        const byId = root.querySelector(
+            `.media-card[data-media-item-id="${safeItemId}"]`
+        );
+        if (byId instanceof HTMLElement) {
+            return byId;
+        }
+    }
+    const previewUrl = String(url || "");
+    if (!previewUrl) {
+        return null;
+    }
+    const safeUrl = typeof CSS !== "undefined" && CSS.escape
+        ? CSS.escape(previewUrl)
+        : previewUrl.replaceAll("\"", "\\\"");
+    const byUrl = root.querySelector(
+        `.media-card[data-preview-url="${safeUrl}"]`
+    );
+    return byUrl instanceof HTMLElement ? byUrl : null;
+}
+
+function buildPreviewOptionsFromCard(card, fallback) {
+    const base = {
+        viewUrl: String(fallback?.viewUrl || ""),
+        mediaItemId: String(fallback?.mediaItemId || "").trim(),
+    };
+    if (!(card instanceof HTMLElement)) {
+        return base;
+    }
+    const kind = String(
+        card.getAttribute("data-preview-kind")
+        || fallback?.kind
+        || "image"
+    );
+    const missing = (
+        (kind === "video" && card.getAttribute("data-video-missing") === "1")
+        || (kind === "image" && card.getAttribute("data-image-missing") === "1")
+        || (kind === "audio" && card.getAttribute("data-audio-missing") === "1")
+    );
+    const permissionDenied = (
+        (kind === "video"
+            && card.getAttribute("data-video-permission-denied") === "1")
+        || (kind === "image"
+            && card.getAttribute("data-image-permission-denied") === "1")
+        || (kind === "audio"
+            && card.getAttribute("data-audio-permission-denied") === "1")
+    );
+    const unsupported = (
+        (kind === "video" && card.getAttribute("data-video-unsupported") === "1")
+        || (kind === "image" && card.getAttribute("data-image-unsupported") === "1")
+        || (kind === "audio" && card.getAttribute("data-audio-unsupported") === "1")
+    );
+    return {
+        ...base,
+        missing,
+        missingMessage: missing
+            ? t("xdatahub.api.error.file_not_found", "File not found or moved")
+            : "",
+        permissionDenied,
+        permissionDeniedMessage: permissionDenied
+            ? t("xdatahub.api.error.permission_denied", "Permission denied")
+            : "",
+        unsupported,
+        unsupportedMessage: unsupported
+            ? kind === "video"
+                ? t(
+                    "xdatahub.ui.app.media.unsupported_video_codec",
+                    "This video format or codec is not supported in the current browser, or the file contains audio track only."
+                )
+                : kind === "audio"
+                    ? t(
+                        "xdatahub.ui.app.media.unsupported_audio_codec",
+                        "This audio format or codec is not supported in the current browser."
+                    )
+                    : t(
+                        "xdatahub.ui.app.media.unsupported_image_codec",
+                        "This image format or codec is not supported in the current browser."
+                    )
+            : "",
+    };
+}
+
+function markPreviewMissing(kind, message) {
+    appState.imagePreview.permissionDenied = false;
+    appState.imagePreview.permissionDeniedMessage = "";
+    appState.imagePreview.missing = true;
+    appState.imagePreview.missingMessage = message || "";
+    appState.imagePreview.unsupported = false;
+    appState.imagePreview.unsupportedMessage = "";
+    if (kind) {
+        markCurrentMediaCardMissing(kind);
+    }
+    mountImageLightbox();
+}
+
+function markPreviewPermissionDenied(kind, message) {
+    appState.imagePreview.permissionDenied = true;
+    appState.imagePreview.permissionDeniedMessage = message || "";
+    appState.imagePreview.missing = false;
+    appState.imagePreview.missingMessage = "";
+    appState.imagePreview.unsupported = false;
+    appState.imagePreview.unsupportedMessage = "";
+    if (kind) {
+        markCurrentMediaCardPermissionDenied(kind);
+    }
+    mountImageLightbox();
+}
+
+function markPreviewUnsupported(kind, message) {
+    appState.imagePreview.permissionDenied = false;
+    appState.imagePreview.permissionDeniedMessage = "";
+    appState.imagePreview.missing = false;
+    appState.imagePreview.missingMessage = "";
+    appState.imagePreview.unsupported = true;
+    appState.imagePreview.unsupportedMessage = message || "";
+    if (kind) {
+        markCurrentMediaCardUnsupported(kind);
+    }
+    mountImageLightbox();
+}
+
 function bindImageLightboxEvents() {
+    document.getElementById("image-lightbox-prev-btn")?.addEventListener(
+        "click",
+        () => {
+            openAdjacentPreview(-1);
+        }
+    );
+    document.getElementById("image-lightbox-next-btn")?.addEventListener(
+        "click",
+        () => {
+            openAdjacentPreview(1);
+        }
+    );
     document.getElementById("image-lightbox-close")?.addEventListener("click", () => {
         closeImagePreview();
     });
@@ -1977,38 +2234,73 @@ function bindImageLightboxEvents() {
     });
     const previewVideo = document.getElementById("video-lightbox-player");
     if (previewVideo instanceof HTMLVideoElement) {
-        const markPreviewUnsupported = () => {
-            appState.imagePreview.unsupported = true;
-            appState.imagePreview.unsupportedMessage =
-                t(
+        previewVideo.addEventListener("error", () => {
+            void (async () => {
+                const failureType = await probeMediaFailure(
+                    previewVideo.currentSrc
+                    || previewVideo.src
+                    || appState.imagePreview.url
+                );
+                if (failureType === "permission") {
+                    markPreviewPermissionDenied("video", t(
+                        "xdatahub.api.error.permission_denied",
+                        "Permission denied"
+                    ));
+                    return;
+                }
+                if (failureType === "missing") {
+                    markPreviewMissing("video", t(
+                        "xdatahub.api.error.file_not_found",
+                        "File not found or moved"
+                    ));
+                    return;
+                }
+                markPreviewUnsupported("video", t(
                     "xdatahub.ui.app.media.unsupported_video_codec",
                     "Unsupported video format or codec"
-                );
-            mountImageLightbox();
-        };
-        previewVideo.addEventListener("error", () => {
-            markPreviewUnsupported();
+                ));
+            })();
         }, { once: true });
         previewVideo.addEventListener("loadedmetadata", () => {
             if (
                 previewVideo.videoWidth <= 0
                 || previewVideo.videoHeight <= 0
             ) {
-                markPreviewUnsupported();
+                markPreviewUnsupported("video", t(
+                    "xdatahub.ui.app.media.unsupported_video_codec",
+                    "Unsupported video format or codec"
+                ));
             }
         }, { once: true });
     }
     const previewAudio = document.getElementById("audio-lightbox-player");
     if (previewAudio instanceof HTMLAudioElement) {
         previewAudio.addEventListener("error", () => {
-            appState.imagePreview.unsupported = true;
-            appState.imagePreview.unsupportedMessage =
-                t(
+            void (async () => {
+                const failureType = await probeMediaFailure(
+                    previewAudio.currentSrc
+                    || previewAudio.src
+                    || appState.imagePreview.url
+                );
+                if (failureType === "permission") {
+                    markPreviewPermissionDenied("audio", t(
+                        "xdatahub.api.error.permission_denied",
+                        "Permission denied"
+                    ));
+                    return;
+                }
+                if (failureType === "missing") {
+                    markPreviewMissing("audio", t(
+                        "xdatahub.api.error.file_not_found",
+                        "File not found or moved"
+                    ));
+                    return;
+                }
+                markPreviewUnsupported("audio", t(
                     "xdatahub.ui.app.media.unsupported_audio_codec",
                     "Unsupported audio format or codec"
-                );
-            markCurrentMediaCardUnsupported("audio");
-            mountImageLightbox();
+                ));
+            })();
         }, { once: true });
     }
 }
@@ -2120,14 +2412,29 @@ function setupImagePreviewEvents() {
         syncImagePreviewTransform();
     });
     image.addEventListener("error", () => {
-        appState.imagePreview.unsupported = true;
-        appState.imagePreview.unsupportedMessage =
-            t(
+        void (async () => {
+            const failureType = await probeMediaFailure(
+                image.currentSrc || image.src || appState.imagePreview.url
+            );
+            if (failureType === "permission") {
+                markPreviewPermissionDenied("image", t(
+                    "xdatahub.api.error.permission_denied",
+                    "Permission denied"
+                ));
+                return;
+            }
+            if (failureType === "missing") {
+                markPreviewMissing("image", t(
+                    "xdatahub.api.error.file_not_found",
+                    "File not found or moved"
+                ));
+                return;
+            }
+            markPreviewUnsupported("image", t(
                 "xdatahub.ui.app.media.unsupported_image_codec",
                 "Unsupported image format or codec"
-            );
-        markCurrentMediaCardUnsupported("image");
-        mountImageLightbox();
+            ));
+        })();
     }, { once: true });
 
     stage.addEventListener("wheel", (event) => {
@@ -2260,6 +2567,63 @@ function refreshNodeSendDialogOverlay() {
     syncOverlayById("node-send-overlay", renderNodeSendDialog());
 }
 
+function syncNodeSendSelectionUi() {
+    const overlay = document.getElementById("node-send-overlay");
+    if (!(overlay instanceof HTMLElement)) {
+        return false;
+    }
+    const list = overlay.querySelector(".node-send-list");
+    const summary = overlay.querySelector(".node-send-selection-summary");
+    const confirmBtn = document.getElementById("node-send-confirm");
+    const selectedIds = new Set(
+        (appState.nodeSendSelectedIds || []).map((id) => String(id))
+    );
+    if (!(list instanceof HTMLElement) || !(summary instanceof HTMLElement)) {
+        return false;
+    }
+    list.querySelectorAll("[data-node-send-id]").forEach((node) => {
+        if (!(node instanceof HTMLElement)) {
+            return;
+        }
+        const nodeId = String(node.getAttribute("data-node-send-id") || "");
+        const checked = selectedIds.has(nodeId);
+        node.classList.toggle("active", checked);
+        node.setAttribute("aria-pressed", checked ? "true" : "false");
+        const check = node.querySelector(".node-send-check");
+        if (check instanceof HTMLElement) {
+            check.textContent = checked
+                ? t("xdatahub.ui.app.common.confirm", "Confirm")
+                : "";
+        }
+    });
+    summary.textContent = `${t(
+        "xdatahub.ui.app.media.send_dialog_selected",
+        "Selected"
+    )}: ${selectedIds.size}`;
+    if (confirmBtn instanceof HTMLButtonElement) {
+        const confirmSendText = t(
+            "xdatahub.ui.app.media.send_dialog_confirm_send",
+            "Send to selected nodes"
+        );
+        const sendingText = t(
+            "xdatahub.ui.app.media.send_dialog_sending",
+            "Sending..."
+        );
+        confirmBtn.disabled = (
+            appState.nodeSendLoading
+            || !!appState.nodeSendError
+            || !selectedIds.size
+            || appState.nodeSendSending
+        );
+        confirmBtn.textContent = appState.nodeSendSending
+            ? sendingText
+            : confirmSendText;
+        confirmBtn.title = confirmSendText;
+        confirmBtn.setAttribute("aria-label", confirmSendText);
+    }
+    return true;
+}
+
 function syncNodeSendLoading() {
     appState.nodeSendLoading = (
         appState.nodeSendNodesLoading
@@ -2369,6 +2733,8 @@ function openNodeSendDialog(fileUrl, title) {
     appState.nodeSendFileUrl = String(fileUrl || "");
     appState.nodeSendTitle = String(title || "");
     appState.nodeSendNodes = [];
+    appState.nodeSendSelectedIds = [];
+    appState.nodeSendSending = false;
     appState.nodeSendError = "";
     appState.nodeSendNodesLoading = true;
     appState.nodeSendValidateLoading = true;
@@ -2388,6 +2754,8 @@ function closeNodeSendDialog() {
     appState.nodeSendFileUrl = "";
     appState.nodeSendTitle = "";
     appState.nodeSendNodes = [];
+    appState.nodeSendSelectedIds = [];
+    appState.nodeSendSending = false;
     appState.nodeSendError = "";
     appState.nodeSendLoading = false;
     appState.nodeSendNodesLoading = false;
@@ -2434,21 +2802,93 @@ function buildDbDeleteSummaryText() {
     );
 }
 
+function renderDbDeleteCriticalConfirmSection() {
+    const isDeleteMode = appState.clearDataMode === "delete";
+    const needSecondYes = isDeleteMode && selectedCriticalDbCount() > 0;
+    if (!needSecondYes) {
+        return "";
+    }
+    return `
+        <div class="db-delete-confirm-hint">${escapeHtml(t("xdatahub.ui.app.db.confirm_yes_second_hint", "Critical databases detected: type YES again for second confirmation."))}</div>
+        <div class="db-delete-confirm-row">
+            <span>${escapeHtml(t("xdatahub.ui.app.db.confirm_phrase_second", "Second confirmation phrase:"))}</span>
+            <input id="db-delete-confirm-yes-critical" value="${escapeAttr(appState.confirmYesCritical)}" autocomplete="off">
+        </div>
+    `;
+}
+
+function renderDbDeleteConfirmHint() {
+    const phrase = "__XDH_CONFIRM_PHRASE__";
+    const template = t(
+        "xdatahub.ui.app.db.confirm_yes_hint",
+        "Confirm operation: type {phrase} below",
+        { phrase }
+    );
+    return escapeHtml(template).replace(
+        escapeHtml(phrase),
+        `<code>YES</code>`
+    );
+}
+
+function updateDbDeleteSubmitUi(submit) {
+    if (!(submit instanceof HTMLButtonElement)) {
+        return;
+    }
+    const isDeleteMode = appState.clearDataMode === "delete";
+    const title = isDeleteMode
+        ? t(
+            "xdatahub.ui.app.db.submit_confirm_delete_files",
+            "Confirm delete selected files"
+        )
+        : t(
+            "xdatahub.ui.app.db.submit_confirm_clear_history",
+            "Confirm clear selected history"
+        );
+    submit.disabled = isDeleteMode
+        ? (!canSubmitDbDelete() || appState.dbDeleteLoading)
+        : (!canSubmitRecordsCleanup() || appState.dbDeleteLoading);
+    submit.title = title;
+    submit.setAttribute("aria-label", title);
+    submit.innerHTML = appState.dbDeleteLoading
+        ? (
+            isDeleteMode
+                ? `${iconSvg("refresh-cw", t("xdatahub.ui.app.db.deleting", "Deleting"), "xdatahub-icon btn-icon")} ${t("xdatahub.ui.app.db.deleting_ellipsis", "Deleting...")}`
+                : `${iconSvg("refresh-cw", t("xdatahub.ui.app.db.clearing", "Clearing"), "xdatahub-icon btn-icon")} ${t("xdatahub.ui.app.db.clearing_ellipsis", "Clearing...")}`
+        )
+        : `${iconSvg("triangle-alert", title, "xdatahub-icon btn-icon")} ${title}`;
+}
+
 function syncDbDeleteSelectionUi() {
     if (!appState.dbDeleteDialogOpen) {
         return;
     }
+    const overlay = document.getElementById("db-delete-overlay");
+    if (!(overlay instanceof HTMLElement)) {
+        return;
+    }
+    overlay.querySelectorAll("[data-db-file-check]").forEach((node) => {
+        if (!(node instanceof HTMLInputElement)) {
+            return;
+        }
+        const name = node.getAttribute("data-db-file-check") || "";
+        const item = appState.dbFileList.find(
+            (entry) => normalizeDbName(entry.name) === normalizeDbName(name)
+        );
+        const locked = isDbCriticalEffective(item) && !appState.unlockCritical;
+        node.checked = isDbSelected(name);
+        node.disabled = locked;
+    });
     const summary = document.querySelector(".db-delete-summary");
     if (summary instanceof HTMLElement) {
         summary.textContent = buildDbDeleteSummaryText();
     }
-    const submit = document.getElementById("db-delete-submit");
-    if (submit instanceof HTMLButtonElement) {
-        const disabled = appState.clearDataMode === "delete"
-            ? (!canSubmitDbDelete() || appState.dbDeleteLoading)
-            : (!canSubmitRecordsCleanup() || appState.dbDeleteLoading);
-        submit.disabled = disabled;
+    const secondConfirm = document.getElementById(
+        "db-delete-critical-confirm-section"
+    );
+    if (secondConfirm instanceof HTMLElement) {
+        secondConfirm.innerHTML = renderDbDeleteCriticalConfirmSection();
     }
+    updateDbDeleteSubmitUi(document.getElementById("db-delete-submit"));
 }
 
 function dbPurposeIconName(purpose) {
@@ -2605,6 +3045,20 @@ function reconcileSelectedDbFiles() {
     );
     appState.selectedDbFiles = appState.selectedDbFiles.filter((name) =>
         existing.has(normalizeDbName(name))
+    );
+}
+
+function reconcileLockedCriticalSelections() {
+    if (appState.unlockCritical) {
+        return;
+    }
+    const blocked = new Set(
+        appState.dbFileList
+            .filter((item) => isDbCriticalEffective(item))
+            .map((item) => normalizeDbName(item.name))
+    );
+    appState.selectedDbFiles = appState.selectedDbFiles.filter((name) =>
+        !blocked.has(normalizeDbName(name))
     );
 }
 
@@ -2863,7 +3317,7 @@ function renderFilters() {
                 <div class="datetime-field">
                     <div class="date-input-shell">
                         <input id="filter-start" type="datetime-local" value="${escapeHtml(state.filters.start)}" title="${escapeAttr(state.filters.start)}">
-                        <button class="date-picker-btn" type="button" data-picker-target="filter-start" title="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}">${iconSvg("calendar", t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"), "xdatahub-icon date-picker-icon")}</button>
+                        <button class="date-picker-btn" type="button" data-picker-target="filter-start" title="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"))}">${iconMask("calendar", t("xdatahub.ui.app.aria.h_668822a22d", "Select start time"), "date-picker-icon-mask")}</button>
                     </div>
                 </div>
             </div>
@@ -2872,7 +3326,7 @@ function renderFilters() {
                 <div class="datetime-field">
                     <div class="date-input-shell">
                         <input id="filter-end" type="datetime-local" value="${escapeHtml(state.filters.end)}" title="${escapeAttr(state.filters.end)}">
-                        <button class="date-picker-btn" type="button" data-picker-target="filter-end" title="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}">${iconSvg("calendar", t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"), "xdatahub-icon date-picker-icon")}</button>
+                        <button class="date-picker-btn" type="button" data-picker-target="filter-end" title="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"))}">${iconMask("calendar", t("xdatahub.ui.app.aria.h_6438a97efd", "Select end time"), "date-picker-icon-mask")}</button>
                     </div>
                 </div>
             </div>
@@ -3275,6 +3729,42 @@ function renderVideoUnsupportedHtml() {
     );
 }
 
+function renderVideoMissingHtml() {
+    const missingLabel = t(
+        "xdatahub.ui.app.media.file_missing",
+        "File missing"
+    );
+    const missingText = t(
+        "xdatahub.api.error.file_not_found",
+        "File not found or moved"
+    );
+    return (
+        '<div class="video-card-placeholder is-unsupported" '
+        + 'data-video-placeholder="1" data-video-missing="1">'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", missingLabel, "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-unsupported-text">${escapeHtml(missingText)}</span>`
+        + "</div>"
+    );
+}
+
+function renderVideoPermissionDeniedHtml() {
+    const deniedLabel = t(
+        "xdatahub.ui.app.media.permission_denied",
+        "Permission denied"
+    );
+    const deniedText = t(
+        "xdatahub.api.error.permission_denied",
+        "Permission denied"
+    );
+    return (
+        '<div class="video-card-placeholder is-unsupported" '
+        + 'data-video-placeholder="1" data-video-permission-denied="1">'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", deniedLabel, "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-unsupported-text">${escapeHtml(deniedText)}</span>`
+        + "</div>"
+    );
+}
+
 function renderAudioUnsupportedHtml() {
     const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
     const unsupportedCodecText = t(
@@ -3290,6 +3780,42 @@ function renderAudioUnsupportedHtml() {
     );
 }
 
+function renderAudioMissingHtml() {
+    const missingLabel = t(
+        "xdatahub.ui.app.media.file_missing",
+        "File missing"
+    );
+    const missingText = t(
+        "xdatahub.api.error.file_not_found",
+        "File not found or moved"
+    );
+    return (
+        '<div class="audio-card-hint is-unsupported" '
+        + 'data-audio-missing="1">'
+        + `<div class="audio-card-icon">${iconSvg("triangle-alert", missingLabel, "xdatahub-icon audio-icon-svg")}</div>`
+        + `<div>${escapeHtml(missingText)}</div>`
+        + "</div>"
+    );
+}
+
+function renderAudioPermissionDeniedHtml() {
+    const deniedLabel = t(
+        "xdatahub.ui.app.media.permission_denied",
+        "Permission denied"
+    );
+    const deniedText = t(
+        "xdatahub.api.error.permission_denied",
+        "Permission denied"
+    );
+    return (
+        '<div class="audio-card-hint is-unsupported" '
+        + 'data-audio-permission-denied="1">'
+        + `<div class="audio-card-icon">${iconSvg("triangle-alert", deniedLabel, "xdatahub-icon audio-icon-svg")}</div>`
+        + `<div>${escapeHtml(deniedText)}</div>`
+        + "</div>"
+    );
+}
+
 function renderImageUnsupportedHtml() {
     const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
     const unsupportedImageCodecText = t(
@@ -3301,6 +3827,42 @@ function renderImageUnsupportedHtml() {
         + 'data-image-placeholder="1" data-image-unsupported="1">'
         + `<span class="media-loading-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</span>`
         + `<span class="media-unsupported-text">${escapeHtml(unsupportedImageCodecText)}</span>`
+        + "</div>"
+    );
+}
+
+function renderImageMissingHtml() {
+    const missingLabel = t(
+        "xdatahub.ui.app.media.file_missing",
+        "File missing"
+    );
+    const missingText = t(
+        "xdatahub.api.error.file_not_found",
+        "File not found or moved"
+    );
+    return (
+        '<div class="video-card-placeholder is-unsupported" '
+        + 'data-image-placeholder="1" data-image-missing="1">'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", missingLabel, "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-unsupported-text">${escapeHtml(missingText)}</span>`
+        + "</div>"
+    );
+}
+
+function renderImagePermissionDeniedHtml() {
+    const deniedLabel = t(
+        "xdatahub.ui.app.media.permission_denied",
+        "Permission denied"
+    );
+    const deniedText = t(
+        "xdatahub.api.error.permission_denied",
+        "Permission denied"
+    );
+    return (
+        '<div class="video-card-placeholder is-unsupported" '
+        + 'data-image-placeholder="1" data-image-permission-denied="1">'
+        + `<span class="media-loading-icon">${iconSvg("triangle-alert", deniedLabel, "xdatahub-icon media-loading-icon-svg")}</span>`
+        + `<span class="media-unsupported-text">${escapeHtml(deniedText)}</span>`
         + "</div>"
     );
 }
@@ -3418,6 +3980,44 @@ function markCurrentMediaCardUnsupported(kind) {
     markMediaCardUnsupported(card, kind);
 }
 
+function markCurrentMediaCardMissing(kind) {
+    if (!root) {
+        return;
+    }
+    const mediaItemId = String(
+        currentTabState()?.lastOpenedMediaId || ""
+    ).trim();
+    if (!mediaItemId) {
+        return;
+    }
+    const card = root.querySelector(
+        `.media-card[data-media-item-id="${escapeCssSelectorValue(mediaItemId)}"]`
+    );
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    markMediaCardMissing(card, kind);
+}
+
+function markCurrentMediaCardPermissionDenied(kind) {
+    if (!root) {
+        return;
+    }
+    const mediaItemId = String(
+        currentTabState()?.lastOpenedMediaId || ""
+    ).trim();
+    if (!mediaItemId) {
+        return;
+    }
+    const card = root.querySelector(
+        `.media-card[data-media-item-id="${escapeCssSelectorValue(mediaItemId)}"]`
+    );
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    markMediaCardPermissionDenied(card, kind);
+}
+
 function markMediaCardUnsupported(card, kind) {
     if (!(card instanceof HTMLElement)) {
         return;
@@ -3427,18 +4027,102 @@ function markMediaCardUnsupported(card, kind) {
         return;
     }
     if (kind === "video") {
+        const mediaId = String(
+            card.getAttribute("data-media-item-id") || ""
+        ).trim();
+        if (mediaId) {
+            appState.videoCardStateMap.set(mediaId, "unsupported");
+        }
+        card.removeAttribute("data-video-permission-denied");
+        card.removeAttribute("data-video-missing");
         card.setAttribute("data-video-unsupported", "1");
         thumb.innerHTML = renderVideoUnsupportedHtml();
         return;
     }
     if (kind === "audio") {
+        card.removeAttribute("data-audio-permission-denied");
+        card.removeAttribute("data-audio-missing");
         card.setAttribute("data-audio-unsupported", "1");
         thumb.innerHTML = renderAudioUnsupportedHtml();
         return;
     }
     if (kind === "image") {
+        card.removeAttribute("data-image-permission-denied");
+        card.removeAttribute("data-image-missing");
         card.setAttribute("data-image-unsupported", "1");
         thumb.innerHTML = renderImageUnsupportedHtml();
+    }
+}
+
+function markMediaCardMissing(card, kind) {
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    const thumb = card.querySelector(".media-thumb");
+    if (!(thumb instanceof HTMLElement)) {
+        return;
+    }
+    if (kind === "video") {
+        const mediaId = String(
+            card.getAttribute("data-media-item-id") || ""
+        ).trim();
+        if (mediaId) {
+            appState.videoCardStateMap.set(mediaId, "missing");
+        }
+        card.removeAttribute("data-video-permission-denied");
+        card.removeAttribute("data-video-unsupported");
+        card.setAttribute("data-video-missing", "1");
+        thumb.innerHTML = renderVideoMissingHtml();
+        return;
+    }
+    if (kind === "audio") {
+        card.removeAttribute("data-audio-permission-denied");
+        card.removeAttribute("data-audio-unsupported");
+        card.setAttribute("data-audio-missing", "1");
+        thumb.innerHTML = renderAudioMissingHtml();
+        return;
+    }
+    if (kind === "image") {
+        card.removeAttribute("data-image-permission-denied");
+        card.removeAttribute("data-image-unsupported");
+        card.setAttribute("data-image-missing", "1");
+        thumb.innerHTML = renderImageMissingHtml();
+    }
+}
+
+function markMediaCardPermissionDenied(card, kind) {
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+    const thumb = card.querySelector(".media-thumb");
+    if (!(thumb instanceof HTMLElement)) {
+        return;
+    }
+    if (kind === "video") {
+        const mediaId = String(
+            card.getAttribute("data-media-item-id") || ""
+        ).trim();
+        if (mediaId) {
+            appState.videoCardStateMap.set(mediaId, "permission");
+        }
+        card.removeAttribute("data-video-unsupported");
+        card.removeAttribute("data-video-missing");
+        card.setAttribute("data-video-permission-denied", "1");
+        thumb.innerHTML = renderVideoPermissionDeniedHtml();
+        return;
+    }
+    if (kind === "audio") {
+        card.removeAttribute("data-audio-unsupported");
+        card.removeAttribute("data-audio-missing");
+        card.setAttribute("data-audio-permission-denied", "1");
+        thumb.innerHTML = renderAudioPermissionDeniedHtml();
+        return;
+    }
+    if (kind === "image") {
+        card.removeAttribute("data-image-unsupported");
+        card.removeAttribute("data-image-missing");
+        card.setAttribute("data-image-permission-denied", "1");
+        thumb.innerHTML = renderImagePermissionDeniedHtml();
     }
 }
 
@@ -3468,7 +4152,9 @@ function buildRankedMediaQueue(mediaType, stateMap) {
                 state !== "loaded"
                 && state !== "loading"
                 && state !== "error"
+                && state !== "permission"
                 && state !== "unsupported"
+                && state !== "missing"
             );
         })
         .sort((a, b) => {
@@ -3598,8 +4284,15 @@ function mountVideoPreview(item, seq, onDone) {
     }
     const markUnsupported = () => {
         appState.videoCardStateMap.set(id, "unsupported");
+        card.removeAttribute("data-video-missing");
         card.setAttribute("data-video-unsupported", "1");
         thumb.innerHTML = renderVideoUnsupportedHtml();
+    };
+    const markMissing = () => {
+        appState.videoCardStateMap.set(id, "missing");
+        card.removeAttribute("data-video-unsupported");
+        card.setAttribute("data-video-missing", "1");
+        thumb.innerHTML = renderVideoMissingHtml();
     };
     const isVideoVisualTrackUsable = (videoEl) => {
         return (
@@ -3607,6 +4300,25 @@ function mountVideoPreview(item, seq, onDone) {
             && videoEl.videoWidth > 0
             && videoEl.videoHeight > 0
         );
+    };
+    const resolveLoadError = async (fallbackUrl) => {
+        if (settled) {
+            return;
+        }
+        const urlText = String(fallbackUrl || url || "");
+        const failureType = await probeMediaFailure(urlText);
+        if (failureType === "permission") {
+            markMediaCardPermissionDenied(card, "video");
+            settle("permission");
+            return;
+        }
+        if (failureType === "missing") {
+            markMissing();
+            settle("missing");
+            return;
+        }
+        markUnsupported();
+        settle("unsupported");
     };
     let settled = false;
     const settle = (state) => {
@@ -3652,8 +4364,7 @@ function mountVideoPreview(item, seq, onDone) {
             `video-error:${id}`,
             "error",
             () => {
-                markUnsupported();
-                settle("unsupported");
+                void resolveLoadError(existing.currentSrc || existing.src);
             }
         );
         const watchdog = window.setTimeout(
@@ -3705,8 +4416,7 @@ function mountVideoPreview(item, seq, onDone) {
         `video-error:${id}`,
         "error",
         () => {
-            markUnsupported();
-            settle("unsupported");
+            void resolveLoadError(urlText);
         }
     );
     const watchdog = window.setTimeout(
@@ -3759,7 +4469,9 @@ function runVideoSchedulerTick(seq) {
             || appState.videoCardStateMap.get(next.id) === "loaded"
             || appState.videoCardStateMap.get(next.id) === "loading"
             || appState.videoCardStateMap.get(next.id) === "error"
+            || appState.videoCardStateMap.get(next.id) === "permission"
             || appState.videoCardStateMap.get(next.id) === "unsupported"
+            || appState.videoCardStateMap.get(next.id) === "missing"
         ) {
             continue;
         }
@@ -3853,7 +4565,7 @@ function renderListRows() {
                             title="${escapeAttr(copyTitleText)}"
                             aria-label="${escapeAttr(copyTitleText)}"
                         >
-                            <span class="btn-emoji" aria-hidden="true">${iconSvg("copy", copyText, "xdatahub-icon btn-icon")}</span>
+                            <span class="btn-emoji" aria-hidden="true">${iconMask("copy", copyText, "row-copy-icon-mask")}</span>
                             <span class="btn-text row-copy-btn-text">${escapeHtml(copyText)}</span>
                         </button>
                     </div>
@@ -4000,6 +4712,14 @@ function renderMediaGrid() {
                 mediaType === "video"
                 && appState.videoCardStateMap.get(mediaItemId) === "unsupported"
             );
+            const isVideoPermissionDenied = (
+                mediaType === "video"
+                && appState.videoCardStateMap.get(mediaItemId) === "permission"
+            );
+            const isVideoMissing = (
+                mediaType === "video"
+                && appState.videoCardStateMap.get(mediaItemId) === "missing"
+            );
             const audioLikelyUnsupported = mediaType === "audio"
                 ? isLikelyUnsupportedAudio(fileUrl)
                 : false;
@@ -4035,7 +4755,11 @@ function renderMediaGrid() {
             } else if (mediaType === "video") {
                 // 设计说明：视频保持分批调度，先渲染占位，后按队列挂载
                 // <video> 以控制首帧解码并发。
-                previewHtml = isVideoUnsupported
+                previewHtml = isVideoPermissionDenied
+                    ? renderVideoPermissionDeniedHtml()
+                    : isVideoMissing
+                    ? renderVideoMissingHtml()
+                    : isVideoUnsupported
                     ? renderVideoUnsupportedHtml()
                     : renderVideoPlaceholderHtml();
             } else {
@@ -4045,6 +4769,12 @@ function renderMediaGrid() {
             }
             const unsupportedAttr = isVideoUnsupported
                 ? ' data-video-unsupported="1"'
+                : "";
+            const permissionDeniedAttr = isVideoPermissionDenied
+                ? ' data-video-permission-denied="1"'
+                : "";
+            const missingAttr = isVideoMissing
+                ? ' data-video-missing="1"'
                 : "";
             const audioUnsupportedAttr = (
                 mediaType === "audio" && audioLikelyUnsupported
@@ -4059,7 +4789,7 @@ function renderMediaGrid() {
                     </button>`
                 : "";
             return `
-                <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${audioUnsupportedAttr}>
+                <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${permissionDeniedAttr}${missingAttr}${audioUnsupportedAttr}>
                     <div class="media-thumb">${previewHtml}${sendBtnHtml}</div>
                         <div class="media-meta">
                             <div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || untitledText)}</div>
@@ -4295,6 +5025,9 @@ function renderImagePreview() {
     if (!appState.imagePreview.open) {
         return "";
     }
+    const nav = currentPreviewMediaNav();
+    const canGoPrev = !!nav.prev;
+    const canGoNext = !!nav.next;
     const isImage = appState.imagePreview.kind === "image";
     const isAudio = appState.imagePreview.kind === "audio";
     const isVideo = appState.imagePreview.kind === "video";
@@ -4306,7 +5039,25 @@ function renderImagePreview() {
                 : t("xdatahub.ui.app.text.h_fd897b7598", "Audio Playback")
     );
     const closePreviewText = t("xdatahub.ui.app.aria.h_bf76308794", "Close Preview");
+    const prevText = t("xdatahub.ui.app.aria.h_b41561d807", "Previous");
+    const nextText = t("xdatahub.ui.app.aria.h_67a246a344", "Next");
     const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
+    const permissionDeniedTitleText = t(
+        "xdatahub.ui.app.media.permission_denied",
+        "Permission denied"
+    );
+    const permissionDeniedDescText = t(
+        "xdatahub.api.error.permission_denied",
+        "Permission denied"
+    );
+    const missingTitleText = t(
+        "xdatahub.ui.app.media.file_missing",
+        "File missing"
+    );
+    const missingDescText = t(
+        "xdatahub.api.error.file_not_found",
+        "File not found or moved"
+    );
     const unsupportedCodecText = t(
         "xdatahub.ui.app.media.unsupported_format_or_codec",
         "Unsupported format or codec"
@@ -4329,28 +5080,58 @@ function renderImagePreview() {
         "Send to node"
     );
     const sendViewUrl = String(appState.imagePreview.viewUrl || "");
-    const sendRowHtml = (isImage && sendViewUrl)
-        ? `<div class="image-lightbox-send-row">
-                <button class="btn image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendViewUrl)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
-                    ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")} ${escapeHtml(sendToNodeText)}
-                </button>
-            </div>`
+    const previewIndexText = nav.index >= 0
+        ? `${nav.index + 1} / ${currentPreviewMediaEntries().length}`
         : "";
+    const sendButtonHtml = (isImage && sendViewUrl)
+        ? `<button class="btn image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendViewUrl)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
+                ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")} ${escapeHtml(sendToNodeText)}
+            </button>`
+        : "";
+    const navRowHtml = `<div class="image-lightbox-nav-row">
+                <div class="image-lightbox-nav-group">
+                    <button class="btn image-lightbox-nav-btn" id="image-lightbox-prev-btn" title="${escapeAttr(prevText)}" aria-label="${escapeAttr(prevText)}" ${canGoPrev ? "" : "disabled"}>
+                        ${iconSvg("arrow-left", prevText, "xdatahub-icon btn-icon")}
+                    </button>
+                    <button class="btn image-lightbox-nav-btn" id="image-lightbox-next-btn" title="${escapeAttr(nextText)}" aria-label="${escapeAttr(nextText)}" ${canGoNext ? "" : "disabled"}>
+                        ${iconSvg("arrow-right", nextText, "xdatahub-icon btn-icon")}
+                    </button>
+                </div>
+            </div>`;
+    const titleRowHtml = `<div class="image-lightbox-title-row">
+                <div class="image-lightbox-title-pill">
+                    <div class="image-lightbox-title" title="${escapeAttr(title)}">${escapeHtml(title)}</div>
+                    <div class="image-lightbox-send-actions">${sendButtonHtml}</div>
+                </div>
+            </div>`;
     return `
         <div class="image-lightbox" id="image-lightbox">
             <div class="image-lightbox-backdrop" id="image-lightbox-close"></div>
             <div class="image-lightbox-content">
-                <div class="image-lightbox-head">
-                    <div class="image-lightbox-head-pill">
-                        <div class="image-lightbox-title" title="${escapeAttr(title)}">${escapeHtml(title)}</div>
-                        <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.shell.btn.close", "Close"))}</button>
-                    </div>
-                </div>
-                ${sendRowHtml}
+                ${previewIndexText ? `<div class="image-lightbox-index" title="${escapeAttr(previewIndexText)}">${escapeHtml(previewIndexText)}</div>` : ""}
+                <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.shell.btn.close", "Close"))}</button>
+                ${navRowHtml}
+                ${titleRowHtml}
                 <div class="image-lightbox-body ${isAudio ? "audio" : isVideo ? "video" : "image"}">
                     ${
                         isImage
-                            ? appState.imagePreview.unsupported
+                            ? appState.imagePreview.permissionDenied
+                                ? `<div class="media-lightbox media-lightbox-image media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", permissionDeniedTitleText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(permissionDeniedTitleText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.permissionDeniedMessage || permissionDeniedDescText)}</div>
+                        </div>
+                    </div>`
+                                : appState.imagePreview.missing
+                                ? `<div class="media-lightbox media-lightbox-image media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", missingTitleText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(missingTitleText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.missingMessage || missingDescText)}</div>
+                        </div>
+                    </div>`
+                                : appState.imagePreview.unsupported
                                 ? `<div class="media-lightbox media-lightbox-image media-lightbox-unsupported">
                         <div class="media-unsupported-panel">
                             <div class="media-unsupported-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</div>
@@ -4370,7 +5151,23 @@ function renderImagePreview() {
                     }
                     ${
                         isAudio
-                            ? appState.imagePreview.unsupported
+                            ? appState.imagePreview.permissionDenied
+                                ? `<div class="media-lightbox media-lightbox-audio media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", permissionDeniedTitleText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(permissionDeniedTitleText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.permissionDeniedMessage || permissionDeniedDescText)}</div>
+                        </div>
+                    </div>`
+                                : appState.imagePreview.missing
+                                ? `<div class="media-lightbox media-lightbox-audio media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", missingTitleText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(missingTitleText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.missingMessage || missingDescText)}</div>
+                        </div>
+                    </div>`
+                                : appState.imagePreview.unsupported
                                 ? `<div class="media-lightbox media-lightbox-audio media-lightbox-unsupported">
                         <div class="media-unsupported-panel">
                             <div class="media-unsupported-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</div>
@@ -4394,7 +5191,23 @@ function renderImagePreview() {
                     }
                     ${
                         isVideo
-                            ? appState.imagePreview.unsupported
+                            ? appState.imagePreview.permissionDenied
+                                ? `<div class="media-lightbox media-lightbox-video media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", permissionDeniedTitleText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(permissionDeniedTitleText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.permissionDeniedMessage || permissionDeniedDescText)}</div>
+                        </div>
+                    </div>`
+                                : appState.imagePreview.missing
+                                ? `<div class="media-lightbox media-lightbox-video media-lightbox-unsupported">
+                        <div class="media-unsupported-panel">
+                            <div class="media-unsupported-icon">${iconSvg("triangle-alert", missingTitleText, "xdatahub-icon media-loading-icon-svg")}</div>
+                            <div class="media-unsupported-title">${escapeHtml(missingTitleText)}</div>
+                            <div class="media-unsupported-desc">${escapeHtml(appState.imagePreview.missingMessage || missingDescText)}</div>
+                        </div>
+                    </div>`
+                                : appState.imagePreview.unsupported
                                 ? `<div class="media-lightbox media-lightbox-video media-lightbox-unsupported">
                         <div class="media-unsupported-panel">
                             <div class="media-unsupported-icon">${iconSvg("triangle-alert", unsupportedText, "xdatahub-icon media-loading-icon-svg")}</div>
@@ -4561,7 +5374,6 @@ function renderDbDeleteDialog() {
     const selectedCount = appState.selectedDbFiles.length;
     const criticalCount = selectedCriticalDbCount();
     const refreshLocked = isDbRefreshLocked();
-    const needSecondYes = isDeleteMode && criticalCount > 0;
     const submitDisabled = isDeleteMode
         ? (!canSubmitDbDelete() || appState.dbDeleteLoading)
         : (!canSubmitRecordsCleanup() || appState.dbDeleteLoading);
@@ -4628,20 +5440,12 @@ function renderDbDeleteDialog() {
                         ? t("xdatahub.ui.app.db.summary_delete_with_critical", "Will delete {selected} files (critical: {critical})", { selected: selectedCount, critical: criticalCount })
                         : t("xdatahub.ui.app.db.summary_clear_with_critical", "Will clear history in {selected} databases (critical: {critical})", { selected: selectedCount, critical: criticalCount })
                 }</div>
-                <div class="db-delete-confirm-hint">${escapeHtml(t("xdatahub.ui.app.db.confirm_yes_hint", "Confirm operation: type YES below."))}</div>
+                <div class="db-delete-confirm-hint">${renderDbDeleteConfirmHint()}</div>
                 <div class="db-delete-confirm-row">
                     <span>${escapeHtml(t("xdatahub.ui.app.dialog.confirm_phrase", "Confirmation phrase:"))}</span>
                     <input id="db-delete-confirm-yes" value="${escapeAttr(appState.confirmYes)}" autocomplete="off">
                 </div>
-                ${
-                    needSecondYes
-                        ? `<div class="db-delete-confirm-hint">${escapeHtml(t("xdatahub.ui.app.db.confirm_yes_second_hint", "Critical databases detected: type YES again for second confirmation."))}</div>
-                        <div class="db-delete-confirm-row">
-                            <span>${escapeHtml(t("xdatahub.ui.app.db.confirm_phrase_second", "Second confirmation phrase:"))}</span>
-                            <input id="db-delete-confirm-yes-critical" value="${escapeAttr(appState.confirmYesCritical)}" autocomplete="off">
-                        </div>`
-                        : ""
-                }
+                <div id="db-delete-critical-confirm-section">${renderDbDeleteCriticalConfirmSection()}</div>
                 ${
                     appState.dbDeleteError
                         ? `<div class="status error">${escapeHtml(appState.dbDeleteError)}</div>`
@@ -4893,16 +5697,37 @@ function renderNodeSendDialog() {
         "xdatahub.ui.app.media.send_dialog_sort_name",
         "Name"
     );
+    const selectedText = t(
+        "xdatahub.ui.app.media.send_dialog_selected",
+        "Selected"
+    );
+    const confirmText = t(
+        "xdatahub.ui.app.common.confirm",
+        "Confirm"
+    );
+    const confirmSendText = t(
+        "xdatahub.ui.app.media.send_dialog_confirm_send",
+        "Send to selected nodes"
+    );
+    const sendingText = t(
+        "xdatahub.ui.app.media.send_dialog_sending",
+        "Sending..."
+    );
     const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
     const nodes = appState.nodeSendNodes || [];
     const subtitle = appState.nodeSendTitle
-        ? `<div class="node-send-subtitle">${escapeHtml(appState.nodeSendTitle)}</div>`
+        ? `<div class="node-send-file-block">
+                <div class="node-send-subtitle" title="${escapeAttr(appState.nodeSendTitle)}">${escapeHtml(appState.nodeSendTitle)}</div>
+            </div>`
         : "";
     const errorText = appState.nodeSendError;
     let bodyHtml = "";
     const sortKey = appState.nodeSendSortKey === "name" ? "name" : "id";
     const sortDir = appState.nodeSendSortDir === "desc" ? "desc" : "asc";
     const sortArrow = sortDir === "asc" ? "↑" : "↓";
+    const selectedIds = new Set(
+        (appState.nodeSendSelectedIds || []).map((id) => String(id))
+    );
     if (appState.nodeSendLoading) {
         bodyHtml = `<div class="node-send-hint">${escapeHtml(loadingText)}</div>`;
     } else if (errorText) {
@@ -4948,22 +5773,31 @@ function renderNodeSendDialog() {
             const label = `${nodeTitle} #${nodeId}`;
             const accent = resolveNodeAccentColor(item);
             const rowStyle = ` style="--node-palette:${escapeAttr(accent)}"`;
+            const checked = selectedIds.has(String(item.id));
             return `
-                <button class="btn node-send-option" data-node-send-id="${escapeAttr(item.id)}"${rowStyle} title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
+                <button class="btn node-send-option ${checked ? "active" : ""}" data-node-send-id="${escapeAttr(item.id)}" aria-pressed="${checked ? "true" : "false"}"${rowStyle} title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
                     <span class="node-send-seq">
                         <span class="node-send-seq-chip">${escapeHtml(nodeId)}</span>
                         <span class="node-send-swatch" aria-hidden="true"></span>
                     </span>
                     <span class="node-send-name" title="${escapeAttr(nodeTitle)}">${escapeHtml(nodeTitle)}</span>
+                    <span class="node-send-check">${checked ? escapeHtml(confirmText) : ""}</span>
                 </button>
             `;
         }).join("");
         bodyHtml = `
             <div class="node-send-hint">${escapeHtml(hintText)}</div>
             ${sortBar}
+            <div class="node-send-selection-summary">${escapeHtml(selectedText)}: ${escapeHtml(String(selectedIds.size))}</div>
             <div class="node-send-list">${rows}</div>
         `;
     }
+    const submitDisabled = (
+        appState.nodeSendLoading
+        || !!appState.nodeSendError
+        || !selectedIds.size
+        || appState.nodeSendSending
+    );
     return `
         <div class="node-send-overlay" id="node-send-overlay">
             <div class="node-send-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(titleText)}">
@@ -4972,6 +5806,7 @@ function renderNodeSendDialog() {
                 <div class="node-send-body">${bodyHtml}</div>
                 <div class="node-send-actions">
                     <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}">${escapeHtml(cancelText)}</button>
+                    <button class="btn primary" id="node-send-confirm" title="${escapeAttr(confirmSendText)}" aria-label="${escapeAttr(confirmSendText)}" ${submitDisabled ? "disabled" : ""}>${escapeHtml(appState.nodeSendSending ? sendingText : confirmSendText)}</button>
                 </div>
             </div>
         </div>
@@ -5699,6 +6534,11 @@ function handleDelegatedMediaCardClick(event) {
         kind === "video"
         && card.getAttribute("data-video-unsupported") === "1"
     );
+    const permissionDenied = (
+        (kind === "video" && card.getAttribute("data-video-permission-denied") === "1")
+        || (kind === "image" && card.getAttribute("data-image-permission-denied") === "1")
+        || (kind === "audio" && card.getAttribute("data-audio-permission-denied") === "1")
+    );
     const imageUnsupported = (
         kind === "image"
         && card.getAttribute("data-image-unsupported") === "1"
@@ -5710,11 +6550,30 @@ function handleDelegatedMediaCardClick(event) {
             || isLikelyUnsupportedAudio(previewUrl)
         )
     );
+    const missing = (
+        (kind === "video" && card.getAttribute("data-video-missing") === "1")
+        || (kind === "image" && card.getAttribute("data-image-missing") === "1")
+        || (kind === "audio" && card.getAttribute("data-audio-missing") === "1")
+    );
     requestAnimationFrame(() => {
         const viewUrl = String(
             card.getAttribute("data-drag-url-preferred") || ""
         );
         openImagePreview(kind, previewUrl, title, {
+            missing,
+            missingMessage: missing
+                ? t(
+                    "xdatahub.api.error.file_not_found",
+                    "File not found or moved"
+                )
+                : "",
+            permissionDenied,
+            permissionDeniedMessage: permissionDenied
+                ? t(
+                    "xdatahub.api.error.permission_denied",
+                    "Permission denied"
+                )
+                    : "",
             unsupported: unsupported || audioUnsupported || imageUnsupported,
             unsupportedMessage: unsupported
                 ? t(
@@ -5733,6 +6592,7 @@ function handleDelegatedMediaCardClick(event) {
                         )
                     : "",
             viewUrl,
+            mediaItemId,
         });
     });
     return true;
@@ -5867,6 +6727,40 @@ function handleDelegatedNodeSend(event) {
         closeNodeSendDialog();
         return true;
     }
+    const confirmBtn = event.target?.closest?.("#node-send-confirm");
+    if (confirmBtn instanceof HTMLElement) {
+        if (
+            appState.nodeSendLoading
+            || appState.nodeSendError
+            || appState.nodeSendSending
+        ) {
+            return true;
+        }
+        const fileUrl = String(appState.nodeSendFileUrl || "");
+        const selectedIds = (appState.nodeSendSelectedIds || [])
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id));
+        if (!fileUrl || !selectedIds.length) {
+            return true;
+        }
+        appState.nodeSendSending = true;
+        refreshNodeSendDialogOverlay();
+        for (const nodeId of selectedIds) {
+            window.parent?.postMessage?.(
+                {
+                    type: "xdatahub:send_to_node",
+                    data: {
+                        node_id: nodeId,
+                        file_url: fileUrl,
+                        title: appState.nodeSendTitle || "",
+                    },
+                },
+                "*"
+            );
+        }
+        closeNodeSendDialog();
+        return true;
+    }
     const option = event.target?.closest?.("[data-node-send-id]");
     if (!(option instanceof HTMLElement)) {
         return false;
@@ -5874,26 +6768,25 @@ function handleDelegatedNodeSend(event) {
     if (appState.nodeSendLoading || appState.nodeSendError) {
         return true;
     }
-    const nodeId = Number(option.getAttribute("data-node-send-id") || "");
+    const nodeIdText = String(
+        option.getAttribute("data-node-send-id") || ""
+    );
+    const nodeId = Number(nodeIdText);
     if (!Number.isFinite(nodeId)) {
         return true;
     }
-    const fileUrl = String(appState.nodeSendFileUrl || "");
-    if (!fileUrl) {
-        return true;
-    }
-    window.parent?.postMessage?.(
-        {
-            type: "xdatahub:send_to_node",
-            data: {
-                node_id: nodeId,
-                file_url: fileUrl,
-                title: appState.nodeSendTitle || "",
-            },
-        },
-        "*"
+    const selected = new Set(
+        (appState.nodeSendSelectedIds || []).map((id) => String(id))
     );
-    closeNodeSendDialog();
+    if (selected.has(nodeIdText)) {
+        selected.delete(nodeIdText);
+    } else {
+        selected.add(nodeIdText);
+    }
+    appState.nodeSendSelectedIds = Array.from(selected);
+    if (!syncNodeSendSelectionUi()) {
+        refreshNodeSendDialogOverlay();
+    }
     return true;
 }
 
@@ -6260,7 +7153,8 @@ function handleDelegatedGlobalChange(event) {
     case "db-delete-unlock-critical":
         if (target instanceof HTMLInputElement) {
             appState.unlockCritical = !target.checked;
-            refreshDbDeleteDialogOverlay();
+            reconcileLockedCriticalSelections();
+            syncDbDeleteSelectionUi();
         }
         return true;
     default:
@@ -6346,7 +7240,19 @@ function installRootDelegatedHandlers() {
         if (!(card instanceof HTMLElement)) {
             return;
         }
-        markMediaCardUnsupported(card, "image");
+        void (async () => {
+            const urlText = target.currentSrc || target.src || "";
+            const failureType = await probeMediaFailure(urlText);
+            if (failureType === "permission") {
+                markMediaCardPermissionDenied(card, "image");
+                return;
+            }
+            if (failureType === "missing") {
+                markMediaCardMissing(card, "image");
+                return;
+            }
+            markMediaCardUnsupported(card, "image");
+        })();
     }, true);
     root.addEventListener("keydown", (event) => {
         const target = event.target;
@@ -7110,7 +8016,15 @@ window.addEventListener("keydown", (event) => {
     if (!appState.imagePreview.open) {
         return;
     }
-    if (event.key === "+" || event.key === "=") {
+    if (event.key === "ArrowLeft") {
+        if (openAdjacentPreview(-1)) {
+            event.preventDefault();
+        }
+    } else if (event.key === "ArrowRight") {
+        if (openAdjacentPreview(1)) {
+            event.preventDefault();
+        }
+    } else if (event.key === "+" || event.key === "=") {
         event.preventDefault();
         setImagePreviewScale(appState.imagePreview.scale * 1.1, 0, 0);
     } else if (event.key === "-" || event.key === "_") {

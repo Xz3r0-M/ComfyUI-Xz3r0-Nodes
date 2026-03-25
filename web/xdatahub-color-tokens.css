@@ -108,7 +108,7 @@ body:not([data-theme]) {
 body[data-theme="light"] {
     --xdh-neutral-base: #ffffff;
     --xdh-neutral-surface: #ffffff;
-    --xdh-neutral-text: #111111;
+    --xdh-neutral-text: #222222;
     --xdh-icon-color: #222222;
 
     --theme-bg-main: #ffffff;
@@ -117,9 +117,9 @@ body[data-theme="light"] {
     --surface-input: #ffffff;
     --xdh-input-bg: #d4d4d4;
 
-    --text-standard: #555555;
-    --text-emphasis: #555555;
-    --text-active: #555555;
+    --text-standard: #222222;
+    --text-emphasis: #222222;
+    --text-active: #222222;
 
     --border-standard: #c8c8c8;
     --border-hover: var(--xdh-brand-pink);
@@ -139,9 +139,9 @@ body[data-theme="light"] {
     --xdh-history-row-active-border: var(--xdh-brand-pink);
     --xdh-lightbox-title-bg: #d4d4d4;
     --xdh-lightbox-title-border: #999999;
-    --xdh-history-content-text: #000000;
+    --xdh-history-content-text: #222222;
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
-        invert(80%);
+        invert(13%);
 
     --icon-color-filter: brightness(0) saturate(100%) invert(13%);
     --icon-color-filter-active: brightness(0) saturate(100%) invert(13%);
@@ -153,7 +153,7 @@ body[data-theme="light"] {
 .xz3r0-datahub-window[data-theme="light"] {
     --xdh-neutral-base: #ffffff;
     --xdh-neutral-surface: #ffffff;
-    --xdh-neutral-text: #111111;
+    --xdh-neutral-text: #222222;
     --xdh-icon-color: #222222;
 
     --theme-bg-main: #ffffff;
@@ -162,9 +162,9 @@ body[data-theme="light"] {
     --surface-input: #ffffff;
     --xdh-input-bg: #d4d4d4;
 
-    --text-standard: #555555;
-    --text-emphasis: #555555;
-    --text-active: #555555;
+    --text-standard: #222222;
+    --text-emphasis: #222222;
+    --text-active: #222222;
 
     --border-standard: #c8c8c8;
     --border-hover: var(--xdh-brand-pink);
@@ -184,9 +184,9 @@ body[data-theme="light"] {
     --xdh-history-row-active-border: var(--xdh-brand-pink);
     --xdh-lightbox-title-bg: #d4d4d4;
     --xdh-lightbox-title-border: #999999;
-    --xdh-history-content-text: #000000;
+    --xdh-history-content-text: #222222;
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
-        invert(80%);
+        invert(13%);
 
     --icon-color-filter: brightness(0) saturate(100%) invert(13%);
     --icon-color-filter-active: brightness(0) saturate(100%) invert(13%);

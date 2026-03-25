@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260325-052">
+    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260325-070">
     <style>
         /*
            颜色规范：
@@ -527,7 +527,7 @@
             border-left: 1px solid var(--border-standard);
             border-radius: 0 6px 6px 0;
             background: var(--xdh-input-bg);
-            color: var(--text-emphasis);
+            color: var(--text-standard);
             padding: 0;
             line-height: 1;
             cursor: pointer;
@@ -536,7 +536,7 @@
         }
 
         .date-picker-btn:hover {
-            color: var(--text-active);
+            color: var(--text-standard);
             background: var(--hover-accent-bg);
             border-left-color: var(--border-hover);
         }
@@ -544,6 +544,23 @@
         .date-picker-icon {
             width: 14px;
             height: 14px;
+            filter: var(--xdh-inner-icon-filter);
+        }
+
+        .date-picker-icon-mask,
+        .row-copy-icon-mask {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            background: currentColor;
+            -webkit-mask-image: var(--mask-icon);
+            mask-image: var(--mask-icon);
+            -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+            -webkit-mask-position: center;
+            mask-position: center;
+            -webkit-mask-size: contain;
+            mask-size: contain;
         }
 
         .filters-toolbar-shell.is-compact .filters-main-row > .btn,
@@ -818,14 +835,14 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            flex: 0 0 1.2em;
-            width: 1.2em;
+            flex: 0 0 1.35em;
+            width: 1.35em;
             line-height: 1;
         }
 
         .top-action-bar .btn-emoji .btn-icon {
-            width: 1.05em;
-            height: 1.05em;
+            width: 1.18em;
+            height: 1.18em;
         }
 
         .top-action-bar .btn-text {
@@ -1530,9 +1547,15 @@
             flex-wrap: wrap;
         }
 
-        .media-sort-cycle-btn {
+        .top-action-bar .media-sort-cycle-btn {
             white-space: nowrap;
             flex: 0 0 auto;
+            width: 146px;
+            min-width: 146px;
+        }
+
+        .top-action-bar .media-sort-cycle-btn .btn-text {
+            max-width: 102px;
         }
 
         .media-sort-cycle-btn .btn-icon {
@@ -2019,10 +2042,12 @@
         .row-copy-btn-inline .btn-icon {
             width: 12px;
             height: 12px;
+            filter: var(--xdh-inner-icon-filter);
         }
 
-        body[data-theme="light"] .row-copy-btn-inline .btn-icon {
-            filter: var(--xdh-inner-icon-filter);
+        .row-copy-icon-mask {
+            width: 12px;
+            height: 12px;
         }
 
         .row-copy-btn-inline .btn-text {
@@ -2159,33 +2184,60 @@
             filter: var(--xdh-inner-icon-filter);
         }
 
-        .image-lightbox-head {
+        .image-lightbox-nav-row {
             width: 100%;
             display: flex;
             align-items: center;
-            justify-content: flex-end;
-            padding: 6px 0;
+            justify-content: center;
+            padding: 2px 72px 0;
             margin-bottom: 8px;
             flex: 0 0 auto;
         }
 
-        .image-lightbox-head-pill {
-            width: 100%;
-            min-width: 0;
+        .image-lightbox-nav-group {
             display: flex;
-            align-items: stretch;
-            border: 1px solid var(--xdh-history-content-border);
-            border-radius: 8px;
-            overflow: hidden;
-            background: var(--xdh-history-content-bg);
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
         }
 
-        .image-lightbox-send-row {
+        .btn.image-lightbox-nav-btn {
+            min-width: 36px;
+            padding: 6px 10px;
+            justify-content: center;
+        }
+
+        .image-lightbox-nav-btn .btn-icon {
+            width: 1.35em;
+            height: 1.35em;
+        }
+
+        .image-lightbox-title-row {
             width: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
             margin-bottom: 8px;
+            flex: 0 0 auto;
+        }
+
+        .image-lightbox-title-pill {
+            width: 100%;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid var(--xdh-history-content-border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            background: var(--xdh-history-content-bg);
+        }
+
+        .image-lightbox-send-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            min-width: 0;
             flex: 0 0 auto;
         }
 
@@ -2195,6 +2247,12 @@
             gap: 8px;
             border-radius: 8px;
             padding: 6px 14px;
+            border-color: #999999;
+        }
+
+        .image-lightbox-send-btn .btn-icon {
+            width: 1.3em;
+            height: 1.3em;
         }
 
         .image-lightbox-body {
@@ -2389,12 +2447,25 @@
             color: var(--text-standard);
             font-size: 14px;
             font-weight: 600;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-standard);
+        }
+
+        .node-send-file-block {
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            border: 1px solid var(--border-standard);
+            border-radius: 8px;
+            background: var(--xdh-input-bg);
         }
 
         .node-send-subtitle {
             color: var(--text-emphasis);
             font-size: 12px;
-            word-break: break-all;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .node-send-body {
@@ -2451,6 +2522,12 @@
             text-align: left;
         }
 
+        .node-send-option.active {
+            border-color: var(--border-active);
+            box-shadow: none;
+            background: var(--btn-active-color);
+        }
+
         .node-send-seq {
             display: inline-flex;
             align-items: center;
@@ -2490,10 +2567,30 @@
             text-overflow: ellipsis;
         }
 
+        .node-send-check {
+            flex: 0 0 auto;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-active);
+            min-width: 32px;
+            text-align: right;
+        }
+
+        .node-send-selection-summary {
+            font-size: 12px;
+            color: var(--text-emphasis);
+            border: 1px dashed var(--border-standard);
+            border-radius: 8px;
+            padding: 6px 10px;
+            background: var(--bg);
+        }
+
         .node-send-actions {
             display: flex;
             justify-content: flex-end;
             gap: 8px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-standard);
         }
 
         .db-delete-overlay {
@@ -2764,57 +2861,76 @@
         }
 
         .image-lightbox-close-btn {
-            border: 0;
-            border-radius: 0 8px 8px 0;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 2;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
             color: var(--text-standard);
             background: transparent;
-            box-shadow: none;
+            border: 1px solid var(--border-standard);
+            box-shadow: var(--shadow-none);
             min-width: 64px;
             flex: 0 0 auto;
-            font-weight: 600;
-            padding: 0 12px;
-            position: relative;
-        }
-
-        .image-lightbox-close-btn::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            width: 1px;
-            background: var(--xdh-history-content-border);
-            pointer-events: none;
+            font-weight: 700;
+            padding: 6px 12px;
         }
 
         .image-lightbox-close-btn:not(:disabled):hover {
             color: var(--text-standard);
-            background: var(--hover-accent-bg);
-            box-shadow: none;
+        }
+
+        .image-lightbox-close-btn .btn-icon {
+            color: currentColor;
+            width: 1.35em;
+            height: 1.35em;
+            display: block;
+            flex: 0 0 auto;
+            transform: translateY(2px);
         }
 
         .btn.image-lightbox-close-btn:not(:disabled):not(.active):hover {
-            border: 0;
-            box-shadow: none;
-        }
-
-        .image-lightbox-close-btn:not(:disabled):hover::before {
-            background: var(--border-hover);
+            box-shadow: var(--btn-hover-glow-soft);
         }
 
         .image-lightbox-title {
             flex: 1 1 auto;
             min-width: 0;
             max-width: 100%;
-            padding: 0 14px;
+            padding: 0 10px;
             background: transparent;
-            color: var(--text-emphasis);
+            color: var(--text-standard);
             font-size: 13px;
-            text-align: center;
-            line-height: 32px;
+            text-align: left;
+            line-height: 1.4;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .image-lightbox-index {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 2;
+            min-width: 64px;
+            min-height: 35px;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--text-standard);
+            border: 1px solid var(--xdh-history-content-border);
+            border-radius: 999px;
+            background: var(--xdh-history-content-bg);
+            padding: 6px 12px;
+            line-height: 1.2;
+            white-space: nowrap;
         }
 
         .media-lightbox {
@@ -2925,16 +3041,20 @@
                 padding: 8px;
             }
 
-            .image-lightbox-head {
+            .image-lightbox-nav-row {
                 padding: 5px 0;
                 margin-bottom: 6px;
             }
 
-            .image-lightbox-head-pill {
+            .image-lightbox-title-row {
                 width: 100%;
             }
 
-            .image-lightbox-send-row {
+            .image-lightbox-nav-group {
+                gap: 4px;
+            }
+
+            .image-lightbox-title-pill {
                 margin-bottom: 6px;
             }
 
@@ -2950,7 +3070,7 @@
 
             .image-lightbox-close-btn {
                 min-width: 56px;
-                padding: 0 10px;
+                padding: 6px 10px;
                 font-size: 12px;
             }
 
@@ -3309,7 +3429,7 @@
 </head>
 <body>
     <div class="app" id="app"></div>
-    <script type="module" src="./xdatahub_app.js?v=20260325-052"></script>
+    <script type="module" src="./xdatahub_app.js?v=20260325-070"></script>
 </body>
 </html>
 

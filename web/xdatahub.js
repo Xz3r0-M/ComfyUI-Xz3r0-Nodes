@@ -110,7 +110,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260325-052";
+const XDATAHUB_ASSET_VER = "20260325-070";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -836,8 +836,8 @@ app.registerExtension({
                 z-index: 1;
             }
             .xz3r0-datahub-window-host-tab-icon .xz3r0-icon {
-                width: 14px;
-                height: 14px;
+                width: 16px;
+                height: 16px;
                 display: block;
                 filter: var(--icon-color-filter);
             }

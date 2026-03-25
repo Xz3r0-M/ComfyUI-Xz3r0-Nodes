@@ -216,9 +216,11 @@ ruff.toml
 _记录/
 _检验/
 .codex/
+.agents/
 AGENTS.md
 XDataSaved/
 _audit/
 node_modules/
 package-lock.json
 package.json
+skills-lock.json
