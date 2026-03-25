@@ -699,6 +699,17 @@
       }
     }
   },
+  "XAudioGet": {
+    "display_name": "XAudioGet",
+    "description": "从 XDataHub 获取最新发送的音频。",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "音频",
+        "tooltip": "XDataHub 最近发送的音频"
+      }
+    }
+  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "高级图像/遮罩保存节点，支持自定义文件名、子文件夹和日期时间占位符。",
@@ -732,6 +743,17 @@
       "1": {
         "name": "保存路径",
         "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
+      }
+    }
+  },
+  "XVideoGet": {
+    "display_name": "XVideoGet",
+    "description": "从 XDataHub 获取最新发送的视频。",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "视频",
+        "tooltip": "XDataHub 最近发送的视频"
       }
     }
   },

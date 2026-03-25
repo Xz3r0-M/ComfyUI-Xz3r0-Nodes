@@ -699,6 +699,17 @@
       }
     }
   },
+  "XAudioGet": {
+    "display_name": "XAudioGet",
+    "description": "Load the latest audio sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Audio",
+        "tooltip": "Latest audio received from XDataHub"
+      }
+    }
+  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "Advanced image/mask saving node with custom filename, subfolder support, and datetime placeholders.",
@@ -732,6 +743,17 @@
       "1": {
         "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XVideoGet": {
+    "display_name": "XVideoGet",
+    "description": "Load the latest video sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Video",
+        "tooltip": "Latest video received from XDataHub"
       }
     }
   },

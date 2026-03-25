@@ -539,9 +539,9 @@ app.registerExtension({
         ensureColorTokensStylesheet();
         await syncThemeModeFromSettings();
         try {
-            const mod = await import("./ximageget_extension.js");
-            const init = mod?.initXImageGetExtension
-                || globalThis.__ximageget_extension_init__;
+            const mod = await import("./xmediaget_extension.js");
+            const init = mod?.initXMediaGetExtension
+                || globalThis.__xmediaget_extension_init__;
             if (typeof init === "function") {
                 init();
             }

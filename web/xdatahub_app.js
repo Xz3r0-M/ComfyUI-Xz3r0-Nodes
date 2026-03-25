@@ -149,6 +149,7 @@ const appState = {
     nodeSendSending: false,
     nodeSendFileUrl: "",
     nodeSendTitle: "",
+    nodeSendTargetClass: "XImageGet",
     nodeSendSortKey: "id",
     nodeSendSortDir: "asc",
     nodeSendRequestId: "",
@@ -2645,8 +2646,36 @@ function clearNodeSendValidateTimer() {
     }
 }
 
-function requestXImageGetNodes() {
-    const requestId = `ximageget_${Date.now()}_${Math.random()
+function resolveNodeClassByMediaType(mediaType) {
+    const type = String(mediaType || "").toLowerCase();
+    if (type === "video") {
+        return "XVideoGet";
+    }
+    if (type === "audio") {
+        return "XAudioGet";
+    }
+    return "XImageGet";
+}
+
+function nodeSendTargetHint(targetClass) {
+    const locale = readUiLocalePreference();
+    if (locale === "en") {
+        return `Select a target ${targetClass} node`;
+    }
+    return `选择目标 ${targetClass} 节点`;
+}
+
+function nodeSendTargetEmpty(targetClass) {
+    const locale = readUiLocalePreference();
+    if (locale === "en") {
+        return `No ${targetClass} nodes found`;
+    }
+    return `未找到 ${targetClass} 节点`;
+}
+
+function requestMediaGetNodes() {
+    const targetClass = String(appState.nodeSendTargetClass || "XImageGet");
+    const requestId = `mediaget_${Date.now()}_${Math.random()
         .toString(16)
         .slice(2)}`;
     appState.nodeSendRequestId = requestId;
@@ -2655,8 +2684,9 @@ function requestXImageGetNodes() {
     clearNodeSendRequestTimer();
     window.parent?.postMessage?.(
         {
-            type: "xdatahub:request_ximageget_nodes",
+            type: "xdatahub:request_media_get_nodes",
             request_id: requestId,
+            node_class: targetClass,
         },
         "*"
     );
@@ -2728,21 +2758,27 @@ async function requestNodeSendValidation(fileUrl) {
     }
 }
 
-function openNodeSendDialog(fileUrl, title) {
+function openNodeSendDialog(fileUrl, title, mediaType = "") {
     appState.nodeSendDialogOpen = true;
     appState.nodeSendFileUrl = String(fileUrl || "");
     appState.nodeSendTitle = String(title || "");
+    appState.nodeSendTargetClass = resolveNodeClassByMediaType(mediaType);
     appState.nodeSendNodes = [];
     appState.nodeSendSelectedIds = [];
     appState.nodeSendSending = false;
     appState.nodeSendError = "";
     appState.nodeSendNodesLoading = true;
-    appState.nodeSendValidateLoading = true;
+    appState.nodeSendValidateLoading = (
+        appState.nodeSendTargetClass === "XImageGet"
+    );
     syncNodeSendLoading();
-    requestXImageGetNodes();
-    if (appState.nodeSendFileUrl) {
+    requestMediaGetNodes();
+    if (
+        appState.nodeSendFileUrl
+        && appState.nodeSendTargetClass === "XImageGet"
+    ) {
         requestNodeSendValidation(appState.nodeSendFileUrl);
-    } else {
+    } else if (!appState.nodeSendValidateLoading) {
         appState.nodeSendValidateLoading = false;
         syncNodeSendLoading();
     }
@@ -2753,6 +2789,7 @@ function closeNodeSendDialog() {
     appState.nodeSendDialogOpen = false;
     appState.nodeSendFileUrl = "";
     appState.nodeSendTitle = "";
+    appState.nodeSendTargetClass = "XImageGet";
     appState.nodeSendNodes = [];
     appState.nodeSendSelectedIds = [];
     appState.nodeSendSending = false;
@@ -2770,6 +2807,11 @@ function closeNodeSendDialog() {
 function applyNodeSendNodesResponse(payload) {
     const requestId = String(payload?.request_id || "");
     if (!requestId || requestId !== appState.nodeSendRequestId) {
+        return;
+    }
+    const responseClass = String(payload?.node_class || "");
+    const targetClass = String(appState.nodeSendTargetClass || "");
+    if (responseClass && targetClass && responseClass !== targetClass) {
         return;
     }
     clearNodeSendRequestTimer();
@@ -4018,6 +4060,29 @@ function markCurrentMediaCardPermissionDenied(kind) {
     markMediaCardPermissionDenied(card, kind);
 }
 
+function detachThumbSendButton(thumb) {
+    if (!(thumb instanceof HTMLElement)) {
+        return null;
+    }
+    const button = thumb.querySelector(".media-send-btn");
+    if (!(button instanceof HTMLElement)) {
+        return null;
+    }
+    button.remove();
+    return button;
+}
+
+function setThumbHtmlKeepingSendButton(thumb, html) {
+    if (!(thumb instanceof HTMLElement)) {
+        return;
+    }
+    const sendButton = detachThumbSendButton(thumb);
+    thumb.innerHTML = String(html || "");
+    if (sendButton instanceof HTMLElement) {
+        thumb.appendChild(sendButton);
+    }
+}
+
 function markMediaCardUnsupported(card, kind) {
     if (!(card instanceof HTMLElement)) {
         return;
@@ -4036,21 +4101,30 @@ function markMediaCardUnsupported(card, kind) {
         card.removeAttribute("data-video-permission-denied");
         card.removeAttribute("data-video-missing");
         card.setAttribute("data-video-unsupported", "1");
-        thumb.innerHTML = renderVideoUnsupportedHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderVideoUnsupportedHtml()
+        );
         return;
     }
     if (kind === "audio") {
         card.removeAttribute("data-audio-permission-denied");
         card.removeAttribute("data-audio-missing");
         card.setAttribute("data-audio-unsupported", "1");
-        thumb.innerHTML = renderAudioUnsupportedHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderAudioUnsupportedHtml()
+        );
         return;
     }
     if (kind === "image") {
         card.removeAttribute("data-image-permission-denied");
         card.removeAttribute("data-image-missing");
         card.setAttribute("data-image-unsupported", "1");
-        thumb.innerHTML = renderImageUnsupportedHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderImageUnsupportedHtml()
+        );
     }
 }
 
@@ -4072,21 +4146,30 @@ function markMediaCardMissing(card, kind) {
         card.removeAttribute("data-video-permission-denied");
         card.removeAttribute("data-video-unsupported");
         card.setAttribute("data-video-missing", "1");
-        thumb.innerHTML = renderVideoMissingHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderVideoMissingHtml()
+        );
         return;
     }
     if (kind === "audio") {
         card.removeAttribute("data-audio-permission-denied");
         card.removeAttribute("data-audio-unsupported");
         card.setAttribute("data-audio-missing", "1");
-        thumb.innerHTML = renderAudioMissingHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderAudioMissingHtml()
+        );
         return;
     }
     if (kind === "image") {
         card.removeAttribute("data-image-permission-denied");
         card.removeAttribute("data-image-unsupported");
         card.setAttribute("data-image-missing", "1");
-        thumb.innerHTML = renderImageMissingHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderImageMissingHtml()
+        );
     }
 }
 
@@ -4108,21 +4191,30 @@ function markMediaCardPermissionDenied(card, kind) {
         card.removeAttribute("data-video-unsupported");
         card.removeAttribute("data-video-missing");
         card.setAttribute("data-video-permission-denied", "1");
-        thumb.innerHTML = renderVideoPermissionDeniedHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderVideoPermissionDeniedHtml()
+        );
         return;
     }
     if (kind === "audio") {
         card.removeAttribute("data-audio-unsupported");
         card.removeAttribute("data-audio-missing");
         card.setAttribute("data-audio-permission-denied", "1");
-        thumb.innerHTML = renderAudioPermissionDeniedHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderAudioPermissionDeniedHtml()
+        );
         return;
     }
     if (kind === "image") {
         card.removeAttribute("data-image-unsupported");
         card.removeAttribute("data-image-missing");
         card.setAttribute("data-image-permission-denied", "1");
-        thumb.innerHTML = renderImagePermissionDeniedHtml();
+        setThumbHtmlKeepingSendButton(
+            thumb,
+            renderImagePermissionDeniedHtml()
+        );
     }
 }
 
@@ -4394,8 +4486,12 @@ function mountVideoPreview(item, seq, onDone) {
     video.preload = "metadata";
     video.playsInline = true;
     video.src = urlText;
+    const sendButton = detachThumbSendButton(thumb);
     thumb.innerHTML = "";
     thumb.appendChild(video);
+    if (sendButton instanceof HTMLElement) {
+        thumb.appendChild(sendButton);
+    }
     addMediaListenerOnce(
         video,
         `video-meta:${id}`,
@@ -4781,10 +4877,14 @@ function renderMediaGrid() {
             )
                 ? ' data-audio-unsupported="1"'
                 : "";
-            const sendFileUrl = mediaType === "image" ? viewUrl : "";
+            const sendFileUrl = viewUrl;
             const sendDisabled = !sendFileUrl;
-            const sendBtnHtml = mediaType === "image"
-                ? `<button class="media-send-btn ${sendDisabled ? "disabled" : ""}" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendFileUrl)}" data-media-title="${escapeAttr(item.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}" ${sendDisabled ? "disabled" : ""}>
+            const sendBtnHtml = (
+                mediaType === "image"
+                || mediaType === "video"
+                || mediaType === "audio"
+            )
+                ? `<button class="media-send-btn ${sendDisabled ? "disabled" : ""}" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendFileUrl)}" data-media-type="${escapeAttr(mediaType)}" data-media-title="${escapeAttr(item.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}" ${sendDisabled ? "disabled" : ""}>
                         ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")}
                     </button>`
                 : "";
@@ -5080,11 +5180,12 @@ function renderImagePreview() {
         "Send to node"
     );
     const sendViewUrl = String(appState.imagePreview.viewUrl || "");
+    const previewMediaType = isVideo ? "video" : isAudio ? "audio" : "image";
     const previewIndexText = nav.index >= 0
         ? `${nav.index + 1} / ${currentPreviewMediaEntries().length}`
         : "";
-    const sendButtonHtml = (isImage && sendViewUrl)
-        ? `<button class="btn image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendViewUrl)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
+    const sendButtonHtml = ((isImage || isAudio || isVideo) && sendViewUrl)
+        ? `<button class="btn image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-url="${escapeAttr(sendViewUrl)}" data-media-type="${escapeAttr(previewMediaType)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
                 ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")} ${escapeHtml(sendToNodeText)}
             </button>`
         : "";
@@ -5673,18 +5774,13 @@ function renderNodeSendDialog() {
         "xdatahub.ui.app.media.send_dialog_title",
         "Send to node"
     );
-    const hintText = t(
-        "xdatahub.ui.app.media.send_dialog_hint",
-        "Select a target XImageGet node"
-    );
+    const targetClass = String(appState.nodeSendTargetClass || "XImageGet");
+    const hintText = nodeSendTargetHint(targetClass);
     const loadingText = t(
         "xdatahub.ui.app.media.send_dialog_loading",
         "Loading nodes..."
     );
-    const emptyText = t(
-        "xdatahub.ui.app.media.send_dialog_empty",
-        "No XImageGet nodes found"
-    );
+    const emptyText = nodeSendTargetEmpty(targetClass);
     const sortLabelText = t(
         "xdatahub.ui.app.media.send_dialog_sort",
         "Sort by"
@@ -5769,7 +5865,7 @@ function renderNodeSendDialog() {
             const nodeId = Number.isFinite(Number(item.id))
                 ? String(item.id)
                 : "--";
-            const nodeTitle = String(item.title || "XImageGet");
+            const nodeTitle = String(item.title || targetClass);
             const label = `${nodeTitle} #${nodeId}`;
             const accent = resolveNodeAccentColor(item);
             const rowStyle = ` style="--node-palette:${escapeAttr(accent)}"`;
@@ -6613,7 +6709,10 @@ async function handleDelegatedMediaSend(event) {
         return true;
     }
     const title = String(button.getAttribute("data-media-title") || "");
-    openNodeSendDialog(fileUrl, title);
+    const mediaType = String(
+        button.getAttribute("data-media-type") || ""
+    ).toLowerCase();
+    openNodeSendDialog(fileUrl, title, mediaType);
     flashButton(button);
     return true;
 }
@@ -6753,6 +6852,7 @@ function handleDelegatedNodeSend(event) {
                         node_id: nodeId,
                         file_url: fileUrl,
                         title: appState.nodeSendTitle || "",
+                        node_class: appState.nodeSendTargetClass || "",
                     },
                 },
                 "*"
@@ -8106,7 +8206,7 @@ window.addEventListener("message", (event) => {
         switchTab(tab);
         return;
     }
-    if (payload.type === "xdatahub:ximageget_nodes") {
+    if (payload.type === "xdatahub:media_get_nodes") {
         applyNodeSendNodesResponse(payload);
         return;
     }

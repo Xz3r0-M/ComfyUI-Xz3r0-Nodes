@@ -33,6 +33,7 @@ from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
 from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
+from .xnode.xaudioget import XAudioGet
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xmath import XMath
@@ -49,6 +50,7 @@ from .xnode.ximagesave import XImageSave
 from .xnode.xlatentload import XLatentLoad
 from .xnode.xlatentsave import XLatentSave
 from .xnode.xmarkdownsave import XMarkdownSave
+from .xnode.xvideoget import XVideoGet
 from .xnode.xvideosave import XVideoSave
 from .xnode.xworkflowsave import XWorkflowSave
 from .xz3r0_utils import configure_logging, get_logger
@@ -86,6 +88,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XSeed,
     XStringGroup,
     XStringWrap,
+    XAudioGet,
     XAudioSave,
     XDataSave,
     XImageGet,
@@ -94,6 +97,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XLatentLoad,
     XLatentSave,
     XMarkdownSave,
+    XVideoGet,
     XVideoSave,
     XWorkflowSave,
 )
