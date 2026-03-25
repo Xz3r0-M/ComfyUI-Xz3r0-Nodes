@@ -17,11 +17,11 @@ def get_critical_db_names() -> set[str]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {"media_index.db", "seed_data.db"}
+        return {"media_index.db", "seed_data.db", "string_data.db"}
 
     values = payload.get("critical_databases")
     if not isinstance(values, list):
-        return {"media_index.db", "seed_data.db"}
+        return {"media_index.db", "seed_data.db", "string_data.db"}
 
     names: set[str] = set()
     for item in values:
@@ -36,6 +36,5 @@ def get_critical_db_names() -> set[str]:
         names.add(name)
 
     if not names:
-        return {"media_index.db", "seed_data.db"}
+        return {"media_index.db", "seed_data.db", "string_data.db"}
     return names
-

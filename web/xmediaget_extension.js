@@ -4,7 +4,6 @@ import { api } from "../../scripts/api.js";
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
 const ROOT = globalThis;
-const IMAGE_NODE_CLASS = "XImageGet";
 const STRING_NODE_CLASS = "XStringGet";
 const SUPPORTED_NODE_CLASSES = new Set([
     "XImageGet",
@@ -17,7 +16,7 @@ const NODE_UI_CONFIG = {
         kind: "image",
         emoji: "🖼️",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_image",
-        placeholderFallback: "Drop XDataHub image link here",
+        placeholderFallback: "Drop XDataHub image here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_image",
         missingFallback: "Image missing",
     },
@@ -25,7 +24,7 @@ const NODE_UI_CONFIG = {
         kind: "video",
         emoji: "🎞️",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_video",
-        placeholderFallback: "Drop XDataHub video link here",
+        placeholderFallback: "Drop XDataHub video here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_video",
         missingFallback: "Video missing",
     },
@@ -33,7 +32,7 @@ const NODE_UI_CONFIG = {
         kind: "audio",
         emoji: "🎵",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_audio",
-        placeholderFallback: "Drop XDataHub audio link here",
+        placeholderFallback: "Drop XDataHub audio here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_audio",
         missingFallback: "Audio missing",
     },
@@ -46,10 +45,13 @@ const NODE_UI_CONFIG = {
         missingFallback: "Text missing",
     },
 };
-const VIEW_URL_WIDGET = "view_url";
+const MEDIA_REF_WIDGET = "media_ref";
 const TEXT_VALUE_WIDGET = "text_value";
+const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const MIN_NODE_WIDTH = 260;
 const MIN_NODE_HEIGHT = 320;
+const MEDIA_REF_PROPERTY = "__xdatahub_media_ref";
+const TEXT_VALUE_PROPERTY = "__xdatahub_text_value";
 
 const STYLE_ID = "xmediaget-extension-style";
 const NODE_ACCENT_DEFAULT = "#0066FF";
@@ -94,6 +96,65 @@ function readUiText(key, fallback) {
 
 function t(key, fallback = "") {
     return readUiText(key, fallback || key);
+}
+
+function buildMediaFileUrl(mediaRef) {
+    const value = String(mediaRef || "").trim();
+    if (!value) {
+        return "";
+    }
+    return `/xz3r0/xdatahub/media/file?ref=${encodeURIComponent(value)}`;
+}
+
+function parseMediaDragPayload(dataTransfer) {
+    const raw = dataTransfer?.getData(XDATAHUB_MEDIA_MIME) || "";
+    if (!raw) {
+        return null;
+    }
+    try {
+        const payload = JSON.parse(raw);
+        const source = String(payload?.source || "").trim().toLowerCase();
+        const mediaRef = String(payload?.media_ref || "").trim();
+        const mediaType = String(payload?.media_type || "").trim().toLowerCase();
+        if (source !== "xdatahub" || !mediaRef) {
+            return null;
+        }
+        return {
+            source,
+            media_ref: mediaRef,
+            media_type: mediaType,
+            title: String(payload?.title || ""),
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function fetchMediaMeta(mediaRef) {
+    const normalized = String(mediaRef || "").trim();
+    if (!normalized) {
+        return null;
+    }
+    try {
+        const response = await api.fetchApi(
+            `/xz3r0/xdatahub/media/meta?ref=${encodeURIComponent(normalized)}`
+        );
+        if (!response.ok) {
+            return null;
+        }
+        return await response.json();
+    } catch {
+        return null;
+    }
+}
+
+function getStoragePropertyName(node) {
+    return isStringNode(node) ? TEXT_VALUE_PROPERTY : MEDIA_REF_PROPERTY;
+}
+
+function looksLikeMediaRef(value) {
+    const raw = String(value || "").trim();
+    return /^[A-Za-z0-9_-]{16,}$/.test(raw);
 }
 
 async function fetchLocaleJson(localeCode) {
@@ -164,7 +225,7 @@ function getNodeUiConfig(nodeClass) {
         ...config,
         placeholder: t(
             config.placeholderKey,
-            config.placeholderFallback || "Drop XDataHub link here"
+            config.placeholderFallback || "Drop XDataHub media here"
         ),
         missing: t(
             config.missingKey,
@@ -589,7 +650,7 @@ function setPreview(panelInfo, data) {
                 mediaEl.load();
             }
         }
-        placeholder.textContent = placeholderText || "Drop XDataHub link here";
+        placeholder.textContent = placeholderText || "Drop XDataHub media here";
         title.textContent = "";
         title.removeAttribute("title");
         if (textEl) {
@@ -719,76 +780,12 @@ function refreshNodeBadge(node) {
     }
 }
 
-function parseMediaIdFromUrl(text) {
-    const raw = String(text || "");
-    const match = raw.match(/\/xz3r0\/xdatahub\/media\/file\?id=(\d+)/);
-    if (!match) {
-        return null;
-    }
-    const value = Number(match[1]);
-    if (!Number.isFinite(value) || value <= 0) {
-        return null;
-    }
-    return value;
-}
-
-function parseViewUrl(text) {
-    const raw = String(text || "").trim();
-    if (!raw) {
-        return "";
-    }
-    const first = raw.split(/\r?\n/)[0].trim();
-    if (!first) {
-        return "";
-    }
-    try {
-        const url = new URL(first, window.location.origin);
-        return url.pathname === "/view"
-            ? url.toString()
-            : "";
-    } catch {
-        return first.startsWith("/view") ? first : "";
-    }
-}
-
-async function sendMediaId(mediaId) {
-    try {
-        const res = await api.fetchApi("/xz3r0/xdatahub/media/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ media_id: mediaId }),
-        });
-        if (!res.ok) {
-            return null;
-        }
-        return await res.json();
-    } catch {
-        return null;
-    }
-}
-
-async function sendViewUrl(fileUrl) {
-    try {
-        const res = await api.fetchApi("/xz3r0/xdatahub/media/send-view", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ file_url: fileUrl }),
-        });
-        if (!res.ok) {
-            return null;
-        }
-        return await res.json();
-    } catch {
-        return null;
-    }
-}
-
 function isStringNode(node) {
     return String(node?.comfyClass || "") === STRING_NODE_CLASS;
 }
 
 function getStorageWidgetName(node) {
-    return isStringNode(node) ? TEXT_VALUE_WIDGET : VIEW_URL_WIDGET;
+    return isStringNode(node) ? TEXT_VALUE_WIDGET : MEDIA_REF_WIDGET;
 }
 
 function getStorageWidget(node) {
@@ -811,33 +808,61 @@ function getStorageWidget(node) {
 function getStoredNodeValue(node) {
     const widget = getStorageWidget(node);
     const value = widget?.value;
-    return typeof value === "string" ? value : String(value || "");
+    const text = typeof value === "string" ? value : String(value || "");
+    if (text) {
+        return text;
+    }
+    const propertyName = getStoragePropertyName(node);
+    const propertyValue = node?.properties?.[propertyName];
+    return typeof propertyValue === "string"
+        ? propertyValue
+        : String(propertyValue || "");
 }
 
 function setStoredNodeValue(node, value) {
     const widget = getStorageWidget(node);
+    const normalized = String(value || "");
+    if (!node?.properties) {
+        node.properties = {};
+    }
+    node.properties[getStoragePropertyName(node)] = normalized;
     if (!widget) {
         return;
     }
-    widget.value = String(value || "");
+    widget.value = normalized;
     node?.graph?.setDirtyCanvas?.(true, true);
 }
 
-function migrateLegacyViewUrl(node) {
-    if (!node || isStringNode(node)) {
-        return;
+function hydrateStoredNodeValue(node) {
+    if (!node) {
+        return "";
     }
-    const legacy = node?.properties?.last_view_url;
-    if (!legacy) {
-        return;
+    const current = getStoredNodeValue(node);
+    if (current) {
+        return current;
     }
-    if (getStoredNodeValue(node)) {
-        return;
+    const propertyValue = node?.properties?.[getStoragePropertyName(node)];
+    if (isStringNode(node)) {
+        if (propertyValue) {
+            setStoredNodeValue(node, propertyValue);
+            return String(propertyValue);
+        }
+        return "";
     }
-    setStoredNodeValue(node, legacy);
-    if (node?.properties) {
-        delete node.properties.last_view_url;
+    if (looksLikeMediaRef(propertyValue)) {
+        setStoredNodeValue(node, propertyValue);
+        return String(propertyValue);
     }
+    const widgetValues = Array.isArray(node?.widgets_values)
+        ? node.widgets_values
+        : [];
+    for (const item of widgetValues) {
+        if (looksLikeMediaRef(item)) {
+            setStoredNodeValue(node, item);
+            return String(item);
+        }
+    }
+    return "";
 }
 
 function installNodeUi(node) {
@@ -894,24 +919,26 @@ function installNodeUi(node) {
             consumeDragEvent(event);
             panelInfo.preview.classList.remove("drag-over");
             const dataTransfer = event.dataTransfer;
-            const uriList = dataTransfer?.getData("text/uri-list")
-                || dataTransfer?.getData("text/plain")
-                || "";
-            const viewUrl = parseViewUrl(uriList);
-            if (!viewUrl) {
+            const payload = parseMediaDragPayload(dataTransfer);
+            if (!payload) {
                 return;
             }
-            if (nodeClass === IMAGE_NODE_CLASS) {
-                const payload = await sendViewUrl(viewUrl);
-                if (payload?.status === "success") {
-                    setPreview(panelInfo, payload);
-                } else {
-                    setPreview(panelInfo, { file_url: viewUrl });
-                }
-            } else {
-                setPreview(panelInfo, { file_url: viewUrl });
+            if (
+                payload.media_type
+                && payload.media_type !== panelInfo.mediaKind
+            ) {
+                return;
             }
-            setStoredNodeValue(node, viewUrl);
+            const mediaRef = String(payload.media_ref || "");
+            const fileUrl = buildMediaFileUrl(mediaRef);
+            if (!fileUrl) {
+                return;
+            }
+            setPreview(panelInfo, {
+                file_url: fileUrl,
+                title: payload.title || "",
+            });
+            setStoredNodeValue(node, mediaRef);
         });
     }
     if (panelInfo.clearBtn instanceof HTMLButtonElement) {
@@ -922,8 +949,7 @@ function installNodeUi(node) {
         });
     }
     ensureNodeMinSize(node);
-    migrateLegacyViewUrl(node);
-    const stored = getStoredNodeValue(node);
+    const stored = hydrateStoredNodeValue(node) || getStoredNodeValue(node);
     if (stored) {
         restoreStoredData(node, stored);
     }
@@ -955,11 +981,12 @@ function ensureNodeMinSize(node) {
     node.__ximageget_resize_guard = true;
     const origOnResize = node.onResize;
     node.onResize = function (size) {
-        const nextWidth = Math.max(this.size?.[0] ?? 0, MIN_NODE_WIDTH);
-        const nextHeight = Math.max(this.size?.[1] ?? 0, MIN_NODE_HEIGHT);
-        if (typeof this.setSize === "function") {
-            this.setSize([nextWidth, nextHeight]);
-        } else if (Array.isArray(this.size)) {
+        const sourceSize = Array.isArray(size) ? size : this.size;
+        const nextWidth = Math.max(sourceSize?.[0] ?? 0, MIN_NODE_WIDTH);
+        const nextHeight = Math.max(sourceSize?.[1] ?? 0, MIN_NODE_HEIGHT);
+        if (!Array.isArray(this.size) || this.size.length < 2) {
+            this.size = [nextWidth, nextHeight];
+        } else {
             this.size[0] = nextWidth;
             this.size[1] = nextHeight;
         }
@@ -986,24 +1013,27 @@ function restoreStoredData(node, stored) {
         }
         return;
     }
+    const mediaRef = value;
+    const fallbackUrl = buildMediaFileUrl(mediaRef);
     if (panelInfo) {
         setPreview(panelInfo, {
-            file_url: value,
+            file_url: fallbackUrl,
             title: panelInfo?.title?.textContent || "",
         });
     }
-    if (nodeClass !== IMAGE_NODE_CLASS) {
-        return;
-    }
-    const viewUrl = parseViewUrl(value);
-    if (viewUrl) {
-        sendViewUrl(viewUrl);
-        return;
-    }
-    const mediaId = parseMediaIdFromUrl(value);
-    if (mediaId) {
-        sendMediaId(mediaId);
-    }
+    fetchMediaMeta(mediaRef).then((payload) => {
+        if (!payload || getStoredNodeValue(node) !== mediaRef) {
+            return;
+        }
+        const fileUrl = String(payload.file_url || fallbackUrl || "");
+        if (!fileUrl) {
+            return;
+        }
+        setPreview(panelInfo, {
+            file_url: fileUrl,
+            title: String(payload.title || ""),
+        });
+    }).catch(() => {});
 }
 
 function installExistingNodes() {
@@ -1021,7 +1051,7 @@ function getNodeById(nodeId) {
     return nodes.find((node) => node?.id === nodeId) || null;
 }
 
-function updateNodeViewUrl(node, fileUrl, title) {
+function updateNodeMediaRef(node, mediaRef, title) {
     if (!node) {
         return;
     }
@@ -1029,17 +1059,11 @@ function updateNodeViewUrl(node, fileUrl, title) {
         installNodeUi(node);
     }
     const panelInfo = node.__ximageget_panel;
+    const fileUrl = buildMediaFileUrl(mediaRef);
     if (panelInfo) {
         setPreview(panelInfo, { file_url: fileUrl, title });
     }
-    setStoredNodeValue(node, fileUrl);
-    if (String(node?.comfyClass || "") !== IMAGE_NODE_CLASS) {
-        return;
-    }
-    const viewUrl = parseViewUrl(fileUrl);
-    if (viewUrl) {
-        sendViewUrl(viewUrl);
-    }
+    setStoredNodeValue(node, mediaRef);
 }
 
 function updateNodeTextValue(node, textValue, title) {
@@ -1092,10 +1116,24 @@ export function initXMediaGetExtension() {
                 return;
             }
             const orig = nodeType.prototype.onNodeCreated;
+            const origOnConfigure = nodeType.prototype.onConfigure;
             nodeType.prototype.onNodeCreated = function () {
                 orig?.apply(this, arguments);
                 installNodeUi(this);
-                restoreStoredData(this, getStoredNodeValue(this));
+                restoreStoredData(
+                    this,
+                    hydrateStoredNodeValue(this) || getStoredNodeValue(this),
+                );
+                refreshNodeBadge(this);
+            };
+            nodeType.prototype.onConfigure = function () {
+                origOnConfigure?.apply(this, arguments);
+                installNodeUi(this);
+                const stored = hydrateStoredNodeValue(this)
+                    || getStoredNodeValue(this);
+                if (stored) {
+                    restoreStoredData(this, stored);
+                }
                 refreshNodeBadge(this);
             };
         },
@@ -1112,7 +1150,10 @@ export function initXMediaGetExtension() {
                 return;
             }
             installNodeUi(node);
-            restoreStoredData(node, getStoredNodeValue(node));
+            restoreStoredData(
+                node,
+                hydrateStoredNodeValue(node) || getStoredNodeValue(node),
+            );
             refreshNodeBadge(node);
         },
         async setup() {
@@ -1142,7 +1183,7 @@ export function initXMediaGetExtension() {
                 if (payload.type === "xdatahub:send_to_node") {
                     const data = payload.data || {};
                     const nodeId = Number(data.node_id);
-                    const fileUrl = String(data.file_url || "");
+                    const mediaRef = String(data.media_ref || "");
                     const textValue = String(data.text_value || "");
                     const nodeClass = String(data.node_class || "");
                     if (!Number.isFinite(nodeId)) {
@@ -1166,10 +1207,10 @@ export function initXMediaGetExtension() {
                         updateNodeTextValue(node, textValue, data.title || "");
                         return;
                     }
-                    if (!fileUrl) {
+                    if (!mediaRef) {
                         return;
                     }
-                    updateNodeViewUrl(node, fileUrl, data.title || "");
+                    updateNodeMediaRef(node, mediaRef, data.title || "");
                     return;
                 }
                 if (payload.type === "xdatahub:image_sent") {

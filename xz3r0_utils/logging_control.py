@@ -51,6 +51,7 @@ MODULE_LOG_LEVELS: dict[str, str] = {
     "api.xdatahub_api": "INFO",
     "api.xworkflowsave_api": "INFO",
     "xz3r0_utils.xdatahub_bridge": "INFO",
+    "xz3r0_utils.xdatahub_media_refs": "INFO",
     "xnode.xaudiosave": "INFO",
     "xnode.xdatasave": "INFO",
     "xnode.ximageget": "INFO",

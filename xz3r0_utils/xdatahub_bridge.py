@@ -20,7 +20,7 @@ LOGGER = get_logger(__name__)
 
 @dataclass(frozen=True)
 class XDataHubImageSnapshot:
-    media_id: int
+    media_ref: str
     path: Path
     title: str
     file_url: str
@@ -33,7 +33,7 @@ _LATEST_IMAGE: XDataHubImageSnapshot | None = None
 
 
 def update_latest_image(
-    media_id: int,
+    media_ref: str,
     path: Path,
     title: str,
     file_url: str = "",
@@ -49,7 +49,7 @@ def update_latest_image(
     with _LOCK:
         _REVISION += 1
         _LATEST_IMAGE = XDataHubImageSnapshot(
-            media_id=int(media_id),
+            media_ref=str(media_ref or "").strip(),
             path=path,
             title=safe_title,
             file_url=str(file_url or ""),
@@ -57,8 +57,8 @@ def update_latest_image(
         )
         revision = _REVISION
     LOGGER.info(
-        "[xdatahub_bridge] image updated: media_id=%s, rev=%s",
-        media_id,
+        "[xdatahub_bridge] image updated: media_ref=%s, rev=%s",
+        media_ref,
         revision,
     )
     return revision

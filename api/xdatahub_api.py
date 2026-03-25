@@ -4,6 +4,7 @@ XDataHub 统一数据浏览 API。
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import mimetypes
@@ -11,11 +12,9 @@ import os
 import sqlite3
 import threading
 import time
-import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import server
 from aiohttp import web
@@ -29,8 +28,12 @@ except Exception:  # pragma: no cover
 try:
     from ..xz3r0_utils import (
         ensure_unique_filename,
+        generate_public_ref,
         get_critical_db_names,
         get_logger,
+        media_ref_to_file_url,
+        normalize_media_ref,
+        resolve_media_ref,
         sanitize_path_component,
     )
     from ..xz3r0_utils.xdatahub_bridge import (
@@ -40,8 +43,12 @@ try:
 except ImportError:
     from xz3r0_utils import (
         ensure_unique_filename,
+        generate_public_ref,
         get_critical_db_names,
         get_logger,
+        media_ref_to_file_url,
+        normalize_media_ref,
+        resolve_media_ref,
         sanitize_path_component,
     )
     from xz3r0_utils.xdatahub_bridge import (
@@ -98,7 +105,10 @@ def _infer_media_content_type(path: Path, media_type: str | None) -> str:
         "video": "video/*",
         "audio": "audio/*",
     }
-    return fallback.get(str(media_type or "").lower(), "application/octet-stream")
+    return fallback.get(
+        str(media_type or "").lower(),
+        "application/octet-stream",
+    )
 
 
 def _is_client_disconnect_error(exc: BaseException) -> bool:
@@ -239,7 +249,11 @@ def json_error(
         request = None
         err_code = str(code_or_request)
     else:
-        request = code_or_request if isinstance(code_or_request, web.Request) else None
+        request = (
+            code_or_request
+            if isinstance(code_or_request, web.Request)
+            else None
+        )
         err_code = str(code)
     locale = resolve_locale_from_request(request)
     message = error_message(err_code, locale)
@@ -275,51 +289,6 @@ def parse_iso(value: str | None) -> float | None:
         return dt.timestamp()
     except Exception:
         return None
-
-
-def _resolve_view_file_url(
-    file_url: str,
-) -> tuple[Path, str, str] | None:
-    raw = str(file_url or "").strip()
-    if not raw:
-        return None
-    try:
-        parsed = urlparse(raw)
-    except Exception:
-        parsed = None
-    path = parsed.path if parsed else raw
-    if path != "/view":
-        return None
-    query = parse_qs(parsed.query if parsed else "")
-    filename = unquote(query.get("filename", [""])[0]).strip()
-    if not filename:
-        return None
-    if filename[0] == "/" or ".." in filename:
-        return None
-    file_type = unquote(query.get("type", [""])[0]).strip().lower()
-    if file_type not in {"input", "output", "temp"}:
-        return None
-    subfolder = unquote(query.get("subfolder", [""])[0]).strip()
-    if folder_paths is None:
-        return None
-    if file_type == "input":
-        root = folder_paths.get_input_directory()
-    elif file_type == "output":
-        root = folder_paths.get_output_directory()
-    else:
-        root = folder_paths.get_temp_directory()
-    root_abs = os.path.abspath(root)
-    candidate = root
-    if subfolder:
-        candidate = os.path.join(candidate, subfolder)
-        try:
-            if os.path.commonpath((os.path.abspath(candidate), root_abs)) != root_abs:
-                return None
-        except Exception:
-            return None
-    safe_name = os.path.basename(filename)
-    file_path = os.path.join(candidate, safe_name)
-    return Path(file_path), safe_name, subfolder
 
 
 def _image_validate_cache_key(path: Path) -> tuple[str, int, int] | None:
@@ -793,21 +762,171 @@ class MediaStore:
         conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
         return conn
 
+    def _create_media_index_table(
+        self,
+        conn: sqlite3.Connection,
+        table_name: str = "media_index",
+    ) -> None:
+        conn.execute(
+            f"CREATE TABLE IF NOT EXISTS {table_name} ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "public_ref TEXT NOT NULL UNIQUE,"
+            "real_path TEXT NOT NULL,"
+            "rel_path TEXT NOT NULL UNIQUE,"
+            "filename TEXT NOT NULL,"
+            "media_type TEXT NOT NULL,"
+            "mtime REAL NOT NULL,"
+            "size INTEGER NOT NULL,"
+            "valid INTEGER NOT NULL DEFAULT 1,"
+            "created_at TEXT NOT NULL,"
+            "updated_at TEXT NOT NULL)"
+        )
+
+    @staticmethod
+    def _coerce_public_ref(
+        value: Any,
+        reserved: set[str],
+    ) -> str:
+        normalized = normalize_media_ref(str(value or ""))
+        if normalized and normalized not in reserved:
+            reserved.add(normalized)
+            return normalized
+        while True:
+            generated = generate_public_ref()
+            normalized = normalize_media_ref(generated)
+            if normalized and normalized not in reserved:
+                reserved.add(normalized)
+                return normalized
+
+    @staticmethod
+    def _row_public_ref_map(
+        conn: sqlite3.Connection,
+        media_type: str | None = None,
+    ) -> dict[str, str]:
+        params: list[Any] = []
+        where = ""
+        if media_type:
+            where = " WHERE media_type = ?"
+            params.append(media_type)
+        rows = conn.execute(
+            "SELECT rel_path, public_ref FROM media_index" + where,
+            params,
+        ).fetchall()
+        return {
+            str(row["rel_path"] or ""): str(row["public_ref"] or "")
+            for row in rows
+            if str(row["rel_path"] or "").strip()
+        }
+
+    @staticmethod
+    def _all_public_refs(conn: sqlite3.Connection) -> set[str]:
+        rows = conn.execute(
+            "SELECT public_ref FROM media_index"
+        ).fetchall()
+        return {
+            ref
+            for ref in (
+                normalize_media_ref(str(row["public_ref"] or ""))
+                for row in rows
+            )
+            if ref
+        }
+
+    def _upsert_index_entry(
+        self,
+        conn: sqlite3.Connection,
+        entry: dict[str, Any],
+        public_ref: str,
+        now: str,
+    ) -> None:
+        conn.execute(
+            (
+                "INSERT INTO media_index "
+                "(public_ref, real_path, rel_path, filename, media_type, "
+                "mtime, size, valid, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?) "
+                "ON CONFLICT(rel_path) DO UPDATE SET "
+                "real_path=excluded.real_path, "
+                "filename=excluded.filename, "
+                "media_type=excluded.media_type, "
+                "mtime=excluded.mtime, "
+                "size=excluded.size, valid=1, "
+                "updated_at=excluded.updated_at"
+            ),
+            (
+                public_ref,
+                entry["path"],
+                entry["rel_path"],
+                entry["filename"],
+                entry["media_type"],
+                entry["mtime"],
+                entry["size"],
+                now,
+                now,
+            ),
+        )
+
+    def upsert_media_file(
+        self,
+        path: Path,
+        media_type: str | None = None,
+    ) -> dict[str, Any] | None:
+        try:
+            resolved = path.resolve(strict=True)
+            stat = resolved.stat()
+        except OSError:
+            return None
+        detected_type = media_type or media_type_for(resolved)
+        if detected_type not in MEDIA_TYPE_EXT:
+            return None
+        root_name = ""
+        root_dir: Path | None = None
+        for candidate_name, candidate_root in comfy_dirs():
+            if is_path_within_root(resolved, candidate_root):
+                root_name = candidate_name
+                root_dir = candidate_root
+                break
+        if not root_name or root_dir is None:
+            return None
+        entry = {
+            "path": str(resolved),
+            "rel_path": rel_media_path(resolved, root_name, root_dir),
+            "filename": resolved.name,
+            "media_type": detected_type,
+            "mtime": float(stat.st_mtime),
+            "size": int(stat.st_size),
+        }
+        with self._connect() as conn:
+            existing_row = conn.execute(
+                "SELECT public_ref FROM media_index WHERE rel_path = ?",
+                (entry["rel_path"],),
+            ).fetchone()
+            existing_ref = (
+                str(existing_row["public_ref"] or "")
+                if existing_row is not None
+                else ""
+            )
+            reserved = self._all_public_refs(conn)
+            normalized_existing = normalize_media_ref(existing_ref)
+            if normalized_existing in reserved:
+                reserved.remove(normalized_existing)
+            public_ref = self._coerce_public_ref(existing_ref, reserved)
+            now = utc_now_iso()
+            self._upsert_index_entry(conn, entry, public_ref, now)
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, public_ref, real_path, rel_path, filename, "
+                "media_type, mtime, size "
+                "FROM media_index WHERE rel_path = ?",
+                (entry["rel_path"],),
+            ).fetchone()
+        if row is None:
+            return None
+        return map_media_item(row)
+
     def _init_schema(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS media_index ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                "real_path TEXT NOT NULL,"
-                "rel_path TEXT NOT NULL UNIQUE,"
-                "filename TEXT NOT NULL,"
-                "media_type TEXT NOT NULL,"
-                "mtime REAL NOT NULL,"
-                "size INTEGER NOT NULL,"
-                "valid INTEGER NOT NULL DEFAULT 1,"
-                "created_at TEXT NOT NULL,"
-                "updated_at TEXT NOT NULL)"
-            )
+            self._create_media_index_table(conn)
             columns = {
                 str(row["name"])
                 for row in conn.execute(
@@ -815,41 +934,49 @@ class MediaStore:
                 ).fetchall()
             }
             needs_migrate = (
-                "real_path" not in columns
+                "public_ref" not in columns
+                or "real_path" not in columns
                 or "path" in columns
             )
             if needs_migrate:
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS media_index_new ("
-                    "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                    "real_path TEXT NOT NULL,"
-                    "rel_path TEXT NOT NULL UNIQUE,"
-                    "filename TEXT NOT NULL,"
-                    "media_type TEXT NOT NULL,"
-                    "mtime REAL NOT NULL,"
-                    "size INTEGER NOT NULL,"
-                    "valid INTEGER NOT NULL DEFAULT 1,"
-                    "created_at TEXT NOT NULL,"
-                    "updated_at TEXT NOT NULL)"
-                )
-                if "path" in columns:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO media_index_new "
-                        "(id, real_path, rel_path, filename, media_type, "
-                        "mtime, size, valid, created_at, updated_at) "
-                        "SELECT id, path, rel_path, filename, media_type, "
-                        "mtime, size, valid, created_at, updated_at "
-                        "FROM media_index"
+                rows = conn.execute(
+                    "SELECT * FROM media_index"
+                ).fetchall()
+                self._create_media_index_table(conn, "media_index_new")
+                reserved_refs: set[str] = set()
+                for row in rows:
+                    public_ref = self._coerce_public_ref(
+                        (
+                            row["public_ref"]
+                            if "public_ref" in row.keys()
+                            else ""
+                        ),
+                        reserved_refs,
                     )
-                else:
+                    real_path = (
+                        str(row["real_path"])
+                        if "real_path" in row.keys()
+                        else str(row["path"])
+                    )
                     conn.execute(
                         "INSERT OR REPLACE INTO media_index_new "
-                        "(id, real_path, rel_path, filename, media_type, "
-                        "mtime, size, valid, created_at, updated_at) "
-                        "SELECT id, real_path, rel_path, "
-                        "filename, media_type, "
-                        "mtime, size, valid, created_at, updated_at "
-                        "FROM media_index"
+                        "(id, public_ref, real_path, rel_path, filename, "
+                        "media_type, mtime, size, valid, created_at, "
+                        "updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            int(row["id"]),
+                            public_ref,
+                            real_path,
+                            str(row["rel_path"]),
+                            str(row["filename"]),
+                            str(row["media_type"]),
+                            float(row["mtime"]),
+                            int(row["size"]),
+                            int(row["valid"]),
+                            str(row["created_at"]),
+                            str(row["updated_at"]),
+                        ),
                     )
                 conn.execute("DROP TABLE media_index")
                 conn.execute(
@@ -862,6 +989,10 @@ class MediaStore:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS "
                 "idx_media_rel_path_unique ON media_index(rel_path)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_media_public_ref_unique ON media_index(public_ref)"
             )
             conn.commit()
 
@@ -942,7 +1073,7 @@ class MediaStore:
                 offset = (safe_page - 1) * page_size
                 rows = conn.execute(
                     (
-                        "SELECT id, real_path, rel_path, "
+                        "SELECT id, public_ref, real_path, rel_path, "
                         "filename, media_type, "
                         "mtime, size "
                         f"FROM media_index WHERE {where} "
@@ -954,7 +1085,7 @@ class MediaStore:
                     self._validate(conn, rows)
                     rows = conn.execute(
                         (
-                            "SELECT id, real_path, rel_path, "
+                            "SELECT id, public_ref, real_path, rel_path, "
                             "filename, media_type, "
                             "mtime, size FROM media_index "
                             f"WHERE {where} {order_clause} "
@@ -981,7 +1112,8 @@ class MediaStore:
 
             rows = conn.execute(
                 (
-                    "SELECT id, real_path, rel_path, filename, media_type, "
+                    "SELECT id, public_ref, real_path, rel_path, "
+                    "filename, media_type, "
                     "mtime, size "
                     f"FROM media_index WHERE {where} "
                     f"{order_clause}"
@@ -992,7 +1124,7 @@ class MediaStore:
                 self._validate(conn, rows)
                 rows = conn.execute(
                     (
-                        "SELECT id, real_path, rel_path, "
+                        "SELECT id, public_ref, real_path, rel_path, "
                         "filename, media_type, "
                         "mtime, size FROM media_index "
                         f"WHERE {where} {order_clause}"
@@ -1153,39 +1285,26 @@ class MediaStore:
         inserted = 0
         updated = 0
         with self._connect() as conn:
+            existing_map = self._row_public_ref_map(conn, media_type)
+            reserved_refs = self._all_public_refs(conn)
             for entry in scan_media(media_type):
                 now = utc_now_iso()
-                conn.execute(
-                    (
-                        "INSERT INTO media_index "
-                        "(real_path, rel_path, filename, media_type, "
-                        "mtime, size, "
-                        "valid, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) "
-                        "ON CONFLICT(rel_path) DO UPDATE SET "
-                        "real_path=excluded.real_path, "
-                        "filename=excluded.filename, "
-                        "media_type=excluded.media_type, "
-                        "mtime=excluded.mtime, "
-                        "size=excluded.size, valid=1, "
-                        "updated_at=excluded.updated_at"
-                    ),
-                    (
-                        entry["path"],
-                        entry["rel_path"],
-                        entry["filename"],
-                        entry["media_type"],
-                        entry["mtime"],
-                        entry["size"],
-                        now,
-                        now,
-                    ),
+                rel_path = str(entry["rel_path"])
+                existing_ref = existing_map.get(rel_path, "")
+                normalized_existing = normalize_media_ref(existing_ref)
+                if normalized_existing in reserved_refs:
+                    reserved_refs.remove(normalized_existing)
+                public_ref = self._coerce_public_ref(
+                    existing_ref,
+                    reserved_refs,
                 )
-                if conn.total_changes:
+                self._upsert_index_entry(conn, entry, public_ref, now)
+                if rel_path in existing_map:
                     updated += 1
+                else:
+                    inserted += 1
             conn.commit()
-        inserted = max(0, updated)
-        return {"inserted": inserted, "updated": 0}
+        return {"inserted": inserted, "updated": updated}
 
     def cleanup_invalid(self, media_type: str | None) -> dict[str, int]:
         checked = 0
@@ -1235,7 +1354,9 @@ class MediaStore:
         }
 
     def rebuild(self, media_type: str) -> dict[str, int]:
+        preserved_refs: dict[str, str] = {}
         with self._connect() as conn:
+            preserved_refs = self._row_public_ref_map(conn, media_type)
             deleted = int(
                 conn.execute(
                     "DELETE FROM media_index WHERE media_type = ?",
@@ -1243,7 +1364,28 @@ class MediaStore:
                 ).rowcount
             )
             conn.commit()
-        refreshed = self.refresh(media_type)
+        with self._connect() as conn:
+            existing_map = self._row_public_ref_map(conn, None)
+            reserved_refs = self._all_public_refs(conn)
+            inserted = 0
+            updated = 0
+            for entry in scan_media(media_type):
+                now = utc_now_iso()
+                rel_path = str(entry["rel_path"])
+                public_ref = self._coerce_public_ref(
+                    preserved_refs.get(
+                        rel_path,
+                        existing_map.get(rel_path, ""),
+                    ),
+                    reserved_refs,
+                )
+                self._upsert_index_entry(conn, entry, public_ref, now)
+                if rel_path in existing_map:
+                    updated += 1
+                else:
+                    inserted += 1
+            conn.commit()
+        refreshed = {"inserted": inserted, "updated": updated}
         return {"deleted": deleted, **refreshed}
 
     def clear(self) -> int:
@@ -1251,6 +1393,34 @@ class MediaStore:
             deleted = int(conn.execute("DELETE FROM media_index").rowcount)
             conn.commit()
         return deleted
+
+    def repair_public_ref_path(
+        self,
+        public_ref: str,
+        resolved: Path,
+    ) -> None:
+        normalized = normalize_media_ref(public_ref)
+        if not normalized:
+            return
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE media_index SET real_path = ?, filename = ?, "
+                    "valid = 1, updated_at = ? WHERE public_ref = ?",
+                    (
+                        str(resolved),
+                        resolved.name,
+                        utc_now_iso(),
+                        normalized,
+                    ),
+                )
+                conn.commit()
+        except sqlite3.Error as exc:
+            LOGGER.warning(
+                "[xdatahub] media path repair by ref skipped: ref=%s, err=%s",
+                normalized,
+                type(exc).__name__,
+            )
 
     def clear_thumbs(self, media_type: str | None) -> int:
         target = (
@@ -1262,6 +1432,32 @@ class MediaStore:
 
 
 STORE = MediaStore()
+
+
+def media_ref_payload(
+    media_ref: str,
+    title: str,
+    media_type: str,
+) -> dict[str, Any]:
+    normalized = normalize_media_ref(media_ref)
+    return {
+        "media_ref": normalized,
+        "public_ref": normalized,
+        "title": str(title or ""),
+        "media_type": str(media_type or ""),
+        "file_url": media_ref_to_file_url(normalized),
+    }
+
+
+def media_ref_error_response(
+    request: web.Request,
+    resolved,
+) -> web.Response:
+    if resolved.status == "blocked":
+        return json_error(request, "permission_denied", 403)
+    if resolved.status == "invalid":
+        return json_error(request, "invalid_payload", 400)
+    return json_error(request, "file_not_found", 404)
 
 
 def scan_media(media_type: str | None) -> list[dict[str, Any]]:
@@ -1349,9 +1545,11 @@ def map_media_item(
             tz=timezone.utc,
         ).isoformat(timespec="seconds")
     media_type = str(row["media_type"])
+    media_ref = normalize_media_ref(str(row["public_ref"] or ""))
     extra: dict[str, Any] = {
         "media_type": media_type,
-        "file_url": f"/xz3r0/xdatahub/media/file?id={int(row['id'])}",
+        "media_ref": media_ref,
+        "file_url": media_ref_to_file_url(media_ref),
     }
     if include_size:
         extra["size"] = int(row["size"])
@@ -1367,11 +1565,11 @@ def map_media_item(
             f"{real_path}|{row['mtime']}|{row['size']}".encode()
         ).hexdigest()
     return {
-        "id": f"media:{int(row['id'])}",
+        "id": f"media:{media_ref}",
         "kind": media_type,
         "title": str(row["filename"]),
         "saved_at": saved_at,
-        "path": str(row["rel_path"]),
+        "path": "",
         "previewable": True,
         "extra": extra,
     }
@@ -2392,56 +2590,17 @@ async def api_thumbs_clear(request: web.Request) -> web.Response:
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/media/file")
 async def api_media_file(request: web.Request) -> web.Response:
-    try:
-        file_id = int(str(request.query.get("id") or ""))
-    except Exception:
-        return json_error("file_not_found", 404)
-
-    def _read(conn: sqlite3.Connection):
-        return conn.execute(
-            "SELECT id, real_path, rel_path, media_type "
-            "FROM media_index WHERE id = ? AND valid = 1",
-            (file_id,),
-        ).fetchone()
-
-    try:
-        row = STORE._retry_read(_read)
-    except Exception as exc:
-        LOGGER.exception(
-            "[xdatahub] media file read failed: %s",
-            type(exc).__name__,
-        )
-        return json_error("internal_error", 500)
-    if row is None:
-        return json_error("file_not_found", 404)
-
-    try:
-        with STORE._connect() as conn:
-            resolved = STORE.resolve_runtime_path(conn, row)
-    except sqlite3.Error as exc:
-        LOGGER.exception(
-            "[xdatahub] media path resolve failed: %s",
-            type(exc).__name__,
-        )
-        return json_error("internal_error", 500)
-
-    if resolved is None:
-        roots = comfy_dirs()
-        located = locate_media_entry(row, roots)
-        LOGGER.info(
-            "[xdatahub] media file denied: id=%s, reason=%s",
-            file_id,
-            located.get("status"),
-        )
-        if located.get("status") == "blocked":
-            return json_error("permission_denied", 403)
-        return json_error("file_not_found", 404)
+    media_ref = normalize_media_ref(str(request.query.get("ref") or ""))
+    resolved = resolve_media_ref(media_ref, db_path=STORE.db_path)
+    if resolved.status != "ok" or resolved.resolved_path is None:
+        return media_ref_error_response(request, resolved)
+    STORE.repair_public_ref_path(resolved.media_ref, resolved.resolved_path)
 
     try:
         return await _stream_media_file_response(
             request=request,
-            path=resolved,
-            media_type=str(row["media_type"] or ""),
+            path=resolved.resolved_path,
+            media_type=resolved.media_type,
         )
     except PermissionError:
         return json_error("permission_denied", 403)
@@ -2450,17 +2609,40 @@ async def api_media_file(request: web.Request) -> web.Response:
     except Exception as exc:
         if _is_client_disconnect_error(exc):
             LOGGER.info(
-                "[xdatahub] media stream client disconnected: id=%s, err=%s",
-                file_id,
+                "[xdatahub] media stream client disconnected: ref=%s, err=%s",
+                media_ref,
                 type(exc).__name__,
             )
             return web.Response(status=204)
         LOGGER.exception(
-            "[xdatahub] media file stream failed: id=%s, err=%s",
-            file_id,
+            "[xdatahub] media file stream failed: ref=%s, err=%s",
+            media_ref,
             type(exc).__name__,
         )
         return json_error("internal_error", 500)
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/media/meta")
+async def api_media_meta(request: web.Request) -> web.Response:
+    media_ref = normalize_media_ref(str(request.query.get("ref") or ""))
+    resolved = resolve_media_ref(media_ref, db_path=STORE.db_path)
+    if resolved.status != "ok":
+        return media_ref_error_response(request, resolved)
+    if resolved.resolved_path is not None:
+        STORE.repair_public_ref_path(
+            resolved.media_ref,
+            resolved.resolved_path,
+        )
+    return web.json_response(
+        {
+            "status": "success",
+            **media_ref_payload(
+                media_ref=resolved.media_ref,
+                title=resolved.title,
+                media_type=resolved.media_type,
+            ),
+        }
+    )
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/send")
@@ -2469,63 +2651,19 @@ async def api_media_send(request: web.Request) -> web.Response:
         payload = await request.json()
     except Exception:
         payload = {}
-    try:
-        media_id = int(str(payload.get("media_id") or ""))
-    except Exception:
-        return json_error(request, "file_not_found", 404)
-
-    def _read(conn: sqlite3.Connection):
-        return conn.execute(
-            "SELECT id, real_path, rel_path, filename, media_type "
-            "FROM media_index WHERE id = ? AND valid = 1",
-            (media_id,),
-        ).fetchone()
-
-    try:
-        row = STORE._retry_read(_read)
-    except Exception as exc:
-        LOGGER.exception(
-            "[xdatahub] media send read failed: %s",
-            type(exc).__name__,
-        )
-        return json_error(request, "internal_error", 500)
-    if row is None:
-        return json_error(request, "file_not_found", 404)
-
-    media_type = str(row["media_type"] or "").lower()
-    if media_type != "image":
+    media_ref = normalize_media_ref(str(payload.get("media_ref") or ""))
+    resolved = resolve_media_ref(media_ref, db_path=STORE.db_path)
+    if resolved.status != "ok" or resolved.resolved_path is None:
+        return media_ref_error_response(request, resolved)
+    STORE.repair_public_ref_path(resolved.media_ref, resolved.resolved_path)
+    if resolved.media_type.lower() != "image":
         return json_error(request, "unsupported_media_type", 400)
-
-    try:
-        with STORE._connect() as conn:
-            resolved = STORE.resolve_runtime_path(conn, row)
-    except sqlite3.Error as exc:
-        LOGGER.exception(
-            "[xdatahub] media send resolve failed: %s",
-            type(exc).__name__,
-        )
-        return json_error(request, "internal_error", 500)
-
-    if resolved is None:
-        roots = comfy_dirs()
-        located = locate_media_entry(row, roots)
-        LOGGER.info(
-            "[xdatahub] media send denied: id=%s, reason=%s",
-            media_id,
-            located.get("status"),
-        )
-        if located.get("status") == "blocked":
-            return json_error(request, "permission_denied", 403)
-        return json_error(request, "file_not_found", 404)
-
-    file_url = f"/xz3r0/xdatahub/media/file?id={media_id}"
-
     try:
         update_latest_image(
-            media_id=media_id,
-            path=Path(resolved),
-            title=str(row["filename"] or ""),
-            file_url=file_url,
+            media_ref=resolved.media_ref,
+            path=resolved.resolved_path,
+            title=resolved.title,
+            file_url=media_ref_to_file_url(resolved.media_ref),
         )
     except Exception as exc:
         LOGGER.exception(
@@ -2536,9 +2674,11 @@ async def api_media_send(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "status": "success",
-            "media_id": media_id,
-            "title": str(row["filename"] or ""),
-            "file_url": file_url,
+            **media_ref_payload(
+                media_ref=resolved.media_ref,
+                title=resolved.title,
+                media_type=resolved.media_type,
+            ),
         }
     )
 
@@ -2583,15 +2723,12 @@ async def api_media_upload(request: web.Request) -> web.Response:
         or "xdatahub"
     )
     if folder_paths is not None:
-        input_root = Path(
-            folder_paths.get_input_directory()
+        target_dir = (
+            Path(folder_paths.get_input_directory())
+            / "xdatahub_uploads"
         )
-        subfolder = "xdatahub_uploads"
-        target_dir = input_root / subfolder
     else:
-        input_root = data_root()
-        subfolder = ""
-        target_dir = input_root / "xdatahub_uploads"
+        target_dir = data_root() / "xdatahub_uploads"
     target_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -2622,17 +2759,16 @@ async def api_media_upload(request: web.Request) -> web.Response:
             pass
         return json_error(request, "internal_error", 500)
 
-    if subfolder:
-        file_url = (
-            f"/view?filename={quote(final_name)}"
-            f"&type=input&subfolder={quote(subfolder)}"
-        )
-    else:
-        file_url = ""
+    media_item = STORE.upsert_media_file(target_path, media_type="image")
+    if media_item is None:
+        return json_error(request, "internal_error", 500)
+    extra = media_item.get("extra") or {}
+    media_ref = normalize_media_ref(str(extra.get("media_ref") or ""))
+    file_url = str(extra.get("file_url") or "")
 
     try:
         update_latest_image(
-            media_id=0,
+            media_ref=media_ref,
             path=target_path,
             title=final_name,
             file_url=file_url,
@@ -2647,68 +2783,32 @@ async def api_media_upload(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "status": "success",
-            "media_id": 0,
-            "title": final_name,
-            "file_url": file_url,
-        }
-    )
-
-
-@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/send-view")
-async def api_media_send_view(request: web.Request) -> web.Response:
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    file_url = str(payload.get("file_url") or "").strip()
-    result = _resolve_view_file_url(file_url)
-    if result is None:
-        return json_error(request, "invalid_payload", 400)
-    resolved, filename, _subfolder = result
-    if not resolved.exists():
-        return json_error(request, "file_not_found", 404)
-
-    try:
-        update_latest_image(
-            media_id=0,
-            path=resolved,
-            title=filename,
-            file_url=file_url,
-        )
-    except Exception as exc:
-        LOGGER.exception(
-            "[xdatahub] media send-view cache failed: %s",
-            type(exc).__name__,
-        )
-        return json_error(request, "internal_error", 500)
-
-    return web.json_response(
-        {
-            "status": "success",
-            "media_id": 0,
-            "title": filename,
-            "file_url": file_url,
+            **media_ref_payload(
+                media_ref=media_ref,
+                title=final_name,
+                media_type="image",
+            ),
         }
     )
 
 
 @server.PromptServer.instance.routes.post(
-    "/xz3r0/xdatahub/media/validate-view"
+    "/xz3r0/xdatahub/media/validate"
 )
-async def api_media_validate_view(request: web.Request) -> web.Response:
+async def api_media_validate(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except Exception:
         payload = {}
-    file_url = str(payload.get("file_url") or "").strip()
-    result = _resolve_view_file_url(file_url)
-    if result is None:
-        return json_error(request, "invalid_payload", 400)
-    resolved, filename, _subfolder = result
-    if not resolved.exists():
-        return json_error(request, "file_not_found", 404)
+    media_ref = normalize_media_ref(str(payload.get("media_ref") or ""))
+    resolved = resolve_media_ref(media_ref, db_path=STORE.db_path)
+    if resolved.status != "ok" or resolved.resolved_path is None:
+        return media_ref_error_response(request, resolved)
+    STORE.repair_public_ref_path(resolved.media_ref, resolved.resolved_path)
+    if resolved.media_type.lower() != "image":
+        return json_error(request, "unsupported_media_type", 400)
 
-    cached = _get_image_validation_cached(resolved)
+    cached = _get_image_validation_cached(resolved.resolved_path)
     if cached is not None:
         ok, code = cached
         if ok:
@@ -2716,8 +2816,11 @@ async def api_media_validate_view(request: web.Request) -> web.Response:
                 {
                     "status": "success",
                     "valid": True,
-                    "title": filename,
-                    "file_url": file_url,
+                    **media_ref_payload(
+                        media_ref=resolved.media_ref,
+                        title=resolved.title,
+                        media_type=resolved.media_type,
+                    ),
                 }
             )
         return json_error(
@@ -2726,15 +2829,18 @@ async def api_media_validate_view(request: web.Request) -> web.Response:
             415 if code == "unsupported_media_type" else 400,
         )
 
-    ok, code = _validate_image_with_pillow(resolved)
-    _set_image_validation_cache(resolved, ok, code)
+    ok, code = _validate_image_with_pillow(resolved.resolved_path)
+    _set_image_validation_cache(resolved.resolved_path, ok, code)
     if ok:
         return web.json_response(
             {
                 "status": "success",
                 "valid": True,
-                "title": filename,
-                "file_url": file_url,
+                **media_ref_payload(
+                    media_ref=resolved.media_ref,
+                    title=resolved.title,
+                    media_type=resolved.media_type,
+                ),
             }
         )
     return json_error(
@@ -2751,21 +2857,21 @@ async def api_media_latest(request: web.Request) -> web.Response:
         return web.json_response(
             {
                 "status": "success",
-                "media_id": None,
-                "title": "",
-                "file_url": "",
+                **media_ref_payload(
+                    media_ref="",
+                    title="",
+                    media_type="image",
+                ),
             }
         )
-    media_id = int(snapshot.media_id)
-    file_url = str(snapshot.file_url or "")
-    if not file_url and media_id > 0:
-        file_url = f"/xz3r0/xdatahub/media/file?id={media_id}"
     return web.json_response(
         {
             "status": "success",
-            "media_id": media_id,
-            "title": str(snapshot.title or ""),
-            "file_url": file_url,
+            **media_ref_payload(
+                media_ref=str(snapshot.media_ref or ""),
+                title=str(snapshot.title or ""),
+                media_type="image",
+            ),
         }
     )
 
