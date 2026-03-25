@@ -16,6 +16,10 @@
       "1": {
         "name": "String",
         "tooltip": "String converted from the input using str()"
+      },
+      "2": {
+        "name": "xdata String",
+        "tooltip": "xdata_string payload for XDataSave"
       }
     }
   },
@@ -710,6 +714,17 @@
       }
     }
   },
+  "XStringGet": {
+    "display_name": "XStringGet",
+    "description": "Load the latest text sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "STRING",
+        "tooltip": "Latest text received from XDataHub"
+      }
+    }
+  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "Advanced image/mask saving node with custom filename, subfolder support, and datetime placeholders.",
@@ -961,18 +976,19 @@
   },
   "XDataSave": {
     "display_name": "XDataSave",
-    "description": "Save xdata records to SQLite DB files under the project XDataSaved folder with custom/seed save types, 500-record rotation, a 120-character header limit, and a 64KB per-record limit.",
+    "description": "Save xdata records to SQLite DB files under the project XDataSaved folder with Custom/Seed/String save types, 500-record rotation, a 120-character header limit, and a 64KB per-record limit.",
     "inputs": {
       "xdata_input": {
         "name": "xdata Input",
-        "tooltip": "Composite xdata input. Currently supports xdata_seed and can be extended with more xdata types later."
+        "tooltip": "Composite xdata input. Currently supports xdata_seed and xdata_string."
       },
       "save_type": {
         "name": "Save Type",
-        "tooltip": "Save type: custom requires a custom filename; seed always writes to seed_data.db.",
+        "tooltip": "Save type: Custom requires a custom filename; Seed always writes to seed_data.db; String always writes to string_data.db.",
         "options": {
-          "custom": "Custom",
-          "seed": "Seed"
+          "Custom": "Custom",
+          "Seed": "Seed",
+          "String": "String"
         }
       },
       "custom_filename_input": {
@@ -981,7 +997,7 @@
       },
       "custom_filename_text": {
         "name": "Custom Filename",
-        "tooltip": "Fallback filename for custom save type. Default is empty; missing filename raises an explicit configuration error."
+        "tooltip": "Fallback filename for Custom save type. Default is empty; missing filename raises an explicit configuration error."
       },
       "extra_header_input": {
         "name": "Extra Header Input",

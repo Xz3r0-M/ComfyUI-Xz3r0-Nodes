@@ -125,7 +125,6 @@ const appState = {
     selectedDbFiles: [],
     unlockCritical: false,
     confirmYes: "",
-    confirmYesCritical: "",
     dbRefreshLockedUntil: 0,
     dbRefreshLockTimer: 0,
     dbRefreshDebounceTimer: 0,
@@ -148,6 +147,7 @@ const appState = {
     nodeSendSelectedIds: [],
     nodeSendSending: false,
     nodeSendFileUrl: "",
+    nodeSendTextValue: "",
     nodeSendTitle: "",
     nodeSendTargetClass: "XImageGet",
     nodeSendSortKey: "id",
@@ -359,7 +359,7 @@ function apiUrl(path, query = {}) {
 }
 
 function iconSvg(name, label = "", className = "xdatahub-icon") {
-    return `<img class="${className}" src="${ICON_BASE_PATH}/${name}.svg" alt="${escapeAttr(label)}" aria-hidden="true">`;
+    return `<img class="${className}" src="${ICON_BASE_PATH}/${name}.svg" alt="${escapeAttr(label)}" aria-hidden="true" draggable="false">`;
 }
 
 function iconMask(name, label = "", className = "xdatahub-mask-icon") {
@@ -2616,9 +2616,9 @@ function syncNodeSendSelectionUi() {
             || !selectedIds.size
             || appState.nodeSendSending
         );
-        confirmBtn.textContent = appState.nodeSendSending
-            ? sendingText
-            : confirmSendText;
+        confirmBtn.innerHTML = appState.nodeSendSending
+            ? `${iconSvg("refresh-cw", sendingText, "xdatahub-icon btn-icon")} ${escapeHtml(sendingText)}`
+            : `${iconSvg("send", confirmSendText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmSendText)}`;
         confirmBtn.title = confirmSendText;
         confirmBtn.setAttribute("aria-label", confirmSendText);
     }
@@ -2648,6 +2648,9 @@ function clearNodeSendValidateTimer() {
 
 function resolveNodeClassByMediaType(mediaType) {
     const type = String(mediaType || "").toLowerCase();
+    if (type === "text") {
+        return "XStringGet";
+    }
     if (type === "video") {
         return "XVideoGet";
     }
@@ -2657,20 +2660,30 @@ function resolveNodeClassByMediaType(mediaType) {
     return "XImageGet";
 }
 
-function nodeSendTargetHint(targetClass) {
+function renderNodeSendTargetHint(targetClass) {
+    const nodeClassToken = "__XDH_NODE_CLASS__";
+    const nodeClassText = String(targetClass || "").trim() || "XImageGet";
     const locale = readUiLocalePreference();
-    if (locale === "en") {
-        return `Select a target ${targetClass} node`;
-    }
-    return `选择目标 ${targetClass} 节点`;
+    const template = locale === "en"
+        ? `Select a target ${nodeClassToken} node`
+        : `选择目标 ${nodeClassToken} 节点`;
+    return escapeHtml(template).replace(
+        escapeHtml(nodeClassToken),
+        `<code>${escapeHtml(nodeClassText)}</code>`
+    );
 }
 
-function nodeSendTargetEmpty(targetClass) {
+function renderNodeSendTargetEmpty(targetClass) {
+    const nodeClassToken = "__XDH_NODE_CLASS__";
+    const nodeClassText = String(targetClass || "").trim() || "XImageGet";
     const locale = readUiLocalePreference();
-    if (locale === "en") {
-        return `No ${targetClass} nodes found`;
-    }
-    return `未找到 ${targetClass} 节点`;
+    const template = locale === "en"
+        ? `No ${nodeClassToken} nodes found`
+        : `未找到 ${nodeClassToken} 节点`;
+    return escapeHtml(template).replace(
+        escapeHtml(nodeClassToken),
+        `<code>${escapeHtml(nodeClassText)}</code>`
+    );
 }
 
 function requestMediaGetNodes() {
@@ -2758,9 +2771,15 @@ async function requestNodeSendValidation(fileUrl) {
     }
 }
 
-function openNodeSendDialog(fileUrl, title, mediaType = "") {
+function openNodeSendDialog(
+    fileUrl,
+    title,
+    mediaType = "",
+    textValue = ""
+) {
     appState.nodeSendDialogOpen = true;
     appState.nodeSendFileUrl = String(fileUrl || "");
+    appState.nodeSendTextValue = String(textValue || "");
     appState.nodeSendTitle = String(title || "");
     appState.nodeSendTargetClass = resolveNodeClassByMediaType(mediaType);
     appState.nodeSendNodes = [];
@@ -2788,6 +2807,7 @@ function openNodeSendDialog(fileUrl, title, mediaType = "") {
 function closeNodeSendDialog() {
     appState.nodeSendDialogOpen = false;
     appState.nodeSendFileUrl = "";
+    appState.nodeSendTextValue = "";
     appState.nodeSendTitle = "";
     appState.nodeSendTargetClass = "XImageGet";
     appState.nodeSendNodes = [];
@@ -2842,21 +2862,6 @@ function buildDbDeleteSummaryText() {
         "Will clear history in {selected} databases (critical: {critical})",
         { selected: selectedCount, critical: criticalCount }
     );
-}
-
-function renderDbDeleteCriticalConfirmSection() {
-    const isDeleteMode = appState.clearDataMode === "delete";
-    const needSecondYes = isDeleteMode && selectedCriticalDbCount() > 0;
-    if (!needSecondYes) {
-        return "";
-    }
-    return `
-        <div class="db-delete-confirm-hint">${escapeHtml(t("xdatahub.ui.app.db.confirm_yes_second_hint", "Critical databases detected: type YES again for second confirmation."))}</div>
-        <div class="db-delete-confirm-row">
-            <span>${escapeHtml(t("xdatahub.ui.app.db.confirm_phrase_second", "Second confirmation phrase:"))}</span>
-            <input id="db-delete-confirm-yes-critical" value="${escapeAttr(appState.confirmYesCritical)}" autocomplete="off">
-        </div>
-    `;
 }
 
 function renderDbDeleteConfirmHint() {
@@ -2917,18 +2922,27 @@ function syncDbDeleteSelectionUi() {
             (entry) => normalizeDbName(entry.name) === normalizeDbName(name)
         );
         const locked = isDbCriticalEffective(item) && !appState.unlockCritical;
-        node.checked = isDbSelected(name);
+        const selected = isDbSelected(name);
+        node.checked = selected;
         node.disabled = locked;
+        const row = node.closest(".db-delete-row");
+        if (row instanceof HTMLElement) {
+            row.classList.toggle("selected", selected);
+        }
+    });
+    overlay.querySelectorAll("[data-db-critical-mark]").forEach((node) => {
+        if (!(node instanceof HTMLInputElement)) {
+            return;
+        }
+        const name = node.getAttribute("data-db-critical-mark") || "";
+        const item = appState.dbFileList.find(
+            (entry) => normalizeDbName(entry.name) === normalizeDbName(name)
+        );
+        node.checked = !!item?.is_critical_user;
     });
     const summary = document.querySelector(".db-delete-summary");
     if (summary instanceof HTMLElement) {
         summary.textContent = buildDbDeleteSummaryText();
-    }
-    const secondConfirm = document.getElementById(
-        "db-delete-critical-confirm-section"
-    );
-    if (secondConfirm instanceof HTMLElement) {
-        secondConfirm.innerHTML = renderDbDeleteCriticalConfirmSection();
     }
     updateDbDeleteSubmitUi(document.getElementById("db-delete-submit"));
 }
@@ -2981,12 +2995,7 @@ function canSubmitDbDelete() {
     if (appState.confirmYes.trim() !== "YES") {
         return false;
     }
-    const criticalCount = selectedCriticalDbCount();
-    if (criticalCount <= 0) {
-        return true;
-    }
-    return appState.unlockCritical
-        && appState.confirmYesCritical.trim() === "YES";
+    return true;
 }
 
 function canSubmitRecordsCleanup() {
@@ -3065,7 +3074,6 @@ function closeDbDeleteDialog() {
     appState.selectedDbFiles = [];
     appState.unlockCritical = false;
     appState.confirmYes = "";
-    appState.confirmYesCritical = "";
     resetDbRefreshLock();
     resetDbRefreshDebounce();
     appState.dbRefreshInFlight = false;
@@ -3113,7 +3121,6 @@ async function openDbDeleteDialog() {
     appState.selectedDbFiles = [];
     appState.unlockCritical = false;
     appState.confirmYes = "";
-    appState.confirmYesCritical = "";
     resetDbRefreshLock();
     resetDbRefreshDebounce();
     appState.dbRefreshInFlight = false;
@@ -3175,7 +3182,6 @@ async function submitDbDelete() {
                 targets: appState.selectedDbFiles,
                 unlock_critical: appState.unlockCritical,
                 confirm_yes: appState.confirmYes.trim(),
-                confirm_yes_critical: appState.confirmYesCritical.trim(),
             }
         );
         const deleted = Number(result.deleted_count || 0);
@@ -3197,7 +3203,6 @@ async function submitDbDelete() {
         await fetchDbFileList();
         appState.selectedDbFiles = [];
         appState.confirmYes = "";
-        appState.confirmYesCritical = "";
         await loadList();
     } catch (error) {
         appState.dbDeleteError = error.message || t(
@@ -3254,7 +3259,6 @@ async function submitRecordsCleanup() {
         await fetchDbFileList();
         appState.selectedDbFiles = [];
         appState.confirmYes = "";
-        appState.confirmYesCritical = "";
         await loadList();
     } catch (error) {
         appState.dbDeleteError = error.message || t(
@@ -4616,8 +4620,11 @@ function setupVideoCardScheduler(resetState = true) {
 function renderListRows() {
     const selectedId = currentTabState().selectedId;
     const noContentText = t("xdatahub.ui.app.text.h_895269f125", "(No Content)");
-    const copyTitleText = t("xdatahub.ui.app.title.h_8bac024269", "Copy left content");
-    const copyText = t("xdatahub.ui.app.text.h_4edd1d0087", "Copy");
+    const copyTitleText = t(
+        "xdatahub.ui.app.title.h_8bac024269",
+        "Send left content to node"
+    );
+    const copyText = t("xdatahub.ui.app.text.h_4edd1d0087", "Send to node");
     const dataTypeText = t("xdatahub.ui.app.text.h_b031dc9a85", "Data Type");
     const tagText = t("xdatahub.ui.app.title.h_ae0a7afece", "Tag");
     return appState.items
@@ -4657,11 +4664,10 @@ function renderListRows() {
                         <button
                             class="btn row-copy-btn row-copy-btn-inline"
                             type="button"
-                            data-copy-preview="${escapeAttr(contentPreview || "")}"
                             title="${escapeAttr(copyTitleText)}"
                             aria-label="${escapeAttr(copyTitleText)}"
                         >
-                            <span class="btn-emoji" aria-hidden="true">${iconMask("copy", copyText, "row-copy-icon-mask")}</span>
+                            <span class="btn-emoji" aria-hidden="true">${iconMask("send", copyText, "row-copy-icon-mask")}</span>
                             <span class="btn-text row-copy-btn-text">${escapeHtml(copyText)}</span>
                         </button>
                     </div>
@@ -4847,7 +4853,7 @@ function renderMediaGrid() {
             if (mediaType === "image") {
                 // 设计说明：图片使用浏览器原生加载，避免历史分批调度在
                 // 极端滚动下出现黑块/挂起。这里保持直接 <img src>。
-                previewHtml = `<img src="${escapeAttr(fileUrl)}" alt="${escapeAttr(item.title || "image")}">`;
+                previewHtml = `<img src="${escapeAttr(fileUrl)}" alt="${escapeAttr(item.title || "image")}" draggable="false">`;
             } else if (mediaType === "video") {
                 // 设计说明：视频保持分批调度，先渲染占位，后按队列挂载
                 // <video> 以控制首帧解码并发。
@@ -5349,7 +5355,7 @@ function renderDetail() {
     if (mediaType === "image") {
         return `
             <div id="preview-media" class="preview-box">
-                <img src="${escapeAttr(fileUrl)}" alt="preview">
+                <img src="${escapeAttr(fileUrl)}" alt="preview" draggable="false">
             </div>
             <pre>${escapeHtml(JSON.stringify(item.extra || {}, null, 2))}</pre>
         `;
@@ -5382,8 +5388,14 @@ function renderHistoryDetail(item) {
     const showStructuredText = t("xdatahub.ui.app.aria.h_4d03befc66", "Show Structured");
     const showRawText = t("xdatahub.ui.app.aria.h_ae9642cc6c", "Show Raw");
     const toggleRawText = appState.historyDetailRaw ? showStructuredText : showRawText;
-    const copyContentText = t("xdatahub.ui.app.aria.h_3aeb16d4b1", "Copy Content");
-    const copyRecordText = t("xdatahub.ui.app.aria.h_62f853f5ff", "Copy This Record");
+    const copyContentText = t(
+        "xdatahub.ui.app.aria.h_3aeb16d4b1",
+        "Send Content to Node"
+    );
+    const copyRecordText = t(
+        "xdatahub.ui.app.aria.h_62f853f5ff",
+        "Send This Record to Node"
+    );
     return `
         <div class="record-detail">
             <div class="record-detail-actions">
@@ -5480,17 +5492,21 @@ function renderDbDeleteDialog() {
         : (!canSubmitRecordsCleanup() || appState.dbDeleteLoading);
     const rows = appState.dbFileList.map((item) => {
         const checked = isDbSelected(item.name) ? "checked" : "";
+        const selected = isDbSelected(item.name);
         const critical = isDbCriticalEffective(item);
         const builtin = !!item.is_critical_builtin;
         const locked = critical && !appState.unlockCritical;
         const purposeRaw = String(item.purpose || "").trim();
         const purposeLabel = localizeDbPurposeLabel(purposeRaw);
         const purposeIcon = dbPurposeIconName(purposeRaw || purposeLabel);
-        const rowClass = builtin
-            ? "critical-builtin"
-            : critical
-                ? "critical-user"
-                : "";
+        const rowClass = [
+            builtin
+                ? "critical-builtin"
+                : critical
+                    ? "critical-user"
+                    : "",
+            selected ? "selected" : "",
+        ].filter(Boolean).join(" ");
         const overrideChecked = !!item.is_critical_user;
         return `
             <div class="db-delete-row ${rowClass}">
@@ -5546,7 +5562,6 @@ function renderDbDeleteDialog() {
                     <span>${escapeHtml(t("xdatahub.ui.app.dialog.confirm_phrase", "Confirmation phrase:"))}</span>
                     <input id="db-delete-confirm-yes" value="${escapeAttr(appState.confirmYes)}" autocomplete="off">
                 </div>
-                <div id="db-delete-critical-confirm-section">${renderDbDeleteCriticalConfirmSection()}</div>
                 ${
                     appState.dbDeleteError
                         ? `<div class="status error">${escapeHtml(appState.dbDeleteError)}</div>`
@@ -5775,12 +5790,12 @@ function renderNodeSendDialog() {
         "Send to node"
     );
     const targetClass = String(appState.nodeSendTargetClass || "XImageGet");
-    const hintText = nodeSendTargetHint(targetClass);
+    const hintHtml = renderNodeSendTargetHint(targetClass);
     const loadingText = t(
         "xdatahub.ui.app.media.send_dialog_loading",
         "Loading nodes..."
     );
-    const emptyText = nodeSendTargetEmpty(targetClass);
+    const emptyHtml = renderNodeSendTargetEmpty(targetClass);
     const sortLabelText = t(
         "xdatahub.ui.app.media.send_dialog_sort",
         "Sort by"
@@ -5829,7 +5844,7 @@ function renderNodeSendDialog() {
     } else if (errorText) {
         bodyHtml = `<div class="node-send-hint is-error">${escapeHtml(errorText)}</div>`;
     } else if (!nodes.length) {
-        bodyHtml = `<div class="node-send-hint">${escapeHtml(emptyText)}</div>`;
+        bodyHtml = `<div class="node-send-hint">${emptyHtml}</div>`;
     } else {
         const sortedNodes = [...nodes].sort((a, b) => {
             if (sortKey === "name") {
@@ -5882,7 +5897,7 @@ function renderNodeSendDialog() {
             `;
         }).join("");
         bodyHtml = `
-            <div class="node-send-hint">${escapeHtml(hintText)}</div>
+            <div class="node-send-hint">${hintHtml}</div>
             ${sortBar}
             <div class="node-send-selection-summary">${escapeHtml(selectedText)}: ${escapeHtml(String(selectedIds.size))}</div>
             <div class="node-send-list">${rows}</div>
@@ -5901,8 +5916,12 @@ function renderNodeSendDialog() {
                 ${subtitle}
                 <div class="node-send-body">${bodyHtml}</div>
                 <div class="node-send-actions">
-                    <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}">${escapeHtml(cancelText)}</button>
-                    <button class="btn primary" id="node-send-confirm" title="${escapeAttr(confirmSendText)}" aria-label="${escapeAttr(confirmSendText)}" ${submitDisabled ? "disabled" : ""}>${escapeHtml(appState.nodeSendSending ? sendingText : confirmSendText)}</button>
+                    <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}">${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
+                    <button class="btn primary" id="node-send-confirm" title="${escapeAttr(confirmSendText)}" aria-label="${escapeAttr(confirmSendText)}" ${submitDisabled ? "disabled" : ""}>${
+                        appState.nodeSendSending
+                            ? `${iconSvg("refresh-cw", sendingText, "xdatahub-icon btn-icon")} ${escapeHtml(sendingText)}`
+                            : `${iconSvg("send", confirmSendText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmSendText)}`
+                    }</button>
                 </div>
             </div>
         </div>
@@ -6450,7 +6469,6 @@ async function handleDelegatedPrimaryButtonClick(event) {
         appState.dbDeleteError = "";
         appState.dbDeleteResult = "";
         appState.confirmYes = "";
-        appState.confirmYesCritical = "";
         refreshDbDeleteDialogOverlay();
         return true;
     case "btn-clear-mode-delete":
@@ -6458,7 +6476,6 @@ async function handleDelegatedPrimaryButtonClick(event) {
         appState.dbDeleteError = "";
         appState.dbDeleteResult = "";
         appState.confirmYes = "";
-        appState.confirmYesCritical = "";
         refreshDbDeleteDialogOverlay();
         return true;
     case "btn-db-select-all": {
@@ -6553,28 +6570,25 @@ async function handleDelegatedHistoryRowCopy(event) {
     }
     event.preventDefault();
     event.stopPropagation();
-    const text = String(
-        button.getAttribute("data-copy-preview") || ""
-    ).trim();
-    if (!text) {
+    const row = button.closest("[data-item-id]");
+    const itemId = String(row?.getAttribute("data-item-id") || "");
+    const item = appState.items.find(
+        (entry) => String(entry?.id || "") === itemId
+    );
+    if (!item) {
         return true;
     }
-    try {
-        await navigator.clipboard.writeText(text);
-    } catch {
-        try {
-            const temp = document.createElement("textarea");
-            temp.value = text;
-            temp.style.position = "fixed";
-            temp.style.opacity = "0";
-            document.body.appendChild(temp);
-            temp.select();
-            document.execCommand("copy");
-            temp.remove();
-        } catch {}
+    const payloadInfo = normalizePayloadValue(item?.extra?.payload);
+    const text = buildPayloadCopyText(payloadInfo).trim();
+    if (!text) {
+        setCopyNotice(
+            t("xdatahub.ui.app.text.h_3286eb7260", "Nothing to send"),
+            true
+        );
+        return true;
     }
+    openNodeSendDialog("", resolveTextSendTitle(item), "text", text);
     flashButton(button);
-    setRowCopyFeedback(button);
     return true;
 }
 
@@ -6836,10 +6850,20 @@ function handleDelegatedNodeSend(event) {
             return true;
         }
         const fileUrl = String(appState.nodeSendFileUrl || "");
+        const textValue = String(appState.nodeSendTextValue || "");
+        const isStringTarget = (
+            String(appState.nodeSendTargetClass || "") === "XStringGet"
+        );
         const selectedIds = (appState.nodeSendSelectedIds || [])
             .map((id) => Number(id))
             .filter((id) => Number.isFinite(id));
-        if (!fileUrl || !selectedIds.length) {
+        if (!selectedIds.length) {
+            return true;
+        }
+        if (!isStringTarget && !fileUrl) {
+            return true;
+        }
+        if (isStringTarget && !textValue.trim()) {
             return true;
         }
         appState.nodeSendSending = true;
@@ -6851,6 +6875,7 @@ function handleDelegatedNodeSend(event) {
                     data: {
                         node_id: nodeId,
                         file_url: fileUrl,
+                        text_value: isStringTarget ? textValue : "",
                         title: appState.nodeSendTitle || "",
                         node_class: appState.nodeSendTargetClass || "",
                     },
@@ -6914,9 +6939,11 @@ function handleDelegatedNodeSendSort(event) {
 function handleDelegatedMediaCardDragstart(event) {
     const card = event.target?.closest?.(".media-card[data-drag-media='1']");
     if (!(card instanceof HTMLElement)) {
+        event.preventDefault();
         return;
     }
     if (!isMediaTab(appState.activeTab)) {
+        event.preventDefault();
         return;
     }
     const dataTransfer = event.dataTransfer;
@@ -6997,6 +7024,7 @@ async function handleDelegatedDbCriticalMarkChange(event) {
         await toggleCriticalOverride(name, target.checked);
         await fetchDbFileList();
         reconcileSelectedDbFiles();
+        reconcileLockedCriticalSelections();
     } catch (error) {
         appState.dbDeleteError = error.message || t(
             "xdatahub.ui.app.error.update_critical_mark_failed",
@@ -7063,18 +7091,7 @@ function handleDelegatedGlobalInput(event) {
     }
     case "db-delete-confirm-yes": {
         appState.confirmYes = target.value;
-        const btn = document.getElementById("db-delete-submit");
-        if (btn instanceof HTMLButtonElement) {
-            btn.disabled = !canSubmitDbDelete() || appState.dbDeleteLoading;
-        }
-        return true;
-    }
-    case "db-delete-confirm-yes-critical": {
-        appState.confirmYesCritical = target.value;
-        const btn = document.getElementById("db-delete-submit");
-        if (btn instanceof HTMLButtonElement) {
-            btn.disabled = !canSubmitDbDelete() || appState.dbDeleteLoading;
-        }
+        updateDbDeleteSubmitUi(document.getElementById("db-delete-submit"));
         return true;
     }
     default:
@@ -7697,26 +7714,76 @@ function payloadToJson(value) {
     }
 }
 
-function buildPayloadCopyText(payloadInfo) {
-    if (payloadInfo.parseError && typeof payloadInfo.original === "string") {
-        return payloadInfo.original;
+function scalarPayloadToText(value) {
+    if (value === null || value === undefined) {
+        return "";
     }
-    const value = payloadInfo.value;
-    const json = payloadToJson(value);
-    const stripLineIndent = (text) => String(text || "").replace(/^\s+/gm, "");
+    if (
+        typeof value === "string"
+        || typeof value === "number"
+        || typeof value === "boolean"
+        || typeof value === "bigint"
+    ) {
+        return String(value);
+    }
+    return "";
+}
+
+function pickCorePayloadText(value, depth = 0) {
+    if (depth > 6) {
+        return "";
+    }
+    const scalarText = scalarPayloadToText(value).trim();
+    if (scalarText) {
+        return scalarText;
+    }
     if (Array.isArray(value)) {
-        if (json.startsWith("[") && json.endsWith("]")) {
-            return stripLineIndent(json.slice(1, -1).trim());
+        for (const item of value) {
+            const text = pickCorePayloadText(item, depth + 1);
+            if (text) {
+                return text;
+            }
         }
-        return stripLineIndent(json);
+        return "";
     }
-    if (value && typeof value === "object") {
-        if (json.startsWith("{") && json.endsWith("}")) {
-            return stripLineIndent(json.slice(1, -1).trim());
+    if (!value || typeof value !== "object") {
+        return "";
+    }
+    const preferredSeed = scalarPayloadToText(value.seed).trim();
+    if (preferredSeed) {
+        return preferredSeed;
+    }
+    const preferredKeys = [
+        "text",
+        "content",
+        "value",
+        "result",
+        "output",
+        "message",
+        "prompt",
+        "data",
+    ];
+    for (const key of preferredKeys) {
+        const preferred = scalarPayloadToText(value[key]).trim();
+        if (preferred) {
+            return preferred;
         }
-        return stripLineIndent(json);
     }
-    return stripLineIndent(json);
+    for (const entry of Object.values(value)) {
+        const text = pickCorePayloadText(entry, depth + 1);
+        if (text) {
+            return text;
+        }
+    }
+    return "";
+}
+
+function resolveTextSendTitle(item) {
+    return String(item?.extra?.extra_header || "").trim();
+}
+
+function buildPayloadCopyText(payloadInfo) {
+    return pickCorePayloadText(payloadInfo.value);
 }
 
 function buildRecordCopyText(item) {
@@ -7795,19 +7862,25 @@ async function handleCopyButton(button) {
     const target = button?.getAttribute("data-copy-target") || "payload";
     const item = selectedItem();
     if (!item) {
-        setCopyNotice(t("xdatahub.ui.app.text.h_3286eb7260", "Nothing to copy"), true);
+        setCopyNotice(
+            t("xdatahub.ui.app.text.h_3286eb7260", "Nothing to send"),
+            true
+        );
         return;
     }
     const payloadInfo = normalizePayloadValue(item?.extra?.payload);
     const text = target === "record"
         ? buildRecordCopyText(item)
         : buildPayloadCopyText(payloadInfo);
-    try {
-        await copyText(text);
-        setCopyNotice(t("xdatahub.ui.app.text.h_e381a5763d", "Copied"));
-    } catch {
-        setCopyNotice(t("xdatahub.ui.app.common.copy_failed", "Copy Failed"), true);
+    if (!String(text || "").trim()) {
+        setCopyNotice(
+            t("xdatahub.ui.app.text.h_3286eb7260", "Nothing to send"),
+            true
+        );
+        return;
     }
+    const title = resolveTextSendTitle(item);
+    openNodeSendDialog("", title, "text", text);
 }
 
 function flashButton(button) {
@@ -7830,17 +7903,23 @@ function setRowCopyFeedback(button) {
     }
     const textEl = button.querySelector(".row-copy-btn-text");
     if (textEl instanceof HTMLElement) {
-        textEl.textContent = t("xdatahub.ui.app.text.h_e381a5763d", "Copied");
+        textEl.textContent = t("xdatahub.ui.app.text.h_e381a5763d", "Sent");
     } else {
-        button.textContent = t("xdatahub.ui.app.text.h_e381a5763d", "Copied");
+        button.textContent = t("xdatahub.ui.app.text.h_e381a5763d", "Sent");
     }
     button.classList.add("copied");
     const timer = window.setTimeout(() => {
         const resetTextEl = button.querySelector(".row-copy-btn-text");
         if (resetTextEl instanceof HTMLElement) {
-            resetTextEl.textContent = t("xdatahub.ui.app.text.h_4edd1d0087", "Copy");
+            resetTextEl.textContent = t(
+                "xdatahub.ui.app.text.h_4edd1d0087",
+                "Send to node"
+            );
         } else {
-            button.textContent = t("xdatahub.ui.app.text.h_4edd1d0087", "Copy");
+            button.textContent = t(
+                "xdatahub.ui.app.text.h_4edd1d0087",
+                "Send to node"
+            );
         }
         button.classList.remove("copied");
         delete button.dataset.copyTimer;

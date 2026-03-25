@@ -110,7 +110,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260325-070";
+const XDATAHUB_ASSET_VER = "20260326-094";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -163,7 +163,7 @@ function iconUrl(name) {
 }
 
 function iconHtml(name, label, className = "xz3r0-icon") {
-    return `<img class="${className}" src="${iconUrl(name)}" alt="${label}" aria-hidden="true">`;
+    return `<img class="${className}" src="${iconUrl(name)}" alt="${label}" aria-hidden="true" draggable="false">`;
 }
 
 function applyMenuButtonIcon() {
@@ -1470,6 +1470,9 @@ const XDataHub = {
             requestAnimationFrame(syncLayout);
             requestAnimationFrame(() => requestAnimationFrame(syncLayout));
         };
+        windowEl.addEventListener("dragstart", (event) => {
+            event.preventDefault();
+        });
         const setHostTab = (tabId, options = {}) => {
             const force = options.force === true;
             if (!force && tabId === activeHostTab) {

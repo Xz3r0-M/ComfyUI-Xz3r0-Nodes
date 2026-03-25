@@ -9,6 +9,8 @@ from typing import Any
 
 from comfy_api.latest import io
 
+XDataStringType = io.Custom("xdata_string")
+
 
 class XAnyToString(io.ComfyNode):
     """
@@ -27,6 +29,7 @@ class XAnyToString(io.ComfyNode):
     输出：
         anything: 原始输入数据 (MatchType 透传输出)
         string: 转换后的字符串 (STRING)
+        xdata_string: 字符串 xdata 协议输出
 
     Usage example:
         anything=123
@@ -71,6 +74,10 @@ class XAnyToString(io.ComfyNode):
                     "string",
                     tooltip="String converted from the input using str()",
                 ),
+                XDataStringType.Output(
+                    "xdata_string",
+                    tooltip="xdata_string payload for XDataSave",
+                ),
             ],
         )
 
@@ -89,4 +96,9 @@ class XAnyToString(io.ComfyNode):
             string_value = str(anything)
         except Exception as exc:
             raise ValueError("Failed to convert input to string") from exc
-        return io.NodeOutput(anything, string_value)
+        payload = {
+            "data_type": "string",
+            "text": string_value,
+            "source": "XAnyToString",
+        }
+        return io.NodeOutput(anything, string_value, payload)

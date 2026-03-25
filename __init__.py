@@ -41,6 +41,7 @@ from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xresolution import XResolution
 from .xnode.xseed import XSeed
 from .xnode.xstringgroup import XStringGroup
+from .xnode.xstringget import XStringGet
 from .xnode.xstringwrap import XStringWrap
 from .xnode.xaudiosave import XAudioSave
 from .xnode.xdatasave import XDataSave
@@ -97,6 +98,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XLatentLoad,
     XLatentSave,
     XMarkdownSave,
+    XStringGet,
     XVideoGet,
     XVideoSave,
     XWorkflowSave,

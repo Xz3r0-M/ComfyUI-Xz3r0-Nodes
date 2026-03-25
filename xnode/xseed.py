@@ -66,7 +66,7 @@ class XSeed(io.ComfyNode):
                 ),
                 io.Int.Input(
                     "seed_value",
-                    default=0,
+                    default=1,
                     min=0,
                     max=max_seed,
                     step=1,
@@ -95,7 +95,7 @@ class XSeed(io.ComfyNode):
         cls,
         digits: int = 20,
         pad_to_limit: bool = False,
-        seed_value: int = 0,
+        seed_value: int = 1,
     ) -> io.NodeOutput:
         """执行种子生成。"""
         normalized_digits = cls._normalize_digits(digits)

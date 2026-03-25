@@ -48,10 +48,20 @@ body:not([data-theme]) {
     --state-danger-bg-standard: var(--btn-active-color);
     --state-danger-bg-hover: var(--hover-accent-bg);
 
-    --state-warn-text-standard: var(--text-active);
-    --state-warn-border-standard: var(--border-standard);
-    --state-warn-bg-standard: var(--btn-active-color);
-    --state-warn-bg-hover: var(--hover-accent-bg);
+    --state-warn-text-standard: var(--db-palette-02);
+    --state-warn-border-standard: var(--db-palette-02);
+    --state-warn-bg-standard: color-mix(
+        in srgb,
+        var(--db-palette-02) 14%,
+        transparent
+    );
+    --state-warn-bg-hover: color-mix(
+        in srgb,
+        var(--db-palette-02) 22%,
+        transparent
+    );
+    --db-critical-border: var(--db-palette-04);
+    --db-critical-bg-hover: #FFBF0033;
 
     --overlay-dialog: rgba(0, 0, 0, 0.01); /* 弹窗外背景近乎透明 */
 
@@ -90,19 +100,19 @@ body:not([data-theme]) {
      * 1) 背景：使用同色盘的减淡色（在 xdatahub_app.html 中通过 color-mix 计算）
      * 2) 文字：使用同色盘原色（100% 色度，不减淡）
      */
-    --db-palette-default: hsl(212, 10%, 52%);
-    --db-palette-01: hsl(8, 74%, 62%);
-    --db-palette-02: hsl(24, 78%, 60%);
-    --db-palette-03: hsl(46, 76%, 60%);
-    --db-palette-04: hsl(88, 68%, 56%);
-    --db-palette-05: hsl(132, 62%, 54%);
-    --db-palette-06: hsl(172, 68%, 55%);
-    --db-palette-07: hsl(198, 76%, 60%);
-    --db-palette-08: hsl(218, 74%, 62%);
-    --db-palette-09: hsl(258, 68%, 64%);
-    --db-palette-10: hsl(292, 66%, 62%);
-    --db-palette-11: hsl(324, 70%, 60%);
-    --db-palette-12: hsl(352, 72%, 61%);
+    --db-palette-default: #0066FF;
+    --db-palette-01: #0066FF;
+    --db-palette-02: #D90429;
+    --db-palette-03: #00A86B;
+    --db-palette-04: #FFBF00;
+    --db-palette-05: #CC00CC;
+    --db-palette-06: #00CCCC;
+    --db-palette-07: #FF6600;
+    --db-palette-08: #0066FF;
+    --db-palette-09: #D90429;
+    --db-palette-10: #00A86B;
+    --db-palette-11: #FFBF00;
+    --db-palette-12: #CC00CC;
 }
 
 body[data-theme="light"] {

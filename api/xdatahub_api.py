@@ -1745,7 +1745,6 @@ def delete_db_files(payload: dict[str, Any]) -> dict[str, Any]:
     critical_set = effective_critical_set()
     unlock_critical = parse_bool(payload.get("unlock_critical"))
     confirm_yes = parse_yes(payload.get("confirm_yes"))
-    confirm_yes_critical = parse_yes(payload.get("confirm_yes_critical"))
 
     if not confirm_yes:
         raise ValueError("missing confirm_yes")
@@ -1761,8 +1760,6 @@ def delete_db_files(payload: dict[str, Any]) -> dict[str, Any]:
     ]
     if critical_targets and not unlock_critical:
         raise PermissionError("critical locked")
-    if critical_targets and not confirm_yes_critical:
-        raise ValueError("missing confirm_yes_critical")
 
     deleted: list[str] = []
     failed: list[str] = []
@@ -2008,8 +2005,15 @@ def register_lock_listener() -> None:
 
     def patched(event: str, data: Any, sid: str = None) -> None:
         original(event, data, sid)
-        if event in {"execution_start", "execution_cached", "executing"}:
+        if event in {"execution_start", "execution_cached"}:
             LOCK.mark_running()
+        elif event == "executing":
+            # ComfyUI 在一次执行结束时会发送 node=None。
+            # 该事件不应继续维持 RUNNING，否则可能导致锁状态卡住。
+            if isinstance(data, dict) and data.get("node") is None:
+                LOCK.mark_finish()
+            else:
+                LOCK.mark_running()
         elif event in {
             "execution_success",
             "execution_error",

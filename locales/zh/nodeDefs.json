@@ -16,6 +16,10 @@
       "1": {
         "name": "字符串",
         "tooltip": "使用 str() 从输入转换得到的字符串"
+      },
+      "2": {
+        "name": "xdata 字符串",
+        "tooltip": "用于 XDataSave 的 xdata_string 协议负载"
       }
     }
   },
@@ -710,6 +714,17 @@
       }
     }
   },
+  "XStringGet": {
+    "display_name": "XStringGet",
+    "description": "从 XDataHub 获取最新发送的文本。",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "STRING",
+        "tooltip": "XDataHub 最近发送的文本"
+      }
+    }
+  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "高级图像/遮罩保存节点，支持自定义文件名、子文件夹和日期时间占位符。",
@@ -961,18 +976,19 @@
   },
   "XDataSave": {
     "display_name": "XDataSave",
-    "description": "将 xdata 数据保存到项目目录 XDataSaved 中的 SQLite 数据库文件，支持 custom/seed 两种保存类型、500 条滚动上限、头部最多 120 字符，以及单条 64KB 上限。",
+    "description": "将 xdata 数据保存到项目目录 XDataSaved 中的 SQLite 数据库文件，支持 Custom/Seed/String 三种保存类型、500 条滚动上限、头部最多 120 字符，以及单条 64KB 上限。",
     "inputs": {
       "xdata_input": {
         "name": "xdata 输入",
-        "tooltip": "复合 xdata 输入。当前支持 xdata_seed，后续可扩展更多 xdata 类型。"
+        "tooltip": "复合 xdata 输入。当前支持 xdata_seed 与 xdata_string。"
       },
       "save_type": {
         "name": "保存类型",
-        "tooltip": "保存类型：custom 需要自定义文件名；seed 固定保存到 seed_data.db。",
+        "tooltip": "保存类型：Custom 需要自定义文件名；Seed 固定保存到 seed_data.db；String 固定保存到 string_data.db。",
         "options": {
-          "custom": "自定义",
-          "seed": "种子"
+          "Custom": "自定义",
+          "Seed": "种子",
+          "String": "字符串"
         }
       },
       "custom_filename_input": {
@@ -981,7 +997,7 @@
       },
       "custom_filename_text": {
         "name": "自定义文件名",
-        "tooltip": "save_type 为 custom 时使用的回退文件名。默认留空，未设置会报错提示先配置。"
+        "tooltip": "save_type 为 Custom 时使用的回退文件名。默认留空，未设置会报错提示先配置。"
       },
       "extra_header_input": {
         "name": "额外头部输入",

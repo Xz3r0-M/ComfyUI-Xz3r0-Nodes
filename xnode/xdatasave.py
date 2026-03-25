@@ -7,6 +7,8 @@ XData 保存节点模块
 
 import json
 import sqlite3
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,7 @@ except ImportError:
 
 LOGGER = get_logger(__name__)
 XDataSeedType = io.Custom("xdata_seed")
+XDataStringType = io.Custom("xdata_string")
 
 
 class XDataSave(io.ComfyNode):
@@ -39,18 +42,28 @@ class XDataSave(io.ComfyNode):
     当前支持 seed 数据，后续可扩展更多 xdata 类型。
     """
 
-    SAVE_TYPE_OPTIONS = ["custom", "seed"]
+    SAVE_TYPE_OPTIONS = ["Custom", "Seed", "String"]
     MAX_RECORDS = 500
     MAX_HEADER_CHARS = 120
     MAX_RECORD_BYTES = 64 * 1024
     WRITE_DATA_ERROR = "Unable to write data file"
     INVALID_CUSTOM_FILENAME_ERROR = (
-        "Custom filename is required when save_type is custom"
+        "Custom filename is required when save_type is Custom"
     )
     INVALID_XDATA_ERROR = "Invalid xdata input"
+    EMPTY_PRIMARY_CONTENT_SKIP_MSG = (
+        "Save skipped: XData 输入端口的内容为空"
+    )
     HEADER_TOO_LONG_ERROR = "Header length exceeds 120 characters limit"
     RECORD_TOO_LARGE_ERROR = "Record size exceeds 64KB limit"
     RESERVED_DB_NAME_ERROR = "Custom filename conflicts with core db list"
+    SQLITE_CONNECT_TIMEOUT_SECONDS = 5.0
+    SQLITE_BUSY_TIMEOUT_MS = 5000
+    SQLITE_LOCK_RETRY_COUNT = 2
+    SQLITE_LOCK_RETRY_DELAY_SECONDS = 0.05
+    DB_LOCKED_ERROR = "Database is locked for write"
+    _PATH_LOCKS: dict[str, threading.Lock] = {}
+    _PATH_LOCKS_GUARD = threading.Lock()
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -68,20 +81,20 @@ class XDataSave(io.ComfyNode):
             inputs=[
                 io.MultiType.Input(
                     "xdata_input",
-                    types=[XDataSeedType],
-                    optional=True,
+                    types=[XDataSeedType, XDataStringType],
                     tooltip=(
                         "Composite xdata input. Currently supports "
-                        "xdata_seed and can be extended later."
+                        "xdata_seed and xdata_string."
                     ),
                 ),
                 io.Combo.Input(
                     "save_type",
                     options=cls.SAVE_TYPE_OPTIONS,
-                    default="custom",
+                    default="Custom",
                     tooltip=(
-                        "Save target type. custom requires a custom "
-                        "filename. seed writes to seed_data.db."
+                        "Save target type. Custom requires a custom "
+                        "filename. Seed writes to seed_data.db. "
+                        "String writes to string_data.db."
                     ),
                 ),
                 io.String.Input(
@@ -97,7 +110,7 @@ class XDataSave(io.ComfyNode):
                     "custom_filename_text",
                     default="",
                     tooltip=(
-                        "Fallback custom filename for save_type custom. "
+                        "Fallback custom filename for save_type Custom. "
                         "Leave empty to force explicit configuration."
                     ),
                 ),
@@ -149,7 +162,7 @@ class XDataSave(io.ComfyNode):
     def execute(
         cls,
         xdata_input: Any = None,
-        save_type: str = "custom",
+        save_type: str = "Custom",
         custom_filename_input: str | None = None,
         custom_filename_text: str = "",
         extra_header_input: str | None = None,
@@ -162,9 +175,12 @@ class XDataSave(io.ComfyNode):
 
         if xdata_input is None:
             raise ValueError(cls.INVALID_XDATA_ERROR)
+        normalized_save_type = cls._normalize_save_type(save_type)
+        if not cls._has_primary_content(xdata_input, normalized_save_type):
+            return io.NodeOutput(cls.EMPTY_PRIMARY_CONTENT_SKIP_MSG, "")
 
         filename_base = cls._resolve_filename_base(
-            save_type=save_type,
+            save_type=normalized_save_type,
             custom_filename_input=custom_filename_input,
             custom_filename_text=custom_filename_text,
         )
@@ -180,11 +196,19 @@ class XDataSave(io.ComfyNode):
         except OSError as exc:
             raise RuntimeError(cls.WRITE_DATA_ERROR) from exc
 
-        record = cls._build_record(xdata_input, extra_header, save_type)
+        record = cls._build_record(
+            xdata_input=xdata_input,
+            extra_header=extra_header,
+            save_type=normalized_save_type,
+        )
         cls._validate_record_size(record)
 
         data_file = data_dir / f"{filename_base}.db"
-        record_count = cls._save_record_to_db(data_file, record)
+        record_count = cls._save_record_to_db(
+            data_file,
+            record,
+            normalized_save_type,
+        )
 
         relative_path = Path("XDataSaved") / data_file.name
         status = f"Saved {record_count} records"
@@ -204,9 +228,11 @@ class XDataSave(io.ComfyNode):
         custom_filename_text: str,
     ) -> str:
         """根据保存类型解析文件基名。"""
-        if save_type == "seed":
+        if save_type == "Seed":
             return "seed_data"
-        if save_type != "custom":
+        if save_type == "String":
+            return "string_data"
+        if save_type != "Custom":
             raise ValueError("Unsupported save_type")
 
         filename_input = (custom_filename_input or "").strip()
@@ -250,13 +276,24 @@ class XDataSave(io.ComfyNode):
 
         if isinstance(xdata_input, dict):
             data_type = str(xdata_input.get("data_type") or save_type)
+            data_type_normalized = data_type.lower()
             source = str(xdata_input.get("source") or "unknown")
             if "payload" in xdata_input:
                 payload: Any = xdata_input.get("payload")
-            elif data_type == "seed" and "seed" in xdata_input:
+            elif (
+                data_type_normalized == "seed"
+                and "seed" in xdata_input
+            ):
                 payload = {
                     "seed": xdata_input.get("seed"),
                     "digits": xdata_input.get("digits"),
+                }
+            elif (
+                data_type_normalized == "string"
+                and "text" in xdata_input
+            ):
+                payload = {
+                    "text": xdata_input.get("text"),
                 }
             else:
                 payload = dict(xdata_input)
@@ -269,10 +306,62 @@ class XDataSave(io.ComfyNode):
         return {
             "saved_at": saved_at,
             "extra_header": str(extra_header),
-            "data_type": data_type,
+            "data_type": data_type_normalized
+            if isinstance(xdata_input, dict)
+            else str(data_type).lower(),
             "payload": safe_payload,
             "source": source,
         }
+
+    @classmethod
+    def _has_primary_content(cls, xdata_input: Any, save_type: str) -> bool:
+        """检测主要内容是否存在（不依赖 extra_header）。"""
+        if isinstance(xdata_input, dict):
+            if "payload" in xdata_input:
+                return cls._is_meaningful_value(xdata_input.get("payload"))
+
+            data_type = str(xdata_input.get("data_type") or save_type).lower()
+            if data_type == "seed":
+                return cls._is_meaningful_value(xdata_input.get("seed"))
+            if data_type == "string":
+                return cls._is_meaningful_value(xdata_input.get("text"))
+
+            metadata_keys = {"data_type", "source", "saved_at"}
+            content_payload = {
+                key: value
+                for key, value in xdata_input.items()
+                if key not in metadata_keys
+            }
+            return cls._is_meaningful_value(content_payload)
+
+        return cls._is_meaningful_value(xdata_input)
+
+    @classmethod
+    def _is_meaningful_value(cls, value: Any) -> bool:
+        """递归判断值是否为“有意义的主要内容”."""
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, (int, float, bool)):
+            return True
+        if isinstance(value, dict):
+            if not value:
+                return False
+            return any(cls._is_meaningful_value(v) for v in value.values())
+        if isinstance(value, (list, tuple, set)):
+            if not value:
+                return False
+            return any(cls._is_meaningful_value(item) for item in value)
+        return bool(str(value).strip())
+
+    @classmethod
+    def _normalize_save_type(cls, save_type: str) -> str:
+        """校验并规范保存类型（严格新值，不兼容旧小写）。"""
+        value = str(save_type or "").strip()
+        if value not in cls.SAVE_TYPE_OPTIONS:
+            raise ValueError("Unsupported save_type")
+        return value
 
     @classmethod
     def _to_jsonable(cls, payload: Any) -> Any:
@@ -301,16 +390,78 @@ class XDataSave(io.ComfyNode):
         cls,
         path: Path,
         record: dict[str, Any],
+        save_type: str,
     ) -> int:
         """保存记录到 SQLite，并执行 500 条滚动保留。"""
+        lock = cls._get_path_lock(path)
         try:
-            with sqlite3.connect(path) as conn:
-                cls._init_schema(conn)
-                cls._insert_record(conn, record)
-                cls._trim_records(conn)
-                return cls._count_records(conn)
-        except sqlite3.Error as exc:
+            with lock:
+                for attempt in range(cls.SQLITE_LOCK_RETRY_COUNT + 1):
+                    try:
+                        with sqlite3.connect(
+                            path,
+                            timeout=cls.SQLITE_CONNECT_TIMEOUT_SECONDS,
+                        ) as conn:
+                            cls._configure_connection(conn)
+                            cls._init_schema(conn)
+                            cls._insert_record(conn, record)
+                            cls._trim_records(conn)
+                            return cls._count_records(conn)
+                    except sqlite3.OperationalError as exc:
+                        if not cls._is_db_locked_error(exc):
+                            raise
+                        if attempt >= cls.SQLITE_LOCK_RETRY_COUNT:
+                            raise
+                        time.sleep(cls.SQLITE_LOCK_RETRY_DELAY_SECONDS)
+        except sqlite3.OperationalError as exc:
+            if cls._is_db_locked_error(exc):
+                LOGGER.error(
+                    "XDataSave db locked: db=%s save_type=%s err=%s",
+                    path.name,
+                    save_type,
+                    exc.__class__.__name__,
+                )
+                raise RuntimeError(
+                    f"{cls.DB_LOCKED_ERROR}: {path.name}"
+                ) from exc
+            LOGGER.error(
+                "XDataSave sqlite operational error: db=%s save_type=%s "
+                "err=%s",
+                path.name,
+                save_type,
+                exc.__class__.__name__,
+            )
             raise RuntimeError(cls.WRITE_DATA_ERROR) from exc
+        except sqlite3.Error as exc:
+            LOGGER.error(
+                "XDataSave sqlite error: db=%s save_type=%s err=%s",
+                path.name,
+                save_type,
+                exc.__class__.__name__,
+            )
+            raise RuntimeError(cls.WRITE_DATA_ERROR) from exc
+
+    @classmethod
+    def _is_db_locked_error(cls, exc: sqlite3.OperationalError) -> bool:
+        """判断是否为 SQLite 写锁冲突。"""
+        return "database is locked" in str(exc).lower()
+
+    @classmethod
+    def _get_path_lock(cls, path: Path) -> threading.Lock:
+        """返回按数据库路径维度的互斥锁。"""
+        lock_key = str(path.resolve())
+        with cls._PATH_LOCKS_GUARD:
+            lock = cls._PATH_LOCKS.get(lock_key)
+            if lock is None:
+                lock = threading.Lock()
+                cls._PATH_LOCKS[lock_key] = lock
+            return lock
+
+    @classmethod
+    def _configure_connection(cls, conn: sqlite3.Connection) -> None:
+        """配置 SQLite 会话参数。"""
+        conn.execute(f"PRAGMA busy_timeout={cls.SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode=WAL")
 
     @classmethod
     def _trim_records(

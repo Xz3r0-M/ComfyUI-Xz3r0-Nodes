@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260325-070">
+    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260326-094">
     <style>
         /*
            颜色规范：
@@ -204,14 +204,30 @@
         .lock-banner {
             border: 1px solid var(--state-warn-border-standard);
             color: var(--state-warn-text-standard);
+            background: var(--state-warn-bg-standard);
             padding: 6px 10px;
             border-radius: 6px;
             font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
             display: none;
         }
 
+        .lock-banner::before {
+            content: "⚠";
+            font-size: 13px;
+            line-height: 1;
+            flex: 0 0 auto;
+        }
+
         .lock-banner.show {
-            display: block;
+            display: flex;
         }
 
         .filters {
@@ -1108,6 +1124,7 @@
             min-width: 24px;
             height: 22px;
             padding: 0 9px;
+            font-size: 13px;
             line-height: 1;
             text-align: center;
             font-weight: 700;
@@ -1952,7 +1969,7 @@
             );
             background: color-mix(
                 in srgb,
-                var(--db-palette, var(--db-palette-default)) 28%,
+                var(--db-palette, var(--db-palette-default)) 15%,
                 var(--surface-input)
             );
             color: var(--db-palette, var(--db-palette-default));
@@ -2247,7 +2264,7 @@
             gap: 8px;
             border-radius: 8px;
             padding: 6px 14px;
-            border-color: #999999;
+            border-color: var(--xdh-history-content-border);
         }
 
         .image-lightbox-send-btn .btn-icon {
@@ -2479,6 +2496,14 @@
             font-size: 12px;
         }
 
+        .node-send-hint code {
+            border: 1px solid var(--border-standard);
+            border-radius: 6px;
+            padding: 1px 6px;
+            color: var(--text-standard);
+            background: var(--bg);
+        }
+
         .node-send-hint.is-error {
             color: var(--state-danger-text-standard);
         }
@@ -2703,21 +2728,26 @@
         }
 
         .db-delete-row.critical-builtin:hover {
-            background: var(--state-danger-bg-hover);
+            background: var(--db-critical-bg-hover);
         }
 
         .db-delete-row.critical-user:hover {
-            background: var(--state-warn-bg-hover);
+            background: var(--db-critical-bg-hover);
         }
 
         .db-delete-row.critical-builtin {
-            border-color: var(--state-danger-border-standard);
-            box-shadow: inset 0 0 0 1px var(--state-danger-border-standard);
+            border-color: var(--db-critical-border);
+            box-shadow: inset 0 0 0 1px var(--db-critical-border);
         }
 
         .db-delete-row.critical-user {
-            border-color: var(--state-warn-border-standard);
-            box-shadow: inset 0 0 0 1px var(--state-warn-border-standard);
+            border-color: var(--db-critical-border);
+            box-shadow: inset 0 0 0 1px var(--db-critical-border);
+        }
+
+        .db-delete-row.selected {
+            border-color: var(--xdh-brand-pink);
+            box-shadow: inset 0 0 0 1px var(--xdh-brand-pink);
         }
 
         .db-delete-segment {
@@ -3429,7 +3459,7 @@
 </head>
 <body>
     <div class="app" id="app"></div>
-    <script type="module" src="./xdatahub_app.js?v=20260325-070"></script>
+    <script type="module" src="./xdatahub_app.js?v=20260326-094"></script>
 </body>
 </html>
 

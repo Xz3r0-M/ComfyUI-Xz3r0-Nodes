@@ -4,11 +4,13 @@ import { api } from "../../scripts/api.js";
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
 const ROOT = globalThis;
-const NODE_CLASS = "XImageGet";
+const IMAGE_NODE_CLASS = "XImageGet";
+const STRING_NODE_CLASS = "XStringGet";
 const SUPPORTED_NODE_CLASSES = new Set([
     "XImageGet",
     "XVideoGet",
     "XAudioGet",
+    "XStringGet",
 ]);
 const NODE_UI_CONFIG = {
     XImageGet: {
@@ -35,26 +37,35 @@ const NODE_UI_CONFIG = {
         missingKey: "xdatahub.ui.node.xmediaget.missing_audio",
         missingFallback: "Audio missing",
     },
+    XStringGet: {
+        kind: "text",
+        emoji: "📝",
+        placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_text",
+        placeholderFallback: "Drop or send XDataHub text here",
+        missingKey: "xdatahub.ui.node.xmediaget.missing_text",
+        missingFallback: "Text missing",
+    },
 };
 const VIEW_URL_WIDGET = "view_url";
+const TEXT_VALUE_WIDGET = "text_value";
 const MIN_NODE_WIDTH = 260;
 const MIN_NODE_HEIGHT = 320;
 
 const STYLE_ID = "xmediaget-extension-style";
-const NODE_ACCENT_DEFAULT = "hsl(212, 10%, 52%)";
+const NODE_ACCENT_DEFAULT = "#0066FF";
 const NODE_ACCENT_PALETTE = [
-    "hsl(8, 74%, 62%)",
-    "hsl(24, 78%, 60%)",
-    "hsl(46, 76%, 60%)",
-    "hsl(88, 68%, 56%)",
-    "hsl(132, 62%, 54%)",
-    "hsl(172, 68%, 55%)",
-    "hsl(198, 76%, 60%)",
-    "hsl(218, 74%, 62%)",
-    "hsl(258, 68%, 64%)",
-    "hsl(292, 66%, 62%)",
-    "hsl(324, 70%, 60%)",
-    "hsl(352, 72%, 61%)",
+    "#0066FF",
+    "#D90429",
+    "#00A86B",
+    "#FFBF00",
+    "#CC00CC",
+    "#00CCCC",
+    "#FF6600",
+    "#0066FF",
+    "#D90429",
+    "#00A86B",
+    "#FFBF00",
+    "#CC00CC",
 ];
 const CLEAR_BTN_LABEL_KEY = "xdatahub.ui.node.xmediaget.clear_loaded_media";
 const CLEAR_BTN_LABEL_FALLBACK = "Clear loaded media";
@@ -288,9 +299,27 @@ function ensureStyles() {
             max-width: 420px;
             display: none;
         }
+        .ximageget-preview .ximageget-text-preview {
+            display: none;
+            width: calc(100% - 16px);
+            height: calc(100% - 16px);
+            margin: 8px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--borderColor, #555);
+            background: #1a1a1a;
+            color: #ffffff;
+            font-size: 13px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: auto;
+            user-select: text;
+        }
         .ximageget-preview.has-media img,
         .ximageget-preview.has-media video,
-        .ximageget-preview.has-media audio {
+        .ximageget-preview.has-media audio,
+        .ximageget-preview.has-media .ximageget-text-preview {
             display: block;
         }
         .ximageget-placeholder {
@@ -364,6 +393,7 @@ function buildPanel(nodeClass) {
     const preview = document.createElement("div");
     preview.className = "ximageget-preview";
     let mediaEl = null;
+    let textEl = null;
     if (config.kind === "image") {
         const img = document.createElement("img");
         img.alt = nodeClass || "XImageGet";
@@ -376,13 +406,23 @@ function buildPanel(nodeClass) {
         video.playsInline = true;
         mediaEl = video;
     } else {
-        const audio = document.createElement("audio");
-        audio.preload = "metadata";
-        audio.controls = true;
-        mediaEl = audio;
+        if (config.kind === "audio") {
+            const audio = document.createElement("audio");
+            audio.preload = "metadata";
+            audio.controls = true;
+            mediaEl = audio;
+        } else {
+            const textPreview = document.createElement("div");
+            textPreview.className = "ximageget-text-preview";
+            textPreview.textContent = "";
+            textEl = textPreview;
+        }
     }
     if (mediaEl) {
         preview.appendChild(mediaEl);
+    }
+    if (textEl) {
+        preview.appendChild(textEl);
     }
 
     const placeholder = document.createElement("div");
@@ -407,6 +447,7 @@ function buildPanel(nodeClass) {
         panel,
         preview,
         mediaEl,
+        textEl,
         mediaKind: config.kind,
         nodeClass: String(nodeClass || "XImageGet"),
         emoji: String(config.emoji || "🔹"),
@@ -475,6 +516,20 @@ function clearMediaElementHandlers(mediaEl) {
     mediaEl.onloadeddata = null;
 }
 
+function deriveTitleFromText(textValue, fallback = "") {
+    const text = String(textValue || "").trim();
+    if (!text) {
+        return String(fallback || "");
+    }
+    const firstLine = text.split(/\r?\n/)[0].trim();
+    if (!firstLine) {
+        return String(fallback || "");
+    }
+    return firstLine.length > 96
+        ? `${firstLine.slice(0, 96)}...`
+        : firstLine;
+}
+
 function setPreview(panelInfo, data) {
     if (!panelInfo) {
         return;
@@ -482,6 +537,7 @@ function setPreview(panelInfo, data) {
     const {
         preview,
         mediaEl,
+        textEl,
         placeholder,
         title,
         mediaKind,
@@ -490,9 +546,39 @@ function setPreview(panelInfo, data) {
         nodeClass,
     } = panelInfo;
     const fileUrl = String(data?.file_url || "");
+    const textValue = String(data?.text_value || "");
     const label = String(data?.title || "");
     const loadToken = (Number(panelInfo.__xmediaget_load_token) || 0) + 1;
     panelInfo.__xmediaget_load_token = loadToken;
+    if (mediaKind === "text") {
+        if (!textValue) {
+            panelInfo.__xmediaget_preview_state = PREVIEW_STATE_EMPTY;
+            preview.classList.remove("has-media");
+            if (textEl) {
+                textEl.textContent = "";
+            }
+            placeholder.textContent =
+                placeholderText || "Drop XDataHub text here";
+            title.textContent = "";
+            title.removeAttribute("title");
+            return;
+        }
+        panelInfo.__xmediaget_preview_state = PREVIEW_STATE_LOADED;
+        preview.classList.add("has-media");
+        placeholder.textContent = "";
+        if (textEl) {
+            textEl.textContent = textValue;
+        }
+        const finalTitle = String(label || "");
+        title.textContent = finalTitle;
+        if (finalTitle) {
+            title.setAttribute("title", finalTitle);
+        } else {
+            title.removeAttribute("title");
+        }
+        return;
+    }
+
     if (!fileUrl) {
         panelInfo.__xmediaget_preview_state = PREVIEW_STATE_EMPTY;
         preview.classList.remove("has-media");
@@ -506,6 +592,9 @@ function setPreview(panelInfo, data) {
         placeholder.textContent = placeholderText || "Drop XDataHub link here";
         title.textContent = "";
         title.removeAttribute("title");
+        if (textEl) {
+            textEl.textContent = "";
+        }
         return;
     }
     const cacheBusted = fileUrl.includes("?")
@@ -694,14 +783,23 @@ async function sendViewUrl(fileUrl) {
     }
 }
 
-function getViewUrlWidget(node) {
+function isStringNode(node) {
+    return String(node?.comfyClass || "") === STRING_NODE_CLASS;
+}
+
+function getStorageWidgetName(node) {
+    return isStringNode(node) ? TEXT_VALUE_WIDGET : VIEW_URL_WIDGET;
+}
+
+function getStorageWidget(node) {
     if (!node) {
         return null;
     }
+    const widgetName = getStorageWidgetName(node);
     const widgets = node.widgets || [];
-    let widget = widgets.find((item) => item?.name === VIEW_URL_WIDGET);
+    let widget = widgets.find((item) => item?.name === widgetName);
     if (!widget && typeof node.addWidget === "function") {
-        widget = node.addWidget("text", VIEW_URL_WIDGET, "", () => {});
+        widget = node.addWidget("text", widgetName, "", () => {});
     }
     if (widget) {
         widget.hidden = true;
@@ -710,30 +808,33 @@ function getViewUrlWidget(node) {
     return widget || null;
 }
 
-function getStoredViewUrl(node) {
-    const widget = getViewUrlWidget(node);
+function getStoredNodeValue(node) {
+    const widget = getStorageWidget(node);
     const value = widget?.value;
     return typeof value === "string" ? value : String(value || "");
 }
 
-function setStoredViewUrl(node, url) {
-    const widget = getViewUrlWidget(node);
+function setStoredNodeValue(node, value) {
+    const widget = getStorageWidget(node);
     if (!widget) {
         return;
     }
-    widget.value = String(url || "");
+    widget.value = String(value || "");
     node?.graph?.setDirtyCanvas?.(true, true);
 }
 
 function migrateLegacyViewUrl(node) {
+    if (!node || isStringNode(node)) {
+        return;
+    }
     const legacy = node?.properties?.last_view_url;
     if (!legacy) {
         return;
     }
-    if (getStoredViewUrl(node)) {
+    if (getStoredNodeValue(node)) {
         return;
     }
-    setStoredViewUrl(node, legacy);
+    setStoredNodeValue(node, legacy);
     if (node?.properties) {
         delete node.properties.last_view_url;
     }
@@ -770,59 +871,61 @@ function installNodeUi(node) {
             event.stopImmediatePropagation();
         }
     };
-    panelInfo.preview.addEventListener("dragenter", (event) => {
-        consumeDragEvent(event);
-        panelInfo.preview.classList.add("drag-over");
-        if (event.dataTransfer) {
-            event.dataTransfer.dropEffect = "copy";
-        }
-    });
-    panelInfo.preview.addEventListener("dragover", (event) => {
-        consumeDragEvent(event);
-        panelInfo.preview.classList.add("drag-over");
-        if (event.dataTransfer) {
-            event.dataTransfer.dropEffect = "copy";
-        }
-    });
-    panelInfo.preview.addEventListener("dragleave", (event) => {
-        consumeDragEvent(event);
-        panelInfo.preview.classList.remove("drag-over");
-    });
-    panelInfo.preview.addEventListener("drop", async (event) => {
-        consumeDragEvent(event);
-        panelInfo.preview.classList.remove("drag-over");
-        const dataTransfer = event.dataTransfer;
-        const uriList = dataTransfer?.getData("text/uri-list")
-            || dataTransfer?.getData("text/plain")
-            || "";
-        const viewUrl = parseViewUrl(uriList);
-        if (!viewUrl) {
-            return;
-        }
-        if (nodeClass === NODE_CLASS) {
-            const payload = await sendViewUrl(viewUrl);
-            if (payload?.status === "success") {
-                setPreview(panelInfo, payload);
+    if (panelInfo.mediaKind !== "text") {
+        panelInfo.preview.addEventListener("dragenter", (event) => {
+            consumeDragEvent(event);
+            panelInfo.preview.classList.add("drag-over");
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = "copy";
+            }
+        });
+        panelInfo.preview.addEventListener("dragover", (event) => {
+            consumeDragEvent(event);
+            panelInfo.preview.classList.add("drag-over");
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = "copy";
+            }
+        });
+        panelInfo.preview.addEventListener("dragleave", (event) => {
+            consumeDragEvent(event);
+            panelInfo.preview.classList.remove("drag-over");
+        });
+        panelInfo.preview.addEventListener("drop", async (event) => {
+            consumeDragEvent(event);
+            panelInfo.preview.classList.remove("drag-over");
+            const dataTransfer = event.dataTransfer;
+            const uriList = dataTransfer?.getData("text/uri-list")
+                || dataTransfer?.getData("text/plain")
+                || "";
+            const viewUrl = parseViewUrl(uriList);
+            if (!viewUrl) {
+                return;
+            }
+            if (nodeClass === IMAGE_NODE_CLASS) {
+                const payload = await sendViewUrl(viewUrl);
+                if (payload?.status === "success") {
+                    setPreview(panelInfo, payload);
+                } else {
+                    setPreview(panelInfo, { file_url: viewUrl });
+                }
             } else {
                 setPreview(panelInfo, { file_url: viewUrl });
             }
-        } else {
-            setPreview(panelInfo, { file_url: viewUrl });
-        }
-        setStoredViewUrl(node, viewUrl);
-    });
+            setStoredNodeValue(node, viewUrl);
+        });
+    }
     if (panelInfo.clearBtn instanceof HTMLButtonElement) {
         panelInfo.clearBtn.addEventListener("click", (event) => {
             consumeDragEvent(event);
-            setStoredViewUrl(node, "");
+            setStoredNodeValue(node, "");
             setPreview(panelInfo, {});
         });
     }
     ensureNodeMinSize(node);
     migrateLegacyViewUrl(node);
-    const stored = getStoredViewUrl(node);
+    const stored = getStoredNodeValue(node);
     if (stored) {
-        restoreStoredView(node, stored);
+        restoreStoredData(node, stored);
     }
 }
 
@@ -867,19 +970,29 @@ function ensureNodeMinSize(node) {
     };
 }
 
-function restoreStoredView(node, stored) {
+function restoreStoredData(node, stored) {
     const value = String(stored || "");
     if (!value) {
         return;
     }
     const panelInfo = node?.__ximageget_panel;
+    const nodeClass = String(node?.comfyClass || "");
+    if (nodeClass === STRING_NODE_CLASS) {
+        if (panelInfo) {
+            setPreview(panelInfo, {
+                text_value: value,
+                title: "",
+            });
+        }
+        return;
+    }
     if (panelInfo) {
         setPreview(panelInfo, {
             file_url: value,
             title: panelInfo?.title?.textContent || "",
         });
     }
-    if (String(node?.comfyClass || "") !== NODE_CLASS) {
+    if (nodeClass !== IMAGE_NODE_CLASS) {
         return;
     }
     const viewUrl = parseViewUrl(value);
@@ -898,7 +1011,7 @@ function installExistingNodes() {
     for (const node of nodes) {
         installNodeUi(node);
         if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
-            getViewUrlWidget(node);
+            getStorageWidget(node);
         }
     }
 }
@@ -919,14 +1032,33 @@ function updateNodeViewUrl(node, fileUrl, title) {
     if (panelInfo) {
         setPreview(panelInfo, { file_url: fileUrl, title });
     }
-    setStoredViewUrl(node, fileUrl);
-    if (String(node?.comfyClass || "") !== NODE_CLASS) {
+    setStoredNodeValue(node, fileUrl);
+    if (String(node?.comfyClass || "") !== IMAGE_NODE_CLASS) {
         return;
     }
     const viewUrl = parseViewUrl(fileUrl);
     if (viewUrl) {
         sendViewUrl(viewUrl);
     }
+}
+
+function updateNodeTextValue(node, textValue, title) {
+    if (!node) {
+        return;
+    }
+    if (!node.__ximageget_panel) {
+        installNodeUi(node);
+    }
+    const panelInfo = node.__ximageget_panel;
+    const text = String(textValue || "");
+    const finalTitle = String(title || "");
+    if (panelInfo) {
+        setPreview(panelInfo, {
+            text_value: text,
+            title: finalTitle,
+        });
+    }
+    setStoredNodeValue(node, text);
 }
 
 function collectNodesByClass(nodeClass) {
@@ -963,7 +1095,7 @@ export function initXMediaGetExtension() {
             nodeType.prototype.onNodeCreated = function () {
                 orig?.apply(this, arguments);
                 installNodeUi(this);
-                restoreStoredView(this, getStoredViewUrl(this));
+                restoreStoredData(this, getStoredNodeValue(this));
                 refreshNodeBadge(this);
             };
         },
@@ -971,7 +1103,7 @@ export function initXMediaGetExtension() {
             installNodeUi(node);
             refreshNodeBadge(node);
             if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
-                getViewUrlWidget(node);
+                getStorageWidget(node);
             }
         },
         async loadedGraphNode(node) {
@@ -980,7 +1112,7 @@ export function initXMediaGetExtension() {
                 return;
             }
             installNodeUi(node);
-            restoreStoredView(node, getStoredViewUrl(node));
+            restoreStoredData(node, getStoredNodeValue(node));
             refreshNodeBadge(node);
         },
         async setup() {
@@ -1011,8 +1143,9 @@ export function initXMediaGetExtension() {
                     const data = payload.data || {};
                     const nodeId = Number(data.node_id);
                     const fileUrl = String(data.file_url || "");
+                    const textValue = String(data.text_value || "");
                     const nodeClass = String(data.node_class || "");
-                    if (!Number.isFinite(nodeId) || !fileUrl) {
+                    if (!Number.isFinite(nodeId)) {
                         return;
                     }
                     const node = getNodeById(nodeId);
@@ -1027,6 +1160,13 @@ export function initXMediaGetExtension() {
                         return;
                     }
                     if (!SUPPORTED_NODE_CLASSES.has(String(node.comfyClass || ""))) {
+                        return;
+                    }
+                    if (String(node.comfyClass || "") === STRING_NODE_CLASS) {
+                        updateNodeTextValue(node, textValue, data.title || "");
+                        return;
+                    }
+                    if (!fileUrl) {
                         return;
                     }
                     updateNodeViewUrl(node, fileUrl, data.title || "");
