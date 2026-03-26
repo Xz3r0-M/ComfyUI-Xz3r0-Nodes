@@ -11,6 +11,7 @@ const TABS = [
     { id: "audio" },
 ];
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
+const DEFAULT_TOGGLE_HOTKEY_SPEC = "Alt + X";
 
 function createDefaultImagePreviewState() {
     return {
@@ -148,6 +149,12 @@ const appState = {
     nodeSendNodes: [],
     nodeSendSelectedIds: [],
     nodeSendSending: false,
+    nodeSendHostLockActive: false,
+    nodeSendProgressCurrent: 0,
+    nodeSendProgressTotal: 0,
+    nodeSendSuccessCount: 0,
+    nodeSendFailureCount: 0,
+    nodeSendLastFailureMessage: "",
     nodeSendMediaRef: "",
     nodeSendTextValue: "",
     nodeSendTitle: "",
@@ -159,13 +166,14 @@ const appState = {
     nodeSendValidateId: "",
     nodeSendValidateTimer: 0,
     nodeSendError: "",
+    nodeSendQuickSlide: null,
     localeSwitcherOpen: false,
     localeSelectionPending: false,
     localeSelectionOriginal: "",
     localePreviewLang: "en",
     settingsDraft: null,
     settings: {
-        showMediaChipType: true,
+        showMediaTitle: true,
         showMediaChipResolution: true,
         showMediaChipDatetime: true,
         showMediaChipSize: true,
@@ -178,7 +186,9 @@ const appState = {
         mediaSortBy: "mtime",
         mediaSortOrder: "desc",
         mediaCardSizePreset: "standard",
+        nodeSendCloseAfterSend: true,
         themeMode: "dark",
+        hotkeySpec: DEFAULT_TOGGLE_HOTKEY_SPEC,
         uiLocale: "",
     },
     videoLoadQueue: [],
@@ -198,6 +208,10 @@ let uiLocaleZhDict = {};
 let uiLocaleEnDict = {};
 let mediaSendProximityRaf = 0;
 let mediaSendProximityPayload = null;
+let nodeSendAckSeq = 0;
+const nodeSendAckResolvers = new Map();
+let hostHotkeyRequestSeq = 0;
+const hostHotkeyRequestResolvers = new Map();
 
 const tabStates = {};
 for (const tab of TABS) {
@@ -224,14 +238,15 @@ const MEDIA_CARD_SIZE_PRESET_VALUES = new Set([
     "large",
 ]);
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
-const DEFAULT_TOGGLE_HOTKEY_SPEC = "Alt + X";
 const VIDEO_SCHEDULER_MAX_CONCURRENCY = 2;
 const VIDEO_SCHEDULER_BATCH_SIZE = 4;
 const VIDEO_SCHEDULER_BATCH_DELAY_MS = 120;
 const VIDEO_SCHEDULER_TIME_BUDGET_MS = 8;
 const VIDEO_LOAD_TIMEOUT_MS = 2200;
 const MEDIA_NAV_STACK_LIMIT = 60;
+const NODE_SEND_ACK_TIMEOUT_MS = 1200;
 const ICON_BASE_PATH = "/extensions/ComfyUI-Xz3r0-Nodes/icons";
+const ACTIVE_TAB_STORAGE_KEY = "xdatahub.activeTab";
 let iframeHotkeySpec = DEFAULT_TOGGLE_HOTKEY_SPEC;
 let iframeHotkeyCombo = null;
 const DB_ACCENT_PALETTE = [
@@ -337,6 +352,16 @@ function loadTabState(tab) {
             ...cloneDefaultState(),
             ...JSON.parse(raw),
         };
+        parsed.page = 1;
+        parsed.pageSize = cloneDefaultState().pageSize;
+        parsed.selectedId = "";
+        parsed.detailCollapsed = false;
+        parsed.drawerOpen = false;
+        parsed.compactFiltersExpanded = false;
+        parsed.cleanupDbName = "";
+        parsed.cleanupDeleteAll = false;
+        parsed.lastOpenedMediaId = "";
+        parsed.lastOpenedMediaUrl = "";
         parsed.mediaBackStack = [];
         parsed.mediaForwardStack = [];
         return parsed;
@@ -345,20 +370,56 @@ function loadTabState(tab) {
     }
 }
 
-function buildPersistedTabState(state) {
+function buildPersistedTabState(tab, state) {
     const next = {
-        ...state,
+        filters: {
+            ...cloneDefaultState().filters,
+            ...(state?.filters || {}),
+        },
     };
-    next.mediaBackStack = [];
-    next.mediaForwardStack = [];
+    if (tab === "history") {
+        next.historySortOrder = normalizeHistorySortOrder(
+            state?.historySortOrder
+        );
+        return next;
+    }
+    if (isMediaTab(tab)) {
+        next.mediaRoot = normalizeMediaRoot(state?.mediaRoot);
+        next.mediaSubdir = normalizeMediaSubdir(state?.mediaSubdir);
+    }
     return next;
 }
 
 function saveTabState(tab) {
     sessionStorage.setItem(
         `xdatahub.tab.${tab}`,
-        JSON.stringify(buildPersistedTabState(tabStates[tab]))
+        JSON.stringify(buildPersistedTabState(tab, tabStates[tab]))
     );
+}
+
+function loadPersistedActiveTab() {
+    try {
+        const raw = String(
+            sessionStorage.getItem(ACTIVE_TAB_STORAGE_KEY) || ""
+        ).trim();
+        if (TABS.some((item) => item.id === raw)) {
+            return raw;
+        }
+    } catch {
+        // ignore sessionStorage read errors
+    }
+    return "";
+}
+
+function savePersistedActiveTab(tab) {
+    if (!TABS.some((item) => item.id === tab)) {
+        return;
+    }
+    try {
+        sessionStorage.setItem(ACTIVE_TAB_STORAGE_KEY, tab);
+    } catch {
+        // ignore sessionStorage write errors
+    }
 }
 
 function apiUrl(path, query = {}) {
@@ -583,11 +644,14 @@ function normalizeSettings(value) {
         raw.media_card_size_preset || ""
     ).trim().toLowerCase();
     const themeModeRaw = String(raw.theme_mode || "").trim().toLowerCase();
+    const hotkeySpecRaw = String(
+        raw.hotkeySpec || raw.hotkey_spec || ""
+    ).trim();
     return {
-        showMediaChipType:
-            raw.show_media_chip_type !== undefined
-                ? raw.show_media_chip_type !== false
-                : legacyDefault,
+        showMediaTitle:
+            raw.show_media_title !== undefined
+                ? raw.show_media_title !== false
+                : true,
         showMediaChipResolution:
             raw.show_media_chip_resolution !== undefined
                 ? raw.show_media_chip_resolution !== false
@@ -645,9 +709,17 @@ function normalizeSettings(value) {
         mediaCardSizePreset: MEDIA_CARD_SIZE_PRESET_VALUES.has(cardSizePresetRaw)
             ? cardSizePresetRaw
             : "standard",
+        nodeSendCloseAfterSend:
+            raw.node_send_close_after_send !== undefined
+                ? raw.node_send_close_after_send !== false
+                : raw.nodeSendCloseAfterSend !== false,
         themeMode: THEME_MODE_VALUES.has(themeModeRaw)
             ? themeModeRaw
             : "dark",
+        hotkeySpec:
+            parseHotkeySpec(hotkeySpecRaw)
+            ? hotkeySpecRaw
+            : DEFAULT_TOGGLE_HOTKEY_SPEC,
         uiLocale,
     };
 }
@@ -662,9 +734,10 @@ function cloneSettings(settings) {
         raw.mediaCardSizePreset || ""
     ).trim().toLowerCase();
     const themeMode = String(raw.themeMode || "").trim().toLowerCase();
+    const hotkeySpec = String(raw.hotkeySpec || "").trim();
     const uiLocale = String(raw.uiLocale || "").trim().toLowerCase();
     return {
-        showMediaChipType: raw.showMediaChipType !== false,
+        showMediaTitle: raw.showMediaTitle !== false,
         showMediaChipResolution: raw.showMediaChipResolution !== false,
         showMediaChipDatetime: raw.showMediaChipDatetime !== false,
         showMediaChipSize: raw.showMediaChipSize !== false,
@@ -701,7 +774,15 @@ function cloneSettings(settings) {
         mediaCardSizePreset: MEDIA_CARD_SIZE_PRESET_VALUES.has(cardSizePreset)
             ? cardSizePreset
             : "standard",
+        nodeSendCloseAfterSend:
+            raw.nodeSendCloseAfterSend !== undefined
+                ? raw.nodeSendCloseAfterSend !== false
+                : raw.node_send_close_after_send !== false,
         themeMode: THEME_MODE_VALUES.has(themeMode) ? themeMode : "dark",
+        hotkeySpec:
+            parseHotkeySpec(hotkeySpec)
+            ? hotkeySpec
+            : DEFAULT_TOGGLE_HOTKEY_SPEC,
         uiLocale: uiLocale ? normalizeUiLocale(uiLocale) : "",
     };
 }
@@ -788,6 +869,10 @@ function updateIframeHotkeySpec(spec) {
     iframeHotkeySpec = parsed ? normalized : DEFAULT_TOGGLE_HOTKEY_SPEC;
     iframeHotkeyCombo = parsed
         || parseHotkeySpec(DEFAULT_TOGGLE_HOTKEY_SPEC);
+    appState.settings.hotkeySpec = iframeHotkeySpec;
+    if (!appState.settingsDialogOpen) {
+        appState.settingsDraft = null;
+    }
 }
 
 function isToggleHotkeyEvent(event) {
@@ -865,10 +950,14 @@ async function updateSettings(partial) {
     appState.settingsError = "";
     refreshSettingsDialogOverlay();
     try {
+        const hasOwn = (key) => Object.prototype.hasOwnProperty.call(
+            partial || {},
+            key
+        );
         const body = {
-            show_media_chip_type:
-                partial?.showMediaChipType
-                ?? appState.settings.showMediaChipType,
+            show_media_title:
+                partial?.showMediaTitle
+                ?? appState.settings.showMediaTitle,
             show_media_chip_resolution:
                 partial?.showMediaChipResolution
                 ?? appState.settings.showMediaChipResolution,
@@ -905,6 +994,10 @@ async function updateSettings(partial) {
             media_card_size_preset:
                 partial?.mediaCardSizePreset
                 ?? appState.settings.mediaCardSizePreset,
+            node_send_close_after_send:
+                hasOwn("nodeSendCloseAfterSend")
+                    ? partial.nodeSendCloseAfterSend
+                    : appState.settings.nodeSendCloseAfterSend,
             theme_mode:
                 partial?.themeMode
                 ?? appState.settings.themeMode,
@@ -915,7 +1008,10 @@ async function updateSettings(partial) {
             body.ui_locale = appState.settings.uiLocale;
         }
         const data = await apiPost("/xz3r0/xdatahub/settings", body);
-        appState.settings = normalizeSettings(data.settings || {});
+        appState.settings = normalizeSettings({
+            ...appState.settings,
+            ...(data.settings || {}),
+        });
         applyThemeMode(appState.settings.themeMode);
         notifyParentThemeMode(appState.settings.themeMode);
     } catch (error) {
@@ -926,8 +1022,70 @@ async function updateSettings(partial) {
     } finally {
         appState.settingsSaving = false;
         refreshSettingsDialogOverlay();
+        refreshNodeSendDialogOverlay();
         syncTopActionBarUi();
     }
+}
+
+function nextHostHotkeyRequestId() {
+    hostHotkeyRequestSeq += 1;
+    return `host_hotkey_${Date.now()}_${hostHotkeyRequestSeq}`;
+}
+
+function requestParentHotkeyUpdate(spec) {
+    const normalized = String(spec || "").trim();
+    return new Promise((resolve) => {
+        const requestId = nextHostHotkeyRequestId();
+        const timeoutId = window.setTimeout(() => {
+            if (!hostHotkeyRequestResolvers.has(requestId)) {
+                return;
+            }
+            hostHotkeyRequestResolvers.delete(requestId);
+            resolve({
+                ok: false,
+                error: t(
+                    "xdatahub.ui.app.settings.hotkey.timeout",
+                    "Hotkey update timed out"
+                ),
+            });
+        }, 1500);
+        hostHotkeyRequestResolvers.set(requestId, { resolve, timeoutId });
+        try {
+            window.parent?.postMessage(
+                {
+                    type: "xdatahub:update-hotkey-spec",
+                    request_id: requestId,
+                    hotkey_spec: normalized,
+                },
+                "*"
+            );
+        } catch {
+            window.clearTimeout(timeoutId);
+            hostHotkeyRequestResolvers.delete(requestId);
+            resolve({
+                ok: false,
+                error: t(
+                    "xdatahub.ui.app.settings.hotkey.update_failed",
+                    "Failed to update hotkey"
+                ),
+            });
+        }
+    });
+}
+
+function applyHotkeySaveResponse(payload) {
+    const requestId = String(payload?.request_id || "");
+    if (!requestId || !hostHotkeyRequestResolvers.has(requestId)) {
+        return;
+    }
+    const pending = hostHotkeyRequestResolvers.get(requestId);
+    hostHotkeyRequestResolvers.delete(requestId);
+    window.clearTimeout(pending.timeoutId);
+    pending.resolve({
+        ok: payload?.ok === true,
+        error: String(payload?.error || ""),
+        hotkeySpec: String(payload?.hotkey_spec || ""),
+    });
 }
 
 function abortRequest(key) {
@@ -1042,6 +1200,18 @@ function mediaDirectoryFromState(state) {
 
 function currentMediaDirectory() {
     return mediaDirectoryFromState(currentTabState());
+}
+
+function parentMediaDirectoryPath(state = currentTabState()) {
+    const rootName = normalizeMediaRoot(state?.mediaRoot);
+    const subdir = normalizeMediaSubdir(state?.mediaSubdir);
+    if (!subdir) {
+        return "";
+    }
+    const parts = subdir.split("/").filter(Boolean);
+    parts.pop();
+    const parentSubdir = normalizeMediaSubdir(parts.join("/"));
+    return parentSubdir ? `${rootName}/${parentSubdir}` : rootName;
 }
 
 function setMediaDirectoryFromPath(pathValue, options = {}) {
@@ -1533,12 +1703,28 @@ function syncListStatusUi() {
     }
 }
 
+const PAGINATION_DISPLAY_MAX = 99999;
+
+function getPaginationInputWidthCh(page, totalPages) {
+    const visibleDigits = Math.min(
+        5,
+        String(Math.max(page, totalPages, 1)).length
+    );
+    return Math.max(5, visibleDigits * 1.35);
+}
+
+function formatDisplayedTotalPages(totalPages) {
+    if (totalPages > PAGINATION_DISPLAY_MAX) {
+        return `${PAGINATION_DISPLAY_MAX}\u2026`;
+    }
+    return String(totalPages);
+}
+
 function syncPaginationUi() {
     const prev = document.getElementById("page-prev");
     const next = document.getElementById("page-next");
     const jump = document.getElementById("page-jump");
-    const pagination = prev?.closest(".pagination");
-    const pageInfo = pagination?.querySelector("span");
+    const pageTotal = document.getElementById("page-total");
     const state = currentTabState();
     if (prev instanceof HTMLButtonElement) {
         prev.disabled = state.page <= 1;
@@ -1547,11 +1733,17 @@ function syncPaginationUi() {
         next.disabled = state.page >= appState.totalPages;
     }
     if (jump instanceof HTMLInputElement) {
+        jump.style.width = `${getPaginationInputWidthCh(
+            state.page,
+            appState.totalPages
+        )}ch`;
         jump.value = String(state.page);
         jump.max = String(appState.totalPages);
+        jump.title = t("xdatahub.ui.app.pagination.jump", "Jump to page");
     }
-    if (pageInfo instanceof HTMLElement) {
-        pageInfo.textContent = `${state.page} / ${appState.totalPages}`;
+    if (pageTotal instanceof HTMLElement) {
+        pageTotal.textContent = formatDisplayedTotalPages(appState.totalPages);
+        pageTotal.title = String(appState.totalPages);
     }
 }
 
@@ -1889,6 +2081,7 @@ function switchTab(tab) {
         appState.dbDeleteDialogOpen = false;
     }
     appState.activeTab = tab;
+    savePersistedActiveTab(tab);
     loadList();
 }
 
@@ -1995,6 +2188,9 @@ function syncSearchButtonUi() {
 }
 
 const debouncedLayoutRefresh = debounce(() => {
+    if (document.fullscreenElement) {
+        return;
+    }
     const tab = appState.activeTab;
     if (tab !== "history" && !isMediaTab(tab)) {
         return;
@@ -2157,6 +2353,13 @@ function closeImagePreview() {
     if (!appState.imagePreview.open) {
         return;
     }
+    document.removeEventListener(
+        "fullscreenchange",
+        handleImageLightboxFullscreenChange
+    );
+    if (isImageLightboxFullscreenActive()) {
+        void document.exitFullscreen().catch(() => {});
+    }
     const audioPlayer = document.getElementById("audio-lightbox-player");
     if (audioPlayer instanceof HTMLMediaElement) {
         try {
@@ -2314,6 +2517,72 @@ function markPreviewUnsupported(kind, message) {
     mountImageLightbox();
 }
 
+function imageLightboxFullscreenTarget() {
+    const stage = document.getElementById("image-lightbox-stage");
+    if (stage instanceof HTMLElement) {
+        return stage;
+    }
+    const content = document.querySelector("#image-lightbox .image-lightbox-content");
+    if (content instanceof HTMLElement) {
+        return content;
+    }
+    return null;
+}
+
+function isImageLightboxFullscreenActive() {
+    const target = imageLightboxFullscreenTarget();
+    if (!target || !document.fullscreenElement) {
+        return false;
+    }
+    return (
+        document.fullscreenElement === target
+        || target.contains(document.fullscreenElement)
+    );
+}
+
+function syncImageLightboxFullscreenButton() {
+    const btn = document.getElementById("image-lightbox-fullscreen-btn");
+    if (!(btn instanceof HTMLButtonElement)) {
+        return;
+    }
+    const active = isImageLightboxFullscreenActive();
+    const fullscreenTitle = btn.dataset.titleFullscreen || "Fullscreen";
+    const exitFullscreenTitle = btn.dataset.titleExitFullscreen
+        || "Exit fullscreen";
+    const titleText = active ? exitFullscreenTitle : fullscreenTitle;
+    btn.title = titleText;
+    btn.setAttribute("aria-label", titleText);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+    btn.innerHTML = iconSvg(
+        active ? "minimize-2" : "maximize-2",
+        titleText,
+        "xdatahub-icon btn-icon"
+    );
+}
+
+function handleImageLightboxFullscreenChange() {
+    syncImageLightboxFullscreenButton();
+    syncImagePreviewTransform();
+}
+
+async function toggleImageLightboxFullscreen() {
+    const target = imageLightboxFullscreenTarget();
+    if (!target) {
+        return;
+    }
+    try {
+        if (isImageLightboxFullscreenActive()) {
+            await document.exitFullscreen();
+        } else {
+            await target.requestFullscreen();
+        }
+    } catch {
+        // 浏览器或宿主环境可能阻止全屏，保持静默失败。
+    } finally {
+        handleImageLightboxFullscreenChange();
+    }
+}
+
 function bindImageLightboxEvents() {
     document.getElementById("image-lightbox-prev-btn")?.addEventListener(
         "click",
@@ -2333,6 +2602,21 @@ function bindImageLightboxEvents() {
     document.getElementById("image-lightbox-close-btn")?.addEventListener("click", () => {
         closeImagePreview();
     });
+    document.getElementById("image-lightbox-fullscreen-btn")?.addEventListener(
+        "click",
+        () => {
+            void toggleImageLightboxFullscreen();
+        }
+    );
+    document.removeEventListener(
+        "fullscreenchange",
+        handleImageLightboxFullscreenChange
+    );
+    document.addEventListener(
+        "fullscreenchange",
+        handleImageLightboxFullscreenChange
+    );
+    handleImageLightboxFullscreenChange();
     const previewVideo = document.getElementById("video-lightbox-player");
     if (previewVideo instanceof HTMLVideoElement) {
         previewVideo.addEventListener("error", () => {
@@ -2466,7 +2750,19 @@ function syncImagePreviewTransform() {
         return;
     }
     clampImagePreviewOffset(stage);
-    image.style.transform = `translate(${preview.offsetX}px, ${preview.offsetY}px) scale(${preview.scale})`;
+    const stageRect = stage.getBoundingClientRect();
+    const stageW = Math.max(1, stageRect.width);
+    const stageH = Math.max(1, stageRect.height);
+    const nw = Math.max(1, Number(preview.naturalWidth || image.naturalWidth || 0));
+    const nh = Math.max(1, Number(preview.naturalHeight || image.naturalHeight || 0));
+    const fitScale = Math.min(stageW / nw, stageH / nh);
+    const renderW = nw * fitScale * preview.scale;
+    const renderH = nh * fitScale * preview.scale;
+    image.style.width = `${renderW}px`;
+    image.style.height = `${renderH}px`;
+    image.style.maxWidth = "none";
+    image.style.maxHeight = "none";
+    image.style.transform = `translate(${preview.offsetX}px, ${preview.offsetY}px)`;
     stage.classList.toggle("zoomed", preview.scale > 1.001);
     stage.classList.toggle("dragging", !!preview.dragging);
 }
@@ -2668,18 +2964,318 @@ function refreshNodeSendDialogOverlay() {
     syncOverlayById("node-send-overlay", renderNodeSendDialog());
 }
 
+function canSubmitNodeSend(nodeIds) {
+    if (
+        appState.nodeSendLoading
+        || appState.nodeSendError
+        || appState.nodeSendSending
+    ) {
+        return false;
+    }
+    const mediaRef = String(appState.nodeSendMediaRef || "");
+    const textValue = String(appState.nodeSendTextValue || "");
+    const isStringTarget = (
+        String(appState.nodeSendTargetClass || "") === "XStringGet"
+    );
+    if (!Array.isArray(nodeIds) || !nodeIds.length) {
+        return false;
+    }
+    if (!isStringTarget && !mediaRef) {
+        return false;
+    }
+    if (isStringTarget && !textValue.trim()) {
+        return false;
+    }
+    return true;
+}
+
+function nextNodeSendAckRequestId() {
+    nodeSendAckSeq += 1;
+    return `node_send_${Date.now()}_${nodeSendAckSeq}`;
+}
+
+function resetNodeSendResultState() {
+    appState.nodeSendProgressCurrent = 0;
+    appState.nodeSendProgressTotal = 0;
+    appState.nodeSendSuccessCount = 0;
+    appState.nodeSendFailureCount = 0;
+    appState.nodeSendLastFailureMessage = "";
+}
+
+function syncHostNodeSendBusyState() {
+    window.parent?.postMessage?.(
+        {
+            type: "xdatahub:node_send_busy",
+            busy: appState.nodeSendSending === true
+                && appState.nodeSendHostLockActive === true,
+        },
+        "*"
+    );
+}
+
+function clearPendingNodeSendAcks() {
+    for (const pending of nodeSendAckResolvers.values()) {
+        window.clearTimeout(pending.timeoutId);
+        pending.resolve({
+            ok: false,
+            error: t(
+                "xdatahub.ui.app.media.send_dialog_failed_closed",
+                "Dialog closed before send completed"
+            ),
+        });
+    }
+    nodeSendAckResolvers.clear();
+}
+
+function waitForNodeSendAck(requestId) {
+    return new Promise((resolve) => {
+        const timeoutId = window.setTimeout(() => {
+            if (!nodeSendAckResolvers.has(requestId)) {
+                return;
+            }
+            nodeSendAckResolvers.delete(requestId);
+            resolve({
+                ok: false,
+                error: t(
+                    "xdatahub.ui.app.media.send_dialog_timeout",
+                    "Send timed out"
+                ),
+            });
+        }, NODE_SEND_ACK_TIMEOUT_MS);
+        nodeSendAckResolvers.set(requestId, { resolve, timeoutId });
+    });
+}
+
+function applyNodeSendAckResponse(payload) {
+    const requestId = String(payload?.request_id || "");
+    if (!requestId || !nodeSendAckResolvers.has(requestId)) {
+        return;
+    }
+    const pending = nodeSendAckResolvers.get(requestId);
+    nodeSendAckResolvers.delete(requestId);
+    window.clearTimeout(pending.timeoutId);
+    pending.resolve({
+        ok: payload?.ok !== false,
+        error: String(payload?.error || ""),
+        nodeId: Number(payload?.node_id),
+    });
+}
+
+function getNodeSendSummaryText() {
+    if (appState.nodeSendSending) {
+        return t(
+            "xdatahub.ui.app.media.send_dialog_progress",
+            "Sending {current}/{total}",
+            {
+                current: appState.nodeSendProgressCurrent,
+                total: appState.nodeSendProgressTotal,
+            }
+        );
+    }
+    if (
+        appState.nodeSendSuccessCount > 0
+        || appState.nodeSendFailureCount > 0
+    ) {
+        return t(
+            "xdatahub.ui.app.media.send_dialog_result",
+            "Success {success}, Failed {failure}",
+            {
+                success: appState.nodeSendSuccessCount,
+                failure: appState.nodeSendFailureCount,
+            }
+        );
+    }
+    return t(
+        "xdatahub.ui.app.media.send_dialog_selected",
+        "Selected"
+    ) + `: ${(appState.nodeSendSelectedIds || []).length}`;
+}
+
+async function submitNodeSend(nodeIds, options = {}) {
+    const selectedIds = (nodeIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id));
+    if (!canSubmitNodeSend(selectedIds)) {
+        return false;
+    }
+    const mediaRef = String(appState.nodeSendMediaRef || "");
+    const textValue = String(appState.nodeSendTextValue || "");
+    const isStringTarget = (
+        String(appState.nodeSendTargetClass || "") === "XStringGet"
+    );
+    const lockHost = options.lockHost !== false;
+    clearPendingNodeSendAcks();
+    appState.nodeSendSending = true;
+    appState.nodeSendHostLockActive = lockHost;
+    syncHostNodeSendBusyState();
+    appState.nodeSendProgressTotal = selectedIds.length;
+    appState.nodeSendProgressCurrent = 0;
+    appState.nodeSendSuccessCount = 0;
+    appState.nodeSendFailureCount = 0;
+    appState.nodeSendLastFailureMessage = "";
+    refreshNodeSendDialogOverlay();
+    for (const [index, nodeId] of selectedIds.entries()) {
+        appState.nodeSendProgressCurrent = index + 1;
+        refreshNodeSendDialogOverlay();
+        const requestId = nextNodeSendAckRequestId();
+        const ackPromise = waitForNodeSendAck(requestId);
+        window.parent?.postMessage?.(
+            {
+                type: "xdatahub:send_to_node",
+                data: {
+                    request_id: requestId,
+                    node_id: nodeId,
+                    media_ref: mediaRef,
+                    text_value: isStringTarget ? textValue : "",
+                    title: appState.nodeSendTitle || "",
+                    node_class: appState.nodeSendTargetClass || "",
+                },
+            },
+            "*"
+        );
+        const ack = await ackPromise;
+        if (ack.ok) {
+            appState.nodeSendSuccessCount += 1;
+        } else {
+            appState.nodeSendFailureCount += 1;
+            appState.nodeSendLastFailureMessage = String(
+                ack.error
+                || t(
+                    "xdatahub.ui.app.media.send_dialog_failed_generic",
+                    "Send failed"
+                )
+            );
+        }
+        refreshNodeSendDialogOverlay();
+    }
+    appState.nodeSendSending = false;
+    appState.nodeSendHostLockActive = false;
+    syncHostNodeSendBusyState();
+    const shouldClose = (
+        appState.settings.nodeSendCloseAfterSend !== false
+        && appState.nodeSendFailureCount === 0
+    );
+    if (shouldClose) {
+        closeNodeSendDialog();
+    } else {
+        refreshNodeSendDialogOverlay();
+    }
+    return appState.nodeSendFailureCount === 0;
+}
+
+function resetNodeSendQuickSlideState() {
+    appState.nodeSendQuickSlide = null;
+}
+
+function getNodeSendQuickSlideElement(nodeId) {
+    if (!root) {
+        return null;
+    }
+    return root.querySelector(
+        `[data-node-send-slide-id="${CSS.escape(String(nodeId))}"]`
+    );
+}
+
+function syncNodeSendQuickSlideVisual(slider, progress = 0) {
+    if (!(slider instanceof HTMLElement)) {
+        return;
+    }
+    const clamped = Math.max(0, Math.min(1, progress));
+    slider.style.setProperty("--node-send-slide-progress", String(clamped));
+    slider.classList.toggle("is-ready", clamped >= 0.92);
+    const label = slider.querySelector("[data-node-send-slide-label]");
+    if (label instanceof HTMLElement) {
+        label.textContent = clamped >= 0.92
+            ? t("xdatahub.ui.app.media.send_dialog_slide_release", "Release to send")
+            : t("xdatahub.ui.app.media.send_dialog_slide", "Slide to send");
+    }
+}
+
+function beginNodeSendQuickSlide(event, slider) {
+    if (
+        !(slider instanceof HTMLElement)
+        || appState.nodeSendLoading
+        || !!appState.nodeSendError
+        || appState.nodeSendSending
+    ) {
+        return false;
+    }
+    const nodeId = Number(slider.getAttribute("data-node-send-slide-id") || "");
+    if (!Number.isFinite(nodeId)) {
+        return false;
+    }
+    const track = slider.querySelector(".node-send-quick-track");
+    const handle = slider.querySelector(".node-send-quick-handle");
+    if (!(track instanceof HTMLElement) || !(handle instanceof HTMLElement)) {
+        return false;
+    }
+    const rect = track.getBoundingClientRect();
+    const usableWidth = Math.max(1, rect.width - handle.offsetWidth - 4);
+    appState.nodeSendQuickSlide = {
+        nodeId,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        usableWidth,
+    };
+    slider.classList.add("is-sliding");
+    slider.setPointerCapture?.(event.pointerId);
+    syncNodeSendQuickSlideVisual(slider, 0);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function updateNodeSendQuickSlide(event) {
+    const active = appState.nodeSendQuickSlide;
+    if (!active || active.pointerId !== event.pointerId) {
+        return false;
+    }
+    const slider = getNodeSendQuickSlideElement(active.nodeId);
+    if (!(slider instanceof HTMLElement)) {
+        resetNodeSendQuickSlideState();
+        return false;
+    }
+    const deltaX = Math.max(0, event.clientX - active.startX);
+    const progress = Math.max(0, Math.min(1, deltaX / active.usableWidth));
+    syncNodeSendQuickSlideVisual(slider, progress);
+    event.preventDefault();
+    return true;
+}
+
+function endNodeSendQuickSlide(event) {
+    const active = appState.nodeSendQuickSlide;
+    if (!active || active.pointerId !== event.pointerId) {
+        return false;
+    }
+    const slider = getNodeSendQuickSlideElement(active.nodeId);
+    const progress = slider instanceof HTMLElement
+        ? Number(slider.style.getPropertyValue("--node-send-slide-progress") || 0)
+        : 0;
+    if (slider instanceof HTMLElement) {
+        slider.classList.remove("is-sliding");
+        slider.releasePointerCapture?.(event.pointerId);
+        syncNodeSendQuickSlideVisual(slider, 0);
+    }
+    resetNodeSendQuickSlideState();
+    if (progress >= 0.92) {
+        void submitNodeSend([active.nodeId], { lockHost: false });
+    }
+    event.preventDefault();
+    return true;
+}
+
 function syncNodeSendSelectionUi() {
     const overlay = document.getElementById("node-send-overlay");
     if (!(overlay instanceof HTMLElement)) {
         return false;
     }
     const list = overlay.querySelector(".node-send-list");
-    const summary = overlay.querySelector(".node-send-selection-summary");
+    const selectedBadge = overlay.querySelector(".node-send-actions-selected");
     const confirmBtn = document.getElementById("node-send-confirm");
     const selectedIds = new Set(
         (appState.nodeSendSelectedIds || []).map((id) => String(id))
     );
-    if (!(list instanceof HTMLElement) || !(summary instanceof HTMLElement)) {
+    if (!(list instanceof HTMLElement) || !(selectedBadge instanceof HTMLElement)) {
         return false;
     }
     list.querySelectorAll("[data-node-send-id]").forEach((node) => {
@@ -2692,15 +3288,27 @@ function syncNodeSendSelectionUi() {
         node.setAttribute("aria-pressed", checked ? "true" : "false");
         const check = node.querySelector(".node-send-check");
         if (check instanceof HTMLElement) {
-            check.textContent = checked
-                ? t("xdatahub.ui.app.common.confirm", "Confirm")
+            const confirmText = t(
+                "xdatahub.ui.app.common.confirm",
+                "Confirm"
+            );
+            check.innerHTML = checked
+                ? iconSvg(
+                    "check",
+                    confirmText,
+                    "xdatahub-icon node-send-check-icon"
+                )
                 : "";
+            if (checked) {
+                check.setAttribute("title", confirmText);
+            } else {
+                check.removeAttribute("title");
+            }
         }
     });
-    summary.textContent = `${t(
-        "xdatahub.ui.app.media.send_dialog_selected",
-        "Selected"
-    )}: ${selectedIds.size}`;
+    const summaryText = getNodeSendSummaryText();
+    selectedBadge.textContent = summaryText;
+    selectedBadge.title = appState.nodeSendLastFailureMessage || summaryText;
     if (confirmBtn instanceof HTMLButtonElement) {
         const confirmSendText = t(
             "xdatahub.ui.app.media.send_dialog_confirm_send",
@@ -2719,8 +3327,11 @@ function syncNodeSendSelectionUi() {
         confirmBtn.innerHTML = appState.nodeSendSending
             ? `${iconSvg("refresh-cw", sendingText, "xdatahub-icon btn-icon")} ${escapeHtml(sendingText)}`
             : `${iconSvg("send", confirmSendText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmSendText)}`;
-        confirmBtn.title = confirmSendText;
-        confirmBtn.setAttribute("aria-label", confirmSendText);
+        const buttonTitle = appState.nodeSendSending
+            ? sendingText
+            : confirmSendText;
+        confirmBtn.title = buttonTitle;
+        confirmBtn.setAttribute("aria-label", buttonTitle);
     }
     return true;
 }
@@ -2820,6 +3431,30 @@ function requestMediaGetNodes() {
     }, 1500);
 }
 
+function refreshNodeSendTargets() {
+    appState.nodeSendError = "";
+    appState.nodeSendNodes = [];
+    appState.nodeSendSelectedIds = [];
+    resetNodeSendResultState();
+    appState.nodeSendNodesLoading = true;
+    appState.nodeSendValidateLoading = (
+        appState.nodeSendTargetClass === "XImageGet"
+        && !!String(appState.nodeSendMediaRef || "")
+    );
+    syncNodeSendLoading();
+    requestMediaGetNodes();
+    if (
+        appState.nodeSendMediaRef
+        && appState.nodeSendTargetClass === "XImageGet"
+    ) {
+        requestNodeSendValidation(appState.nodeSendMediaRef);
+    } else if (!appState.nodeSendValidateLoading) {
+        appState.nodeSendValidateLoading = false;
+        syncNodeSendLoading();
+    }
+    refreshNodeSendDialogOverlay();
+}
+
 async function requestNodeSendValidation(mediaRef) {
     const requestId = `ximageget_validate_${Date.now()}_${Math.random()
         .toString(16)
@@ -2882,26 +3517,9 @@ function openNodeSendDialog(
     appState.nodeSendTextValue = String(textValue || "");
     appState.nodeSendTitle = String(title || "");
     appState.nodeSendTargetClass = resolveNodeClassByMediaType(mediaType);
-    appState.nodeSendNodes = [];
-    appState.nodeSendSelectedIds = [];
     appState.nodeSendSending = false;
-    appState.nodeSendError = "";
-    appState.nodeSendNodesLoading = true;
-    appState.nodeSendValidateLoading = (
-        appState.nodeSendTargetClass === "XImageGet"
-    );
-    syncNodeSendLoading();
-    requestMediaGetNodes();
-    if (
-        appState.nodeSendMediaRef
-        && appState.nodeSendTargetClass === "XImageGet"
-    ) {
-        requestNodeSendValidation(appState.nodeSendMediaRef);
-    } else if (!appState.nodeSendValidateLoading) {
-        appState.nodeSendValidateLoading = false;
-        syncNodeSendLoading();
-    }
-    refreshNodeSendDialogOverlay();
+    resetNodeSendResultState();
+    refreshNodeSendTargets();
 }
 
 function closeNodeSendDialog() {
@@ -2913,14 +3531,19 @@ function closeNodeSendDialog() {
     appState.nodeSendNodes = [];
     appState.nodeSendSelectedIds = [];
     appState.nodeSendSending = false;
+    appState.nodeSendHostLockActive = false;
     appState.nodeSendError = "";
     appState.nodeSendLoading = false;
     appState.nodeSendNodesLoading = false;
     appState.nodeSendValidateLoading = false;
     appState.nodeSendRequestId = "";
     appState.nodeSendValidateId = "";
+    appState.nodeSendQuickSlide = null;
+    resetNodeSendResultState();
     clearNodeSendRequestTimer();
     clearNodeSendValidateTimer();
+    clearPendingNodeSendAcks();
+    syncHostNodeSendBusyState();
     syncOverlayById("node-send-overlay", "");
 }
 
@@ -2984,12 +3607,12 @@ function updateDbDeleteSubmitUi(submit) {
     const isDeleteMode = appState.clearDataMode === "delete";
     const title = isDeleteMode
         ? t(
-            "xdatahub.ui.app.db.submit_confirm_delete_files",
-            "Confirm delete selected files"
+            "xdatahub.ui.app.db.submit_confirm_delete_short",
+            "Confirm Delete"
         )
         : t(
-            "xdatahub.ui.app.db.submit_confirm_clear_history",
-            "Confirm clear selected history"
+            "xdatahub.ui.app.db.submit_confirm_clear_short",
+            "Confirm Clear"
         );
     submit.disabled = isDeleteMode
         ? (!canSubmitDbDelete() || appState.dbDeleteLoading)
@@ -4744,13 +5367,13 @@ function renderListRows() {
                     <span class="row-id-db-group">
                         <span class="chip row-id-chip">${escapeHtml(recordId)}</span>
                         <span class="row-id-db-sep" aria-hidden="true"></span>
-                        <span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span> ${escapeHtml(dbName)}</span>
+                        <span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span><span class="row-db-chip-text">${escapeHtml(dbName)}</span></span>
                     </span>
                 `;
             } else if (recordId) {
                 idDbChipHtml = `<span class="chip row-id-chip">${escapeHtml(recordId)}</span>`;
             } else if (dbName) {
-                idDbChipHtml = `<span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span> ${escapeHtml(dbName)}</span>`;
+                idDbChipHtml = `<span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span><span class="row-db-chip-text">${escapeHtml(dbName)}</span></span>`;
             }
             return `
                 <div class="row${activeClass}" data-item-id="${escapeHtml(item.id)}"${rowStyle}>
@@ -4813,18 +5436,22 @@ function scheduleHistoryRowExtraHeaderLayout() {
 }
 
 function renderMediaGrid() {
-    if (appState.loading || appState.error || appState.items.length === 0) {
+    if (appState.loading || appState.error) {
         return renderStatus();
     }
     const folderText = t("xdatahub.ui.app.text.h_46ecac2910", "Folder");
+    const parentFolderText = t(
+        "xdatahub.ui.app.media.parent_folder",
+        "Back to parent"
+    );
     const untitledText = t("xdatahub.ui.app.title.h_8f9548eaa5", "(Untitled)");
     const audioText = t("xdatahub.ui.app.text.h_461189f186", "Audio");
-    const tapToPlayText = t("xdatahub.ui.app.media.tap_to_open_player", "Click to open player");
+    const tapToPlayText = t("xdatahub.ui.app.media.tap_to_open_player", "Click to preview");
     const sendToNodeText = t(
         "xdatahub.ui.app.media.send_to_node",
         "Send to node"
     );
-    const showTypeChip = appState.settings.showMediaChipType !== false;
+    const showMediaTitle = appState.settings.showMediaTitle !== false;
     const showResolutionChip =
         appState.settings.showMediaChipResolution !== false;
     const showDatetimeChip =
@@ -4834,7 +5461,22 @@ function renderMediaGrid() {
     const lastOpenedMediaUrl = String(
         currentTabState().lastOpenedMediaUrl || ""
     );
-    return appState.items
+    const parentPath = isMediaTab(appState.activeTab)
+        ? parentMediaDirectoryPath()
+        : "";
+    const parentCardHtml = isMediaTab(appState.activeTab)
+        ? `
+            <article class="media-card media-folder-card media-folder-card-parent${parentPath ? "" : " is-disabled"}" ${parentPath ? `data-folder-path="${escapeAttr(parentPath)}"` : ""}>
+                <div class="media-thumb media-folder-thumb">
+                    <div class="audio-card-hint media-parent-card-hint">
+                        <div class="audio-card-icon media-parent-card-icon">${iconMask("folder-up", parentFolderText, "folder-icon-mask-parent")}</div>
+                        <div class="audio-card-label media-parent-card-label" title="${escapeAttr(parentFolderText)}">${escapeHtml(parentFolderText)}</div>
+                    </div>
+                </div>
+            </article>
+        `
+        : "";
+    const itemCardsHtml = appState.items
         .map((item) => {
             if (item.kind === "folder" || item.extra?.entry_type === "folder") {
                 const folderPath = String(item.path || item.extra?.child_path || "");
@@ -4842,12 +5484,9 @@ function renderMediaGrid() {
                     <article class="media-card media-folder-card" data-folder-path="${escapeAttr(folderPath)}">
                         <div class="media-thumb media-folder-thumb">
                             <div class="media-folder-thumb-inner">
-                                <div class="media-folder-icon">${iconSvg("folder", folderText, "xdatahub-icon folder-icon-svg")}</div>
-                                <div class="media-folder-kind">${escapeHtml(folderText)}</div>
+                                <div class="media-folder-icon">${iconMask("folder", folderText, "folder-icon-mask")}</div>
+                                <div class="media-folder-name" title="${escapeAttr(item.title || folderText)}">${escapeHtml(item.title || folderText)}</div>
                             </div>
-                        </div>
-                        <div class="media-meta">
-                            <div class="media-title" title="${escapeAttr(item.title || folderText)}">${escapeHtml(item.title || folderText)}</div>
                         </div>
                     </article>
                 `;
@@ -4874,15 +5513,12 @@ function renderMediaGrid() {
                 ? formatFileSize(item.extra?.size)
                 : "";
             const visiblePrimaryChipCount = (
-                (showTypeChip ? 1 : 0)
-                + (
-                    (
-                        showResolutionChip
-                        && (mediaType === "image" || mediaType === "video")
-                    )
-                        ? 1
-                        : 0
+                (
+                    showResolutionChip
+                    && (mediaType === "image" || mediaType === "video")
                 )
+                    ? 1
+                    : 0
             );
             const visibleMetaChipCount = (
                 ((showDatetimeChip && savedAt) ? 1 : 0)
@@ -4891,6 +5527,7 @@ function renderMediaGrid() {
             const showPrimaryRow = visiblePrimaryChipCount > 0;
             const showMetaRow = visibleMetaChipCount > 0;
             const hasVisibleChips = showPrimaryRow || showMetaRow;
+            const showMetaSection = showMediaTitle || hasVisibleChips;
             const mediaTitleClass = hasVisibleChips
                 ? "media-title with-chips"
                 : "media-title";
@@ -4904,13 +5541,6 @@ function renderMediaGrid() {
             )
                 ? " media-card-last-opened"
                 : "";
-            const mediaIcon = (
-                mediaType === "image"
-                    ? "image"
-                    : mediaType === "video"
-                        ? "video"
-                        : "audio-lines"
-            );
             const isVideoUnsupported = (
                 mediaType === "video"
                 && appState.videoCardStateMap.get(mediaItemId) === "unsupported"
@@ -4963,7 +5593,7 @@ function renderMediaGrid() {
             } else {
                 previewHtml = audioLikelyUnsupported
                     ? renderAudioUnsupportedHtml()
-                    : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("audio-lines", audioText, "xdatahub-icon audio-icon-svg")}</div><div>${escapeHtml(tapToPlayText)}</div></div>`;
+                    : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("audio-lines", audioText, "xdatahub-icon audio-icon-svg")}</div><div class="audio-card-label">${escapeHtml(tapToPlayText)}</div></div>`;
             }
             const unsupportedAttr = isVideoUnsupported
                 ? ' data-video-unsupported="1"'
@@ -4992,22 +5622,23 @@ function renderMediaGrid() {
             return `
                 <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${permissionDeniedAttr}${missingAttr}${audioUnsupportedAttr}>
                     <div class="media-thumb">${previewHtml}${sendBtnHtml}</div>
+                    ${
+                        showMetaSection
+                            ? `
                         <div class="media-meta">
-                            <div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || untitledText)}</div>
                             ${
-                                (showTypeChip
-                                    || canShowResolutionChip
+                                showMediaTitle
+                                    ? `<div class="${mediaTitleClass}" title="${escapeAttr(item.title || "")}">${escapeHtml(item.title || untitledText)}</div>`
+                                    : ""
+                            }
+                            ${
+                                (canShowResolutionChip
                                     || showDatetimeChip
                                     || showSizeChip)
                                     ? `<div class="media-chips">
                                         ${
                                             showPrimaryRow
                                                 ? `<div class="media-chip-row media-chip-row-primary">
-                                                    ${
-                                                        showTypeChip
-                                                            ? `<span class="chip">${iconSvg(mediaIcon, mediaType.toUpperCase(), "xdatahub-icon chip-icon")} ${escapeHtml(mediaType.toUpperCase())}</span>`
-                                                            : ""
-                                                    }
                                                     ${
                                                         canShowResolutionChip
                                                             ? `<span class="chip resolution-chip ${resolutionText ? "" : "pending"}" data-resolution-chip="${escapeAttr(resolutionKey)}">${escapeHtml(resolutionText || "...")}</span>`
@@ -5018,7 +5649,7 @@ function renderMediaGrid() {
                                         }
                                         ${
                                             showMetaRow
-                                                ? `<div class="media-chip-row media-chip-row-meta">
+                                                ? `<div class="media-chip-row media-chip-row-meta${showPrimaryRow ? "" : " is-first-row"}">
                                                     ${
                                                         (showDatetimeChip && savedAt)
                                                             ? `<span class="chip">${escapeHtml(savedAt)}</span>`
@@ -5036,10 +5667,17 @@ function renderMediaGrid() {
                                     : ""
                             }
                     </div>
+                    `
+                            : ""
+                    }
                 </article>
             `;
         })
         .join("");
+    if (!parentCardHtml && !itemCardsHtml) {
+        return renderStatus();
+    }
+    return `${parentCardHtml}${itemCardsHtml}`;
 }
 
 function renderSettingsDialog() {
@@ -5064,6 +5702,21 @@ function renderSettingsDialog() {
                     </div>
                 </div>
                 <div class="settings-section">
+                    <div class="settings-section-title">${iconSvg("keyboard", t("xdatahub.ui.app.settings.hotkey.title", "Hotkey"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.settings.hotkey.title", "Hotkey"))}</div>
+                    <div class="danger-dialog-input-wrap settings-select-row">
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.hotkey.label", "Toggle hotkey:"))}</span>
+                        <input
+                            id="setting-hotkey-spec"
+                            type="text"
+                            value="${escapeAttr(draft.hotkeySpec || DEFAULT_TOGGLE_HOTKEY_SPEC)}"
+                            placeholder="${escapeAttr(DEFAULT_TOGGLE_HOTKEY_SPEC)}"
+                            spellcheck="false"
+                            autocomplete="off"
+                            ${appState.settingsSaving ? "disabled" : ""}
+                        >
+                    </div>
+                </div>
+                <div class="settings-section">
                     <div class="settings-section-title">${iconSvg("layout-grid", t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_638bf44547", "Card Layout"))}</div>
                     <div class="danger-dialog-input-wrap settings-select-row">
                         <span>${escapeHtml(t("xdatahub.ui.app.settings.card_size", "Card size:"))}</span>
@@ -5073,18 +5726,18 @@ function renderSettingsDialog() {
                             <option value="large" ${draft.mediaCardSizePreset === "large" ? "selected" : ""}>${escapeHtml(t("xdatahub.ui.app.settings.card_size.large", "Large"))}</option>
                         </select>
                     </div>
-                </div>
-                <div class="settings-section">
-                    <div class="settings-section-title">${iconSvg("tags", t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"))}</div>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
                             type="checkbox"
-                            id="setting-show-media-chip-type"
-                            ${draft.showMediaChipType ? "checked" : ""}
+                            id="setting-show-media-title"
+                            ${draft.showMediaTitle ? "checked" : ""}
                             ${appState.settingsSaving ? "disabled" : ""}
                         >
-                        <span>${escapeHtml(t("xdatahub.ui.app.settings.show_chip_type", "Show type chip"))}</span>
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.show_media_title", "Show filename"))}</span>
                     </label>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-section-title">${iconSvg("tags", t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.text.h_52615a7e45", "Card Tag Display"))}</div>
                     <label class="cleanup-all-toggle settings-toggle-row">
                         <input
                             type="checkbox"
@@ -5177,7 +5830,6 @@ function renderSettingsDialog() {
                         : ""
                 }
                 <div class="danger-dialog-actions">
-                    <button class="btn" id="settings-dialog-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}" ${appState.settingsSaving ? "disabled" : ""}>${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
                     <button class="btn primary" id="settings-dialog-save" title="${escapeAttr(appState.settingsSaving ? savingText : saveText)}" aria-label="${escapeAttr(appState.settingsSaving ? savingText : saveText)}" ${appState.settingsSaving ? "disabled" : ""}>
                         ${
                             appState.settingsSaving
@@ -5185,6 +5837,7 @@ function renderSettingsDialog() {
                                 : `${iconSvg("save", saveText, "xdatahub-icon btn-icon")} ${escapeHtml(saveText)}`
                         }
                     </button>
+                    <button class="btn" id="settings-dialog-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}" ${appState.settingsSaving ? "disabled" : ""}>${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
                 </div>
             </div>
         </div>
@@ -5241,6 +5894,14 @@ function renderImagePreview() {
                 : t("xdatahub.ui.app.text.h_fd897b7598", "Audio Playback")
     );
     const closePreviewText = t("xdatahub.ui.app.aria.h_bf76308794", "Close Preview");
+    const fullscreenPreviewText = t(
+        "xdatahub.ui.app.aria.h_558f8fc0d4",
+        "Fullscreen"
+    );
+    const exitFullscreenPreviewText = t(
+        "xdatahub.ui.app.aria.h_f50dd6f6d4",
+        "Exit fullscreen"
+    );
     const prevText = t("xdatahub.ui.app.aria.h_b41561d807", "Previous");
     const nextText = t("xdatahub.ui.app.aria.h_67a246a344", "Next");
     const unsupportedText = t("xdatahub.ui.app.common.unsupported", "Unsupported");
@@ -5287,9 +5948,17 @@ function renderImagePreview() {
         ? `${nav.index + 1} / ${currentPreviewMediaEntries().length}`
         : "";
     const sendButtonHtml = ((isImage || isAudio || isVideo) && sendMediaRef)
-        ? `<button class="btn image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-ref="${escapeAttr(sendMediaRef)}" data-media-type="${escapeAttr(previewMediaType)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
-                ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")} ${escapeHtml(sendToNodeText)}
+        ? `<button class="btn row-copy-btn row-copy-btn-inline image-lightbox-send-btn" type="button" data-media-send="1" data-media-send-ref="${escapeAttr(sendMediaRef)}" data-media-type="${escapeAttr(previewMediaType)}" data-media-title="${escapeAttr(appState.imagePreview.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}">
+                <span class="btn-emoji" aria-hidden="true">${iconMask("send", sendToNodeText, "row-copy-icon-mask")}</span>
+                <span class="btn-text row-copy-btn-text">${escapeHtml(sendToNodeText)}</span>
             </button>`
+        : "";
+    const fullscreenActive = isImage && isImageLightboxFullscreenActive();
+    const fullscreenTitleText = fullscreenActive
+        ? exitFullscreenPreviewText
+        : fullscreenPreviewText;
+    const fullscreenButtonHtml = isImage
+        ? `<button class="btn image-lightbox-fullscreen-btn" id="image-lightbox-fullscreen-btn" title="${escapeAttr(fullscreenTitleText)}" aria-label="${escapeAttr(fullscreenTitleText)}" aria-pressed="${fullscreenActive ? "true" : "false"}" data-title-fullscreen="${escapeAttr(fullscreenPreviewText)}" data-title-exit-fullscreen="${escapeAttr(exitFullscreenPreviewText)}">${iconSvg(fullscreenActive ? "minimize-2" : "maximize-2", fullscreenTitleText, "xdatahub-icon btn-icon")}</button>`
         : "";
     const navRowHtml = `<div class="image-lightbox-nav-row">
                 <div class="image-lightbox-nav-group">
@@ -5302,9 +5971,9 @@ function renderImagePreview() {
                 </div>
             </div>`;
     const titleRowHtml = `<div class="image-lightbox-title-row">
-                <div class="image-lightbox-title-pill">
-                    <div class="image-lightbox-title" title="${escapeAttr(title)}">${escapeHtml(title)}</div>
-                    <div class="image-lightbox-send-actions">${sendButtonHtml}</div>
+                <div class="row-content-line image-lightbox-title-line">
+                    <div class="row-title row-content-text image-lightbox-title" title="${escapeAttr(title)}">${escapeHtml(title)}</div>
+                    ${sendButtonHtml}
                 </div>
             </div>`;
     return `
@@ -5312,8 +5981,12 @@ function renderImagePreview() {
             <div class="image-lightbox-backdrop" id="image-lightbox-close"></div>
             <div class="image-lightbox-content">
                 ${previewIndexText ? `<div class="image-lightbox-index" title="${escapeAttr(previewIndexText)}">${escapeHtml(previewIndexText)}</div>` : ""}
-                <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.shell.btn.close", "Close"))}</button>
+                <div class="image-lightbox-top-actions">
+                    ${fullscreenButtonHtml}
+                    <button class="btn image-lightbox-close-btn" id="image-lightbox-close-btn" title="${escapeAttr(closePreviewText)}" aria-label="${escapeAttr(closePreviewText)}">${iconSvg("x", closePreviewText, "xdatahub-icon btn-icon")}</button>
+                </div>
                 ${navRowHtml}
+                <div class="image-lightbox-top-divider" aria-hidden="true"></div>
                 ${titleRowHtml}
                 <div class="image-lightbox-body ${isAudio ? "audio" : isVideo ? "video" : "image"}">
                     ${
@@ -5567,8 +6240,8 @@ function renderDangerDialog() {
                     <input id="danger-dialog-input" autocomplete="off" placeholder="${escapeAttr(t("xdatahub.ui.app.dialog.input_yes_placeholder", "Type YES"))}" value="${escapeAttr(dialog.input)}">
                 </div>
                 <div class="danger-dialog-actions">
-                    <button class="btn" id="danger-dialog-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
                     <button class="btn danger" id="danger-dialog-confirm" title="${escapeAttr(t("xdatahub.ui.app.common.confirm_delete", "Confirm Delete"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.confirm_delete", "Confirm Delete"))}" ${isDangerDialogConfirmed() ? "" : "disabled"}>${escapeHtml(t("xdatahub.ui.app.common.confirm_delete", "Confirm Delete"))}</button>
+                    <button class="btn" id="danger-dialog-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
                 </div>
             </div>
         </div>
@@ -5630,10 +6303,7 @@ function renderDbDeleteDialog() {
             <div class="db-delete-dialog" role="dialog" aria-modal="true">
                 <div class="db-delete-head">
                     <div class="db-delete-title">${iconSvg("triangle-alert", t("xdatahub.ui.app.dialog.warning", "Warning"), "xdatahub-icon dialog-title-icon")} ${escapeHtml(t("xdatahub.ui.app.db.clear_data", "Clear Data"))}</div>
-                    <label class="db-delete-unlock db-delete-unlock-top">
-                        <input type="checkbox" id="db-delete-unlock-critical" ${appState.unlockCritical ? "" : "checked"}>
-                        <span>${escapeHtml(t("xdatahub.ui.app.db.lock_critical", "Lock critical databases"))}</span>
-                    </label>
+                    <button class="btn image-lightbox-close-btn db-delete-title-close" id="db-delete-close" title="${escapeAttr(t("xdatahub.ui.app.common.close", "Close"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.close", "Close"))}">${iconSvg("x", t("xdatahub.ui.app.common.close", "Close"), "xdatahub-icon btn-icon")}</button>
                 </div>
                 <div class="db-delete-mode-switch">
                     <button class="btn ${isDeleteMode ? "" : "active"}" id="btn-clear-mode-records" title="${escapeAttr(t("xdatahub.ui.app.db.mode_records_title", "Switch to clear-history mode"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.db.mode_records_title", "Switch to clear-history mode"))}">${iconSvg("database", t("xdatahub.ui.app.db.mode_records", "Clear History"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.db.mode_records", "Clear History"))}</button>
@@ -5669,14 +6339,18 @@ function renderDbDeleteDialog() {
                         : ""
                 }
                 <div class="db-delete-actions">
-                    <button class="btn" id="db-delete-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${iconSvg("x", t("xdatahub.ui.app.common.cancel", "Cancel"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
-                    <button class="btn danger" id="db-delete-submit" title="${escapeAttr(isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history"))}" aria-label="${escapeAttr(isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history"))}" ${submitDisabled ? "disabled" : ""}>
+                    <label class="db-delete-unlock db-delete-unlock-bottom">
+                        <input type="checkbox" id="db-delete-unlock-critical" ${appState.unlockCritical ? "" : "checked"}>
+                        <span>${escapeHtml(t("xdatahub.ui.app.db.lock_critical", "Lock critical databases"))}</span>
+                    </label>
+                    <button class="btn danger" id="db-delete-submit" title="${escapeAttr(isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_short", "Confirm Delete") : t("xdatahub.ui.app.db.submit_confirm_clear_short", "Confirm Clear"))}" aria-label="${escapeAttr(isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_short", "Confirm Delete") : t("xdatahub.ui.app.db.submit_confirm_clear_short", "Confirm Clear"))}" ${submitDisabled ? "disabled" : ""}>
                         ${
                             appState.dbDeleteLoading
                                 ? `${iconSvg("refresh-cw", isDeleteMode ? t("xdatahub.ui.app.db.deleting", "Deleting") : t("xdatahub.ui.app.db.clearing", "Clearing"), "xdatahub-icon btn-icon")} ${isDeleteMode ? t("xdatahub.ui.app.db.deleting_ellipsis", "Deleting...") : t("xdatahub.ui.app.db.clearing_ellipsis", "Clearing...")}`
-                                : `${iconSvg("triangle-alert", isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history"), "xdatahub-icon btn-icon")} ${isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_files", "Confirm delete selected files") : t("xdatahub.ui.app.db.submit_confirm_clear_history", "Confirm clear selected history")}`
+                                : `${iconSvg("triangle-alert", isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_short", "Confirm Delete") : t("xdatahub.ui.app.db.submit_confirm_clear_short", "Confirm Clear"), "xdatahub-icon btn-icon")} ${isDeleteMode ? t("xdatahub.ui.app.db.submit_confirm_delete_short", "Confirm Delete") : t("xdatahub.ui.app.db.submit_confirm_clear_short", "Confirm Clear")}`
                         }
                     </button>
+                    <button class="btn" id="db-delete-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${iconSvg("x", t("xdatahub.ui.app.common.cancel", "Cancel"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
                 </div>
             </div>
         </div>
@@ -5720,7 +6394,10 @@ function renderLocaleSwitcherOverlay() {
     const pending = appState.localeSelectionPending;
     const zhActive = !pending && appState.localePreviewLang === "zh";
     const enActive = !pending && appState.localePreviewLang === "en";
-    const confirmText = t("xdatahub.ui.app.common.confirm", "Confirm");
+    const confirmText = t(
+        "xdatahub.ui.app.aria.h_bb79ec7c15",
+        "Save Settings"
+    );
     const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
     // NOTE: Keep "中文" label in English UI intentionally; do not "fix" to "Chinese".
     const zhDisplayLabel = appState.localePreviewLang === "en"
@@ -5756,7 +6433,7 @@ function renderLocaleSwitcherOverlay() {
                     🇺🇸 ${escapeHtml(t("xdatahub.ui.app.locale.en", "English"))}
                 </button>
                 <div class="locale-switcher-actions">
-                    <button class="btn primary" id="btn-locale-confirm" type="button">${iconSvg("check", confirmText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmText)}</button>
+                    <button class="btn primary" id="btn-locale-confirm" type="button">${iconSvg("save", confirmText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmText)}</button>
                     <button class="btn" id="btn-locale-cancel" type="button">${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
                 </div>
             </div>
@@ -5766,21 +6443,31 @@ function renderLocaleSwitcherOverlay() {
 
 function renderHistoryLayout() {
     const state = currentTabState();
-    const prevText = t("xdatahub.ui.app.aria.h_b41561d807", "Previous");
+    const pageInputWidthCh = getPaginationInputWidthCh(
+        state.page,
+        appState.totalPages
+    );
+    const displayedTotalPages = formatDisplayedTotalPages(appState.totalPages);
+    const prevText = t("xdatahub.ui.app.aria.h_b41561d807", "Prev");
     const nextText = t("xdatahub.ui.app.aria.h_67a246a344", "Next");
-    const pageJumpText = t("xdatahub.ui.app.pagination.jump", "Jump");
+    const pageJumpText = t("xdatahub.ui.app.pagination.jump", "Jump to page");
     return `
         <div class="panel list-panel history-list-panel collapsed-fill" style="width:100%">
             <div class="list" id="list" data-list-tab="history">${renderListRows()}${renderStatus()}</div>
             <div class="pagination">
-                <button class="btn" id="page-prev" title="${escapeAttr(prevText)}" aria-label="${escapeAttr(prevText)}" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", prevText, "xdatahub-icon btn-icon")} ${escapeHtml(prevText)}</button>
-                <span>${state.page} / ${appState.totalPages}</span>
-                <button class="btn" id="page-next" title="${escapeAttr(nextText)}" aria-label="${escapeAttr(nextText)}" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", nextText, "xdatahub-icon btn-icon")} ${escapeHtml(nextText)}</button>
-                <span>${escapeHtml(pageJumpText)}</span>
-                <div class="page-jump-wrap">
-                    <input id="page-jump" type="number" min="1" max="${appState.totalPages}" value="${state.page}" style="width:60px;">
+                <div class="pagination-main-left">
+                    <div class="pagination-page-editor">
+                        <input id="page-jump" type="text" inputmode="numeric" pattern="[0-9]*" min="1" max="${appState.totalPages}" value="${state.page}" aria-label="${escapeAttr(pageJumpText)}" title="${escapeAttr(pageJumpText)}" style="width:${pageInputWidthCh}ch;">
+                        <span class="pagination-page-total">/ <span id="page-total" title="${escapeAttr(String(appState.totalPages))}">${displayedTotalPages}</span></span>
+                    </div>
                 </div>
-                <div class="pagination-locale-anchor">${renderLocaleSwitcher()}</div>
+                <div class="pagination-main-center">
+                    <button class="btn" id="page-prev" title="${escapeAttr(prevText)}" aria-label="${escapeAttr(prevText)}" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", prevText, "xdatahub-icon btn-icon")} ${escapeHtml(prevText)}</button>
+                    <button class="btn" id="page-next" title="${escapeAttr(nextText)}" aria-label="${escapeAttr(nextText)}" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", nextText, "xdatahub-icon btn-icon")} ${escapeHtml(nextText)}</button>
+                </div>
+                <div class="pagination-main-right">
+                    <div class="pagination-locale-anchor">${renderLocaleSwitcher()}</div>
+                </div>
             </div>
         </div>
     `;
@@ -5815,6 +6502,11 @@ function syncLockBannerUi() {
 function renderShell() {
     const tab = appState.activeTab;
     const state = currentTabState();
+    const pageInputWidthCh = getPaginationInputWidthCh(
+        state.page,
+        appState.totalPages
+    );
+    const displayedTotalPages = formatDisplayedTotalPages(appState.totalPages);
     const readonly = appState.lockState.readonly;
     const showLock = readonly ? "show" : "";
     const mediaView = isMediaTab(tab);
@@ -5842,14 +6534,19 @@ function renderShell() {
                     ${renderMediaExplorerBar()}
                     <div class="media-grid" id="list" data-list-tab="${tab}">${renderMediaGrid()}</div>
                     <div class="pagination">
-                        <button class="btn" id="page-prev" title="${escapeAttr(t("xdatahub.ui.app.aria.h_b41561d807", "Previous"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_b41561d807", "Previous"))}" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", t("xdatahub.ui.app.aria.h_b41561d807", "Previous"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_b41561d807", "Previous"))}</button>
-                        <span>${state.page} / ${appState.totalPages}</span>
-                        <button class="btn" id="page-next" title="${escapeAttr(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", t("xdatahub.ui.app.aria.h_67a246a344", "Next"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}</button>
-                        <span>${escapeHtml(t("xdatahub.ui.app.pagination.jump", "Jump"))}</span>
-                        <div class="page-jump-wrap">
-                            <input id="page-jump" type="number" min="1" max="${appState.totalPages}" value="${state.page}" style="width:60px;">
+                        <div class="pagination-main-left">
+                            <div class="pagination-page-editor">
+                                <input id="page-jump" type="text" inputmode="numeric" pattern="[0-9]*" min="1" max="${appState.totalPages}" value="${state.page}" aria-label="${escapeAttr(t("xdatahub.ui.app.pagination.jump", "Jump to page"))}" title="${escapeAttr(t("xdatahub.ui.app.pagination.jump", "Jump to page"))}" style="width:${pageInputWidthCh}ch;">
+                                <span class="pagination-page-total">/ <span id="page-total" title="${escapeAttr(String(appState.totalPages))}">${displayedTotalPages}</span></span>
+                            </div>
                         </div>
-                        <div class="pagination-locale-anchor">${renderLocaleSwitcher()}</div>
+                        <div class="pagination-main-center">
+                            <button class="btn" id="page-prev" title="${escapeAttr(t("xdatahub.ui.app.aria.h_b41561d807", "Prev"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_b41561d807", "Prev"))}" ${state.page <= 1 ? "disabled" : ""}>${iconSvg("arrow-left", t("xdatahub.ui.app.aria.h_b41561d807", "Prev"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_b41561d807", "Prev"))}</button>
+                            <button class="btn" id="page-next" title="${escapeAttr(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}" ${state.page >= appState.totalPages ? "disabled" : ""}>${iconSvg("arrow-right", t("xdatahub.ui.app.aria.h_67a246a344", "Next"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.aria.h_67a246a344", "Next"))}</button>
+                        </div>
+                        <div class="pagination-main-right">
+                            <div class="pagination-locale-anchor">${renderLocaleSwitcher()}</div>
+                        </div>
                     </div>
                 </div>
                 `
@@ -5904,9 +6601,17 @@ function renderNodeSendDialog() {
         "xdatahub.ui.app.media.send_dialog_sort_name",
         "Name"
     );
-    const selectedText = t(
-        "xdatahub.ui.app.media.send_dialog_selected",
-        "Selected"
+    const refreshNodesText = t(
+        "xdatahub.ui.app.media.send_dialog_refresh",
+        "Refresh node list"
+    );
+    const closeAfterSendText = t(
+        "xdatahub.ui.app.media.send_dialog_close_after_send",
+        "Close window after send"
+    );
+    const slideSendText = t(
+        "xdatahub.ui.app.media.send_dialog_slide",
+        "Slide to send"
     );
     const confirmText = t(
         "xdatahub.ui.app.common.confirm",
@@ -5921,7 +6626,15 @@ function renderNodeSendDialog() {
         "Sending..."
     );
     const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
+    const closeText = t("xdatahub.ui.shell.btn.close", "Close");
     const nodes = appState.nodeSendNodes || [];
+    const hasNodes = nodes.length > 0;
+    const sortDisabled = (
+        !hasNodes
+        || appState.nodeSendLoading
+        || !!appState.nodeSendError
+        || appState.nodeSendSending
+    );
     const subtitle = appState.nodeSendTitle
         ? `<div class="node-send-file-block">
                 <div class="node-send-subtitle" title="${escapeAttr(appState.nodeSendTitle)}">${escapeHtml(appState.nodeSendTitle)}</div>
@@ -5935,12 +6648,53 @@ function renderNodeSendDialog() {
     const selectedIds = new Set(
         (appState.nodeSendSelectedIds || []).map((id) => String(id))
     );
+    const selectedSummaryText = getNodeSendSummaryText();
+    const selectedSummaryTitle = appState.nodeSendLastFailureMessage
+        || selectedSummaryText;
+    const closeToggleHtml = `
+            <label class="node-send-close-toggle">
+                <input
+                    type="checkbox"
+                    id="node-send-close-after-send"
+                    ${appState.settings.nodeSendCloseAfterSend !== false ? "checked" : ""}
+                    ${appState.settingsSaving || appState.nodeSendSending ? "disabled" : ""}
+                >
+                <span>${escapeHtml(closeAfterSendText)}</span>
+            </label>
+        `;
+    const sortBarHtml = `
+            <div class="node-send-sort">
+                <span class="node-send-sort-label">${escapeHtml(sortLabelText)}</span>
+                <button class="btn node-send-sort-btn ${sortKey === "id" ? "active" : ""}" data-node-send-sort="id" title="${escapeAttr(sortIdText)}" aria-label="${escapeAttr(sortIdText)}" ${sortDisabled ? "disabled" : ""}>
+                    ${escapeHtml(sortIdText)}${sortKey === "id" ? ` ${sortArrow}` : ""}
+                </button>
+                <button class="btn node-send-sort-btn ${sortKey === "name" ? "active" : ""}" data-node-send-sort="name" title="${escapeAttr(sortNameText)}" aria-label="${escapeAttr(sortNameText)}" ${sortDisabled ? "disabled" : ""}>
+                    ${escapeHtml(sortNameText)}${sortKey === "name" ? ` ${sortArrow}` : ""}
+                </button>
+                <button class="btn node-send-sort-btn node-send-refresh-btn" id="node-send-refresh" title="${escapeAttr(refreshNodesText)}" aria-label="${escapeAttr(refreshNodesText)}" ${appState.nodeSendLoading || appState.nodeSendSending ? "disabled" : ""}>
+                    ${iconSvg("refresh-cw", refreshNodesText, "xdatahub-icon btn-icon")}
+                    ${escapeHtml(refreshNodesText)}
+                </button>
+            </div>
+        `;
+    const buildNodeSendToolbar = (hintMarkup, hintClass = "") => `
+            <div class="node-send-toolbar">
+                <div class="node-send-toolbar-top">
+                    <div class="node-send-hint${hintClass}">${hintMarkup}</div>
+                    ${closeToggleHtml}
+                </div>
+                ${sortBarHtml}
+            </div>
+        `;
     if (appState.nodeSendLoading) {
-        bodyHtml = `<div class="node-send-hint">${escapeHtml(loadingText)}</div>`;
+        bodyHtml = buildNodeSendToolbar(escapeHtml(loadingText));
     } else if (errorText) {
-        bodyHtml = `<div class="node-send-hint is-error">${escapeHtml(errorText)}</div>`;
+        bodyHtml = buildNodeSendToolbar(
+            escapeHtml(errorText),
+            " is-error"
+        );
     } else if (!nodes.length) {
-        bodyHtml = `<div class="node-send-hint">${emptyHtml}</div>`;
+        bodyHtml = buildNodeSendToolbar(emptyHtml);
     } else {
         const sortedNodes = [...nodes].sort((a, b) => {
             if (sortKey === "name") {
@@ -5961,17 +6715,6 @@ function renderNodeSendDialog() {
                 ? String(a?.id || "").localeCompare(String(b?.id || ""))
                 : String(b?.id || "").localeCompare(String(a?.id || ""));
         });
-        const sortBar = `
-            <div class="node-send-sort">
-                <span class="node-send-sort-label">${escapeHtml(sortLabelText)}</span>
-                <button class="btn node-send-sort-btn ${sortKey === "id" ? "active" : ""}" data-node-send-sort="id" title="${escapeAttr(sortIdText)}" aria-label="${escapeAttr(sortIdText)}">
-                    ${escapeHtml(sortIdText)}${sortKey === "id" ? ` ${sortArrow}` : ""}
-                </button>
-                <button class="btn node-send-sort-btn ${sortKey === "name" ? "active" : ""}" data-node-send-sort="name" title="${escapeAttr(sortNameText)}" aria-label="${escapeAttr(sortNameText)}">
-                    ${escapeHtml(sortNameText)}${sortKey === "name" ? ` ${sortArrow}` : ""}
-                </button>
-            </div>
-        `;
         const rows = sortedNodes.map((item) => {
             const nodeId = Number.isFinite(Number(item.id))
                 ? String(item.id)
@@ -5983,19 +6726,27 @@ function renderNodeSendDialog() {
             const checked = selectedIds.has(String(item.id));
             return `
                 <button class="btn node-send-option ${checked ? "active" : ""}" data-node-send-id="${escapeAttr(item.id)}" aria-pressed="${checked ? "true" : "false"}"${rowStyle} title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
-                    <span class="node-send-seq">
-                        <span class="node-send-seq-chip">${escapeHtml(nodeId)}</span>
-                        <span class="node-send-swatch" aria-hidden="true"></span>
-                    </span>
                     <span class="node-send-name" title="${escapeAttr(nodeTitle)}">${escapeHtml(nodeTitle)}</span>
-                    <span class="node-send-check">${checked ? escapeHtml(confirmText) : ""}</span>
+                    <span class="node-send-meta-row">
+                        <span class="node-send-seq-wrap">
+                            <span class="node-send-seq">
+                                <span class="node-send-seq-chip">${escapeHtml(nodeId)}</span>
+                                <span class="node-send-swatch" aria-hidden="true"></span>
+                            </span>
+                            <span class="node-send-check" title="${checked ? escapeAttr(confirmText) : ""}">${checked ? iconSvg("check", confirmText, "xdatahub-icon node-send-check-icon") : ""}</span>
+                        </span>
+                        <span class="node-send-quick" data-node-send-slide data-node-send-slide-id="${escapeAttr(item.id)}" title="${escapeAttr(slideSendText)}" aria-label="${escapeAttr(slideSendText)}">
+                            <span class="node-send-quick-track">
+                                <span class="node-send-quick-label" data-node-send-slide-label>${escapeHtml(slideSendText)}</span>
+                                <span class="node-send-quick-handle" aria-hidden="true">${iconSvg("send", slideSendText, "xdatahub-icon")}</span>
+                            </span>
+                        </span>
+                    </span>
                 </button>
             `;
         }).join("");
         bodyHtml = `
-            <div class="node-send-hint">${hintHtml}</div>
-            ${sortBar}
-            <div class="node-send-selection-summary">${escapeHtml(selectedText)}: ${escapeHtml(String(selectedIds.size))}</div>
+            ${buildNodeSendToolbar(hintHtml)}
             <div class="node-send-list">${rows}</div>
         `;
     }
@@ -6008,16 +6759,20 @@ function renderNodeSendDialog() {
     return `
         <div class="node-send-overlay" id="node-send-overlay">
             <div class="node-send-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(titleText)}">
-                <div class="node-send-title">${iconSvg("send", titleText, "xdatahub-icon dialog-title-icon")} ${escapeHtml(titleText)}</div>
+                <div class="node-send-title">
+                    <div class="node-send-title-text">${iconSvg("send", titleText, "xdatahub-icon dialog-title-icon")} ${escapeHtml(titleText)}</div>
+                    <button class="btn node-send-title-close" id="node-send-close" title="${escapeAttr(closeText)}" aria-label="${escapeAttr(closeText)}" ${appState.nodeSendSending ? "disabled" : ""}>${iconSvg("x", closeText, "xdatahub-icon btn-icon")}</button>
+                </div>
                 ${subtitle}
                 <div class="node-send-body">${bodyHtml}</div>
                 <div class="node-send-actions">
-                    <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}">${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
-                    <button class="btn primary" id="node-send-confirm" title="${escapeAttr(confirmSendText)}" aria-label="${escapeAttr(confirmSendText)}" ${submitDisabled ? "disabled" : ""}>${
+                    <div class="node-send-actions-selected" title="${escapeAttr(selectedSummaryTitle)}">${escapeHtml(selectedSummaryText)}</div>
+                    <button class="btn primary" id="node-send-confirm" title="${escapeAttr(appState.nodeSendSending ? sendingText : confirmSendText)}" aria-label="${escapeAttr(appState.nodeSendSending ? sendingText : confirmSendText)}" ${submitDisabled ? "disabled" : ""}>${
                         appState.nodeSendSending
                             ? `${iconSvg("refresh-cw", sendingText, "xdatahub-icon btn-icon")} ${escapeHtml(sendingText)}`
                             : `${iconSvg("send", confirmSendText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmSendText)}`
                     }</button>
+                    <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}" ${appState.nodeSendSending ? "disabled" : ""}>${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
                 </div>
             </div>
         </div>
@@ -6286,30 +7041,51 @@ function openSettingsDialogFromAction() {
     appState.settingsDraft = cloneSettings(appState.settings);
     const overlay = document.getElementById("settings-dialog-overlay");
     overlay?.classList.remove("is-hidden");
-    const typeInput = document.getElementById(
-        "setting-show-media-chip-type"
+    syncSettingsDialogControlsFromDraft();
+}
+
+function syncSettingsDialogControlsFromDraft() {
+    const draft = cloneSettings(appState.settingsDraft || appState.settings);
+    const syncCheckbox = (id, value) => {
+        const input = document.getElementById(id);
+        if (input instanceof HTMLInputElement) {
+            input.checked = !!value;
+        }
+    };
+    const syncSelect = (id, value) => {
+        const select = document.getElementById(id);
+        if (select instanceof HTMLSelectElement && typeof value === "string") {
+            select.value = value;
+        }
+    };
+    const syncText = (id, value) => {
+        const input = document.getElementById(id);
+        if (input instanceof HTMLInputElement) {
+            input.value = String(value || "");
+        }
+    };
+    syncText("setting-hotkey-spec", draft.hotkeySpec || DEFAULT_TOGGLE_HOTKEY_SPEC);
+    syncSelect("setting-theme-mode", normalizeThemeMode(draft.themeMode));
+    syncSelect(
+        "setting-media-card-size-preset",
+        normalizeMediaCardSizePreset(draft.mediaCardSizePreset)
     );
-    const resInput = document.getElementById(
-        "setting-show-media-chip-resolution"
+    syncCheckbox("setting-show-media-title", draft.showMediaTitle);
+    syncCheckbox(
+        "setting-show-media-chip-resolution",
+        draft.showMediaChipResolution
     );
-    const dtInput = document.getElementById(
-        "setting-show-media-chip-datetime"
+    syncCheckbox(
+        "setting-show-media-chip-datetime",
+        draft.showMediaChipDatetime
     );
-    const sizeInput = document.getElementById(
-        "setting-show-media-chip-size"
-    );
-    if (typeInput instanceof HTMLInputElement) {
-        typeInput.checked = !!appState.settingsDraft.showMediaChipType;
-    }
-    if (resInput instanceof HTMLInputElement) {
-        resInput.checked = !!appState.settingsDraft.showMediaChipResolution;
-    }
-    if (dtInput instanceof HTMLInputElement) {
-        dtInput.checked = !!appState.settingsDraft.showMediaChipDatetime;
-    }
-    if (sizeInput instanceof HTMLInputElement) {
-        sizeInput.checked = !!appState.settingsDraft.showMediaChipSize;
-    }
+    syncCheckbox("setting-show-media-chip-size", draft.showMediaChipSize);
+    syncCheckbox("setting-video-preview-autoplay", draft.videoPreviewAutoplay);
+    syncCheckbox("setting-video-preview-muted", draft.videoPreviewMuted);
+    syncCheckbox("setting-video-preview-loop", draft.videoPreviewLoop);
+    syncCheckbox("setting-audio-preview-autoplay", draft.audioPreviewAutoplay);
+    syncCheckbox("setting-audio-preview-muted", draft.audioPreviewMuted);
+    syncCheckbox("setting-audio-preview-loop", draft.audioPreviewLoop);
 }
 
 function syncFiltersSidebarUi() {
@@ -6475,6 +7251,28 @@ async function handleDelegatedPrimaryButtonClick(event) {
         return true;
     case "settings-dialog-save": {
         const draft = cloneSettings(appState.settingsDraft || appState.settings);
+        const hotkeySpec = String(
+            draft.hotkeySpec || DEFAULT_TOGGLE_HOTKEY_SPEC
+        ).trim();
+        if (!parseHotkeySpec(hotkeySpec)) {
+            appState.settingsError = t(
+                "xdatahub.ui.app.settings.hotkey.invalid",
+                "Invalid hotkey format"
+            );
+            refreshSettingsDialogOverlay();
+            return true;
+        }
+        const hotkeyResult = await requestParentHotkeyUpdate(hotkeySpec);
+        if (!hotkeyResult.ok) {
+            appState.settingsError = hotkeyResult.error || t(
+                "xdatahub.ui.app.settings.hotkey.update_failed",
+                "Failed to update hotkey"
+            );
+            refreshSettingsDialogOverlay();
+            return true;
+        }
+        draft.hotkeySpec = hotkeyResult.hotkeySpec || hotkeySpec;
+        appState.settings.hotkeySpec = draft.hotkeySpec;
         await updateSettings(draft);
         if (!appState.settingsError) {
             appState.settingsDraft = null;
@@ -6522,6 +7320,7 @@ async function handleDelegatedPrimaryButtonClick(event) {
             closeDangerConfirm(true);
         }
         return true;
+    case "db-delete-close":
     case "db-delete-cancel":
         closeDbDeleteDialog();
         return true;
@@ -6640,8 +7439,8 @@ async function handleDelegatedHistoryRowCopy(event) {
         return true;
     }
     const payloadInfo = normalizePayloadValue(item?.extra?.payload);
-    const text = buildPayloadCopyText(payloadInfo).trim();
-    if (!text) {
+    const text = buildPayloadCopyText(payloadInfo);
+    if (!String(text || "").trim()) {
         setCopyNotice(
             t("xdatahub.ui.app.text.h_3286eb7260", "Nothing to send"),
             true
@@ -6896,62 +7695,51 @@ function resetMediaSendProximity(card) {
 }
 
 function handleDelegatedNodeSend(event) {
+    const slideArea = event.target?.closest?.("[data-node-send-slide]");
+    if (slideArea instanceof HTMLElement) {
+        return true;
+    }
+    const closeBtn = event.target?.closest?.("#node-send-close");
+    if (closeBtn instanceof HTMLElement) {
+        if (appState.nodeSendSending) {
+            return true;
+        }
+        closeNodeSendDialog();
+        return true;
+    }
+    const refreshBtn = event.target?.closest?.("#node-send-refresh");
+    if (refreshBtn instanceof HTMLElement) {
+        if (appState.nodeSendLoading || appState.nodeSendSending) {
+            return true;
+        }
+        refreshNodeSendTargets();
+        return true;
+    }
     const cancelBtn = event.target?.closest?.("#node-send-cancel");
     if (cancelBtn instanceof HTMLElement) {
+        if (appState.nodeSendSending) {
+            return true;
+        }
         closeNodeSendDialog();
         return true;
     }
     const confirmBtn = event.target?.closest?.("#node-send-confirm");
     if (confirmBtn instanceof HTMLElement) {
-        if (
-            appState.nodeSendLoading
-            || appState.nodeSendError
-            || appState.nodeSendSending
-        ) {
-            return true;
-        }
-        const mediaRef = String(appState.nodeSendMediaRef || "");
-        const textValue = String(appState.nodeSendTextValue || "");
-        const isStringTarget = (
-            String(appState.nodeSendTargetClass || "") === "XStringGet"
-        );
         const selectedIds = (appState.nodeSendSelectedIds || [])
             .map((id) => Number(id))
             .filter((id) => Number.isFinite(id));
-        if (!selectedIds.length) {
-            return true;
-        }
-        if (!isStringTarget && !mediaRef) {
-            return true;
-        }
-        if (isStringTarget && !textValue.trim()) {
-            return true;
-        }
-        appState.nodeSendSending = true;
-        refreshNodeSendDialogOverlay();
-        for (const nodeId of selectedIds) {
-            window.parent?.postMessage?.(
-                {
-                    type: "xdatahub:send_to_node",
-                    data: {
-                        node_id: nodeId,
-                        media_ref: mediaRef,
-                        text_value: isStringTarget ? textValue : "",
-                        title: appState.nodeSendTitle || "",
-                        node_class: appState.nodeSendTargetClass || "",
-                    },
-                },
-                "*"
-            );
-        }
-        closeNodeSendDialog();
+        submitNodeSend(selectedIds);
         return true;
     }
     const option = event.target?.closest?.("[data-node-send-id]");
     if (!(option instanceof HTMLElement)) {
         return false;
     }
-    if (appState.nodeSendLoading || appState.nodeSendError) {
+    if (
+        appState.nodeSendLoading
+        || appState.nodeSendError
+        || appState.nodeSendSending
+    ) {
         return true;
     }
     const nodeIdText = String(
@@ -6969,6 +7757,7 @@ function handleDelegatedNodeSend(event) {
     } else {
         selected.add(nodeIdText);
     }
+    resetNodeSendResultState();
     appState.nodeSendSelectedIds = Array.from(selected);
     if (!syncNodeSendSelectionUi()) {
         refreshNodeSendDialogOverlay();
@@ -7089,6 +7878,7 @@ function handleDelegatedGlobalInput(event) {
     }
     switch (target.id) {
     case "page-jump":
+        target.value = target.value.replace(/\D+/g, "");
         debouncedJumpPage(target.value);
         return true;
     case "filter-keyword":
@@ -7140,6 +7930,14 @@ function handleDelegatedGlobalInput(event) {
         updateDbDeleteSubmitUi(document.getElementById("db-delete-submit"));
         return true;
     }
+    case "node-send-close-after-send":
+        if (target instanceof HTMLInputElement) {
+            appState.settings.nodeSendCloseAfterSend = !!target.checked;
+            void updateSettings({
+                nodeSendCloseAfterSend: !!target.checked,
+            });
+        }
+        return true;
     default:
         return false;
     }
@@ -7233,9 +8031,13 @@ function handleDelegatedGlobalChange(event) {
         return false;
     }
     switch (target.id) {
-    case "setting-show-media-chip-type":
+    case "setting-hotkey-spec":
         ensureSettingsDraftState();
-        appState.settingsDraft.showMediaChipType = !!target.checked;
+        appState.settingsDraft.hotkeySpec = String(target.value || "");
+        return true;
+    case "setting-show-media-title":
+        ensureSettingsDraftState();
+        appState.settingsDraft.showMediaTitle = !!target.checked;
         return true;
     case "setting-show-media-chip-resolution":
         ensureSettingsDraftState();
@@ -7382,9 +8184,24 @@ function installRootDelegatedHandlers() {
     root.addEventListener("dragstart", (event) => {
         handleDelegatedMediaCardDragstart(event);
     });
+    root.addEventListener("pointerdown", (event) => {
+        const slider = event.target?.closest?.("[data-node-send-slide]");
+        if (slider instanceof HTMLElement) {
+            beginNodeSendQuickSlide(event, slider);
+        }
+    });
     root.addEventListener("pointermove", (event) => {
+        if (updateNodeSendQuickSlide(event)) {
+            return;
+        }
         handleDelegatedMediaSendProximity(event);
-    }, { passive: true });
+    });
+    root.addEventListener("pointerup", (event) => {
+        endNodeSendQuickSlide(event);
+    });
+    root.addEventListener("pointercancel", (event) => {
+        endNodeSendQuickSlide(event);
+    });
     root.addEventListener("pointerover", (event) => {
         handleDelegatedMediaSendProximity(event);
     }, { passive: true });
@@ -7445,6 +8262,9 @@ function installRootDelegatedHandlers() {
         handleDelegatedDateInputKeydown(event);
     });
     root.addEventListener("input", (event) => {
+        handleDelegatedGlobalInput(event);
+    });
+    root.addEventListener("change", (event) => {
         handleDelegatedGlobalInput(event);
     });
     root.addEventListener("focusin", (event) => {
@@ -7779,8 +8599,8 @@ function pickCorePayloadText(value, depth = 0) {
     if (depth > 6) {
         return "";
     }
-    const scalarText = scalarPayloadToText(value).trim();
-    if (scalarText) {
+    const scalarText = scalarPayloadToText(value);
+    if (scalarText.trim()) {
         return scalarText;
     }
     if (Array.isArray(value)) {
@@ -7795,8 +8615,8 @@ function pickCorePayloadText(value, depth = 0) {
     if (!value || typeof value !== "object") {
         return "";
     }
-    const preferredSeed = scalarPayloadToText(value.seed).trim();
-    if (preferredSeed) {
+    const preferredSeed = scalarPayloadToText(value.seed);
+    if (preferredSeed.trim()) {
         return preferredSeed;
     }
     const preferredKeys = [
@@ -7810,8 +8630,8 @@ function pickCorePayloadText(value, depth = 0) {
         "data",
     ];
     for (const key of preferredKeys) {
-        const preferred = scalarPayloadToText(value[key]).trim();
-        if (preferred) {
+        const preferred = scalarPayloadToText(value[key]);
+        if (preferred.trim()) {
             return preferred;
         }
     }
@@ -8194,6 +9014,10 @@ async function pollLockStatus() {
 
 window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && appState.nodeSendDialogOpen) {
+        if (appState.nodeSendSending) {
+            event.preventDefault();
+            return;
+        }
         event.preventDefault();
         closeNodeSendDialog();
         return;
@@ -8335,12 +9159,20 @@ window.addEventListener("message", (event) => {
         applyNodeSendNodesResponse(payload);
         return;
     }
+    if (payload.type === "xdatahub:send_to_node_ack") {
+        applyNodeSendAckResponse(payload.data || payload);
+        return;
+    }
     if (payload.type === "xdatahub:theme-mode") {
         applyThemeMode(payload.theme_mode);
         return;
     }
     if (payload.type === "xdatahub:hotkey-spec") {
         updateIframeHotkeySpec(payload.hotkey_spec);
+        return;
+    }
+    if (payload.type === "xdatahub:hotkey-spec-updated") {
+        applyHotkeySaveResponse(payload);
         return;
     }
     if (payload.type === "xdatahub:close-facet") {
@@ -8356,17 +9188,12 @@ async function init() {
     uiLocaleZhDict = await fetchUiLocaleDict("zh");
     uiLocaleEnDict = await fetchUiLocaleDict("en");
     appState.localePreviewLang = readUiLocalePreference();
-    syncDocumentLocaleMeta();
-    window.parent?.postMessage?.({
-        type: "xdatahub:ui-locale",
-        locale: appState.localePreviewLang,
-    }, "*");
     installRootDelegatedHandlers();
     updateIframeHotkeySpec(DEFAULT_TOGGLE_HOTKEY_SPEC);
-    const queryTab = new URLSearchParams(window.location.search).get("tab");
     const queryTheme = new URLSearchParams(window.location.search).get("theme");
-    if (queryTab && TABS.some((item) => item.id === queryTab)) {
-        appState.activeTab = queryTab;
+    const persistedTab = loadPersistedActiveTab();
+    if (persistedTab) {
+        appState.activeTab = persistedTab;
     }
     if (queryTheme) {
         applyThemeMode(queryTheme);
@@ -8390,15 +9217,16 @@ async function init() {
     if (appState.settings.uiLocale) {
         appState.localePreviewLang = appState.settings.uiLocale;
         appState.localeSelectionPending = false;
-        syncDocumentLocaleMeta();
-        window.parent?.postMessage?.({
-            type: "xdatahub:ui-locale",
-            locale: appState.localePreviewLang,
-        }, "*");
     } else {
         appState.localeSelectionPending = true;
         openLocaleSwitcher();
     }
+    syncDocumentLocaleMeta();
+    window.parent?.postMessage?.({
+        type: "xdatahub:ui-locale",
+        locale: appState.localePreviewLang,
+    }, "*");
+    render();
     await pollLockStatus();
     await loadList();
 }

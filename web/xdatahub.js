@@ -79,13 +79,16 @@ const CLOSE_BEHAVIOR_OPTION_CODES = [
 ];
 const WINDOW_STATE_STORAGE_KEY = "Xz3r0.XDataHub.WindowState.v1";
 const WINDOW_STATE_VERSION = 1;
+const HOST_ACTIVE_TAB_SESSION_KEY = "xdatahub.host.activeTab";
 let hotkeySpec = DEFAULT_HOTKEY_SPEC;
-let hotkeySettingInitialized = false;
 let defaultOpenLayout = "center";
 let closeBehavior = "hide";
+let hostNodeSendBusy = false;
 let xdataHubRef = null;
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
+let uiLocaleApplySeq = 0;
+let hotkeyListenerInstalled = false;
 
 const UI_KEYS = {
     windowTitle: "xdatahub.ui.shell.window_title",
@@ -97,7 +100,6 @@ const UI_KEYS = {
     menuTooltip: "xdatahub.ui.shell.menu_tooltip",
     opacityLabel: "xdatahub.ui.shell.opacity_label",
     hotkeyUpdated: "xdatahub.ui.shell.toast.hotkey_updated",
-    toggleCommandLabel: "xdatahub.ui.shell.command.toggle_window",
     tabHistory: "xdatahub.ui.shell.tab.history",
     tabImage: "xdatahub.ui.shell.tab.image",
     tabVideo: "xdatahub.ui.shell.tab.video",
@@ -110,7 +112,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260326-100";
+const XDATAHUB_ASSET_VER = "20260327-265";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -184,6 +186,10 @@ function applyMenuButtonIcon() {
             </svg>
         </span>
     `;
+}
+
+function isWindowCloseBlocked() {
+    return hostNodeSendBusy === true;
 }
 
 function getLocale() {
@@ -292,11 +298,60 @@ function parseHotkeySpec(spec) {
     return combo;
 }
 
+function normalizeHotkeyEventKey(key) {
+    const raw = String(key || "").trim();
+    if (!raw) {
+        return "";
+    }
+    const lower = raw.toLowerCase();
+    if (lower === " ") {
+        return "space";
+    }
+    if (lower === "spacebar") {
+        return "space";
+    }
+    return lower;
+}
+
+function matchesHotkeyEvent(event, combo) {
+    if (!event || !combo) {
+        return false;
+    }
+    const key = normalizeHotkeyEventKey(event.key);
+    if (!key || key !== combo.key) {
+        return false;
+    }
+    return (
+        !!event.ctrlKey === !!combo.ctrl
+        && !!event.altKey === !!combo.alt
+        && !!event.shiftKey === !!combo.shift
+        && !!event.metaKey === !!combo.meta
+    );
+}
+
 function readHotkeySpecFromSettings() {
+    try {
+        const stored = String(
+            localStorage.getItem(HOTKEY_SETTING_ID) || ""
+        ).trim();
+        if (parseHotkeySpec(stored)) {
+            return stored;
+        }
+    } catch {
+        // ignore localStorage read errors
+    }
     return String(
         app.extensionManager?.setting?.get(HOTKEY_SETTING_ID)
         || DEFAULT_HOTKEY_SPEC
     ).trim() || DEFAULT_HOTKEY_SPEC;
+}
+
+function persistHotkeySpec(spec) {
+    try {
+        localStorage.setItem(HOTKEY_SETTING_ID, String(spec || ""));
+    } catch {
+        // ignore localStorage write errors
+    }
 }
 
 function equalsSettingOption(value, optionCode, aliases = []) {
@@ -360,11 +415,6 @@ function applyDefaultOpenLayoutToOpenWindow() {
     xdataHubRef?.instance?.applyDefaultOpenLayout?.();
 }
 
-const initialHotkeyCombo = (
-    parseHotkeySpec(readHotkeySpecFromSettings())
-    || parseHotkeySpec(DEFAULT_HOTKEY_SPEC)
-);
-
 /**
  * 窗口启用状态
  */
@@ -405,33 +455,48 @@ function updateMenuButtonVisibility() {
     }
 }
 
+function handleGlobalHotkeyCapture(event) {
+    if (
+        event.defaultPrevented
+        || event.isComposing
+        || event.repeat
+        || !windowEnabled
+    ) {
+        return;
+    }
+    const combo = (
+        parseHotkeySpec(hotkeySpec)
+        || parseHotkeySpec(DEFAULT_HOTKEY_SPEC)
+    );
+    if (!matchesHotkeyEvent(event, combo)) {
+        return;
+    }
+    if (isWindowCloseBlocked() && XDataHub.instance?.isVisible) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    XDataHub.toggle();
+}
+
+function ensureGlobalHotkeyListener() {
+    if (hotkeyListenerInstalled) {
+        return;
+    }
+    window.addEventListener("keydown", handleGlobalHotkeyCapture, true);
+    hotkeyListenerInstalled = true;
+}
+
 /**
  * 注册 ComfyUI 扩展
  * 在 ComfyUI 初始化时设置窗口按钮和样式
  */
 app.registerExtension({
     name: "ComfyUI.Xz3r0.XDataHub",
-    commands: [
-        {
-            id: "Xz3r0.XDataHub.ToggleWindow",
-            label: t("toggleCommandLabel", "Toggle XDataHub Window"),
-            icon: "pi pi-window-maximize",
-            function: () => {
-                if (!windowEnabled) {
-                    return;
-                }
-                XDataHub.toggle();
-            }
-        }
-    ],
-    keybindings: initialHotkeyCombo
-        ? [
-            {
-                commandId: "Xz3r0.XDataHub.ToggleWindow",
-                combo: initialHotkeyCombo
-            }
-        ]
-        : [],
 
     /**
      * 扩展设置配置
@@ -492,39 +557,6 @@ app.registerExtension({
                 closeBehavior = normalizeCloseBehavior(value);
             }
         },
-        {
-            id: HOTKEY_SETTING_ID,
-            name: "XDataHub toggle hotkey",
-            type: "text",
-            defaultValue: DEFAULT_HOTKEY_SPEC,
-            tooltip: "Set the hotkey used to toggle XDataHub visibility.",
-            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "Hotkey"],
-            onChange: (value) => {
-                hotkeySpec = String(value || "").trim() || DEFAULT_HOTKEY_SPEC;
-                if (!parseHotkeySpec(hotkeySpec)) {
-                    hotkeySpec = DEFAULT_HOTKEY_SPEC;
-                    app.extensionManager?.setting?.set(
-                        HOTKEY_SETTING_ID,
-                        DEFAULT_HOTKEY_SPEC
-                    );
-                }
-                xdataHubRef?.instance?.postHotkeySpecToDataFrame?.();
-                if (!hotkeySettingInitialized) {
-                    hotkeySettingInitialized = true;
-                    return;
-                }
-                app.extensionManager?.toast?.add?.({
-                    severity: "info",
-                    summary: "XDataHub",
-                    detail: t(
-                        "hotkeyUpdated",
-                        "Hotkey updated, refresh page to apply"
-                    ),
-                    life: 2200
-                });
-            }
-        }
     ],
 
     /**
@@ -534,6 +566,7 @@ app.registerExtension({
     async setup() {
         await loadUiLocaleBundle();
         hotkeySpec = readHotkeySpecFromSettings();
+        ensureGlobalHotkeyListener();
         defaultOpenLayout = readDefaultOpenLayoutFromSettings();
         closeBehavior = readCloseBehaviorFromSettings();
         ensureColorTokensStylesheet();
@@ -587,6 +620,10 @@ app.registerExtension({
                 font-weight: 600;
                 color: var(--text-standard);
                 font-size: 14px;
+            }
+            .xz3r0-datahub-window-title-text {
+                display: inline-block;
+                transform: translateY(-1px);
             }
             .xz3r0-datahub-window-title .xz3r0-title-icon {
                 width: 16px;
@@ -1002,6 +1039,8 @@ app.registerExtension({
                 font-size: 12px;
                 color: var(--text-standard);
                 font-weight: 700;
+                display: inline-block;
+                transform: translateY(-1px);
             }
             .xz3r0-opacity-slider {
                 width: 84px;
@@ -1176,6 +1215,9 @@ const XDataHub = {
      */
     toggle() {
         if (this.instance && this.instance.isVisible) {
+            if (isWindowCloseBlocked()) {
+                return;
+            }
             if (closeBehavior === "destroy") {
                 this.instance.destroy();
             } else {
@@ -1384,7 +1426,7 @@ const XDataHub = {
         dataFrame.className = "xz3r0-datahub-window-frame";
         dataFrame.src = (
             "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app.html"
-            + `?tab=history&theme=${encodeURIComponent(currentThemeMode)}`
+            + `?theme=${encodeURIComponent(currentThemeMode)}`
             + `&v=${XDATAHUB_ASSET_VER}`
         );
 
@@ -1392,7 +1434,30 @@ const XDataHub = {
         content.appendChild(hostTabs);
         content.appendChild(frameStack);
 
-        let activeHostTab = "history";
+        const loadPersistedHostTab = () => {
+            try {
+                const raw = String(
+                    sessionStorage.getItem(HOST_ACTIVE_TAB_SESSION_KEY) || ""
+                ).trim();
+                if (HOST_TABS.some((tab) => tab.id === raw)) {
+                    return raw;
+                }
+            } catch {
+                // ignore sessionStorage read errors
+            }
+            return "history";
+        };
+        const savePersistedHostTab = (tabId) => {
+            if (!HOST_TABS.some((tab) => tab.id === tabId)) {
+                return;
+            }
+            try {
+                sessionStorage.setItem(HOST_ACTIVE_TAB_SESSION_KEY, tabId);
+            } catch {
+                // ignore sessionStorage write errors
+            }
+        };
+        let activeHostTab = loadPersistedHostTab();
         const hostTabButtons = new Map();
         const hostTabsIndicator = document.createElement("div");
         hostTabsIndicator.className = "xz3r0-datahub-window-host-tabs-indicator";
@@ -1442,6 +1507,20 @@ const XDataHub = {
             postThemeModeToDataFrame();
             postHotkeySpecToDataFrame();
         };
+        const postTabToDataFrame = (tabId) => {
+            if (!dataFrame.contentWindow) {
+                return;
+            }
+            dataFrame.contentWindow.postMessage(
+                { type: "xdatahub:set-tab", tab: tabId },
+                "*"
+            );
+        };
+        const syncActiveTabToDataFrame = (tabId) => {
+            postTabToDataFrame(tabId);
+            // 双发一次，规避 iframe 刚加载时消息先于内部监听器注册。
+            requestAnimationFrame(() => postTabToDataFrame(tabId));
+        };
         const postCloseFacetToDataFrame = () => {
             if (!dataFrame.contentWindow) {
                 return;
@@ -1479,16 +1558,14 @@ const XDataHub = {
                 return;
             }
             activeHostTab = tabId;
+            savePersistedHostTab(tabId);
             hostTabButtons.forEach((button, id) => {
                 button.classList.toggle("active", id === tabId);
             });
             updateHostTabIndicator();
             dataFrame.classList.add("active");
             if (dataFrame.contentWindow) {
-                dataFrame.contentWindow.postMessage(
-                    { type: "xdatahub:set-tab", tab: tabId },
-                    "*"
-                );
+                syncActiveTabToDataFrame(tabId);
                 postSharedStateToDataFrame();
             }
         };
@@ -1545,11 +1622,18 @@ const XDataHub = {
             requestAnimationFrame(updateHostTabIndicator);
         };
 
+        const syncCloseButtonState = () => {
+            closeBtn.disabled = isWindowCloseBlocked();
+        };
+
         windowEl.appendChild(header);
         windowEl.appendChild(content);
         document.body.appendChild(windowEl);
         windowEl.setAttribute("data-theme", currentThemeMode);
-        dataFrame.addEventListener("load", postSharedStateToDataFrame);
+        dataFrame.addEventListener("load", () => {
+            postSharedStateToDataFrame();
+            syncActiveTabToDataFrame(activeHostTab);
+        });
         updateHostTabCompactMode();
         setHostTab(activeHostTab, { force: true });
 
@@ -2349,8 +2433,13 @@ const XDataHub = {
             windowEl,
             dataFrame,
             setHostTab,
+            syncCloseButtonState,
             async applyUiLocale(locale) {
+                const seq = ++uiLocaleApplySeq;
                 await loadUiLocaleBundle(locale);
+                if (seq !== uiLocaleApplySeq) {
+                    return;
+                }
                 applyShellLocaleText();
             },
             applyThemeMode(mode) {
@@ -2407,8 +2496,13 @@ const XDataHub = {
             }
         };
 
+        syncCloseButtonState();
+
         // 关闭按钮事件
         closeBtn.addEventListener("click", () => {
+            if (isWindowCloseBlocked()) {
+                return;
+            }
             if (closeBehavior === "destroy") {
                 state.destroy();
             } else {
@@ -2455,12 +2549,59 @@ window.addEventListener("message", (event) => {
     if (!payload || typeof payload !== "object") {
         return;
     }
+    if (payload.type === "xdatahub:node_send_busy") {
+        hostNodeSendBusy = payload.busy === true;
+        xdataHubRef?.instance?.syncCloseButtonState?.();
+        return;
+    }
+    if (payload.type === "xdatahub:update-hotkey-spec") {
+        const requestId = String(payload.request_id || "");
+        const nextSpec = String(payload.hotkey_spec || "").trim();
+        const parsed = parseHotkeySpec(nextSpec);
+        if (!parsed) {
+            event.source?.postMessage?.(
+                {
+                    type: "xdatahub:hotkey-spec-updated",
+                    request_id: requestId,
+                    ok: false,
+                    error: "Invalid hotkey format",
+                },
+                "*"
+            );
+            return;
+        }
+        hotkeySpec = nextSpec;
+        persistHotkeySpec(hotkeySpec);
+        xdataHubRef?.instance?.postHotkeySpecToDataFrame?.();
+        app.extensionManager?.toast?.add?.({
+            severity: "info",
+            summary: "XDataHub",
+            detail: t(
+                "hotkeyUpdated",
+                "Hotkey updated"
+            ),
+            life: 2200
+        });
+        event.source?.postMessage?.(
+            {
+                type: "xdatahub:hotkey-spec-updated",
+                request_id: requestId,
+                ok: true,
+                hotkey_spec: hotkeySpec,
+            },
+            "*"
+        );
+        return;
+    }
     if (payload.type === "xdatahub:theme-mode") {
         applyThemeMode(payload.theme_mode);
         return;
     }
     if (payload.type === "xdatahub:toggle-window-request") {
         if (!windowEnabled) {
+            return;
+        }
+        if (isWindowCloseBlocked() && XDataHub.instance?.isVisible) {
             return;
         }
         XDataHub.toggle();
@@ -2470,6 +2611,9 @@ window.addEventListener("message", (event) => {
         xdataHubRef?.instance?.applyUiLocale?.(payload.locale);
     }
 });
+
+
+
 
 
 

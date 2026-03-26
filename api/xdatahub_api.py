@@ -1618,7 +1618,7 @@ def parse_yes(value: Any) -> bool:
 
 def default_xdatahub_settings() -> dict[str, Any]:
     return {
-        "show_media_chip_type": True,
+        "show_media_title": True,
         "show_media_chip_resolution": True,
         "show_media_chip_datetime": True,
         "show_media_chip_size": True,
@@ -1631,6 +1631,7 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "media_sort_by": "mtime",
         "media_sort_order": "desc",
         "media_card_size_preset": "standard",
+        "node_send_close_after_send": True,
         "theme_mode": "dark",
     }
 
@@ -1646,12 +1647,11 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
     if "show_media_card_info" in value:
         # 兼容旧配置：一个开关控制全部标签。
         flag = parse_bool(value.get("show_media_card_info"))
-        patch["show_media_chip_type"] = flag
         patch["show_media_chip_resolution"] = flag
         patch["show_media_chip_datetime"] = flag
         patch["show_media_chip_size"] = flag
     for key in (
-        "show_media_chip_type",
+        "show_media_title",
         "show_media_chip_resolution",
         "show_media_chip_datetime",
         "show_media_chip_size",
@@ -1696,6 +1696,10 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         ).strip().lower()
         if preset in MEDIA_CARD_SIZE_PRESET_VALUES:
             patch["media_card_size_preset"] = preset
+    if "node_send_close_after_send" in value:
+        patch["node_send_close_after_send"] = parse_bool(
+            value.get("node_send_close_after_send")
+        )
     if "theme_mode" in value:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()
         if theme_mode in THEME_MODE_VALUES:

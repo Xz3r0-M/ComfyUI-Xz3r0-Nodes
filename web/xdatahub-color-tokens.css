@@ -85,6 +85,7 @@ body:not([data-theme]) {
     --xdh-history-content-text: var(--text-standard);
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
         invert(87%);
+    --media-parent-icon-color: #d4d4d4;
     --app-shell-padding: 4px 8px 8px 8px;
 
     --icon-color-filter: brightness(0) saturate(100%) invert(87%);
@@ -152,6 +153,7 @@ body[data-theme="light"] {
     --xdh-history-content-text: #222222;
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
         invert(13%);
+    --media-parent-icon-color: #d4d4d4;
 
     --icon-color-filter: brightness(0) saturate(100%) invert(13%);
     --icon-color-filter-active: brightness(0) saturate(100%) invert(13%);
@@ -197,6 +199,7 @@ body[data-theme="light"] {
     --xdh-history-content-text: #222222;
     --xdh-history-content-icon-filter: brightness(0) saturate(100%)
         invert(13%);
+    --media-parent-icon-color: #d4d4d4;
 
     --icon-color-filter: brightness(0) saturate(100%) invert(13%);
     --icon-color-filter-active: brightness(0) saturate(100%) invert(13%);

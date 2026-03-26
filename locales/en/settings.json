@@ -48,10 +48,6 @@
     "name": "Place ♾️ XDataHub below ComfyUI UI layers",
     "tooltip": "When enabled, XDataHub is rendered below ComfyUI UI components (not only sidebars). Panels and tools around the viewport may cover window content or controls (Maximize/Close)."
   },
-  "Xz3r0_XDataHub_Hotkey": {
-    "name": "XDataHub Show/Hide Hotkey",
-    "tooltip": "Set the hotkey used to toggle XDataHub visibility. Examples: Alt + X / Ctrl + Shift + H"
-  },
   "Xz3r0_XDataHub_DefaultOpenLayout": {
     "name": "XDataHub Default Open Layout",
     "tooltip": "Default window layout when opening XDataHub.",

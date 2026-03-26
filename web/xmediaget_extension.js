@@ -805,6 +805,24 @@ function getStorageWidget(node) {
     return widget || null;
 }
 
+function removeStorageInputSlot(node) {
+    if (!node || !SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
+        return;
+    }
+    if (!Array.isArray(node?.inputs)) {
+        return;
+    }
+    const widgetName = getStorageWidgetName(node);
+    const nextInputs = node.inputs.filter(
+        (input) => String(input?.name || "") !== widgetName
+    );
+    if (nextInputs.length === node.inputs.length) {
+        return;
+    }
+    node.inputs = nextInputs;
+    node?.graph?.setDirtyCanvas?.(true, true);
+}
+
 function getStoredNodeValue(node) {
     const widget = getStorageWidget(node);
     const value = widget?.value;
@@ -874,8 +892,10 @@ function installNodeUi(node) {
         return;
     }
     if (node.__ximageget_panel) {
+        removeStorageInputSlot(node);
         return;
     }
+    removeStorageInputSlot(node);
     ensureStyles();
     const panelInfo = buildPanel(nodeClass);
     node.__ximageget_panel = panelInfo;
@@ -1162,6 +1182,23 @@ export function initXMediaGetExtension() {
                 if (!payload || typeof payload !== "object") {
                     return;
                 }
+                const replyNodeSendAck = (requestId, nodeId, ok, error = "") => {
+                    if (!requestId) {
+                        return;
+                    }
+                    event.source?.postMessage?.(
+                        {
+                            type: "xdatahub:send_to_node_ack",
+                            data: {
+                                request_id: String(requestId),
+                                node_id: nodeId,
+                                ok: !!ok,
+                                error: String(error || ""),
+                            },
+                        },
+                        "*"
+                    );
+                };
                 if (payload.type === "xdatahub:ui-locale") {
                     applyUiLocale(payload.locale).catch(() => {});
                     return;
@@ -1182,15 +1219,28 @@ export function initXMediaGetExtension() {
                 }
                 if (payload.type === "xdatahub:send_to_node") {
                     const data = payload.data || {};
+                    const requestId = String(data.request_id || "");
                     const nodeId = Number(data.node_id);
                     const mediaRef = String(data.media_ref || "");
                     const textValue = String(data.text_value || "");
                     const nodeClass = String(data.node_class || "");
                     if (!Number.isFinite(nodeId)) {
+                        replyNodeSendAck(
+                            requestId,
+                            data.node_id,
+                            false,
+                            "Invalid node id"
+                        );
                         return;
                     }
                     const node = getNodeById(nodeId);
                     if (!node) {
+                        replyNodeSendAck(
+                            requestId,
+                            nodeId,
+                            false,
+                            "Target node not found"
+                        );
                         return;
                     }
                     if (
@@ -1198,20 +1248,50 @@ export function initXMediaGetExtension() {
                         && SUPPORTED_NODE_CLASSES.has(nodeClass)
                         && node.comfyClass !== nodeClass
                     ) {
+                        replyNodeSendAck(
+                            requestId,
+                            nodeId,
+                            false,
+                            "Target node type mismatch"
+                        );
                         return;
                     }
                     if (!SUPPORTED_NODE_CLASSES.has(String(node.comfyClass || ""))) {
+                        replyNodeSendAck(
+                            requestId,
+                            nodeId,
+                            false,
+                            "Unsupported target node"
+                        );
                         return;
                     }
-                    if (String(node.comfyClass || "") === STRING_NODE_CLASS) {
-                        updateNodeTextValue(node, textValue, data.title || "");
+                    try {
+                        if (String(node.comfyClass || "") === STRING_NODE_CLASS) {
+                            updateNodeTextValue(node, textValue, data.title || "");
+                            replyNodeSendAck(requestId, nodeId, true);
+                            return;
+                        }
+                        if (!mediaRef) {
+                            replyNodeSendAck(
+                                requestId,
+                                nodeId,
+                                false,
+                                "Missing media reference"
+                            );
+                            return;
+                        }
+                        updateNodeMediaRef(node, mediaRef, data.title || "");
+                        replyNodeSendAck(requestId, nodeId, true);
+                        return;
+                    } catch (error) {
+                        replyNodeSendAck(
+                            requestId,
+                            nodeId,
+                            false,
+                            error?.message || "Failed to update target node"
+                        );
                         return;
                     }
-                    if (!mediaRef) {
-                        return;
-                    }
-                    updateNodeMediaRef(node, mediaRef, data.title || "");
-                    return;
                 }
                 if (payload.type === "xdatahub:image_sent") {
                     return;

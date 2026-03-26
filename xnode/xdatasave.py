@@ -44,6 +44,7 @@ class XDataSave(io.ComfyNode):
 
     SAVE_TYPE_OPTIONS = ["Custom", "Seed", "String"]
     MAX_RECORDS = 500
+    MAX_DB_STEM_CHARS = 64
     MAX_HEADER_CHARS = 120
     MAX_RECORD_BYTES = 64 * 1024
     WRITE_DATA_ERROR = "Unable to write data file"
@@ -56,6 +57,9 @@ class XDataSave(io.ComfyNode):
     )
     HEADER_TOO_LONG_ERROR = "Header length exceeds 120 characters limit"
     RECORD_TOO_LARGE_ERROR = "Record size exceeds 64KB limit"
+    DB_NAME_TOO_LONG_ERROR = (
+        "Custom filename exceeds 64 characters limit"
+    )
     RESERVED_DB_NAME_ERROR = "Custom filename conflicts with core db list"
     SQLITE_CONNECT_TIMEOUT_SECONDS = 5.0
     SQLITE_BUSY_TIMEOUT_MS = 5000
@@ -244,12 +248,14 @@ class XDataSave(io.ComfyNode):
         safe_filename = sanitize_path_component(filename).strip(" .")
         if not safe_filename:
             raise ValueError(cls.INVALID_CUSTOM_FILENAME_ERROR)
+        safe_stem = Path(safe_filename).stem
+        if len(safe_stem) > cls.MAX_DB_STEM_CHARS:
+            raise ValueError(cls.DB_NAME_TOO_LONG_ERROR)
         critical_names = {
             Path(name).stem.lower()
             for name in get_critical_db_names()
         }
-        safe_stem = Path(safe_filename).stem.lower()
-        if safe_stem in critical_names:
+        if safe_stem.lower() in critical_names:
             raise ValueError(cls.RESERVED_DB_NAME_ERROR)
         return safe_filename
 
