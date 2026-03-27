@@ -16,7 +16,7 @@ const NODE_UI_CONFIG = {
         kind: "image",
         emoji: "🖼️",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_image",
-        placeholderFallback: "Drop XDataHub image here",
+        placeholderFallback: "Drop an XDataHub image card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_image",
         missingFallback: "Image missing",
     },
@@ -24,7 +24,7 @@ const NODE_UI_CONFIG = {
         kind: "video",
         emoji: "🎞️",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_video",
-        placeholderFallback: "Drop XDataHub video here",
+        placeholderFallback: "Drop an XDataHub video card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_video",
         missingFallback: "Video missing",
     },
@@ -32,7 +32,7 @@ const NODE_UI_CONFIG = {
         kind: "audio",
         emoji: "🎵",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_audio",
-        placeholderFallback: "Drop XDataHub audio here",
+        placeholderFallback: "Drop an XDataHub audio card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_audio",
         missingFallback: "Audio missing",
     },
@@ -40,18 +40,25 @@ const NODE_UI_CONFIG = {
         kind: "text",
         emoji: "📝",
         placeholderKey: "xdatahub.ui.node.xmediaget.placeholder_text",
-        placeholderFallback: "Drop or send XDataHub text here",
+        placeholderFallback: "Drop an XDataHub text card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_text",
         missingFallback: "Text missing",
     },
 };
 const MEDIA_REF_WIDGET = "media_ref";
+const MASK_IMAGE_REF_WIDGET = "mask_image_ref";
+const MASK_EDITOR_IMAGE_WIDGET = "image";
 const TEXT_VALUE_WIDGET = "text_value";
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const MIN_NODE_WIDTH = 260;
 const MIN_NODE_HEIGHT = 320;
 const MEDIA_REF_PROPERTY = "__xdatahub_media_ref";
+const MASK_IMAGE_REF_PROPERTY = "__xdatahub_mask_image_ref";
 const TEXT_VALUE_PROPERTY = "__xdatahub_text_value";
+const OPEN_MASK_EDITOR_LABEL_KEY = "xdatahub.ui.node.xmediaget.open_mask_editor";
+const OPEN_MASK_EDITOR_LABEL_FALLBACK = "Mask";
+const MASK_EDITOR_UNAVAILABLE_KEY = "xdatahub.ui.node.xmediaget.mask_editor_unavailable";
+const MASK_EDITOR_UNAVAILABLE_FALLBACK = "Mask editor unavailable";
 
 const STYLE_ID = "xmediaget-extension-style";
 const NODE_ACCENT_DEFAULT = "#0066FF";
@@ -104,6 +111,45 @@ function buildMediaFileUrl(mediaRef) {
         return "";
     }
     return `/xz3r0/xdatahub/media/file?ref=${encodeURIComponent(value)}`;
+}
+
+function parseAnnotatedImageRef(value) {
+    const raw = String(value || "").trim();
+    if (!raw.endsWith("]") || !raw.includes("[")) {
+        return null;
+    }
+    const splitIndex = raw.lastIndexOf("[");
+    const pathPart = raw.slice(0, splitIndex).trim();
+    const typePart = raw.slice(splitIndex + 1, -1).trim().toLowerCase();
+    if (!pathPart || !["input", "output", "temp"].includes(typePart)) {
+        return null;
+    }
+    const parts = pathPart.split("/").filter(Boolean);
+    if (!parts.length) {
+        return null;
+    }
+    const filename = parts[parts.length - 1];
+    const subfolder = parts.slice(0, -1).join("/");
+    return {
+        filename,
+        subfolder,
+        type: typePart,
+    };
+}
+
+function buildAnnotatedImageUrl(value) {
+    const parsed = parseAnnotatedImageRef(value);
+    if (!parsed) {
+        return "";
+    }
+    const query = new URLSearchParams({
+        filename: parsed.filename,
+        type: parsed.type,
+    });
+    if (parsed.subfolder) {
+        query.set("subfolder", parsed.subfolder);
+    }
+    return `/api/view?${query.toString()}`;
 }
 
 function parseMediaDragPayload(dataTransfer) {
@@ -225,7 +271,8 @@ function getNodeUiConfig(nodeClass) {
         ...config,
         placeholder: t(
             config.placeholderKey,
-            config.placeholderFallback || "Drop XDataHub media here"
+            config.placeholderFallback ||
+            "Drop an XDataHub media card here"
         ),
         missing: t(
             config.missingKey,
@@ -252,7 +299,7 @@ function ensureStyles() {
         }
         .ximageget-meta {
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 8px;
             min-height: 20px;
         }
@@ -268,7 +315,37 @@ function ensureStyles() {
             user-select: none;
             pointer-events: none;
             flex: 0 0 auto;
+        }
+        .ximageget-kind-emoji-push {
             margin-left: auto;
+        }
+        .ximageget-mask-btn {
+            min-width: 40px;
+            height: 22px;
+            padding: 0 8px;
+            border-radius: 6px;
+            border: 1px solid var(--borderColor, #555);
+            background: var(--bgColor, #222);
+            color: #f2f2f2;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1;
+            transition: border-color 120ms ease, background-color 120ms ease;
+            flex: 0 0 auto;
+            margin-left: auto;
+        }
+        .ximageget-mask-btn:hover,
+        .ximageget-mask-btn:focus-visible {
+            border-color: var(--ximageget-accent, #888);
+            background: #2b2b2b;
+            outline: none;
+        }
+        .ximageget-mask-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
         }
         .ximageget-badge {
             display: inline-flex;
@@ -332,6 +409,7 @@ function ensureStyles() {
             min-height: 180px;
             border: 1px solid var(--borderColor, #555);
             background: var(--bgColor, #222);
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -384,13 +462,25 @@ function ensureStyles() {
             display: block;
         }
         .ximageget-placeholder {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
             font-size: 13px;
             color: #ffffff;
             font-weight: 600;
             opacity: 1;
+            width: calc(100% - 24px);
+            max-width: 220px;
+            text-align: center;
+            line-height: 1.45;
+            pointer-events: none;
             text-shadow:
                 0 0 6px rgba(0, 0, 0, 0.9),
                 0 0 10px rgba(0, 0, 0, 0.75);
+        }
+        .ximageget-placeholder:empty {
+            display: none;
         }
         .ximageget-title {
             font-size: 12px;
@@ -427,6 +517,16 @@ function buildPanel(nodeClass) {
     kindEmoji.textContent = String(config.emoji || "🔹");
     kindEmoji.setAttribute("aria-hidden", "true");
 
+    let maskBtn = null;
+    if (nodeClass === "XImageGet") {
+        maskBtn = document.createElement("button");
+        maskBtn.className = "ximageget-mask-btn";
+        maskBtn.type = "button";
+        maskBtn.disabled = true;
+    } else {
+        kindEmoji.classList.add("ximageget-kind-emoji-push");
+    }
+
     const badge = document.createElement("div");
     badge.className = "ximageget-badge";
 
@@ -449,6 +549,9 @@ function buildPanel(nodeClass) {
     clearBtn.setAttribute("aria-label", clearBtnLabel);
 
     meta.appendChild(badge);
+    if (maskBtn) {
+        meta.appendChild(maskBtn);
+    }
     meta.appendChild(kindEmoji);
 
     const preview = document.createElement("div");
@@ -513,6 +616,7 @@ function buildPanel(nodeClass) {
         nodeClass: String(nodeClass || "XImageGet"),
         emoji: String(config.emoji || "🔹"),
         kindEmoji,
+        maskBtn,
         placeholderText: config.placeholder,
         missingText: config.missing,
         placeholder,
@@ -536,9 +640,18 @@ function applyPanelLocale(panelInfo) {
     panelInfo.placeholderText = config.placeholder;
     panelInfo.missingText = config.missing;
     const clearBtnLabel = t(CLEAR_BTN_LABEL_KEY, CLEAR_BTN_LABEL_FALLBACK);
+    const maskBtnLabel = t(
+        OPEN_MASK_EDITOR_LABEL_KEY,
+        OPEN_MASK_EDITOR_LABEL_FALLBACK
+    );
     if (panelInfo.clearBtn instanceof HTMLButtonElement) {
         panelInfo.clearBtn.title = clearBtnLabel;
         panelInfo.clearBtn.setAttribute("aria-label", clearBtnLabel);
+    }
+    if (panelInfo.maskBtn instanceof HTMLButtonElement) {
+        panelInfo.maskBtn.textContent = maskBtnLabel;
+        panelInfo.maskBtn.title = maskBtnLabel;
+        panelInfo.maskBtn.setAttribute("aria-label", maskBtnLabel);
     }
     const state = String(
         panelInfo.__xmediaget_preview_state || PREVIEW_STATE_EMPTY
@@ -619,7 +732,7 @@ function setPreview(panelInfo, data) {
                 textEl.textContent = "";
             }
             placeholder.textContent =
-                placeholderText || "Drop XDataHub text here";
+                placeholderText || "Drop an XDataHub text card here";
             title.textContent = "";
             title.removeAttribute("title");
             return;
@@ -637,6 +750,7 @@ function setPreview(panelInfo, data) {
         } else {
             title.removeAttribute("title");
         }
+        syncMaskButtonState(panelInfo.__ximageget_node);
         return;
     }
 
@@ -650,12 +764,14 @@ function setPreview(panelInfo, data) {
                 mediaEl.load();
             }
         }
-        placeholder.textContent = placeholderText || "Drop XDataHub media here";
+        placeholder.textContent =
+            placeholderText || "Drop an XDataHub media card here";
         title.textContent = "";
         title.removeAttribute("title");
         if (textEl) {
             textEl.textContent = "";
         }
+        syncMaskButtonState(panelInfo.__ximageget_node);
         return;
     }
     const cacheBusted = fileUrl.includes("?")
@@ -670,6 +786,7 @@ function setPreview(panelInfo, data) {
             panelInfo.__xmediaget_preview_state = PREVIEW_STATE_LOADED;
             preview.classList.add("has-media");
             placeholder.textContent = "";
+            syncMaskButtonState(panelInfo.__ximageget_node);
         };
         mediaEl.onerror = () => {
             if (panelInfo.__xmediaget_load_token !== loadToken) {
@@ -678,6 +795,7 @@ function setPreview(panelInfo, data) {
             panelInfo.__xmediaget_preview_state = PREVIEW_STATE_MISSING;
             preview.classList.remove("has-media");
             placeholder.textContent = missingText || "Image missing";
+            syncMaskButtonState(panelInfo.__ximageget_node);
         };
         mediaEl.src = cacheBusted;
         mediaEl.alt = label || nodeClass || "XImageGet";
@@ -690,6 +808,7 @@ function setPreview(panelInfo, data) {
             panelInfo.__xmediaget_preview_state = PREVIEW_STATE_LOADED;
             preview.classList.add("has-media");
             placeholder.textContent = "";
+            syncMaskButtonState(panelInfo.__ximageget_node);
         };
         mediaEl.onerror = () => {
             if (panelInfo.__xmediaget_load_token !== loadToken) {
@@ -698,6 +817,7 @@ function setPreview(panelInfo, data) {
             panelInfo.__xmediaget_preview_state = PREVIEW_STATE_MISSING;
             preview.classList.remove("has-media");
             placeholder.textContent = missingText || "Media missing";
+            syncMaskButtonState(panelInfo.__ximageget_node);
         };
         mediaEl.src = cacheBusted;
         if (typeof mediaEl.load === "function") {
@@ -788,21 +908,285 @@ function getStorageWidgetName(node) {
     return isStringNode(node) ? TEXT_VALUE_WIDGET : MEDIA_REF_WIDGET;
 }
 
-function getStorageWidget(node) {
+function getPreferredImagePreviewUrl(node, fallbackUrl = "") {
+    if (String(node?.comfyClass || "") !== "XImageGet") {
+        return String(fallbackUrl || "");
+    }
+    const maskRef = getMaskImageRef(node);
+    const maskUrl = buildAnnotatedImageUrl(maskRef);
+    if (maskUrl) {
+        return maskUrl;
+    }
+    return String(fallbackUrl || "");
+}
+
+function canOpenMaskEditor(node) {
+    if (String(node?.comfyClass || "") !== "XImageGet") {
+        return false;
+    }
+    const mediaRef = getStoredNodeValue(node);
+    if (!mediaRef) {
+        return false;
+    }
+    const panelInfo = node?.__ximageget_panel;
+    if (!panelInfo) {
+        return false;
+    }
+    if (panelInfo.__xmediaget_preview_state !== PREVIEW_STATE_LOADED) {
+        return false;
+    }
+    if (!(panelInfo.mediaEl instanceof HTMLImageElement)) {
+        return false;
+    }
+    if (!panelInfo.mediaEl.complete) {
+        return false;
+    }
+    if (!panelInfo.mediaEl.naturalWidth || !panelInfo.mediaEl.naturalHeight) {
+        return false;
+    }
+    return typeof app?.extensionManager?.command?.execute === "function";
+}
+
+function syncMaskButtonState(node) {
+    const panelInfo = node?.__ximageget_panel;
+    const btn = panelInfo?.maskBtn;
+    if (!(btn instanceof HTMLButtonElement)) {
+        return;
+    }
+    btn.disabled = !canOpenMaskEditor(node);
+}
+
+function createPreviewImageFromNode(node) {
+    const panelInfo = node?.__ximageget_panel;
+    const imgEl = panelInfo?.mediaEl;
+    if (!(imgEl instanceof HTMLImageElement)) {
+        return null;
+    }
+    if (!imgEl.complete || !imgEl.naturalWidth || !imgEl.naturalHeight) {
+        return null;
+    }
+    return imgEl;
+}
+
+function selectNodeForMaskEditor(node) {
+    const canvas = app?.canvas;
+    if (!canvas || !node) {
+        return;
+    }
+    try {
+        canvas.deselectAllNodes?.();
+    } catch {
+        // ignore
+    }
+    try {
+        canvas.selectNode?.(node, false);
+    } catch {
+        // ignore
+    }
+    canvas.current_node = node;
+    canvas.node_selected = node;
+    canvas.selected_nodes = { [node.id]: node };
+}
+
+function clearTemporaryMaskEditorState(node) {
+    if (!node) {
+        return;
+    }
+    if (node.__ximageget_mask_editor_prev_images === undefined) {
+        delete node.images;
+    } else {
+        node.images = node.__ximageget_mask_editor_prev_images;
+    }
+    if (node.__ximageget_mask_editor_prev_imgs === undefined) {
+        delete node.imgs;
+    } else {
+        node.imgs = node.__ximageget_mask_editor_prev_imgs;
+    }
+    if (node.__ximageget_mask_editor_prev_preview_type === undefined) {
+        delete node.previewMediaType;
+    } else {
+        node.previewMediaType = node.__ximageget_mask_editor_prev_preview_type;
+    }
+    delete node.__ximageget_mask_editor_prev_images;
+    delete node.__ximageget_mask_editor_prev_imgs;
+    delete node.__ximageget_mask_editor_prev_preview_type;
+}
+
+function scheduleTemporaryMaskEditorStateClear(node) {
+    window.setTimeout(() => {
+        clearTemporaryMaskEditorState(node);
+    }, 0);
+}
+
+function clearLegacyCanvasPreview(node) {
+    if (!node) {
+        return;
+    }
+    delete node.imgs;
+    node.imageIndex = null;
+    if (Array.isArray(node.widgets)) {
+        const widgetIndex = node.widgets.findIndex(
+            (item) => item?.name === "$$canvas-image-preview"
+        );
+        if (widgetIndex >= 0) {
+            node.widgets[widgetIndex]?.onRemove?.();
+            node.widgets.splice(widgetIndex, 1);
+        }
+    }
+    node?.graph?.setDirtyCanvas?.(true, true);
+}
+
+function scheduleLegacyCanvasPreviewClear(node) {
+    clearLegacyCanvasPreview(node);
+    window.setTimeout(() => {
+        clearLegacyCanvasPreview(node);
+    }, 0);
+    window.requestAnimationFrame(() => {
+        clearLegacyCanvasPreview(node);
+    });
+}
+
+async function uploadCurrentNodeImageForMaskEditor(node) {
+    const panelInfo = node?.__ximageget_panel;
+    const imgEl = panelInfo?.mediaEl;
+    if (!(imgEl instanceof HTMLImageElement)) {
+        throw new Error("Mask source image element missing");
+    }
+    const sourceUrl = String(imgEl.currentSrc || imgEl.src || "").trim();
+    if (!sourceUrl) {
+        throw new Error("Mask source image URL missing");
+    }
+    const response = await fetch(sourceUrl, { credentials: "same-origin" });
+    if (!response.ok) {
+        throw new Error("Failed to fetch mask source image");
+    }
+    const blob = await response.blob();
+    const sourceTitle = String(panelInfo?.title?.textContent || "").trim();
+    const fallbackName = sourceTitle || "ximageget-mask-source.png";
+    const uploadName = fallbackName.includes(".")
+        ? fallbackName
+        : `${fallbackName}.png`;
+    const file = new File([blob], uploadName, {
+        type: blob.type || "image/png",
+    });
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("subfolder", "clipspace");
+    const uploadResponse = await api.fetchApi("/upload/image", {
+        method: "POST",
+        body: formData,
+    });
+    if (!uploadResponse.ok) {
+        throw new Error("Failed to upload mask source image");
+    }
+    const payload = await uploadResponse.json();
+    return {
+        filename: String(payload?.name || ""),
+        subfolder: String(payload?.subfolder || ""),
+        type: String(payload?.type || "input"),
+    };
+}
+
+async function openMaskEditorForNode(node) {
+    if (!canOpenMaskEditor(node)) {
+        return;
+    }
+    const tempPreviewImage = createPreviewImageFromNode(node);
+    if (!tempPreviewImage) {
+        return;
+    }
+    try {
+        const uploadedRef = await uploadCurrentNodeImageForMaskEditor(node);
+        if (!uploadedRef.filename) {
+            return;
+        }
+        getMaskEditorBridgeWidget(node);
+        node.__ximageget_mask_editor_prev_images = node.images;
+        node.__ximageget_mask_editor_prev_imgs = node.imgs;
+        node.__ximageget_mask_editor_prev_preview_type = node.previewMediaType;
+        node.images = [uploadedRef];
+        node.imgs = [tempPreviewImage];
+        node.previewMediaType = "image";
+        selectNodeForMaskEditor(node);
+        await app.extensionManager.command.execute(
+            "Comfy.MaskEditor.OpenMaskEditor"
+        );
+    } catch (error) {
+        console.warn(
+            t(
+                MASK_EDITOR_UNAVAILABLE_KEY,
+                MASK_EDITOR_UNAVAILABLE_FALLBACK
+            ),
+            error
+        );
+    } finally {
+        scheduleTemporaryMaskEditorStateClear(node);
+    }
+}
+
+function handleMaskEditorImageSaved(node, value) {
+    if (String(node?.comfyClass || "") !== "XImageGet") {
+        return;
+    }
+    const normalized = String(value || "").trim();
+    setMaskImageRef(node, normalized);
+    if (!normalized) {
+        syncMaskButtonState(node);
+        return;
+    }
+    const panelInfo = node?.__ximageget_panel;
+    if (!panelInfo) {
+        return;
+    }
+    const mediaRef = getStoredNodeValue(node);
+    const previewUrl = getPreferredImagePreviewUrl(
+        node,
+        buildMediaFileUrl(mediaRef)
+    );
+    setPreview(panelInfo, {
+        file_url: previewUrl,
+        title: panelInfo.title?.textContent || "",
+    });
+    scheduleLegacyCanvasPreviewClear(node);
+    syncMaskButtonState(node);
+}
+
+function ensureHiddenWidget(node, widgetName, onChange = null) {
     if (!node) {
         return null;
     }
-    const widgetName = getStorageWidgetName(node);
     const widgets = node.widgets || [];
     let widget = widgets.find((item) => item?.name === widgetName);
     if (!widget && typeof node.addWidget === "function") {
-        widget = node.addWidget("text", widgetName, "", () => {});
+        widget = node.addWidget("text", widgetName, "", onChange || (() => {}));
+    } else if (widget && typeof onChange === "function") {
+        widget.callback = onChange;
     }
     if (widget) {
         widget.hidden = true;
         widget.serializeValue = () => widget.value;
     }
     return widget || null;
+}
+
+function getStorageWidget(node) {
+    return ensureHiddenWidget(node, getStorageWidgetName(node));
+}
+
+function getMaskStorageWidget(node) {
+    if (String(node?.comfyClass || "") !== "XImageGet") {
+        return null;
+    }
+    return ensureHiddenWidget(node, MASK_IMAGE_REF_WIDGET);
+}
+
+function getMaskEditorBridgeWidget(node) {
+    if (String(node?.comfyClass || "") !== "XImageGet") {
+        return null;
+    }
+    return ensureHiddenWidget(node, MASK_EDITOR_IMAGE_WIDGET, (value) => {
+        handleMaskEditorImageSaved(node, value);
+    });
 }
 
 function removeStorageInputSlot(node) {
@@ -812,10 +1196,14 @@ function removeStorageInputSlot(node) {
     if (!Array.isArray(node?.inputs)) {
         return;
     }
-    const widgetName = getStorageWidgetName(node);
-    const nextInputs = node.inputs.filter(
-        (input) => String(input?.name || "") !== widgetName
-    );
+    const hiddenNames = new Set([getStorageWidgetName(node)]);
+    if (String(node?.comfyClass || "") === "XImageGet") {
+        hiddenNames.add(MASK_IMAGE_REF_WIDGET);
+    }
+    const nextInputs = node.inputs.filter((input) => {
+        const name = String(input?.name || "");
+        return !hiddenNames.has(name);
+    });
     if (nextInputs.length === node.inputs.length) {
         return;
     }
@@ -849,6 +1237,33 @@ function setStoredNodeValue(node, value) {
     }
     widget.value = normalized;
     node?.graph?.setDirtyCanvas?.(true, true);
+}
+
+function getMaskImageRef(node) {
+    const widget = getMaskStorageWidget(node);
+    const value = widget?.value;
+    if (typeof value === "string" && value) {
+        return value;
+    }
+    const propertyValue = node?.properties?.[MASK_IMAGE_REF_PROPERTY];
+    return typeof propertyValue === "string"
+        ? propertyValue
+        : String(propertyValue || "");
+}
+
+function setMaskImageRef(node, value) {
+    if (String(node?.comfyClass || "") !== "XImageGet") {
+        return;
+    }
+    const normalized = String(value || "");
+    if (!node?.properties) {
+        node.properties = {};
+    }
+    node.properties[MASK_IMAGE_REF_PROPERTY] = normalized;
+    const widget = getMaskStorageWidget(node);
+    if (widget) {
+        widget.value = normalized;
+    }
 }
 
 function hydrateStoredNodeValue(node) {
@@ -897,7 +1312,9 @@ function installNodeUi(node) {
     }
     removeStorageInputSlot(node);
     ensureStyles();
+    clearLegacyCanvasPreview(node);
     const panelInfo = buildPanel(nodeClass);
+    panelInfo.__ximageget_node = node;
     node.__ximageget_panel = panelInfo;
     applyPanelLocale(panelInfo);
     applyNodeBadge(panelInfo, node);
@@ -965,14 +1382,24 @@ function installNodeUi(node) {
         panelInfo.clearBtn.addEventListener("click", (event) => {
             consumeDragEvent(event);
             setStoredNodeValue(node, "");
+            setMaskImageRef(node, "");
             setPreview(panelInfo, {});
         });
     }
+    if (panelInfo.maskBtn instanceof HTMLButtonElement) {
+        panelInfo.maskBtn.addEventListener("click", async (event) => {
+            consumeDragEvent(event);
+            await openMaskEditorForNode(node);
+        });
+    }
+    getMaskStorageWidget(node);
+    getMaskEditorBridgeWidget(node);
     ensureNodeMinSize(node);
     const stored = hydrateStoredNodeValue(node) || getStoredNodeValue(node);
     if (stored) {
         restoreStoredData(node, stored);
     }
+    syncMaskButtonState(node);
 }
 
 function ensureNodeMinSize(node) {
@@ -1022,6 +1449,7 @@ function restoreStoredData(node, stored) {
     if (!value) {
         return;
     }
+    clearLegacyCanvasPreview(node);
     const panelInfo = node?.__ximageget_panel;
     const nodeClass = String(node?.comfyClass || "");
     if (nodeClass === STRING_NODE_CLASS) {
@@ -1034,7 +1462,10 @@ function restoreStoredData(node, stored) {
         return;
     }
     const mediaRef = value;
-    const fallbackUrl = buildMediaFileUrl(mediaRef);
+    const fallbackUrl = getPreferredImagePreviewUrl(
+        node,
+        buildMediaFileUrl(mediaRef)
+    );
     if (panelInfo) {
         setPreview(panelInfo, {
             file_url: fallbackUrl,
@@ -1050,7 +1481,7 @@ function restoreStoredData(node, stored) {
             return;
         }
         setPreview(panelInfo, {
-            file_url: fileUrl,
+            file_url: getPreferredImagePreviewUrl(node, fileUrl),
             title: String(payload.title || ""),
         });
     }).catch(() => {});
@@ -1075,11 +1506,13 @@ function updateNodeMediaRef(node, mediaRef, title) {
     if (!node) {
         return;
     }
+    clearLegacyCanvasPreview(node);
     if (!node.__ximageget_panel) {
         installNodeUi(node);
     }
     const panelInfo = node.__ximageget_panel;
-    const fileUrl = buildMediaFileUrl(mediaRef);
+    setMaskImageRef(node, "");
+    const fileUrl = getPreferredImagePreviewUrl(node, buildMediaFileUrl(mediaRef));
     if (panelInfo) {
         setPreview(panelInfo, { file_url: fileUrl, title });
     }

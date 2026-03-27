@@ -695,11 +695,20 @@
   "XImageGet": {
     "display_name": "XImageGet",
     "description": "从 XDataHub 获取最新发送的图片。",
-    "inputs": {},
+    "inputs": {
+      "mask_image_ref": {
+        "name": "遮罩引用",
+        "tooltip": "官方遮罩编辑器保存后的遮罩图引用"
+      }
+    },
     "outputs": {
       "0": {
         "name": "图像",
         "tooltip": "XDataHub 最近发送的图片"
+      },
+      "1": {
+        "name": "遮罩",
+        "tooltip": "从遮罩编辑器输出图中提取的遮罩"
       }
     }
   },

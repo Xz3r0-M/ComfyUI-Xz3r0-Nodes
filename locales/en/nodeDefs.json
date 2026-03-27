@@ -695,11 +695,20 @@
   "XImageGet": {
     "display_name": "XImageGet",
     "description": "Load the latest image sent from XDataHub.",
-    "inputs": {},
+    "inputs": {
+      "mask_image_ref": {
+        "name": "Mask Ref",
+        "tooltip": "Mask image reference saved by the official mask editor"
+      }
+    },
     "outputs": {
       "0": {
         "name": "Image",
         "tooltip": "Latest image received from XDataHub"
+      },
+      "1": {
+        "name": "Mask",
+        "tooltip": "Mask extracted from the mask editor output image"
       }
     }
   },
