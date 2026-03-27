@@ -24,11 +24,6 @@ ComfyUI-Xz3r0-Nodes V3 扩展入口。
 
 import shutil
 
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
-
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
 from .xnode.xanygate10 import XAnyGate10
@@ -120,14 +115,12 @@ class Xz3r0NodesExtension(ComfyExtension):
     Xz3r0-Nodes 扩展类（V3）。
     """
 
-    @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         """
         返回固定注册节点列表。
         """
         return list(REGISTERED_NODE_CLASSES)
 
-    @override
     async def on_load(self):
         """
         扩展加载时输出最小环境提示。

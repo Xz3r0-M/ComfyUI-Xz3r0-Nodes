@@ -8,11 +8,6 @@
 import json
 from pathlib import Path
 
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
-
 import comfy.utils
 import numpy as np
 import torch
@@ -466,7 +461,6 @@ class XImageSave(io.ComfyNode):
 class Xz3r0Extension(ComfyExtension):
     """Xz3r0 Nodes Extension"""
 
-    @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [XImageSave]
 
