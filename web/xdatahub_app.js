@@ -76,7 +76,18 @@ const appState = {
     items: [],
     total: 0,
     totalPages: 1,
-    lockState: { state: "IDLE", readonly: false, cooldown_ms: 0 },
+    lockState: {
+        state: "IDLE",
+        readonly: false,
+        cooldown_ms: 0,
+        is_executing: false,
+        queue_remaining: 0,
+        queue_running: 0,
+        queue_pending: 0,
+        interrupt_requested: false,
+        interrupt_request_at: null,
+        last_event: "",
+    },
     requests: new Map(),
     lockPollTimer: 0,
     lockWs: null,
@@ -1529,6 +1540,17 @@ function normalizeLockState(lock) {
         state: lock?.state || "IDLE",
         readonly: !!lock?.readonly,
         cooldown_ms: Number(lock?.cooldown_ms || 0),
+        is_executing: !!lock?.is_executing,
+        queue_remaining: Math.max(0, Number(lock?.queue_remaining || 0)),
+        queue_running: Math.max(0, Number(lock?.queue_running || 0)),
+        queue_pending: Math.max(0, Number(lock?.queue_pending || 0)),
+        interrupt_requested: !!lock?.interrupt_requested,
+        interrupt_request_at: Number.isFinite(
+            Number(lock?.interrupt_request_at)
+        )
+            ? Number(lock?.interrupt_request_at)
+            : null,
+        last_event: String(lock?.last_event || ""),
     };
 }
 
@@ -1538,11 +1560,55 @@ function applyLockState(lock) {
     const changed =
         prev.state !== next.state ||
         prev.readonly !== next.readonly ||
-        prev.cooldown_ms !== next.cooldown_ms;
+        prev.cooldown_ms !== next.cooldown_ms ||
+        prev.is_executing !== next.is_executing ||
+        prev.queue_remaining !== next.queue_remaining ||
+        prev.queue_running !== next.queue_running ||
+        prev.queue_pending !== next.queue_pending ||
+        prev.interrupt_requested !== next.interrupt_requested ||
+        prev.interrupt_request_at !== next.interrupt_request_at ||
+        prev.last_event !== next.last_event;
     if (changed) {
         appState.lockState = next;
     }
     return changed;
+}
+
+function applyInterruptRequested(requestedAt = Date.now()) {
+    return applyLockState({
+        ...appState.lockState,
+        interrupt_requested: true,
+        interrupt_request_at: requestedAt,
+        last_event: "interrupt_requested",
+        state: appState.lockState.is_executing
+            ? "STOPPING"
+            : appState.lockState.state,
+    });
+}
+
+function applyOfficialQueueRemaining(queueRemaining, eventType) {
+    const remaining = Math.max(0, Number(queueRemaining || 0));
+    const next = {
+        ...appState.lockState,
+        readonly: remaining > 0,
+        is_executing: remaining > 0,
+        queue_remaining: remaining,
+        last_event: String(eventType || appState.lockState.last_event || ""),
+    };
+    if (remaining <= 0) {
+        next.state = "IDLE";
+        next.interrupt_requested = false;
+        next.interrupt_request_at = null;
+        next.queue_running = 0;
+        next.queue_pending = 0;
+    } else if (next.interrupt_requested) {
+        next.state = "STOPPING";
+    } else if (next.queue_running > 0) {
+        next.state = "RUNNING";
+    } else {
+        next.state = "QUEUED";
+    }
+    return applyLockState(next);
 }
 
 function clearDetailResources() {
@@ -6485,6 +6551,23 @@ function syncTopActionBarUi() {
     syncDocumentLocaleMeta();
 }
 
+function getLockBannerText() {
+    const stateLabel = getLocalizedLockStateLabel(appState.lockState.state);
+    const key = appState.lockState.interrupt_requested
+        ? "xdatahub.ui.app.lock.readonly_interrupt_requested"
+        : "xdatahub.ui.app.lock.readonly_with_state";
+    const fallback = appState.lockState.interrupt_requested
+        ? (
+            "Stop requested, waiting for active tasks to finish "
+            + "(state: {state}, active: {count})"
+        )
+        : "Read-only while running (state: {state}, active: {count})";
+    return t(key, fallback, {
+        state: stateLabel,
+        count: appState.lockState.queue_remaining,
+    });
+}
+
 function syncLockBannerUi() {
     const banner = document.querySelector(".lock-banner");
     if (!(banner instanceof HTMLElement)) {
@@ -6492,11 +6575,7 @@ function syncLockBannerUi() {
         return;
     }
     banner.classList.toggle("show", !!appState.lockState.readonly);
-    banner.textContent = t(
-        "xdatahub.ui.app.lock.readonly_with_state",
-        `Read-only while running (state: ${appState.lockState.state})`,
-        { state: appState.lockState.state }
-    );
+    banner.textContent = getLockBannerText();
 }
 
 function renderShell() {
@@ -6516,11 +6595,7 @@ function renderShell() {
     );
     return `
         <div class="lock-banner ${showLock}">
-            ${escapeHtml(t(
-                "xdatahub.ui.app.lock.readonly_with_state",
-                `Read-only while running (state: ${appState.lockState.state})`,
-                { state: appState.lockState.state }
-            ))}
+            ${escapeHtml(getLockBannerText())}
         </div>
         <div class="workspace ${sidebarOpen ? "filters-expanded" : "filters-collapsed"}">
             ${renderTopActionBar()}
@@ -9012,6 +9087,67 @@ async function pollLockStatus() {
     }
 }
 
+function scheduleLockUiSync() {
+    syncLockBannerUi();
+    syncTopActionBarUi();
+}
+
+function getLocalizedLockStateLabel(state) {
+    const normalized = String(state || "").trim().toUpperCase() || "IDLE";
+    const fallbackMap = {
+        IDLE: "Idle",
+        QUEUED: "Queued",
+        RUNNING: "Running",
+        STOPPING: "Stopping",
+        COOLDOWN: "Cooldown",
+    };
+    return t(
+        `xdatahub.ui.app.lock.state.${normalized.toLowerCase()}`,
+        fallbackMap[normalized] || normalized
+    );
+}
+
+function handleOfficialExecutionEvent(message) {
+    if (!message || typeof message !== "object") {
+        return false;
+    }
+    const eventType = String(message.type || "").trim();
+    const payload = message.data;
+    if (eventType === "status") {
+        const queueRemaining = payload?.status?.exec_info?.queue_remaining;
+        if (Number.isFinite(Number(queueRemaining))) {
+            if (applyOfficialQueueRemaining(queueRemaining, eventType)) {
+                scheduleLockUiSync();
+            }
+            return true;
+        }
+    }
+    if (eventType === "execution_interrupted") {
+        if (applyInterruptRequested(Date.now())) {
+            scheduleLockUiSync();
+        }
+        return true;
+    }
+    if (
+        eventType === "execution_start"
+        || eventType === "execution_cached"
+        || eventType === "executing"
+        || eventType === "execution_success"
+        || eventType === "execution_error"
+        || eventType === "progress"
+    ) {
+        const changed = applyLockState({
+            ...appState.lockState,
+            last_event: eventType,
+        });
+        if (changed) {
+            scheduleLockUiSync();
+        }
+        return true;
+    }
+    return false;
+}
+
 window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && appState.nodeSendDialogOpen) {
         if (appState.nodeSendSending) {
@@ -9098,7 +9234,16 @@ function setupWsLockSync() {
                 pollLockStatus();
             }, 120);
         };
-        ws.addEventListener("message", () => {
+        ws.addEventListener("message", (event) => {
+            try {
+                const payload = JSON.parse(String(event.data || ""));
+                if (handleOfficialExecutionEvent(payload)) {
+                    schedulePoll();
+                    return;
+                }
+            } catch {
+                // 忽略非 JSON 消息，保留轮询兜底。
+            }
             schedulePoll();
         });
         ws.addEventListener("close", () => {
@@ -9161,6 +9306,17 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:send_to_node_ack") {
         applyNodeSendAckResponse(payload.data || payload);
+        return;
+    }
+    if (payload.type === "xdatahub:interrupt-requested") {
+        if (
+            applyInterruptRequested(
+                Number(payload.requested_at) || Date.now()
+            )
+        ) {
+            scheduleLockUiSync();
+        }
+        pollLockStatus();
         return;
     }
     if (payload.type === "xdatahub:theme-mode") {

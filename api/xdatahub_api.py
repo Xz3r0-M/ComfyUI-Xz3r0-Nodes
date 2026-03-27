@@ -61,7 +61,7 @@ LOGGER = get_logger(__name__)
 SQLITE_BUSY_TIMEOUT_MS = 1000
 RETRY_COUNT = 2
 RETRY_DELAY_S = 0.05
-LOCK_COOLDOWN_S = 1.5
+LOCK_COOLDOWN_S = 0.35
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 VALIDATION_BATCH_SIZE = 30
@@ -704,40 +704,89 @@ class LockManager:
         self._lock = threading.Lock()
         self._state = "IDLE"
         self._cooldown_until = 0.0
-        self._candidate_until = 0.0
+        self._interrupt_requested = False
+        self._interrupt_request_at: float | None = None
+        self._last_event = "init"
+        self._was_executing = False
 
-    def mark_running(self) -> None:
-        with self._lock:
-            self._state = "RUNNING"
-            self._cooldown_until = 0.0
+    def _queue_counts(self) -> tuple[int, int]:
+        prompt_queue = getattr(
+            server.PromptServer.instance,
+            "prompt_queue",
+            None,
+        )
+        if prompt_queue is None:
+            return 0, 0
+        try:
+            running, queued = prompt_queue.get_current_queue_volatile()
+        except Exception:
+            return 0, 0
+        return len(running), len(queued)
 
-    def mark_candidate(self) -> None:
+    def mark_prompt_submitted(self) -> None:
         with self._lock:
-            now = time.monotonic()
-            self._candidate_until = max(self._candidate_until, now + 2.0)
-            if self._state == "IDLE":
-                self._state = "RUNNING"
+            self._last_event = "prompt_submitted"
 
-    def mark_finish(self) -> None:
+    def mark_interrupt_requested(self) -> None:
         with self._lock:
-            self._state = "COOLDOWN"
-            self._cooldown_until = time.monotonic() + LOCK_COOLDOWN_S
+            self._interrupt_requested = True
+            self._interrupt_request_at = time.time()
+            self._last_event = "interrupt_requested"
+
+    def mark_event(self, event: str) -> None:
+        normalized = str(event or "").strip().lower() or "unknown"
+        with self._lock:
+            self._last_event = normalized
+            if normalized in {"execution_start", "execution_cached"}:
+                self._interrupt_requested = False
+                self._interrupt_request_at = None
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             now = time.monotonic()
-            if self._state == "COOLDOWN" and now >= self._cooldown_until:
-                self._state = "IDLE"
-            if self._state == "RUNNING" and now > self._candidate_until > 0:
-                self._state = "IDLE"
-                self._candidate_until = 0.0
+            running_count, queued_count = self._queue_counts()
+            queue_remaining = running_count + queued_count
+            is_executing = queue_remaining > 0
+
+            if is_executing:
+                self._cooldown_until = 0.0
+                self._was_executing = True
+                if self._interrupt_requested:
+                    self._state = "STOPPING"
+                elif running_count > 0:
+                    self._state = "RUNNING"
+                else:
+                    self._state = "QUEUED"
+            else:
+                if self._was_executing and self._cooldown_until <= 0.0:
+                    self._cooldown_until = now + LOCK_COOLDOWN_S
+                if self._cooldown_until > now:
+                    self._state = "COOLDOWN"
+                else:
+                    self._state = "IDLE"
+                    self._cooldown_until = 0.0
+                    self._was_executing = False
+                self._interrupt_requested = False
+                self._interrupt_request_at = None
+
             remain_ms = 0
             if self._state == "COOLDOWN":
                 remain_ms = max(0, int((self._cooldown_until - now) * 1000))
             return {
                 "state": self._state,
-                "readonly": self._state in {"RUNNING", "COOLDOWN"},
+                "readonly": is_executing,
                 "cooldown_ms": remain_ms,
+                "is_executing": is_executing,
+                "queue_remaining": queue_remaining,
+                "queue_running": running_count,
+                "queue_pending": queued_count,
+                "interrupt_requested": self._interrupt_requested,
+                "interrupt_request_at": (
+                    int(self._interrupt_request_at * 1000)
+                    if self._interrupt_request_at is not None
+                    else None
+                ),
+                "last_event": self._last_event,
             }
 
 
@@ -2207,21 +2256,17 @@ def register_lock_listener() -> None:
 
     def patched(event: str, data: Any, sid: str = None) -> None:
         original(event, data, sid)
-        if event in {"execution_start", "execution_cached"}:
-            LOCK.mark_running()
-        elif event == "executing":
-            # ComfyUI 在一次执行结束时会发送 node=None。
-            # 该事件不应继续维持 RUNNING，否则可能导致锁状态卡住。
-            if isinstance(data, dict) and data.get("node") is None:
-                LOCK.mark_finish()
-            else:
-                LOCK.mark_running()
-        elif event in {
+        if event in {
+            "status",
+            "progress",
+            "execution_start",
+            "execution_cached",
+            "executing",
             "execution_success",
             "execution_error",
             "execution_interrupted",
         }:
-            LOCK.mark_finish()
+            LOCK.mark_event(event)
 
     server.PromptServer.instance.send_sync = patched
     register_lock_listener._patched = True
@@ -2232,9 +2277,19 @@ async def api_lock_status(request: web.Request) -> web.Response:
     return web.json_response({"status": "success", **lock_payload()})
 
 
-@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/lock/prompt-submitted")
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/lock/prompt-submitted"
+)
 async def api_lock_candidate(request: web.Request) -> web.Response:
-    LOCK.mark_candidate()
+    LOCK.mark_prompt_submitted()
+    return web.json_response({"status": "success", **lock_payload()})
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/lock/interrupt-requested"
+)
+async def api_lock_interrupt_requested(request: web.Request) -> web.Response:
+    LOCK.mark_interrupt_requested()
     return web.json_response({"status": "success", **lock_payload()})
 
 

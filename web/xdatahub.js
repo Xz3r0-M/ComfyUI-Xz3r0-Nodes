@@ -89,6 +89,7 @@ let uiLocalePrimary = {};
 let uiLocaleFallback = {};
 let uiLocaleApplySeq = 0;
 let hotkeyListenerInstalled = false;
+let interruptObserverInstalled = false;
 
 const UI_KEYS = {
     windowTitle: "xdatahub.ui.shell.window_title",
@@ -112,7 +113,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260327-267";
+const XDATAHUB_ASSET_VER = "20260327-269";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -162,6 +163,72 @@ async function syncThemeModeFromSettings() {
 
 function iconUrl(name) {
     return `/extensions/ComfyUI-Xz3r0-Nodes/icons/${name}.svg`;
+}
+
+function toRequestUrl(input) {
+    if (typeof input === "string" || input instanceof URL) {
+        return String(input);
+    }
+    if (input && typeof input === "object" && "url" in input) {
+        return String(input.url || "");
+    }
+    return "";
+}
+
+function resolveRequestMethod(input, init) {
+    const initMethod = String(init?.method || "").trim().toUpperCase();
+    if (initMethod) {
+        return initMethod;
+    }
+    if (input && typeof input === "object" && "method" in input) {
+        return String(input.method || "").trim().toUpperCase();
+    }
+    return "GET";
+}
+
+function isInterruptRequest(input, init) {
+    const requestUrl = toRequestUrl(input);
+    if (!requestUrl) {
+        return false;
+    }
+    try {
+        const url = new URL(requestUrl, window.location.origin);
+        return url.pathname === "/interrupt"
+            && resolveRequestMethod(input, init) === "POST";
+    } catch {
+        return false;
+    }
+}
+
+function notifyInterruptRequested() {
+    try {
+        fetch("/xz3r0/xdatahub/lock/interrupt-requested", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: "{}",
+        }).catch(() => {
+            // 仅用于同步停止请求态，不阻断官方中断流程。
+        });
+    } catch {
+        // 忽略同步失败，避免影响官方中断按钮。
+    }
+    xdataHubRef?.instance?.postInterruptRequestedToDataFrame?.();
+}
+
+function installInterruptObserver() {
+    if (interruptObserverInstalled || typeof window.fetch !== "function") {
+        return;
+    }
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = function wrappedFetch(input, init) {
+        if (isInterruptRequest(input, init)) {
+            notifyInterruptRequested();
+        }
+        return originalFetch(input, init);
+    };
+    interruptObserverInstalled = true;
 }
 
 function iconHtml(name, label, className = "xz3r0-icon") {
@@ -1503,6 +1570,18 @@ const XDataHub = {
                 "*"
             );
         };
+        const postInterruptRequestedToDataFrame = () => {
+            if (!dataFrame.contentWindow) {
+                return;
+            }
+            dataFrame.contentWindow.postMessage(
+                {
+                    type: "xdatahub:interrupt-requested",
+                    requested_at: Date.now(),
+                },
+                "*"
+            );
+        };
         const postSharedStateToDataFrame = () => {
             postThemeModeToDataFrame();
             postHotkeySpecToDataFrame();
@@ -2450,6 +2529,9 @@ const XDataHub = {
             postHotkeySpecToDataFrame() {
                 postHotkeySpecToDataFrame();
             },
+            postInterruptRequestedToDataFrame() {
+                postInterruptRequestedToDataFrame();
+            },
 
             /**
              * 显示窗口
@@ -2543,6 +2625,7 @@ const XDataHub = {
     }
 };
 xdataHubRef = XDataHub;
+installInterruptObserver();
 
 window.addEventListener("message", (event) => {
     const payload = event.data;
