@@ -696,6 +696,10 @@
     "display_name": "XImageGet",
     "description": "Load the latest image sent from XDataHub.",
     "inputs": {
+      "output_placeholder": {
+        "name": "Placeholder Black Image",
+        "tooltip": "Output a 1x1 black placeholder image when no image is available"
+      },
       "mask_image_ref": {
         "name": "Mask Ref",
         "tooltip": "Mask image reference saved by the official mask editor"

@@ -21,6 +21,7 @@ except ImportError:
 PIXELS_PER_MEGAPIXEL = 1_000_000  # 每百万像素的像素数
 MAX_MEGAPIXELS = 100.0  # 最大百万像素限制（防止显存溢出）
 LOGGER = get_logger(__name__)
+ResizeSettingsIO = io.Custom("XZ3R0_RESIZE_SETTINGS")
 SETTINGS_FIELDS = (
     "scale_mode",
     "edge_mode",
@@ -80,7 +81,7 @@ class XImageResize(io.ComfyNode):
 
     输入：
         image_or_mask: 输入图像或遮罩张量 (IMAGE/MASK)
-        resize_settings_in: 上游设置输入 (MatchType, 可选)
+        resize_settings_in: 上游设置输入 (专用设置类型，可选)
         use_passed_settings: 是否用于本节点缩放计算 (BOOLEAN)
         output_resize_settings: 是否输出缩放设置 (BOOLEAN)
         scale_mode: 缩放模式 (STRING)
@@ -98,13 +99,12 @@ class XImageResize(io.ComfyNode):
         Processed_Data: 缩放后的图像或遮罩张量
         width: 输出分辨率宽度
         height: 输出分辨率高度
-        resize_settings_out: 继续传递给下游的链路设置字典或空值
+        resize_settings_out: 继续传递给下游的专用设置链或空值
     """
 
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束。"""
-        settings_template = io.MatchType.Template("resize_settings")
         passthrough_template = io.MatchType.Template(
             "image_or_mask_passthrough",
             allowed_types=[io.Image, io.Mask],
@@ -122,9 +122,8 @@ class XImageResize(io.ComfyNode):
                     template=passthrough_template,
                     tooltip="Input image or mask",
                 ),
-                io.MatchType.Input(
+                ResizeSettingsIO.Input(
                     "resize_settings_in",
-                    template=settings_template,
                     optional=True,
                     tooltip="Optional resize settings from previous "
                     "XImageResize node",
@@ -280,9 +279,8 @@ class XImageResize(io.ComfyNode):
                     "height",
                     tooltip="Output resolution height",
                 ),
-                io.MatchType.Output(
-                    template=settings_template,
-                    display_name="resize_settings_out",
+                ResizeSettingsIO.Output(
+                    "resize_settings_out",
                     tooltip=(
                         "Settings passed to downstream nodes. If valid "
                         "upstream settings exist, this output keeps "

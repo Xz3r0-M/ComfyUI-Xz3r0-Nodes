@@ -58,6 +58,16 @@ class XImageGet(io.ComfyNode):
                     socketless=True,
                     extra_dict={"hidden": True},
                 ),
+                io.Boolean.Input(
+                    "output_placeholder",
+                    default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip=(
+                        "Output a 1x1 black placeholder image when no "
+                        "image is available"
+                    ),
+                ),
             ],
             outputs=[
                 io.Image.Output(
@@ -78,9 +88,14 @@ class XImageGet(io.ComfyNode):
         cls,
         media_ref: str = "",
         mask_image_ref: str = "",
+        output_placeholder: bool = False,
     ) -> int:
-        if media_ref or mask_image_ref:
-            return cls._fingerprint_refs(media_ref, mask_image_ref)
+        if media_ref or mask_image_ref or output_placeholder:
+            return cls._fingerprint_refs(
+                media_ref,
+                mask_image_ref,
+                output_placeholder,
+            )
         return 0
 
     @classmethod
@@ -88,23 +103,26 @@ class XImageGet(io.ComfyNode):
         cls,
         media_ref: str = "",
         mask_image_ref: str = "",
+        output_placeholder: bool = False,
     ) -> io.NodeOutput:
         if not media_ref:
-            return io.NodeOutput(None)
+            return cls._build_empty_image_output(output_placeholder)
         mask_path = cls._resolve_mask_image_ref(mask_image_ref)
         image_path = cls._resolve_image_path(media_ref, mask_path)
         if image_path is None:
             LOGGER.warning("[XImageGet] invalid media ref")
-            return io.NodeOutput(None)
+            return cls._build_empty_image_output(output_placeholder)
         if not image_path.exists():
             LOGGER.warning("[XImageGet] image file missing")
-            return io.NodeOutput(None)
-        preserve_alpha = bool(mask_path is not None and image_path == mask_path)
+            return cls._build_empty_image_output(output_placeholder)
+        preserve_alpha = bool(
+            mask_path is not None and image_path == mask_path
+        )
         try:
             image = cls._load_image(image_path, preserve_alpha=preserve_alpha)
         except FileNotFoundError:
             LOGGER.warning("[XImageGet] image file missing")
-            return io.NodeOutput(None)
+            return cls._build_empty_image_output(output_placeholder)
         except Exception as exc:
             LOGGER.exception(
                 "[XImageGet] image load failed: err=%s",
@@ -155,17 +173,41 @@ class XImageGet(io.ComfyNode):
             else:
                 return torch.zeros((height, width), dtype=torch.float32)
             if alpha.size != (width, height):
-                alpha = alpha.resize((width, height), Image.Resampling.BILINEAR)
+                alpha = alpha.resize(
+                    (width, height),
+                    Image.Resampling.BILINEAR,
+                )
             array = np.asarray(alpha).astype(np.float32) / 255.0
         return 1.0 - torch.from_numpy(array)
 
     @staticmethod
-    def _fingerprint_refs(media_ref: str, mask_image_ref: str) -> int:
+    def _build_placeholder_output() -> io.NodeOutput:
+        image = torch.zeros((1, 1, 1, 3), dtype=torch.float32)
+        mask = torch.zeros((1, 1), dtype=torch.float32)
+        return io.NodeOutput(image, mask)
+
+    @classmethod
+    def _build_empty_image_output(
+        cls,
+        output_placeholder: bool,
+    ) -> io.NodeOutput:
+        if output_placeholder:
+            return cls._build_placeholder_output()
+        return io.NodeOutput(None)
+
+    @staticmethod
+    def _fingerprint_refs(
+        media_ref: str,
+        mask_image_ref: str,
+        output_placeholder: bool,
+    ) -> int:
         import hashlib
 
         digest = hashlib.sha1(
             (
-                f"{str(media_ref)}\n{str(mask_image_ref)}"
+                f"{str(media_ref)}\n"
+                f"{str(mask_image_ref)}\n"
+                f"{int(bool(output_placeholder))}"
             ).encode("utf-8", errors="ignore")
         ).hexdigest()
         return int(digest, 16)

@@ -60,7 +60,7 @@
   "xdatahub.ui.app.filters.end": "结束",
   "xdatahub.ui.app.facet.all": "全部",
   "xdatahub.ui.app.pagination.jump": "跳页",
-  "xdatahub.ui.app.sort.prefix": "排序:",
+  "xdatahub.ui.app.sort.prefix": "排序：",
   "xdatahub.ui.app.lock.readonly_with_state": "执行中，仅可只读浏览（状态：{state}，活动任务：{count}）",
   "xdatahub.ui.app.lock.readonly_interrupt_requested": "已请求停止，等待活动任务结束（状态：{state}，活动任务：{count}）",
   "xdatahub.ui.app.lock.state.idle": "空闲",
@@ -270,6 +270,5 @@
   "xdatahub.ui.shell.text.h_457d449ce1": "还原",
   "xdatahub.ui.shell.text.h_242ddb0618": "靠左停靠",
   "xdatahub.ui.shell.text.h_ea7ae864e5": "靠右停靠",
-  "xdatahub.ui.shell.text.h_61b101b501": "透明度",
-  "xdatahub.ui.shell.text.h_b9e593a5a2": "快捷键已更新，刷新页面后生效\\nHotkey updated, refresh page to apply"
+  "xdatahub.ui.shell.text.h_61b101b501": "透明度"
 }

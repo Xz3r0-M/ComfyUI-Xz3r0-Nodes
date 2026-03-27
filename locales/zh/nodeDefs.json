@@ -696,6 +696,10 @@
     "display_name": "XImageGet",
     "description": "从 XDataHub 获取最新发送的图片。",
     "inputs": {
+      "output_placeholder": {
+        "name": "无图时输出占位黑图",
+        "tooltip": "没有可用图像时，输出 1x1 像素黑色占位图"
+      },
       "mask_image_ref": {
         "name": "遮罩引用",
         "tooltip": "官方遮罩编辑器保存后的遮罩图引用"

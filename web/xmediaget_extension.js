@@ -51,8 +51,9 @@ const MASK_EDITOR_IMAGE_WIDGET = "image";
 const TEXT_VALUE_WIDGET = "text_value";
 const TEXT_TITLE_WIDGET = "title_value";
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
-const MIN_NODE_WIDTH = 260;
-const MIN_NODE_HEIGHT = 320;
+const DEFAULT_MIN_NODE_WIDTH = 260;
+const DEFAULT_MIN_NODE_HEIGHT = 320;
+const IMAGE_GET_MIN_NODE_HEIGHT = 356;
 const MEDIA_REF_PROPERTY = "__xdatahub_media_ref";
 const MASK_IMAGE_REF_PROPERTY = "__xdatahub_mask_image_ref";
 const TEXT_VALUE_PROPERTY = "__xdatahub_text_value";
@@ -763,6 +764,14 @@ function deriveTitleFromText(textValue, fallback = "") {
     return firstLine.length > 96
         ? `${firstLine.slice(0, 96)}...`
         : firstLine;
+}
+
+function getNodeMinSize(node) {
+    const nodeClass = String(node?.comfyClass || "");
+    if (nodeClass === "XImageGet") {
+        return [DEFAULT_MIN_NODE_WIDTH, IMAGE_GET_MIN_NODE_HEIGHT];
+    }
+    return [DEFAULT_MIN_NODE_WIDTH, DEFAULT_MIN_NODE_HEIGHT];
 }
 
 function syncTextPreviewEmptyState(panelInfo, textValue = "") {
@@ -1639,21 +1648,22 @@ function ensureNodeMinSize(node) {
     if (!node) {
         return;
     }
+    const [minWidth, minHeight] = getNodeMinSize(node);
     if (!node.min_size || node.min_size.length < 2) {
-        node.min_size = [MIN_NODE_WIDTH, MIN_NODE_HEIGHT];
+        node.min_size = [minWidth, minHeight];
     } else {
-        node.min_size[0] = Math.max(node.min_size[0], MIN_NODE_WIDTH);
-        node.min_size[1] = Math.max(node.min_size[1], MIN_NODE_HEIGHT);
+        node.min_size[0] = Math.max(node.min_size[0], minWidth);
+        node.min_size[1] = Math.max(node.min_size[1], minHeight);
     }
     if (typeof node.setSize === "function") {
-        const width = Math.max(node.size?.[0] ?? 0, MIN_NODE_WIDTH);
-        const height = Math.max(node.size?.[1] ?? 0, MIN_NODE_HEIGHT);
+        const width = Math.max(node.size?.[0] ?? 0, minWidth);
+        const height = Math.max(node.size?.[1] ?? 0, minHeight);
         node.setSize([width, height]);
     } else if (!node.size || node.size.length < 2) {
-        node.size = [MIN_NODE_WIDTH, MIN_NODE_HEIGHT];
+        node.size = [minWidth, minHeight];
     } else {
-        node.size[0] = Math.max(node.size[0], MIN_NODE_WIDTH);
-        node.size[1] = Math.max(node.size[1], MIN_NODE_HEIGHT);
+        node.size[0] = Math.max(node.size[0], minWidth);
+        node.size[1] = Math.max(node.size[1], minHeight);
     }
     if (node.__ximageget_resize_guard) {
         return;
@@ -1661,9 +1671,10 @@ function ensureNodeMinSize(node) {
     node.__ximageget_resize_guard = true;
     const origOnResize = node.onResize;
     node.onResize = function (size) {
+        const [resizeMinWidth, resizeMinHeight] = getNodeMinSize(this);
         const sourceSize = Array.isArray(size) ? size : this.size;
-        const nextWidth = Math.max(sourceSize?.[0] ?? 0, MIN_NODE_WIDTH);
-        const nextHeight = Math.max(sourceSize?.[1] ?? 0, MIN_NODE_HEIGHT);
+        const nextWidth = Math.max(sourceSize?.[0] ?? 0, resizeMinWidth);
+        const nextHeight = Math.max(sourceSize?.[1] ?? 0, resizeMinHeight);
         if (!Array.isArray(this.size) || this.size.length < 2) {
             this.size = [nextWidth, nextHeight];
         } else {
