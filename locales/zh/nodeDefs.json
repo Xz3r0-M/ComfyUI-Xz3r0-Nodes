@@ -726,11 +726,24 @@
   "XStringGet": {
     "display_name": "XStringGet",
     "description": "从 XDataHub 获取最新发送的文本。",
-    "inputs": {},
+    "inputs": {
+      "text_value": {
+        "name": "内容",
+        "tooltip": "XDataHub 最近发送的正文内容"
+      },
+      "title_value": {
+        "name": "头部信息",
+        "tooltip": "XDataHub 最近发送的头部信息"
+      }
+    },
     "outputs": {
       "0": {
-        "name": "STRING",
-        "tooltip": "XDataHub 最近发送的文本"
+        "name": "内容",
+        "tooltip": "XDataHub 最近发送的正文内容"
+      },
+      "1": {
+        "name": "头部信息",
+        "tooltip": "XDataHub 最近发送的头部信息"
       }
     }
   },

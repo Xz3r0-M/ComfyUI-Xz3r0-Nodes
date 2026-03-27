@@ -5424,6 +5424,23 @@ function renderListRows() {
             const dataType = String(item.extra?.data_type || "");
             const recordId = String(item.extra?.record_id || "");
             const dbName = String(item.extra?.db_name || "");
+            const payloadInfo = normalizePayloadValue(item.extra?.payload);
+            const textValue = buildPayloadCopyText(payloadInfo).trim();
+            const mediaRef = String(item.extra?.media_ref || "");
+            const mediaType = String(item.extra?.media_type || "")
+                .trim()
+                .toLowerCase();
+            const dragTitle = String(item.title || contentPreview || noContentText);
+            const hasMediaDrag = (
+                mediaRef
+                && (mediaType === "image"
+                    || mediaType === "video"
+                    || mediaType === "audio")
+            );
+            const hasTextDrag = !hasMediaDrag && Boolean(textValue);
+            const dragAttrs = (hasMediaDrag || hasTextDrag)
+                ? ` draggable="true" data-drag-media="1" data-drag-item-id="${escapeAttr(item.id)}" data-drag-title="${escapeAttr(dragTitle)}"${hasMediaDrag ? ` data-media-ref="${escapeAttr(mediaRef)}" data-drag-media-type="${escapeAttr(mediaType)}"` : ""}${hasTextDrag ? ' data-drag-text="1"' : ""}`
+                : "";
             const dbAccent = getDbAccentColor(dbName);
             const rowStyle = ` style="--db-palette:${escapeAttr(dbAccent)}"`;
             const activeClass = String(item.id) === String(selectedId) ? " active" : "";
@@ -5442,7 +5459,7 @@ function renderListRows() {
                 idDbChipHtml = `<span class="chip row-db-chip" title="${escapeAttr(dbName)}"><span class="chip-icon chip-icon-db" aria-hidden="true"></span><span class="row-db-chip-text">${escapeHtml(dbName)}</span></span>`;
             }
             return `
-                <div class="row${activeClass}" data-item-id="${escapeHtml(item.id)}"${rowStyle}>
+                <div class="row${activeClass}" data-item-id="${escapeHtml(item.id)}"${rowStyle}${dragAttrs}>
                     <div class="row-id-line">
                         <div class="row-id-chip-wrap">
                             ${idDbChipHtml}
@@ -5485,6 +5502,54 @@ function renderListRows() {
             `;
         })
         .join("");
+}
+
+function writeXDataHubDragPayload(
+    dataTransfer,
+    { mediaRef = "", mediaType = "", textValue = "", title = "" } = {}
+) {
+    const normalizedMediaRef = String(mediaRef || "").trim();
+    const normalizedMediaType = String(mediaType || "").trim().toLowerCase();
+    const normalizedTextValue = String(textValue || "");
+    const finalTitle = String(title || "").trim();
+    dataTransfer.effectAllowed = "copy";
+    try {
+        const payload = { source: "xdatahub" };
+        if (
+            normalizedMediaRef
+            && (
+                normalizedMediaType === "image"
+                || normalizedMediaType === "video"
+                || normalizedMediaType === "audio"
+            )
+        ) {
+            payload.media_ref = normalizedMediaRef;
+            payload.media_type = normalizedMediaType;
+            payload.title = finalTitle || (
+                normalizedMediaType === "audio"
+                    ? "audio"
+                    : normalizedMediaType === "video"
+                        ? "video"
+                        : "image"
+            );
+        } else if (normalizedTextValue.trim()) {
+            payload.text_value = normalizedTextValue;
+            payload.media_type = "text";
+            payload.title = finalTitle || truncateText(
+                normalizedTextValue.trim(),
+                96
+            );
+        } else {
+            return false;
+        }
+        dataTransfer.setData(
+            XDATAHUB_MEDIA_MIME,
+            JSON.stringify(payload)
+        );
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function updateHistoryRowExtraHeaderLayout() {
@@ -7861,13 +7926,15 @@ function handleDelegatedNodeSendSort(event) {
     return true;
 }
 
-function handleDelegatedMediaCardDragstart(event) {
-    const card = event.target?.closest?.(".media-card[data-drag-media='1']");
-    if (!(card instanceof HTMLElement)) {
+function handleDelegatedMediaDragstart(event) {
+    const dragSource = event.target?.closest?.(
+        ".media-card[data-drag-media='1'], .row[data-drag-media='1']"
+    );
+    if (!(dragSource instanceof HTMLElement)) {
         event.preventDefault();
         return;
     }
-    if (!isMediaTab(appState.activeTab)) {
+    if (!isMediaTab(appState.activeTab) && appState.activeTab !== "history") {
         event.preventDefault();
         return;
     }
@@ -7876,34 +7943,47 @@ function handleDelegatedMediaCardDragstart(event) {
         event.preventDefault();
         return;
     }
-    const mediaRef = String(card.getAttribute("data-media-ref") || "").trim();
-    const mediaType = String(
-        card.getAttribute("data-drag-media-type") || ""
-    ).toLowerCase();
-    if (!mediaRef) {
+    const title = String(
+        dragSource.getAttribute("data-drag-title") || ""
+    );
+    let writeOk = false;
+    if (dragSource.classList.contains("row")) {
+        const itemId = String(
+            dragSource.getAttribute("data-drag-item-id")
+            || dragSource.getAttribute("data-item-id")
+            || ""
+        );
+        const item = appState.items.find(
+            (entry) => String(entry?.id || "") === itemId
+        );
+        if (item) {
+            const payloadInfo = normalizePayloadValue(item?.extra?.payload);
+            writeOk = writeXDataHubDragPayload(dataTransfer, {
+                mediaRef: item?.extra?.media_ref || "",
+                mediaType: item?.extra?.media_type || "",
+                textValue: buildPayloadCopyText(payloadInfo),
+                title,
+            });
+        }
+    } else {
+        writeOk = writeXDataHubDragPayload(dataTransfer, {
+            mediaRef: dragSource.getAttribute("data-media-ref") || "",
+            mediaType: dragSource.getAttribute("data-drag-media-type") || "",
+            title,
+        });
+    }
+    if (!writeOk) {
         event.preventDefault();
         return;
     }
-    const title = String(
-        card.getAttribute("data-drag-title")
-        || (mediaType === "audio"
-            ? "audio"
-            : mediaType === "video"
-                ? "video"
-                : "image")
-    );
-    dataTransfer.effectAllowed = "copy";
-    try {
-        dataTransfer.setData(
-            XDATAHUB_MEDIA_MIME,
-            JSON.stringify({
-                source: "xdatahub",
-                media_ref: mediaRef,
-                media_type: mediaType,
-                title,
-            })
-        );
-    } catch {}
+    dragSource.classList.add("dragging");
+    const clearDragging = () => {
+        dragSource.classList.remove("dragging");
+        window.removeEventListener("dragend", clearDragging, true);
+        window.removeEventListener("drop", clearDragging, true);
+    };
+    window.addEventListener("dragend", clearDragging, true);
+    window.addEventListener("drop", clearDragging, true);
 }
 
 function handleDelegatedDbFileCheckChange(event) {
@@ -8257,7 +8337,7 @@ function installRootDelegatedHandlers() {
         }
     });
     root.addEventListener("dragstart", (event) => {
-        handleDelegatedMediaCardDragstart(event);
+        handleDelegatedMediaDragstart(event);
     });
     root.addEventListener("pointerdown", (event) => {
         const slider = event.target?.closest?.("[data-node-send-slide]");

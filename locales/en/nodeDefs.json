@@ -726,11 +726,24 @@
   "XStringGet": {
     "display_name": "XStringGet",
     "description": "Load the latest text sent from XDataHub.",
-    "inputs": {},
+    "inputs": {
+      "text_value": {
+        "name": "Content",
+        "tooltip": "Latest body text received from XDataHub"
+      },
+      "title_value": {
+        "name": "Header",
+        "tooltip": "Latest header text received from XDataHub"
+      }
+    },
     "outputs": {
       "0": {
-        "name": "STRING",
-        "tooltip": "Latest text received from XDataHub"
+        "name": "Content",
+        "tooltip": "Latest body text received from XDataHub"
+      },
+      "1": {
+        "name": "Header",
+        "tooltip": "Latest header text received from XDataHub"
       }
     }
   },

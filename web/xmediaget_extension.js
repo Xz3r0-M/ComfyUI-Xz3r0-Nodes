@@ -49,16 +49,20 @@ const MEDIA_REF_WIDGET = "media_ref";
 const MASK_IMAGE_REF_WIDGET = "mask_image_ref";
 const MASK_EDITOR_IMAGE_WIDGET = "image";
 const TEXT_VALUE_WIDGET = "text_value";
+const TEXT_TITLE_WIDGET = "title_value";
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const MIN_NODE_WIDTH = 260;
 const MIN_NODE_HEIGHT = 320;
 const MEDIA_REF_PROPERTY = "__xdatahub_media_ref";
 const MASK_IMAGE_REF_PROPERTY = "__xdatahub_mask_image_ref";
 const TEXT_VALUE_PROPERTY = "__xdatahub_text_value";
+const TEXT_TITLE_PROPERTY = "__xdatahub_text_title";
 const OPEN_MASK_EDITOR_LABEL_KEY = "xdatahub.ui.node.xmediaget.open_mask_editor";
 const OPEN_MASK_EDITOR_LABEL_FALLBACK = "Mask";
 const MASK_EDITOR_UNAVAILABLE_KEY = "xdatahub.ui.node.xmediaget.mask_editor_unavailable";
 const MASK_EDITOR_UNAVAILABLE_FALLBACK = "Mask editor unavailable";
+const TEXT_TITLE_PLACEHOLDER_KEY = "xdatahub.ui.node.xmediaget.title_placeholder";
+const TEXT_TITLE_PLACEHOLDER_FALLBACK = "Header";
 
 const STYLE_ID = "xmediaget-extension-style";
 const NODE_ACCENT_DEFAULT = "#0066FF";
@@ -162,13 +166,18 @@ function parseMediaDragPayload(dataTransfer) {
         const source = String(payload?.source || "").trim().toLowerCase();
         const mediaRef = String(payload?.media_ref || "").trim();
         const mediaType = String(payload?.media_type || "").trim().toLowerCase();
-        if (source !== "xdatahub" || !mediaRef) {
+        const textValue = String(payload?.text_value || "");
+        if (source !== "xdatahub") {
+            return null;
+        }
+        if (!mediaRef && !textValue.trim()) {
             return null;
         }
         return {
             source,
             media_ref: mediaRef,
             media_type: mediaType,
+            text_value: textValue,
             title: String(payload?.title || ""),
         };
     } catch {
@@ -196,6 +205,10 @@ async function fetchMediaMeta(mediaRef) {
 
 function getStoragePropertyName(node) {
     return isStringNode(node) ? TEXT_VALUE_PROPERTY : MEDIA_REF_PROPERTY;
+}
+
+function getTextTitlePropertyName(node) {
+    return isStringNode(node) ? TEXT_TITLE_PROPERTY : "";
 }
 
 function looksLikeMediaRef(value) {
@@ -454,6 +467,23 @@ function ensureStyles() {
             word-break: break-word;
             overflow: auto;
             user-select: text;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+        }
+        .ximageget-preview.is-text .ximageget-text-preview {
+            display: block;
+        }
+        .ximageget-preview.is-text.is-empty-text .ximageget-text-preview {
+            text-align: center;
+        }
+        .ximageget-preview.is-text .ximageget-text-preview:focus {
+            border-color: var(--xdh-brand-pink, #EA005E);
+            box-shadow: 0 0 0 1px var(--xdh-brand-pink, #EA005E);
+        }
+        .ximageget-preview.is-text .ximageget-text-preview::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+            text-align: center;
         }
         .ximageget-preview.has-media img,
         .ximageget-preview.has-media video,
@@ -486,19 +516,26 @@ function ensureStyles() {
             font-size: 12px;
             color: #ffffff;
             opacity: 1;
-            white-space: nowrap;
-            overflow: hidden;
             user-select: text;
             cursor: text;
             background: #222222;
             padding: 4px 6px;
             border-radius: 6px;
-            min-height: 22px;
-            display: flex;
-            align-items: center;
+            min-height: 24px;
+            display: block;
             flex: 1 1 auto;
             min-width: 0;
-            text-overflow: ellipsis;
+            border: 1px solid transparent;
+            outline: none;
+            font-family: inherit;
+            line-height: 1.3;
+        }
+        .ximageget-title::placeholder {
+            color: rgba(255, 255, 255, 0.65);
+        }
+        .ximageget-title:focus {
+            border-color: var(--xdh-brand-pink, #EA005E);
+            box-shadow: 0 0 0 1px var(--xdh-brand-pink, #EA005E);
         }
     `;
     document.head.appendChild(style);
@@ -576,10 +613,13 @@ function buildPanel(nodeClass) {
             audio.controls = true;
             mediaEl = audio;
         } else {
-            const textPreview = document.createElement("div");
+            const textPreview = document.createElement("textarea");
             textPreview.className = "ximageget-text-preview";
-            textPreview.textContent = "";
+            textPreview.value = "";
+            textPreview.placeholder = String(config.placeholder || "");
+            textPreview.spellcheck = false;
             textEl = textPreview;
+            preview.classList.add("is-text");
         }
     }
     if (mediaEl) {
@@ -594,9 +634,15 @@ function buildPanel(nodeClass) {
     placeholder.textContent = config.placeholder;
     preview.appendChild(placeholder);
 
-    const title = document.createElement("div");
+    const title = document.createElement("input");
     title.className = "ximageget-title";
-    title.textContent = "";
+    title.type = "text";
+    title.value = "";
+    title.placeholder = t(
+        TEXT_TITLE_PLACEHOLDER_KEY,
+        TEXT_TITLE_PLACEHOLDER_FALLBACK
+    );
+    title.spellcheck = false;
 
     const footer = document.createElement("div");
     footer.className = "ximageget-footer";
@@ -639,6 +685,18 @@ function applyPanelLocale(panelInfo) {
     const config = getNodeUiConfig(panelInfo.nodeClass);
     panelInfo.placeholderText = config.placeholder;
     panelInfo.missingText = config.missing;
+    if (panelInfo.mediaKind === "text" && panelInfo.textEl) {
+        panelInfo.textEl.placeholder = config.placeholder || "";
+    }
+    if (
+        panelInfo.mediaKind === "text"
+        && panelInfo.title instanceof HTMLInputElement
+    ) {
+        panelInfo.title.placeholder = t(
+            TEXT_TITLE_PLACEHOLDER_KEY,
+            TEXT_TITLE_PLACEHOLDER_FALLBACK
+        );
+    }
     const clearBtnLabel = t(CLEAR_BTN_LABEL_KEY, CLEAR_BTN_LABEL_FALLBACK);
     const maskBtnLabel = t(
         OPEN_MASK_EDITOR_LABEL_KEY,
@@ -657,7 +715,10 @@ function applyPanelLocale(panelInfo) {
         panelInfo.__xmediaget_preview_state || PREVIEW_STATE_EMPTY
     );
     if (state === PREVIEW_STATE_EMPTY) {
-        panelInfo.placeholder.textContent = panelInfo.placeholderText;
+        panelInfo.placeholder.textContent =
+            panelInfo.mediaKind === "text"
+                ? ""
+                : panelInfo.placeholderText;
         return;
     }
     if (state === PREVIEW_STATE_MISSING) {
@@ -704,6 +765,16 @@ function deriveTitleFromText(textValue, fallback = "") {
         : firstLine;
 }
 
+function syncTextPreviewEmptyState(panelInfo, textValue = "") {
+    if (panelInfo?.mediaKind !== "text" || !panelInfo.preview) {
+        return;
+    }
+    panelInfo.preview.classList.toggle(
+        "is-empty-text",
+        !String(textValue || "")
+    );
+}
+
 function setPreview(panelInfo, data) {
     if (!panelInfo) {
         return;
@@ -728,27 +799,36 @@ function setPreview(panelInfo, data) {
         if (!textValue) {
             panelInfo.__xmediaget_preview_state = PREVIEW_STATE_EMPTY;
             preview.classList.remove("has-media");
+            syncTextPreviewEmptyState(panelInfo, "");
             if (textEl) {
-                textEl.textContent = "";
+                textEl.value = "";
             }
-            placeholder.textContent =
-                placeholderText || "Drop an XDataHub text card here";
-            title.textContent = "";
-            title.removeAttribute("title");
+            placeholder.textContent = "";
+            if (title instanceof HTMLInputElement) {
+                title.value = String(label || "");
+                if (label) {
+                    title.setAttribute("title", label);
+                } else {
+                    title.removeAttribute("title");
+                }
+            }
             return;
         }
         panelInfo.__xmediaget_preview_state = PREVIEW_STATE_LOADED;
         preview.classList.add("has-media");
+        syncTextPreviewEmptyState(panelInfo, textValue);
         placeholder.textContent = "";
         if (textEl) {
-            textEl.textContent = textValue;
+            textEl.value = textValue;
         }
         const finalTitle = String(label || "");
-        title.textContent = finalTitle;
-        if (finalTitle) {
-            title.setAttribute("title", finalTitle);
-        } else {
-            title.removeAttribute("title");
+        if (title instanceof HTMLInputElement) {
+            title.value = finalTitle;
+            if (finalTitle) {
+                title.setAttribute("title", finalTitle);
+            } else {
+                title.removeAttribute("title");
+            }
         }
         syncMaskButtonState(panelInfo.__ximageget_node);
         return;
@@ -766,8 +846,10 @@ function setPreview(panelInfo, data) {
         }
         placeholder.textContent =
             placeholderText || "Drop an XDataHub media card here";
-        title.textContent = "";
-        title.removeAttribute("title");
+        if (title instanceof HTMLInputElement) {
+            title.value = "";
+            title.removeAttribute("title");
+        }
         if (textEl) {
             textEl.textContent = "";
         }
@@ -824,11 +906,13 @@ function setPreview(panelInfo, data) {
             mediaEl.load();
         }
     }
-    title.textContent = label;
-    if (label) {
-        title.setAttribute("title", label);
-    } else {
-        title.removeAttribute("title");
+    if (title instanceof HTMLInputElement) {
+        title.value = label;
+        if (label) {
+            title.setAttribute("title", label);
+        } else {
+            title.removeAttribute("title");
+        }
     }
 }
 
@@ -906,6 +990,10 @@ function isStringNode(node) {
 
 function getStorageWidgetName(node) {
     return isStringNode(node) ? TEXT_VALUE_WIDGET : MEDIA_REF_WIDGET;
+}
+
+function getTextTitleWidgetName(node) {
+    return isStringNode(node) ? TEXT_TITLE_WIDGET : "";
 }
 
 function getPreferredImagePreviewUrl(node, fallbackUrl = "") {
@@ -1173,6 +1261,14 @@ function getStorageWidget(node) {
     return ensureHiddenWidget(node, getStorageWidgetName(node));
 }
 
+function getTextTitleWidget(node) {
+    const widgetName = getTextTitleWidgetName(node);
+    if (!widgetName) {
+        return null;
+    }
+    return ensureHiddenWidget(node, widgetName);
+}
+
 function getMaskStorageWidget(node) {
     if (String(node?.comfyClass || "") !== "XImageGet") {
         return null;
@@ -1197,6 +1293,10 @@ function removeStorageInputSlot(node) {
         return;
     }
     const hiddenNames = new Set([getStorageWidgetName(node)]);
+    const textTitleWidgetName = getTextTitleWidgetName(node);
+    if (textTitleWidgetName) {
+        hiddenNames.add(textTitleWidgetName);
+    }
     if (String(node?.comfyClass || "") === "XImageGet") {
         hiddenNames.add(MASK_IMAGE_REF_WIDGET);
     }
@@ -1228,10 +1328,68 @@ function getStoredNodeValue(node) {
 function setStoredNodeValue(node, value) {
     const widget = getStorageWidget(node);
     const normalized = String(value || "");
+    const propertyName = getStoragePropertyName(node);
+    const currentValue = getStoredNodeValue(node);
+    if (currentValue === normalized) {
+        if (!node?.properties) {
+            node.properties = {};
+        }
+        node.properties[propertyName] = normalized;
+        if (widget) {
+            widget.value = normalized;
+        }
+        return;
+    }
     if (!node?.properties) {
         node.properties = {};
     }
-    node.properties[getStoragePropertyName(node)] = normalized;
+    node.properties[propertyName] = normalized;
+    if (!widget) {
+        return;
+    }
+    widget.value = normalized;
+    node?.graph?.setDirtyCanvas?.(true, true);
+}
+
+function getStoredNodeTitle(node) {
+    const widget = getTextTitleWidget(node);
+    const value = widget?.value;
+    const text = typeof value === "string" ? value : String(value || "");
+    if (text) {
+        return text;
+    }
+    const propertyName = getTextTitlePropertyName(node);
+    if (!propertyName) {
+        return "";
+    }
+    const propertyValue = node?.properties?.[propertyName];
+    return typeof propertyValue === "string"
+        ? propertyValue
+        : String(propertyValue || "");
+}
+
+function setStoredNodeTitle(node, value) {
+    const propertyName = getTextTitlePropertyName(node);
+    if (!propertyName) {
+        return;
+    }
+    const widget = getTextTitleWidget(node);
+    const normalized = String(value || "");
+    const currentValue = getStoredNodeTitle(node);
+    if (currentValue === normalized) {
+        if (!node?.properties) {
+            node.properties = {};
+        }
+        node.properties[propertyName] = normalized;
+        if (widget) {
+            widget.value = normalized;
+        }
+        return;
+    }
+    if (!node?.properties) {
+        node.properties = {};
+    }
+    node.properties[propertyName] = normalized;
     if (!widget) {
         return;
     }
@@ -1298,6 +1456,35 @@ function hydrateStoredNodeValue(node) {
     return "";
 }
 
+function hydrateStoredNodeTitle(node) {
+    if (!isStringNode(node)) {
+        return "";
+    }
+    const current = getStoredNodeTitle(node);
+    if (current) {
+        return current;
+    }
+    const propertyName = getTextTitlePropertyName(node);
+    const propertyValue = propertyName
+        ? node?.properties?.[propertyName]
+        : "";
+    if (propertyValue) {
+        setStoredNodeTitle(node, propertyValue);
+        return String(propertyValue);
+    }
+    const widgetValues = Array.isArray(node?.widgets_values)
+        ? node.widgets_values
+        : [];
+    for (let index = widgetValues.length - 1; index >= 0; index -= 1) {
+        const item = widgetValues[index];
+        if (typeof item === "string" && item.trim()) {
+            setStoredNodeTitle(node, item);
+            return item;
+        }
+    }
+    return "";
+}
+
 function installNodeUi(node) {
     if (!node) {
         return;
@@ -1333,55 +1520,99 @@ function installNodeUi(node) {
             event.stopImmediatePropagation();
         }
     };
-    if (panelInfo.mediaKind !== "text") {
-        panelInfo.preview.addEventListener("dragenter", (event) => {
-            consumeDragEvent(event);
-            panelInfo.preview.classList.add("drag-over");
-            if (event.dataTransfer) {
-                event.dataTransfer.dropEffect = "copy";
-            }
-        });
-        panelInfo.preview.addEventListener("dragover", (event) => {
-            consumeDragEvent(event);
-            panelInfo.preview.classList.add("drag-over");
-            if (event.dataTransfer) {
-                event.dataTransfer.dropEffect = "copy";
-            }
-        });
-        panelInfo.preview.addEventListener("dragleave", (event) => {
-            consumeDragEvent(event);
-            panelInfo.preview.classList.remove("drag-over");
-        });
-        panelInfo.preview.addEventListener("drop", async (event) => {
-            consumeDragEvent(event);
-            panelInfo.preview.classList.remove("drag-over");
-            const dataTransfer = event.dataTransfer;
-            const payload = parseMediaDragPayload(dataTransfer);
-            if (!payload) {
-                return;
-            }
-            if (
-                payload.media_type
-                && payload.media_type !== panelInfo.mediaKind
-            ) {
-                return;
-            }
-            const mediaRef = String(payload.media_ref || "");
-            const fileUrl = buildMediaFileUrl(mediaRef);
-            if (!fileUrl) {
+    panelInfo.preview.addEventListener("dragenter", (event) => {
+        consumeDragEvent(event);
+        panelInfo.preview.classList.add("drag-over");
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = "copy";
+        }
+    });
+    panelInfo.preview.addEventListener("dragover", (event) => {
+        consumeDragEvent(event);
+        panelInfo.preview.classList.add("drag-over");
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = "copy";
+        }
+    });
+    panelInfo.preview.addEventListener("dragleave", (event) => {
+        consumeDragEvent(event);
+        panelInfo.preview.classList.remove("drag-over");
+    });
+    panelInfo.preview.addEventListener("drop", async (event) => {
+        consumeDragEvent(event);
+        panelInfo.preview.classList.remove("drag-over");
+        const dataTransfer = event.dataTransfer;
+        const payload = parseMediaDragPayload(dataTransfer);
+        if (!payload) {
+            return;
+        }
+        if (panelInfo.mediaKind === "text") {
+            const textValue = String(payload.text_value || "");
+            if (!textValue.trim()) {
                 return;
             }
             setPreview(panelInfo, {
-                file_url: fileUrl,
+                text_value: textValue,
                 title: payload.title || "",
             });
-            setStoredNodeValue(node, mediaRef);
+            setStoredNodeValue(node, textValue);
+            setStoredNodeTitle(node, payload.title || "");
+            return;
+        }
+        if (
+            payload.media_type
+            && payload.media_type !== panelInfo.mediaKind
+        ) {
+            return;
+        }
+        const mediaRef = String(payload.media_ref || "");
+        const fileUrl = buildMediaFileUrl(mediaRef);
+        if (!fileUrl) {
+            return;
+        }
+        setPreview(panelInfo, {
+            file_url: fileUrl,
+            title: payload.title || "",
+        });
+        setStoredNodeValue(node, mediaRef);
+    });
+    if (
+        panelInfo.mediaKind === "text"
+        && panelInfo.textEl instanceof HTMLTextAreaElement
+    ) {
+        if (panelInfo.title instanceof HTMLInputElement) {
+            panelInfo.title.addEventListener("input", () => {
+                const nextTitle = String(panelInfo.title.value || "");
+                if (getStoredNodeTitle(node) === nextTitle) {
+                    return;
+                }
+                setStoredNodeTitle(node, nextTitle);
+                if (nextTitle) {
+                    panelInfo.title.setAttribute("title", nextTitle);
+                } else {
+                    panelInfo.title.removeAttribute("title");
+                }
+            });
+        }
+        panelInfo.textEl.addEventListener("input", () => {
+            const nextValue = String(panelInfo.textEl.value || "");
+            if (getStoredNodeValue(node) === nextValue) {
+                return;
+            }
+            setStoredNodeValue(node, nextValue);
+            syncTextPreviewEmptyState(panelInfo, nextValue);
+            panelInfo.__xmediaget_preview_state = nextValue
+                ? PREVIEW_STATE_LOADED
+                : PREVIEW_STATE_EMPTY;
+            panelInfo.preview.classList.toggle("has-media", Boolean(nextValue));
+            panelInfo.placeholder.textContent = "";
         });
     }
     if (panelInfo.clearBtn instanceof HTMLButtonElement) {
         panelInfo.clearBtn.addEventListener("click", (event) => {
             consumeDragEvent(event);
             setStoredNodeValue(node, "");
+            setStoredNodeTitle(node, "");
             setMaskImageRef(node, "");
             setPreview(panelInfo, {});
         });
@@ -1393,11 +1624,13 @@ function installNodeUi(node) {
         });
     }
     getMaskStorageWidget(node);
+    getTextTitleWidget(node);
     getMaskEditorBridgeWidget(node);
     ensureNodeMinSize(node);
     const stored = hydrateStoredNodeValue(node) || getStoredNodeValue(node);
-    if (stored) {
-        restoreStoredData(node, stored);
+    const storedTitle = hydrateStoredNodeTitle(node) || getStoredNodeTitle(node);
+    if (stored || storedTitle) {
+        restoreStoredData(node, stored, storedTitle);
     }
     syncMaskButtonState(node);
 }
@@ -1444,9 +1677,10 @@ function ensureNodeMinSize(node) {
     };
 }
 
-function restoreStoredData(node, stored) {
+function restoreStoredData(node, stored, storedTitle = "") {
     const value = String(stored || "");
-    if (!value) {
+    const titleValue = String(storedTitle || "");
+    if (!value && !titleValue) {
         return;
     }
     clearLegacyCanvasPreview(node);
@@ -1456,7 +1690,7 @@ function restoreStoredData(node, stored) {
         if (panelInfo) {
             setPreview(panelInfo, {
                 text_value: value,
-                title: "",
+                title: titleValue,
             });
         }
         return;
@@ -1493,6 +1727,7 @@ function installExistingNodes() {
         installNodeUi(node);
         if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
             getStorageWidget(node);
+            getTextTitleWidget(node);
         }
     }
 }
@@ -1536,6 +1771,7 @@ function updateNodeTextValue(node, textValue, title) {
         });
     }
     setStoredNodeValue(node, text);
+    setStoredNodeTitle(node, finalTitle);
 }
 
 function collectNodesByClass(nodeClass) {
@@ -1576,6 +1812,7 @@ export function initXMediaGetExtension() {
                 restoreStoredData(
                     this,
                     hydrateStoredNodeValue(this) || getStoredNodeValue(this),
+                    hydrateStoredNodeTitle(this) || getStoredNodeTitle(this),
                 );
                 refreshNodeBadge(this);
             };
@@ -1584,8 +1821,10 @@ export function initXMediaGetExtension() {
                 installNodeUi(this);
                 const stored = hydrateStoredNodeValue(this)
                     || getStoredNodeValue(this);
-                if (stored) {
-                    restoreStoredData(this, stored);
+                const storedTitle = hydrateStoredNodeTitle(this)
+                    || getStoredNodeTitle(this);
+                if (stored || storedTitle) {
+                    restoreStoredData(this, stored, storedTitle);
                 }
                 refreshNodeBadge(this);
             };
@@ -1595,6 +1834,7 @@ export function initXMediaGetExtension() {
             refreshNodeBadge(node);
             if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
                 getStorageWidget(node);
+                getTextTitleWidget(node);
             }
         },
         async loadedGraphNode(node) {
@@ -1606,6 +1846,7 @@ export function initXMediaGetExtension() {
             restoreStoredData(
                 node,
                 hydrateStoredNodeValue(node) || getStoredNodeValue(node),
+                hydrateStoredNodeTitle(node) || getStoredNodeTitle(node),
             );
             refreshNodeBadge(node);
         },

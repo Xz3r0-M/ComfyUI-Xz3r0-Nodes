@@ -94,6 +94,7 @@
   "xdatahub.ui.node.xmediaget.missing_video": "Video missing",
   "xdatahub.ui.node.xmediaget.missing_audio": "Audio missing",
   "xdatahub.ui.node.xmediaget.missing_text": "Text missing",
+  "xdatahub.ui.node.xmediaget.title_placeholder": "Header",
   "xdatahub.ui.node.xmediaget.open_mask_editor": "Edit Mask",
   "xdatahub.ui.node.xmediaget.mask_editor_unavailable": "Mask editor unavailable",
   "xdatahub.ui.app.media.send_dialog_title": "Send to node",

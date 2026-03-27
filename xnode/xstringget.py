@@ -34,25 +34,47 @@ class XStringGet(io.ComfyNode):
                     socketless=True,
                     extra_dict={"hidden": True},
                 ),
+                io.String.Input(
+                    "title_value",
+                    default="",
+                    multiline=False,
+                    tooltip="XDataHub header text",
+                    socketless=True,
+                    extra_dict={"hidden": True},
+                ),
             ],
             outputs=[
                 io.String.Output(
-                    "STRING",
-                    display_name="STRING",
+                    "CONTENT",
+                    display_name="Content",
                     tooltip="Latest text received from XDataHub",
+                ),
+                io.String.Output(
+                    "TITLE",
+                    display_name="Header",
+                    tooltip="Latest header received from XDataHub",
                 ),
             ],
         )
 
     @classmethod
-    def fingerprint_inputs(cls, text_value: str = "") -> int:
-        if not text_value:
+    def fingerprint_inputs(
+        cls, text_value: str = "", title_value: str = ""
+    ) -> int:
+        if not text_value and not title_value:
             return 0
-        return cls._fingerprint_text(text_value)
+        return cls._fingerprint_text(
+            f"{str(title_value or '')}\n\x1f\n{str(text_value or '')}"
+        )
 
     @classmethod
-    def execute(cls, text_value: str = "") -> io.NodeOutput:
-        return io.NodeOutput(str(text_value or ""))
+    def execute(
+        cls, text_value: str = "", title_value: str = ""
+    ) -> io.NodeOutput:
+        return io.NodeOutput(
+            str(text_value or ""),
+            str(title_value or ""),
+        )
 
     @staticmethod
     def _fingerprint_text(text_value: str) -> int:
