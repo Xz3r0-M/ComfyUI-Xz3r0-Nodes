@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260327-273">
+    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260327-274">
     <style>
         /*
            颜色规范：
@@ -3009,6 +3009,43 @@
             color: var(--text-active);
         }
 
+        .node-send-quick.is-success .node-send-quick-track::before {
+            width: 100%;
+            background: var(--btn-active-color);
+        }
+
+        .node-send-quick.is-success .node-send-quick-track,
+        .node-send-quick.is-success .node-send-quick-handle {
+            border-color: var(--border-active);
+            color: var(--text-active);
+        }
+
+        .node-send-quick.is-success .node-send-quick-handle {
+            transform: translateX(86px);
+            background: transparent;
+        }
+
+        .node-send-quick.is-error .node-send-quick-track {
+            border-color: var(--state-warn-border-standard);
+            background: var(--state-warn-bg-standard);
+        }
+
+        .node-send-quick.is-error .node-send-quick-track::before {
+            width: 100%;
+            background: var(--state-warn-bg-hover);
+        }
+
+        .node-send-quick.is-error .node-send-quick-label,
+        .node-send-quick.is-error .node-send-quick-handle {
+            color: var(--state-warn-text-standard);
+        }
+
+        .node-send-quick.is-error .node-send-quick-handle {
+            border-color: var(--state-warn-border-standard);
+            background: transparent;
+            transform: translateX(86px);
+        }
+
         .node-send-actions {
             display: flex;
             justify-content: flex-end;
@@ -4059,7 +4096,7 @@
 </head>
 <body>
     <div class="app" id="app"></div>
-    <script type="module" src="./xdatahub_app.js?v=20260327-273"></script>
+    <script type="module" src="./xdatahub_app.js?v=20260327-274"></script>
 </body>
 </html>
 

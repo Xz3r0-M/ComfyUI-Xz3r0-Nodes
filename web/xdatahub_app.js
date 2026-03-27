@@ -178,6 +178,15 @@ const appState = {
     nodeSendValidateTimer: 0,
     nodeSendError: "",
     nodeSendQuickSlide: null,
+    nodeSendQuickFeedback: {
+        nodeId: "",
+        state: "",
+        message: "",
+        label: "",
+        timer: 0,
+        closeTimer: 0,
+    },
+    nodeSendActiveSource: "",
     localeSwitcherOpen: false,
     localeSelectionPending: false,
     localeSelectionOriginal: "",
@@ -256,6 +265,8 @@ const VIDEO_SCHEDULER_TIME_BUDGET_MS = 8;
 const VIDEO_LOAD_TIMEOUT_MS = 2200;
 const MEDIA_NAV_STACK_LIMIT = 60;
 const NODE_SEND_ACK_TIMEOUT_MS = 1200;
+const NODE_SEND_QUICK_FEEDBACK_MS = 900;
+const NODE_SEND_QUICK_CLOSE_DELAY_MS = 720;
 const ICON_BASE_PATH = "/extensions/ComfyUI-Xz3r0-Nodes/icons";
 const ACTIVE_TAB_STORAGE_KEY = "xdatahub.activeTab";
 let iframeHotkeySpec = DEFAULT_TOGGLE_HOTKEY_SPEC;
@@ -3139,8 +3150,11 @@ function getNodeSendSummaryText() {
         );
     }
     if (
+        appState.nodeSendActiveSource !== "quick-slide"
+        && (
         appState.nodeSendSuccessCount > 0
         || appState.nodeSendFailureCount > 0
+        )
     ) {
         return t(
             "xdatahub.ui.app.media.send_dialog_result",
@@ -3157,10 +3171,28 @@ function getNodeSendSummaryText() {
     ) + `: ${(appState.nodeSendSelectedIds || []).length}`;
 }
 
+function setNodeSendQuickFeedback(nodeId, state, options = {}) {
+    const normalizedState = state === "success" ? "success" : "error";
+    resetNodeSendQuickFeedbackState();
+    appState.nodeSendQuickFeedback.nodeId = String(nodeId || "");
+    appState.nodeSendQuickFeedback.state = normalizedState;
+    appState.nodeSendQuickFeedback.message = String(options.message || "");
+    appState.nodeSendQuickFeedback.label = String(options.label || "");
+    syncNodeSendQuickFeedbackUi(nodeId);
+    appState.nodeSendQuickFeedback.timer = window.setTimeout(() => {
+        const currentNodeId = String(appState.nodeSendQuickFeedback.nodeId || "");
+        resetNodeSendQuickFeedbackState();
+        syncNodeSendQuickFeedbackUi(currentNodeId || nodeId);
+    }, NODE_SEND_QUICK_FEEDBACK_MS);
+}
+
 async function submitNodeSend(nodeIds, options = {}) {
     const selectedIds = (nodeIds || [])
         .map((id) => Number(id))
         .filter((id) => Number.isFinite(id));
+    const source = options.source === "quick-slide"
+        ? "quick-slide"
+        : "batch";
     if (!canSubmitNodeSend(selectedIds)) {
         return false;
     }
@@ -3170,7 +3202,12 @@ async function submitNodeSend(nodeIds, options = {}) {
         String(appState.nodeSendTargetClass || "") === "XStringGet"
     );
     const lockHost = options.lockHost !== false;
+    appState.nodeSendActiveSource = source;
     clearPendingNodeSendAcks();
+    if (source === "quick-slide") {
+        resetNodeSendQuickFeedbackState();
+        syncNodeSendQuickFeedbackUi();
+    }
     appState.nodeSendSending = true;
     appState.nodeSendHostLockActive = lockHost;
     syncHostNodeSendBusyState();
@@ -3212,6 +3249,39 @@ async function submitNodeSend(nodeIds, options = {}) {
                 )
             );
         }
+        if (source === "quick-slide") {
+            if (ack.ok) {
+                setNodeSendQuickFeedback(ack.nodeId || nodeId, "success", {
+                    message: t(
+                        "xdatahub.ui.app.media.send_dialog_slide_success",
+                        "Slide send successful"
+                    ),
+                    label: appState.settings.nodeSendCloseAfterSend !== false
+                        ? t(
+                            "xdatahub.ui.app.media.send_dialog_slide_success_closing",
+                            "Closing..."
+                        )
+                        : t(
+                            "xdatahub.ui.app.media.send_dialog_slide_success_label",
+                            "Sent"
+                        ),
+                });
+            } else {
+                setNodeSendQuickFeedback(ack.nodeId || nodeId, "error", {
+                    message: String(
+                        ack.error
+                        || t(
+                            "xdatahub.ui.app.media.send_dialog_slide_failed",
+                            "Slide send failed"
+                        )
+                    ),
+                    label: t(
+                        "xdatahub.ui.app.media.send_dialog_slide_failed_label",
+                        "Failed"
+                    ),
+                });
+            }
+        }
         refreshNodeSendDialogOverlay();
     }
     appState.nodeSendSending = false;
@@ -3221,7 +3291,12 @@ async function submitNodeSend(nodeIds, options = {}) {
         appState.settings.nodeSendCloseAfterSend !== false
         && appState.nodeSendFailureCount === 0
     );
-    if (shouldClose) {
+    if (shouldClose && source === "quick-slide") {
+        appState.nodeSendQuickFeedback.closeTimer = window.setTimeout(() => {
+            closeNodeSendDialog();
+        }, NODE_SEND_QUICK_CLOSE_DELAY_MS);
+        refreshNodeSendDialogOverlay();
+    } else if (shouldClose) {
         closeNodeSendDialog();
     } else {
         refreshNodeSendDialogOverlay();
@@ -3233,6 +3308,83 @@ function resetNodeSendQuickSlideState() {
     appState.nodeSendQuickSlide = null;
 }
 
+function clearNodeSendQuickFeedbackTimers() {
+    if (appState.nodeSendQuickFeedback.timer) {
+        window.clearTimeout(appState.nodeSendQuickFeedback.timer);
+        appState.nodeSendQuickFeedback.timer = 0;
+    }
+    if (appState.nodeSendQuickFeedback.closeTimer) {
+        window.clearTimeout(appState.nodeSendQuickFeedback.closeTimer);
+        appState.nodeSendQuickFeedback.closeTimer = 0;
+    }
+}
+
+function resetNodeSendQuickFeedbackState() {
+    clearNodeSendQuickFeedbackTimers();
+    appState.nodeSendQuickFeedback.nodeId = "";
+    appState.nodeSendQuickFeedback.state = "";
+    appState.nodeSendQuickFeedback.message = "";
+    appState.nodeSendQuickFeedback.label = "";
+}
+
+function getNodeSendQuickFeedback(nodeId) {
+    if (
+        String(appState.nodeSendQuickFeedback.nodeId || "")
+        !== String(nodeId || "")
+    ) {
+        return null;
+    }
+    if (
+        appState.nodeSendQuickFeedback.state !== "success"
+        && appState.nodeSendQuickFeedback.state !== "error"
+    ) {
+        return null;
+    }
+    return appState.nodeSendQuickFeedback;
+}
+
+function getNodeSendQuickFeedbackUi(nodeId, progress = 0) {
+    const feedback = getNodeSendQuickFeedback(nodeId);
+    if (feedback) {
+        const fallbackLabel = feedback.state === "success"
+            ? (
+                appState.nodeSendQuickFeedback.closeTimer
+                    ? t(
+                        "xdatahub.ui.app.media.send_dialog_slide_success_closing",
+                        "Closing..."
+                    )
+                    : t(
+                        "xdatahub.ui.app.media.send_dialog_slide_success_label",
+                        "Sent"
+                    )
+            )
+            : t(
+                "xdatahub.ui.app.media.send_dialog_slide_failed_label",
+                "Failed"
+            );
+        return {
+            state: feedback.state,
+            label: feedback.label || fallbackLabel,
+            title: feedback.message || fallbackLabel,
+        };
+    }
+    const ready = progress >= 0.92;
+    const defaultText = ready
+        ? t(
+            "xdatahub.ui.app.media.send_dialog_slide_release",
+            "Release to send"
+        )
+        : t(
+            "xdatahub.ui.app.media.send_dialog_slide",
+            "Slide to send"
+        );
+    return {
+        state: "",
+        label: defaultText,
+        title: defaultText,
+    };
+}
+
 function getNodeSendQuickSlideElement(nodeId) {
     if (!root) {
         return null;
@@ -3242,18 +3394,57 @@ function getNodeSendQuickSlideElement(nodeId) {
     );
 }
 
+function syncNodeSendQuickFeedbackUi(nodeId = null) {
+    const overlay = document.getElementById("node-send-overlay");
+    if (!(overlay instanceof HTMLElement)) {
+        return false;
+    }
+    const sliders = nodeId === null
+        ? overlay.querySelectorAll("[data-node-send-slide-id]")
+        : [getNodeSendQuickSlideElement(nodeId)];
+    let synced = false;
+    for (const slider of sliders) {
+        if (!(slider instanceof HTMLElement)) {
+            continue;
+        }
+        const currentNodeId = String(
+            slider.getAttribute("data-node-send-slide-id") || ""
+        );
+        const progress = Number(
+            slider.style.getPropertyValue("--node-send-slide-progress") || 0
+        );
+        const ui = getNodeSendQuickFeedbackUi(currentNodeId, progress);
+        slider.classList.toggle("is-success", ui.state === "success");
+        slider.classList.toggle("is-error", ui.state === "error");
+        slider.setAttribute("title", ui.title);
+        slider.setAttribute("aria-label", ui.title);
+        const label = slider.querySelector("[data-node-send-slide-label]");
+        if (label instanceof HTMLElement) {
+            label.textContent = ui.label;
+        }
+        synced = true;
+    }
+    return synced;
+}
+
 function syncNodeSendQuickSlideVisual(slider, progress = 0) {
     if (!(slider instanceof HTMLElement)) {
         return;
     }
     const clamped = Math.max(0, Math.min(1, progress));
+    const nodeId = String(
+        slider.getAttribute("data-node-send-slide-id") || ""
+    );
     slider.style.setProperty("--node-send-slide-progress", String(clamped));
     slider.classList.toggle("is-ready", clamped >= 0.92);
+    const ui = getNodeSendQuickFeedbackUi(nodeId, clamped);
+    slider.classList.toggle("is-success", ui.state === "success");
+    slider.classList.toggle("is-error", ui.state === "error");
+    slider.setAttribute("title", ui.title);
+    slider.setAttribute("aria-label", ui.title);
     const label = slider.querySelector("[data-node-send-slide-label]");
     if (label instanceof HTMLElement) {
-        label.textContent = clamped >= 0.92
-            ? t("xdatahub.ui.app.media.send_dialog_slide_release", "Release to send")
-            : t("xdatahub.ui.app.media.send_dialog_slide", "Slide to send");
+        label.textContent = ui.label;
     }
 }
 
@@ -3269,6 +3460,10 @@ function beginNodeSendQuickSlide(event, slider) {
     const nodeId = Number(slider.getAttribute("data-node-send-slide-id") || "");
     if (!Number.isFinite(nodeId)) {
         return false;
+    }
+    if (getNodeSendQuickFeedback(nodeId)) {
+        resetNodeSendQuickFeedbackState();
+        syncNodeSendQuickFeedbackUi(nodeId);
     }
     const track = slider.querySelector(".node-send-quick-track");
     const handle = slider.querySelector(".node-send-quick-handle");
@@ -3324,7 +3519,10 @@ function endNodeSendQuickSlide(event) {
     }
     resetNodeSendQuickSlideState();
     if (progress >= 0.92) {
-        void submitNodeSend([active.nodeId], { lockHost: false });
+        void submitNodeSend([active.nodeId], {
+            lockHost: false,
+            source: "quick-slide",
+        });
     }
     event.preventDefault();
     return true;
@@ -3399,6 +3597,7 @@ function syncNodeSendSelectionUi() {
         confirmBtn.title = buttonTitle;
         confirmBtn.setAttribute("aria-label", buttonTitle);
     }
+    syncNodeSendQuickFeedbackUi();
     return true;
 }
 
@@ -3501,6 +3700,8 @@ function refreshNodeSendTargets() {
     appState.nodeSendError = "";
     appState.nodeSendNodes = [];
     appState.nodeSendSelectedIds = [];
+    appState.nodeSendActiveSource = "";
+    resetNodeSendQuickFeedbackState();
     resetNodeSendResultState();
     appState.nodeSendNodesLoading = true;
     appState.nodeSendValidateLoading = (
@@ -3584,6 +3785,8 @@ function openNodeSendDialog(
     appState.nodeSendTitle = String(title || "");
     appState.nodeSendTargetClass = resolveNodeClassByMediaType(mediaType);
     appState.nodeSendSending = false;
+    appState.nodeSendActiveSource = "";
+    resetNodeSendQuickFeedbackState();
     resetNodeSendResultState();
     refreshNodeSendTargets();
 }
@@ -3604,7 +3807,9 @@ function closeNodeSendDialog() {
     appState.nodeSendValidateLoading = false;
     appState.nodeSendRequestId = "";
     appState.nodeSendValidateId = "";
+    appState.nodeSendActiveSource = "";
     appState.nodeSendQuickSlide = null;
+    resetNodeSendQuickFeedbackState();
     resetNodeSendResultState();
     clearNodeSendRequestTimer();
     clearNodeSendValidateTimer();
@@ -3633,6 +3838,15 @@ function applyNodeSendNodesResponse(payload) {
     appState.nodeSendNodes = nodes.filter(
         (item) => Number.isFinite(Number(item?.id))
     );
+    const quickFeedbackNodeId = String(appState.nodeSendQuickFeedback.nodeId || "");
+    if (
+        quickFeedbackNodeId
+        && !appState.nodeSendNodes.some(
+            (item) => String(item?.id || "") === quickFeedbackNodeId
+        )
+    ) {
+        resetNodeSendQuickFeedbackState();
+    }
     refreshNodeSendDialogOverlay();
 }
 
@@ -6864,6 +7078,10 @@ function renderNodeSendDialog() {
             const accent = resolveNodeAccentColor(item);
             const rowStyle = ` style="--node-palette:${escapeAttr(accent)}"`;
             const checked = selectedIds.has(String(item.id));
+            const quickUi = getNodeSendQuickFeedbackUi(item.id, 0);
+            const quickStateClass = quickUi.state
+                ? ` is-${quickUi.state}`
+                : "";
             return `
                 <button class="btn node-send-option ${checked ? "active" : ""}" data-node-send-id="${escapeAttr(item.id)}" aria-pressed="${checked ? "true" : "false"}"${rowStyle} title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
                     <span class="node-send-name" title="${escapeAttr(nodeTitle)}">${escapeHtml(nodeTitle)}</span>
@@ -6875,9 +7093,9 @@ function renderNodeSendDialog() {
                             </span>
                             <span class="node-send-check" title="${checked ? escapeAttr(confirmText) : ""}">${checked ? iconSvg("check", confirmText, "xdatahub-icon node-send-check-icon") : ""}</span>
                         </span>
-                        <span class="node-send-quick" data-node-send-slide data-node-send-slide-id="${escapeAttr(item.id)}" title="${escapeAttr(slideSendText)}" aria-label="${escapeAttr(slideSendText)}">
+                        <span class="node-send-quick${quickStateClass}" data-node-send-slide data-node-send-slide-id="${escapeAttr(item.id)}" title="${escapeAttr(quickUi.title)}" aria-label="${escapeAttr(quickUi.title)}">
                             <span class="node-send-quick-track">
-                                <span class="node-send-quick-label" data-node-send-slide-label>${escapeHtml(slideSendText)}</span>
+                                <span class="node-send-quick-label" data-node-send-slide-label>${escapeHtml(quickUi.label)}</span>
                                 <span class="node-send-quick-handle" aria-hidden="true">${iconSvg("send", slideSendText, "xdatahub-icon")}</span>
                             </span>
                         </span>
@@ -9360,6 +9578,7 @@ function cleanupRuntimeResources() {
     appState.searchInFlight = false;
     stopVideoScheduler(true);
     clearMediaQueueRebuildTimer();
+    resetNodeSendQuickFeedbackState();
     endHistorySplitDrag();
     if (topActionCompactRaf) {
         window.cancelAnimationFrame(topActionCompactRaf);
