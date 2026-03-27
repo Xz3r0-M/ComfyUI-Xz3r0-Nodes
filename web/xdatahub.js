@@ -113,7 +113,7 @@ const HOST_TABS = [
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
 ];
-const XDATAHUB_ASSET_VER = "20260327-274";
+const XDATAHUB_ASSET_VER = "20260327-300";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -845,7 +845,7 @@ app.registerExtension({
             .xz3r0-datahub-window-host-tabs {
                 display: flex;
                 gap: 6px;
-                padding: 10px 10px 10px 10px;
+                padding: 11px 10px 11px 10px;
                 background: var(--xdh-tab-strip-bg);
                 box-shadow: inset 0 -1px 0 var(--xdh-tab-strip-divider);
                 flex-shrink: 0;
@@ -855,7 +855,7 @@ app.registerExtension({
                 align-items: center;
             }
             .xz3r0-datahub-window.compact-tabs .xz3r0-datahub-window-host-tabs {
-                padding: 10px 8px 10px 8px;
+                padding: 11px 8px 11px 8px;
                 justify-content: flex-start;
             }
             .xz3r0-datahub-window.compact-tabs
@@ -903,8 +903,11 @@ app.registerExtension({
                 background: var(--bg-panel);
                 color: var(--text-emphasis);
                 border-radius: 10px;
-                height: 32px;
-                padding: 6px 10px;
+                width: 84px;
+                min-width: 84px;
+                height: 30px;
+                min-height: 30px;
+                padding: 5px 10px;
                 cursor: pointer;
                 font-size: 12px;
                 font-weight: 700;

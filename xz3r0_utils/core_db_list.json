@@ -2,6 +2,7 @@
   "critical_databases": [
     "media_index.db",
     "seed_data.db",
-    "string_data.db"
+    "string_data.db",
+    "user_favorites.db"
   ]
 }

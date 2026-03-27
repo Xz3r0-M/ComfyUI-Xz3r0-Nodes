@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260327-274">
+    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260327-300">
     <style>
         /*
            颜色规范：
@@ -857,6 +857,13 @@
             flex: 0 0 auto;
         }
 
+        .history-view-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: nowrap;
+        }
+
         .history-list-header-left {
             display: inline-flex;
             align-items: center;
@@ -872,9 +879,9 @@
             white-space: nowrap;
             width: 116px;
             min-width: 116px;
-            height: 33px;
-            min-height: 33px;
-            padding: 6px 10px;
+            height: 30px;
+            min-height: 30px;
+            padding: 5px 10px;
             box-sizing: border-box;
         }
 
@@ -954,8 +961,8 @@
             position: relative;
             width: 100%;
             min-width: 0;
-            height: 33px;
-            min-height: 33px;
+            height: 30px;
+            min-height: 30px;
             box-sizing: border-box;
             border-width: 1px !important;
             padding: 6px;
@@ -1181,6 +1188,59 @@
             min-width: 0;
         }
 
+        .row-favorite-btn,
+        .row-favorite-check {
+            flex: 0 0 auto;
+            align-self: flex-start;
+        }
+
+        .row-favorite-btn {
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            min-height: 24px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .row-favorite-btn .btn-icon {
+            width: 14px;
+            height: 14px;
+        }
+
+        .row-favorite-btn.favorite-saved {
+            color: var(--text-active);
+            border-color: var(--border-active);
+            background: var(--btn-active-color);
+            box-shadow: var(--btn-hover-glow-soft);
+        }
+
+        .row-favorite-btn.favorite-error {
+            color: var(--state-danger-text-standard);
+            border-color: var(--state-danger-text-standard);
+        }
+
+        .row-favorite-check {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            min-width: 22px;
+            height: 22px;
+            min-height: 22px;
+            border: 1px solid var(--border-standard);
+            border-radius: 8px;
+            background: var(--xdh-history-content-bg);
+        }
+
+        .row-favorite-check input {
+            width: 13px;
+            height: 13px;
+            margin: 0;
+        }
+
         .row-id-db-sep {
             width: 1px;
             align-self: stretch;
@@ -1212,6 +1272,7 @@
             align-items: stretch;
             gap: 0;
             width: 100%;
+            min-height: 30px;
             border: 1px solid var(--xdh-history-content-border);
             border-radius: 8px;
             padding: 0;
@@ -1224,7 +1285,10 @@
         .row-content-text {
             flex: 1 1 auto;
             min-width: 0;
-            padding: 7px 9px;
+            display: flex;
+            align-items: center;
+            min-height: 30px;
+            padding: 0 9px;
             color: var(--xdh-history-content-text);
             white-space: nowrap;
             overflow: hidden;
@@ -1329,6 +1393,7 @@
         .row-time-line-primary > .chip:not(.row-extra-inline) {
             white-space: nowrap;
             flex: 0 0 auto;
+            min-height: 24px;
         }
 
         .row-time-line .chip {
@@ -1641,6 +1706,83 @@
             display: inline-flex;
             gap: 6px;
             flex-wrap: wrap;
+            justify-content: center;
+            align-self: center;
+            width: 100%;
+            --switch-btn-width: clamp(126px, 26vw, 158px);
+        }
+
+        .media-root-switch > .btn {
+            flex: 0 0 var(--switch-btn-width);
+            width: var(--switch-btn-width);
+            height: 30px;
+            min-height: 30px;
+            box-sizing: border-box;
+            justify-content: center;
+        }
+
+        .history-view-bar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto minmax(40px, 1fr);
+            align-items: center;
+            width: 100%;
+            gap: 12px;
+            min-height: 44px;
+            box-sizing: border-box;
+        }
+
+        .history-view-bar .history-view-switch {
+            grid-column: 2;
+            justify-self: center;
+            --switch-btn-width: clamp(92px, 16vw, 112px);
+        }
+
+        .history-view-bar .history-view-switch > .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            height: 30px;
+            min-height: 30px;
+            box-sizing: border-box;
+        }
+
+        .history-view-bar .history-view-actions {
+            grid-column: 3;
+            justify-self: end;
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            min-width: 40px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .history-view-bar .history-view-delete-btn {
+            min-width: 29px;
+            width: 30px;
+            height: 30px;
+            min-height: 30px;
+            padding: 0;
+            box-sizing: border-box;
+            color: var(--text-standard);
+        }
+
+        .history-view-bar .history-view-delete-btn .btn-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .history-view-bar .history-view-delete-btn .btn-text {
+            display: none;
+        }
+
+        .history-view-bar .history-view-delete-btn .btn-emoji {
+            margin: 0;
+        }
+
+        #favorite-delete-overlay .danger-dialog-title {
+            color: var(--text-standard);
         }
 
         .top-action-bar .media-sort-cycle-btn {
@@ -1672,14 +1814,25 @@
             flex: 1 1 auto;
             min-width: 0;
             max-width: 100%;
+            height: 30px;
+            min-height: 30px;
             border: 1px solid var(--border-standard);
             border-radius: 8px;
-            padding: 5px 10px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
             color: var(--text-emphasis);
             background: var(--bg);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .media-path-line > .btn {
+            height: 30px;
+            min-height: 30px;
+            box-sizing: border-box;
         }
 
         .media-grid {
@@ -2155,7 +2308,8 @@
             margin: 0;
             min-width: 48px;
             padding: 0 10px;
-            height: auto;
+            height: 30px;
+            min-height: 30px;
             align-self: stretch;
             background: transparent;
             box-shadow: none;
@@ -3769,16 +3923,16 @@
 
         .pagination #page-prev,
         .pagination #page-next {
-            height: 28px;
-            min-height: 28px;
+            height: 30px;
+            min-height: 30px;
             padding: 4px 8px;
             font-size: 12px;
             line-height: 1;
         }
 
         .pagination #page-jump {
-            height: 28px;
-            min-height: 28px;
+            height: 30px;
+            min-height: 30px;
             padding: 4px 6px;
             font-size: 12px;
             line-height: 1;
@@ -3808,11 +3962,11 @@
         }
 
         .locale-switcher-toggle {
-            width: 34px;
-            min-width: 34px;
-            height: 28px;
-            min-height: 28px;
-            padding: 4px 0;
+            width: 30px;
+            min-width: 30px;
+            height: 30px;
+            min-height: 30px;
+            padding: 0;
             font-size: 12px;
             line-height: 1;
             white-space: nowrap;
@@ -4096,7 +4250,7 @@
 </head>
 <body>
     <div class="app" id="app"></div>
-    <script type="module" src="./xdatahub_app.js?v=20260327-274"></script>
+    <script type="module" src="./xdatahub_app.js?v=20260327-300"></script>
 </body>
 </html>
 

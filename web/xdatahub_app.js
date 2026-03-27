@@ -56,6 +56,7 @@ const DEFAULT_STATE = {
     mediaBackStack: [],
     mediaForwardStack: [],
     historySortOrder: "desc",
+    historyView: "base",
     lastOpenedMediaId: "",
     lastOpenedMediaUrl: "",
     filters: {
@@ -139,6 +140,14 @@ const appState = {
     unlockCritical: false,
     confirmYes: "",
     dbRefreshLockedUntil: 0,
+    selectedFavoriteIds: [],
+    favoriteDeleteDialog: {
+        open: false,
+        countdown: 0,
+        loading: false,
+        error: "",
+    },
+    favoriteDeleteTimer: 0,
     dbRefreshLockTimer: 0,
     dbRefreshDebounceTimer: 0,
     dbRefreshInFlight: false,
@@ -301,9 +310,15 @@ const FOCUSABLE_IDS = new Set([
     "filter-end",
     "page-jump",
 ]);
+const HISTORY_VIEW_VALUES = new Set(["base", "favorites"]);
 
 function cloneDefaultState() {
     return JSON.parse(JSON.stringify(DEFAULT_STATE));
+}
+
+function normalizeHistoryView(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return HISTORY_VIEW_VALUES.has(normalized) ? normalized : "base";
 }
 
 function debounce(fn, delay) {
@@ -386,6 +401,7 @@ function loadTabState(tab) {
         parsed.lastOpenedMediaUrl = "";
         parsed.mediaBackStack = [];
         parsed.mediaForwardStack = [];
+        parsed.historyView = normalizeHistoryView(parsed.historyView);
         return parsed;
     } catch {
         return cloneDefaultState();
@@ -403,6 +419,7 @@ function buildPersistedTabState(tab, state) {
         next.historySortOrder = normalizeHistorySortOrder(
             state?.historySortOrder
         );
+        next.historyView = normalizeHistoryView(state?.historyView);
         return next;
     }
     if (isMediaTab(tab)) {
@@ -1122,6 +1139,59 @@ function currentTabState() {
     return tabStates[appState.activeTab];
 }
 
+function currentHistoryView() {
+    return normalizeHistoryView(tabStates.history?.historyView);
+}
+
+function isFavoritesHistoryView() {
+    return appState.activeTab === "history"
+        && currentHistoryView() === "favorites";
+}
+
+function clearFavoriteDeleteTimer() {
+    if (appState.favoriteDeleteTimer) {
+        clearInterval(appState.favoriteDeleteTimer);
+        appState.favoriteDeleteTimer = 0;
+    }
+}
+
+function closeFavoriteDeleteDialog(shouldRender = true) {
+    clearFavoriteDeleteTimer();
+    appState.favoriteDeleteDialog = {
+        open: false,
+        countdown: 0,
+        loading: false,
+        error: "",
+    };
+    if (shouldRender) {
+        renderOverlays();
+    }
+}
+
+function selectedFavoriteIdSet() {
+    return new Set(
+        (appState.selectedFavoriteIds || []).map((id) => String(id || ""))
+    );
+}
+
+function isFavoriteSelected(itemId) {
+    return selectedFavoriteIdSet().has(String(itemId || ""));
+}
+
+function toggleFavoriteSelected(itemId) {
+    const normalizedId = String(itemId || "").trim();
+    if (!normalizedId) {
+        return;
+    }
+    const selected = selectedFavoriteIdSet();
+    if (selected.has(normalizedId)) {
+        selected.delete(normalizedId);
+    } else {
+        selected.add(normalizedId);
+    }
+    appState.selectedFavoriteIds = Array.from(selected);
+}
+
 function getListTabId(listElement) {
     if (!(listElement instanceof HTMLElement)) {
         return appState.activeTab;
@@ -1622,6 +1692,120 @@ function applyOfficialQueueRemaining(queueRemaining, eventType) {
     return applyLockState(next);
 }
 
+async function saveFavoriteItem(item) {
+    const recordId = Number(item?.extra?.record_id || 0);
+    const dbName = String(item?.extra?.db_name || "").trim();
+    if (recordId <= 0 || !dbName) {
+        throw new Error(
+            t(
+                "xdatahub.ui.app.favorite.save_failed",
+                "Failed to save favorite"
+            )
+        );
+    }
+    return apiPost("/xz3r0/xdatahub/favorites", {
+        record_id: recordId,
+        db_name: dbName,
+        extra_header: String(item?.extra?.extra_header || ""),
+        data_type: String(item?.extra?.data_type || ""),
+        source: String(item?.extra?.source || ""),
+        payload: item?.extra?.payload,
+    });
+}
+
+function resetHistorySelection() {
+    tabStates.history.selectedId = "";
+    appState.selectedItemCache.delete("history");
+    clearDetailResources();
+}
+
+function setHistoryView(view) {
+    const nextView = normalizeHistoryView(view);
+    if (currentHistoryView() === nextView) {
+        return false;
+    }
+    tabStates.history.historyView = nextView;
+    tabStates.history.page = 1;
+    appState.selectedFavoriteIds = [];
+    closeFavoriteDeleteDialog(false);
+    resetHistorySelection();
+    saveTabState("history");
+    return true;
+}
+
+function reconcileFavoriteSelection() {
+    const currentIds = new Set(
+        (appState.items || []).map((item) => String(item?.id || ""))
+    );
+    appState.selectedFavoriteIds = (appState.selectedFavoriteIds || []).filter(
+        (id) => currentIds.has(String(id || ""))
+    );
+}
+
+function startFavoriteDeleteCountdown() {
+    clearFavoriteDeleteTimer();
+    appState.favoriteDeleteDialog.countdown = 3;
+    appState.favoriteDeleteTimer = setInterval(() => {
+        if (appState.favoriteDeleteDialog.countdown <= 1) {
+            clearFavoriteDeleteTimer();
+            appState.favoriteDeleteDialog.countdown = 0;
+        } else {
+            appState.favoriteDeleteDialog.countdown -= 1;
+        }
+        renderOverlays();
+    }, 1000);
+}
+
+function openFavoriteDeleteDialog() {
+    if (!appState.selectedFavoriteIds.length) {
+        return;
+    }
+    appState.favoriteDeleteDialog = {
+        open: true,
+        countdown: 3,
+        loading: false,
+        error: "",
+    };
+    startFavoriteDeleteCountdown();
+    renderOverlays();
+}
+
+async function submitFavoriteDelete() {
+    if (
+        appState.favoriteDeleteDialog.loading
+        || appState.favoriteDeleteDialog.countdown > 0
+        || !appState.selectedFavoriteIds.length
+    ) {
+        return;
+    }
+    appState.favoriteDeleteDialog.loading = true;
+    appState.favoriteDeleteDialog.error = "";
+    renderOverlays();
+    try {
+        await apiPost("/xz3r0/xdatahub/favorites/delete", {
+            ids: (appState.selectedFavoriteIds || [])
+                .map((itemId) => {
+                    const item = appState.items.find(
+                        (entry) => String(entry?.id || "") === String(itemId)
+                    );
+                    return Number(item?.extra?.favorite_id || 0);
+                })
+                .filter((id) => Number.isFinite(id) && id > 0),
+        });
+        appState.selectedFavoriteIds = [];
+        closeFavoriteDeleteDialog(false);
+        resetHistorySelection();
+        await loadList();
+    } catch (error) {
+        appState.favoriteDeleteDialog.loading = false;
+        appState.favoriteDeleteDialog.error = error.message || t(
+            "xdatahub.ui.app.favorite.delete_failed",
+            "Failed to delete favorites"
+        );
+        renderOverlays();
+    }
+}
+
 function clearDetailResources() {
     stopVideoScheduler(true);
     clearMediaQueueRebuildTimer();
@@ -1656,40 +1840,65 @@ async function loadList(options = {}) {
             const historySortOrder = normalizeHistorySortOrder(
                 state.historySortOrder
             );
-            data = await apiGet(
-                "/xz3r0/xdatahub/records",
-                {
-                    page: state.page,
-                    page_size: state.pageSize,
-                    extra_header: state.filters.keyword,
-                    data_type: state.filters.dataType,
-                    source: state.filters.source,
-                    db_name: state.filters.dbName,
-                    start: state.filters.start,
-                    end: state.filters.end,
-                    sort_order: historySortOrder,
-                },
-                `list-${tab}`
-            );
-            const facets = data.facets || {};
-            appState.recordFacets = {
-                dbNames: toFacetList(facets.db_names),
-                dataTypes: toFacetList(facets.data_types),
-                sources: toFacetList(facets.sources),
-            };
-            const dbNameKey = normalizeFacetKey(state.filters.dbName);
-            if (dbNameKey) {
-                appState.scopedFacets = {
-                    dbNameKey,
-                    dataTypes: toFacetList(facets.data_types),
-                    sources: toFacetList(facets.sources),
-                };
-            } else {
+            if (normalizeHistoryView(state.historyView) === "favorites") {
+                data = await apiGet(
+                    "/xz3r0/xdatahub/favorites",
+                    {
+                        page: state.page,
+                        page_size: state.pageSize,
+                        extra_header: state.filters.keyword,
+                        start: state.filters.start,
+                        end: state.filters.end,
+                        sort_order: historySortOrder,
+                    },
+                    `list-${tab}`
+                );
                 appState.scopedFacets = {
                     dbNameKey: "",
                     dataTypes: [],
                     sources: [],
                 };
+                appState.recordFacets = {
+                    dbNames: [],
+                    dataTypes: [],
+                    sources: [],
+                };
+            } else {
+                data = await apiGet(
+                    "/xz3r0/xdatahub/records",
+                    {
+                        page: state.page,
+                        page_size: state.pageSize,
+                        extra_header: state.filters.keyword,
+                        data_type: state.filters.dataType,
+                        source: state.filters.source,
+                        db_name: state.filters.dbName,
+                        start: state.filters.start,
+                        end: state.filters.end,
+                        sort_order: historySortOrder,
+                    },
+                    `list-${tab}`
+                );
+                const facets = data.facets || {};
+                appState.recordFacets = {
+                    dbNames: toFacetList(facets.db_names),
+                    dataTypes: toFacetList(facets.data_types),
+                    sources: toFacetList(facets.sources),
+                };
+                const dbNameKey = normalizeFacetKey(state.filters.dbName);
+                if (dbNameKey) {
+                    appState.scopedFacets = {
+                        dbNameKey,
+                        dataTypes: toFacetList(facets.data_types),
+                        sources: toFacetList(facets.sources),
+                    };
+                } else {
+                    appState.scopedFacets = {
+                        dbNameKey: "",
+                        dataTypes: [],
+                        sources: [],
+                    };
+                }
             }
         } else {
             const showDatetimeChip =
@@ -1730,6 +1939,7 @@ async function loadList(options = {}) {
                 appState.items,
                 normalizeHistorySortOrder(state.historySortOrder)
             );
+            reconcileFavoriteSelection();
         }
         appState.total = data.total || 0;
         appState.totalPages = data.total_pages || 1;
@@ -1862,6 +2072,9 @@ function syncListContentUi() {
         list.dataset.listTab = "history";
         list.innerHTML = `${renderListRows()}${renderStatus()}`;
     }
+    if (appState.activeTab === "history") {
+        syncHistoryViewBarUi();
+    }
     syncPaginationUi();
     syncTopActionBarUi();
     syncLockBannerUi();
@@ -1902,6 +2115,15 @@ function syncHistorySelectionUi() {
 }
 
 async function loadScopedFacetsByDb(dbName) {
+    if (isFavoritesHistoryView()) {
+        appState.scopedFacets = {
+            dbNameKey: "",
+            dataTypes: [],
+            sources: [],
+        };
+        refreshDependentWarnings();
+        return;
+    }
     const key = normalizeFacetKey(dbName);
     if (!key || !isDbNameMatched(dbName)) {
         appState.scopedFacets = {
@@ -3955,6 +4177,12 @@ function dbPurposeIconName(purpose) {
     if (!text) {
         return "database";
     }
+    if (text.includes("seed")) {
+        return "dices";
+    }
+    if (text.includes("favorite")) {
+        return "bookmark";
+    }
     if (text.includes("media")) {
         return "image";
     }
@@ -3982,8 +4210,14 @@ function localizeDbPurposeLabel(purpose) {
     if (text === "media index db") {
         return t("xdatahub.ui.app.db.purpose.media_index", "Media Index DB");
     }
+    if (text === "seed values db") {
+        return t("xdatahub.ui.app.db.purpose.seed_values", "Seed Values DB");
+    }
     if (text === "records db") {
         return t("xdatahub.ui.app.db.purpose.records", "Records DB");
+    }
+    if (text === "favorites db") {
+        return t("xdatahub.ui.app.db.purpose.favorites", "Favorites DB");
     }
     if (text === "other db") {
         return t("xdatahub.ui.app.db.purpose.other", "Other DB");
@@ -4320,6 +4554,7 @@ function requestDangerConfirm(kind, meta = {}) {
 function renderFilters() {
     const state = currentTabState();
     const isHistory = appState.activeTab === "history";
+    const isFavoriteView = isFavoritesHistoryView();
     const tab = appState.activeTab;
     const readonly = appState.lockState.readonly;
     const canCleanInvalid = isMediaTab(tab) && !readonly;
@@ -4329,7 +4564,7 @@ function renderFilters() {
     const searchBtnText = `${iconSvg("search", searchText, "xdatahub-icon btn-icon")} ${searchText}`;
     const searchBtnClass = "btn primary search-btn";
     const searchDisabled = isSearchLocked() || appState.searchInFlight;
-    const dbField = isHistory
+    const dbField = isHistory && !isFavoriteView
         ? renderFacetInput(
             "filter-db-name",
             t("xdatahub.ui.app.text.h_1f6f90f1a7", "Source"),
@@ -4338,7 +4573,7 @@ function renderFilters() {
             appState.recordFacets.dbNames
         )
         : "";
-    const typeField = isHistory
+    const typeField = isHistory && !isFavoriteView
         ? renderFacetInput(
             "filter-data-type",
             t("xdatahub.ui.app.text.h_b031dc9a85", "Data Type"),
@@ -4347,7 +4582,7 @@ function renderFilters() {
             appState.recordFacets.dataTypes
         )
         : "";
-    const sourceField = isHistory
+    const sourceField = isHistory && !isFavoriteView
         ? renderFacetInput(
             "filter-source",
             t("xdatahub.ui.app.text.h_e840cd6f1e", "Node"),
@@ -4412,6 +4647,8 @@ function renderFilters() {
 function renderTopActionBar() {
     const tab = appState.activeTab;
     const state = currentTabState();
+    const historyView = normalizeHistoryView(state.historyView);
+    const isFavoriteView = tab === "history" && historyView === "favorites";
     const sidebarOpen = !!appState.filtersSidebarOpen;
     const readonly = appState.lockState.readonly;
     const isMedia = isMediaTab(tab);
@@ -5622,6 +5859,7 @@ function setupVideoCardScheduler(resetState = true) {
 
 function renderListRows() {
     const selectedId = currentTabState().selectedId;
+    const isFavoriteView = isFavoritesHistoryView();
     const noContentText = t("xdatahub.ui.app.text.h_895269f125", "(No Content)");
     const copyTitleText = t(
         "xdatahub.ui.app.title.h_8bac024269",
@@ -5658,6 +5896,7 @@ function renderListRows() {
             const dbAccent = getDbAccentColor(dbName);
             const rowStyle = ` style="--db-palette:${escapeAttr(dbAccent)}"`;
             const activeClass = String(item.id) === String(selectedId) ? " active" : "";
+            const favoriteSelected = isFavoriteSelected(item.id);
             let idDbChipHtml = "";
             if (recordId && dbName) {
                 idDbChipHtml = `
@@ -5678,6 +5917,20 @@ function renderListRows() {
                         <div class="row-id-chip-wrap">
                             ${idDbChipHtml}
                         </div>
+                        ${
+                            isFavoriteView
+                                ? `<label class="row-favorite-check" title="${escapeAttr(t("xdatahub.ui.app.favorite.select_item", "Select favorite"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.favorite.select_item", "Select favorite"))}">
+                                    <input type="checkbox" data-favorite-check="1" data-item-id="${escapeAttr(item.id)}" ${favoriteSelected ? "checked" : ""}>
+                                </label>`
+                                : `<button
+                                    class="btn row-favorite-btn"
+                                    type="button"
+                                    data-favorite-save="1"
+                                    data-item-id="${escapeAttr(item.id)}"
+                                    title="${escapeAttr(t("xdatahub.ui.app.favorite.save_action", "Save to favorites"))}"
+                                    aria-label="${escapeAttr(t("xdatahub.ui.app.favorite.save_action", "Save to favorites"))}"
+                                >${iconSvg("bookmark-plus", t("xdatahub.ui.app.favorite.save_action", "Save to favorites"), "xdatahub-icon btn-icon")}</button>`
+                        }
                     </div>
                     <div class="row-content-line">
                         <div class="row-title row-content-text" title="${escapeAttr(contentPreview || noContentText)}">${escapeHtml(contentPreview || noContentText)}</div>
@@ -6221,6 +6474,25 @@ function renderMediaExplorerBar() {
     `;
 }
 
+function renderHistoryViewBar() {
+    const historyView = currentHistoryView();
+    const inFavoritesView = isFavoritesHistoryView();
+    const canDeleteFavorites = inFavoritesView
+        && !appState.lockState.readonly
+        && appState.selectedFavoriteIds.length > 0;
+    return `
+        <div class="media-explorer-bar history-view-bar">
+            <div class="media-root-switch history-view-switch" role="tablist" aria-label="${escapeAttr(t("xdatahub.ui.app.favorite.view_switch", "History view switch"))}">
+                <button class="btn ${historyView === "base" ? "active" : ""}" id="btn-history-view-base" type="button" role="tab" aria-selected="${historyView === "base" ? "true" : "false"}">${iconSvg("database", t("xdatahub.ui.app.favorite.base_tab", "Base"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.favorite.base_tab", "Base"))}</button>
+                <button class="btn ${historyView === "favorites" ? "active" : ""}" id="btn-history-view-favorites" type="button" role="tab" aria-selected="${historyView === "favorites" ? "true" : "false"}">${iconSvg("bookmark", t("xdatahub.ui.app.favorite.favorites_tab", "Favorites"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.favorite.favorites_tab", "Favorites"))}</button>
+            </div>
+            <div class="history-view-actions">
+                <button class="btn danger history-view-delete-btn" id="btn-delete-favorites" type="button" title="${escapeAttr(t("xdatahub.ui.app.favorite.delete_selected", "Delete Selected"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.favorite.delete_selected", "Delete Selected"))}" ${canDeleteFavorites ? "" : "disabled"} ${inFavoritesView ? "" : "hidden"}>${iconSvg("trash-2", t("xdatahub.ui.app.favorite.delete_selected", "Delete Selected"), "xdatahub-icon btn-icon")}</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderImagePreview() {
     if (!appState.imagePreview.open) {
         return "";
@@ -6593,6 +6865,42 @@ function renderDangerDialog() {
     `;
 }
 
+function renderFavoriteDeleteDialog() {
+    const dialog = appState.favoriteDeleteDialog;
+    if (!dialog.open) {
+        return "";
+    }
+    const count = appState.selectedFavoriteIds.length;
+    const confirmText = dialog.countdown > 0
+        ? t(
+            "xdatahub.ui.app.favorite.delete_confirm_countdown",
+            "Confirm ({seconds}s)",
+            { seconds: dialog.countdown }
+        )
+        : t(
+            "xdatahub.ui.app.favorite.confirm_short",
+            "Confirm"
+        );
+    const submitDisabled = dialog.loading || dialog.countdown > 0 || !count;
+    return `
+        <div class="danger-dialog-overlay" id="favorite-delete-overlay">
+            <div class="danger-dialog" role="dialog" aria-modal="true" aria-labelledby="favorite-delete-title">
+                <div class="danger-dialog-title" id="favorite-delete-title">${iconSvg("triangle-alert", t("xdatahub.ui.app.dialog.warning", "Warning"), "xdatahub-icon dialog-title-icon")} ${escapeHtml(t("xdatahub.ui.app.favorite.delete_dialog_title", "Delete Favorites"))}</div>
+                <div class="danger-dialog-msg">${escapeHtml(t("xdatahub.ui.app.favorite.delete_dialog_message", "Delete {count} selected favorites? This action cannot be undone.", { count }))}</div>
+                ${
+                    dialog.error
+                        ? `<div class="status error">${escapeHtml(dialog.error)}</div>`
+                        : ""
+                }
+                <div class="danger-dialog-actions">
+                    <button class="btn danger" id="favorite-delete-confirm" title="${escapeAttr(dialog.loading ? t("xdatahub.ui.app.favorite.deleting", "Deleting...") : confirmText)}" aria-label="${escapeAttr(dialog.loading ? t("xdatahub.ui.app.favorite.deleting", "Deleting...") : confirmText)}" ${submitDisabled ? "disabled" : ""}>${dialog.loading ? `${iconSvg("refresh-cw", t("xdatahub.ui.app.favorite.deleting", "Deleting..."), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.favorite.deleting", "Deleting..."))}` : `${iconSvg("triangle-alert", confirmText, "xdatahub-icon btn-icon")} ${escapeHtml(confirmText)}`}</button>
+                    <button class="btn" id="favorite-delete-cancel" title="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}" aria-label="${escapeAttr(t("xdatahub.ui.app.common.cancel", "Cancel"))}">${iconSvg("x", t("xdatahub.ui.app.common.cancel", "Cancel"), "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.common.cancel", "Cancel"))}</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderDbDeleteDialog() {
     if (!appState.dbDeleteDialogOpen) {
         return "";
@@ -6798,6 +7106,7 @@ function renderHistoryLayout() {
     const pageJumpText = t("xdatahub.ui.app.pagination.jump", "Jump to page");
     return `
         <div class="panel list-panel history-list-panel collapsed-fill" style="width:100%">
+            ${renderHistoryViewBar()}
             <div class="list" id="list" data-list-tab="history">${renderListRows()}${renderStatus()}</div>
             <div class="pagination">
                 <div class="pagination-main-left">
@@ -6816,6 +7125,15 @@ function renderHistoryLayout() {
             </div>
         </div>
     `;
+}
+
+function syncHistoryViewBarUi() {
+    const bar = document.querySelector(".history-view-bar");
+    if (!(bar instanceof HTMLElement)) {
+        render();
+        return;
+    }
+    bar.outerHTML = renderHistoryViewBar();
 }
 
 function syncTopActionBarUi() {
@@ -7140,6 +7458,7 @@ function renderNodeSendDialog() {
 function renderOverlays() {
     syncOverlayById("image-lightbox", renderImagePreview());
     syncOverlayById("danger-dialog-overlay", renderDangerDialog());
+    syncOverlayById("favorite-delete-overlay", renderFavoriteDeleteDialog());
     syncOverlayById("db-delete-overlay", renderDbDeleteDialog());
     syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
     syncOverlayById("node-send-overlay", renderNodeSendDialog());
@@ -7670,6 +7989,21 @@ async function handleDelegatedPrimaryButtonClick(event) {
         await loadList();
         return true;
     }
+    case "btn-history-view-base":
+        if (setHistoryView("base")) {
+            await loadList();
+        }
+        return true;
+    case "btn-history-view-favorites":
+        if (setHistoryView("favorites")) {
+            await loadList();
+        }
+        return true;
+    case "btn-delete-favorites":
+        if (isFavoritesHistoryView()) {
+            openFavoriteDeleteDialog();
+        }
+        return true;
     case "danger-dialog-cancel":
         closeDangerConfirm(false);
         return true;
@@ -7677,6 +8011,12 @@ async function handleDelegatedPrimaryButtonClick(event) {
         if (isDangerDialogConfirmed()) {
             closeDangerConfirm(true);
         }
+        return true;
+    case "favorite-delete-cancel":
+        closeFavoriteDeleteDialog();
+        return true;
+    case "favorite-delete-confirm":
+        await submitFavoriteDelete();
         return true;
     case "db-delete-close":
     case "db-delete-cancel":
@@ -7759,6 +8099,10 @@ function handleDelegatedOverlayBackdropClick(event) {
         closeDangerConfirm(false);
         return true;
     }
+    if (target.id === "favorite-delete-overlay") {
+        closeFavoriteDeleteDialog();
+        return true;
+    }
     if (target.id === "db-delete-overlay") {
         closeDbDeleteDialog();
         return true;
@@ -7807,6 +8151,53 @@ async function handleDelegatedHistoryRowCopy(event) {
     }
     openNodeSendDialog("", resolveTextSendTitle(item), "text", text);
     flashButton(button);
+    return true;
+}
+
+async function handleDelegatedFavoriteSave(event) {
+    const button = event.target?.closest?.("[data-favorite-save='1']");
+    if (!(button instanceof HTMLElement) || isFavoritesHistoryView()) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const itemId = String(button.getAttribute("data-item-id") || "");
+    const item = appState.items.find(
+        (entry) => String(entry?.id || "") === itemId
+    );
+    if (!item) {
+        return true;
+    }
+    try {
+        const result = await saveFavoriteItem(item);
+        setFavoriteButtonFeedback(
+            button,
+            result?.duplicate ? "duplicate" : "saved"
+        );
+    } catch (error) {
+        setFavoriteButtonFeedback(
+            button,
+            "error",
+            error.message || t(
+                "xdatahub.ui.app.favorite.save_failed",
+                "Failed to save favorite"
+            )
+        );
+    }
+    return true;
+}
+
+function handleDelegatedFavoriteCheck(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+        return false;
+    }
+    if (!target.matches("[data-favorite-check='1']")) {
+        return false;
+    }
+    event.stopPropagation();
+    toggleFavoriteSelected(target.getAttribute("data-item-id") || "");
+    syncHistoryViewBarUi();
     return true;
 }
 
@@ -8531,6 +8922,12 @@ function installRootDelegatedHandlers() {
         if (await handleDelegatedPrimaryButtonClick(event)) {
             return;
         }
+        if (handleDelegatedFavoriteCheck(event)) {
+            return;
+        }
+        if (await handleDelegatedFavoriteSave(event)) {
+            return;
+        }
         if (await handleDelegatedHistoryRowCopy(event)) {
             return;
         }
@@ -9130,6 +9527,60 @@ function flashButton(button) {
     setTimeout(() => {
         button.classList.remove("clicked");
     }, 180);
+}
+
+function setFavoriteButtonFeedback(button, mode = "saved", titleText = "") {
+    if (!(button instanceof HTMLElement)) {
+        return;
+    }
+    const prevTimer = Number(button.dataset.favoriteTimer || 0);
+    if (prevTimer) {
+        clearTimeout(prevTimer);
+    }
+    button.classList.remove("favorite-saved", "favorite-error");
+    if (mode === "error") {
+        button.classList.add("favorite-error");
+        button.title = titleText || t(
+            "xdatahub.ui.app.favorite.save_failed",
+            "Failed to save favorite"
+        );
+        button.setAttribute("aria-label", button.title);
+        flashButton(button);
+    } else {
+        button.classList.add("favorite-saved");
+        const label = mode === "duplicate"
+            ? t(
+                "xdatahub.ui.app.favorite.duplicate",
+                "Already in favorites"
+            )
+            : t(
+                "xdatahub.ui.app.favorite.saved",
+                "Saved to favorites"
+            );
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        button.innerHTML = iconSvg(
+            "bookmark-check",
+            label,
+            "xdatahub-icon btn-icon"
+        );
+    }
+    const timer = window.setTimeout(() => {
+        button.classList.remove("favorite-saved", "favorite-error", "clicked");
+        const baseLabel = t(
+            "xdatahub.ui.app.favorite.save_action",
+            "Save to favorites"
+        );
+        button.title = baseLabel;
+        button.setAttribute("aria-label", baseLabel);
+        button.innerHTML = iconSvg(
+            "bookmark-plus",
+            baseLabel,
+            "xdatahub-icon btn-icon"
+        );
+        button.dataset.favoriteTimer = "0";
+    }, mode === "error" ? 1200 : 1400);
+    button.dataset.favoriteTimer = String(timer);
 }
 
 function setRowCopyFeedback(button) {

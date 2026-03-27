@@ -77,6 +77,7 @@ IMAGE_VALIDATE_CACHE_MAX = 512
 IMAGE_VALIDATE_CACHE_TTL_S = 30.0
 IMAGE_VALIDATE_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
 IMAGE_VALIDATE_LOCK = threading.Lock()
+FAVORITES_DB_NAME = "user_favorites.db"
 
 MEDIA_TYPE_EXT = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"},
@@ -359,6 +360,10 @@ def data_root() -> Path:
     root = Path(__file__).resolve().parent.parent / "XDataSaved"
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def favorites_db_path() -> Path:
+    return data_root() / FAVORITES_DB_NAME
 
 
 def locales_root() -> Path:
@@ -1628,7 +1633,8 @@ def list_record_db_files() -> list[Path]:
     return [
         p
         for p in data_root().glob("*.db")
-        if p.is_file() and p.name != "media_index.db"
+        if p.is_file()
+        and p.name not in {"media_index.db", FAVORITES_DB_NAME}
     ]
 
 
@@ -1949,7 +1955,11 @@ def db_file_item(
         tz=timezone.utc,
     ).isoformat(timespec="seconds")
     purpose = "Other DB"
-    if path.name == "media_index.db":
+    if path.name == FAVORITES_DB_NAME:
+        purpose = "Favorites DB"
+    elif path.name == "seed_data.db":
+        purpose = "Seed Values DB"
+    elif path.name == "media_index.db":
         purpose = "Media Index DB"
     elif record_count > 0:
         purpose = "Records DB"
@@ -2048,6 +2058,244 @@ def parse_saved_at(value: str) -> float:
         return float(value)
     except Exception:
         return 0.0
+
+
+def connect_favorites_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(favorites_db_path())
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def ensure_favorites_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS favorites ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "created_at TEXT NOT NULL,"
+        "source_record_key TEXT NOT NULL,"
+        "extra_header TEXT NOT NULL,"
+        "data_type TEXT NOT NULL,"
+        "source TEXT NOT NULL,"
+        "payload_json TEXT NOT NULL,"
+        "content_hash TEXT NOT NULL UNIQUE"
+        ")"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_favorites_created_at "
+        "ON favorites(created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_favorites_source_record_key "
+        "ON favorites(source_record_key)"
+    )
+    conn.commit()
+
+
+def normalize_favorite_payload(payload: Any) -> tuple[Any, str]:
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return json.loads(canonical), canonical
+
+
+def favorite_content_hash(
+    payload_text: str,
+    extra_header: str,
+    data_type: str,
+    source: str,
+) -> str:
+    del extra_header
+    del data_type
+    del source
+    return hashlib.sha1(payload_text.encode("utf-8")).hexdigest()
+
+
+def map_favorite_item(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"favorite:{row['id']}",
+        "kind": "favorite",
+        "title": row["extra_header"] or row["data_type"],
+        "saved_at": row["created_at"],
+        "path": f"XDataSaved/{FAVORITES_DB_NAME}",
+        "previewable": True,
+        "extra": {
+            "favorite_id": row["id"],
+            "record_id": row["id"],
+            "db_name": FAVORITES_DB_NAME,
+            "data_type": row["data_type"],
+            "extra_header": row["extra_header"],
+            "source": row["source"],
+            "payload": row["payload"],
+            "source_record_key": row["source_record_key"],
+            "is_favorite": True,
+        },
+    }
+
+
+def list_favorites(
+    page: int,
+    page_size: int,
+    extra_header: str,
+    start_ts: float | None,
+    end_ts: float | None,
+    sort_order: str = "desc",
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    header_kw = extra_header.strip().lower()
+    with connect_favorites_db() as conn:
+        ensure_favorites_schema(conn)
+        for row in conn.execute(
+            "SELECT id, created_at, source_record_key, extra_header, "
+            "data_type, source, payload_json FROM favorites"
+        ).fetchall():
+            created_at = str(row["created_at"])
+            header = str(row["extra_header"])
+            if header_kw and header_kw not in header.lower():
+                continue
+            ts = parse_saved_at(created_at)
+            if start_ts is not None and ts < start_ts:
+                continue
+            if end_ts is not None and ts > end_ts:
+                continue
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except Exception:
+                payload = str(row["payload_json"])
+            rows.append(
+                {
+                    "id": int(row["id"]),
+                    "created_at": created_at,
+                    "created_at_ts": ts,
+                    "source_record_key": str(row["source_record_key"]),
+                    "extra_header": header,
+                    "data_type": str(row["data_type"]),
+                    "source": str(row["source"]),
+                    "payload": payload,
+                }
+            )
+    safe_sort_order = (
+        sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
+    )
+    rows.sort(
+        key=lambda item: (item["created_at_ts"], item["id"]),
+        reverse=safe_sort_order == "desc",
+    )
+    total = len(rows)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    safe_page = min(max(1, page), total_pages)
+    offset = (safe_page - 1) * page_size
+    items = [
+        map_favorite_item(row)
+        for row in rows[offset:offset + page_size]
+    ]
+    return {
+        "items": items,
+        "page": safe_page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "facets": {
+            "db_names": [],
+            "data_types": [],
+            "sources": [],
+        },
+    }
+
+
+def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
+    record_id = parse_int(payload.get("record_id"), 0)
+    db_name = safe_db_name(str(payload.get("db_name") or ""))
+    extra_header = str(payload.get("extra_header") or "")
+    data_type = str(payload.get("data_type") or "")
+    source = str(payload.get("source") or "")
+    raw_payload = payload.get("payload")
+    if record_id <= 0 or not db_name:
+        raise ValueError("invalid favorite source")
+    normalized_payload, payload_text = normalize_favorite_payload(raw_payload)
+    created_at = utc_now_iso()
+    source_record_key = f"{db_name}:{record_id}"
+    content_hash = favorite_content_hash(
+        payload_text,
+        extra_header,
+        data_type,
+        source,
+    )
+    with connect_favorites_db() as conn:
+        ensure_favorites_schema(conn)
+        existing = conn.execute(
+            "SELECT id FROM favorites WHERE content_hash = ?",
+            (content_hash,),
+        ).fetchone()
+        if existing is not None:
+            return {
+                "created": False,
+                "duplicate": True,
+                "favorite_id": int(existing["id"]),
+            }
+        conn.execute(
+            "INSERT INTO favorites ("
+            "created_at, source_record_key, extra_header, data_type, "
+            "source, payload_json, content_hash"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                created_at,
+                source_record_key,
+                extra_header,
+                data_type,
+                source,
+                payload_text,
+                content_hash,
+            ),
+        )
+        row = conn.execute(
+            "SELECT id FROM favorites WHERE content_hash = ?",
+            (content_hash,),
+        ).fetchone()
+        conn.commit()
+    return {
+        "created": True,
+        "duplicate": False,
+        "favorite_id": int(row["id"]) if row is not None else 0,
+        "item": map_favorite_item(
+            {
+                "id": int(row["id"]) if row is not None else 0,
+                "created_at": created_at,
+                "source_record_key": source_record_key,
+                "extra_header": extra_header,
+                "data_type": data_type,
+                "source": source,
+                "payload": normalized_payload,
+            }
+        ),
+    }
+
+
+def delete_favorites(payload: dict[str, Any]) -> dict[str, int]:
+    ids_raw = payload.get("ids")
+    if not isinstance(ids_raw, list):
+        raise ValueError("missing ids")
+    ids: list[int] = []
+    for item in ids_raw:
+        value = parse_int(item, 0)
+        if value > 0:
+            ids.append(value)
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise ValueError("missing ids")
+    placeholders = ",".join("?" for _ in ids)
+    with connect_favorites_db() as conn:
+        ensure_favorites_schema(conn)
+        cursor = conn.execute(
+            f"DELETE FROM favorites WHERE id IN ({placeholders})",
+            ids,
+        )
+        deleted = int(cursor.rowcount or 0)
+        conn.commit()
+    return {"deleted": deleted}
 
 
 def list_records(
@@ -2370,6 +2618,79 @@ async def api_records(request: web.Request) -> web.Response:
         )
         return json_error("internal_error", 500)
     return web.json_response({"status": "success", **list_payload(data)})
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/favorites")
+async def api_favorites(request: web.Request) -> web.Response:
+    q = request.query
+    sort_order = str(q.get("sort_order") or "desc").strip().lower()
+    if sort_order not in MEDIA_SORT_ORDER_VALUES:
+        sort_order = "desc"
+    try:
+        data = list_favorites(
+            page=parse_int(q.get("page"), 1),
+            page_size=min(
+                parse_int(q.get("page_size"), DEFAULT_PAGE_SIZE),
+                MAX_PAGE_SIZE,
+            ),
+            extra_header=str(q.get("extra_header") or "").strip(),
+            start_ts=parse_iso(str(q.get("start") or "")),
+            end_ts=parse_iso(str(q.get("end") or "")),
+            sort_order=sort_order,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] favorites list failed: %s",
+            type(exc).__name__,
+        )
+        return json_error("internal_error", 500)
+    return web.json_response({"status": "success", **list_payload(data)})
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/favorites")
+async def api_favorites_create(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return json_error("invalid_payload", 400)
+    try:
+        result = save_favorite(payload)
+    except ValueError:
+        return json_error("invalid_payload", 400)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] favorite save failed: %s",
+            type(exc).__name__,
+        )
+        return json_error("internal_error", 500)
+    return web.json_response({"status": "success", **result})
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/favorites/delete"
+)
+async def api_favorites_delete(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return json_error("invalid_payload", 400)
+    try:
+        result = delete_favorites(payload)
+    except ValueError:
+        return json_error("invalid_payload", 400)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] favorites delete failed: %s",
+            type(exc).__name__,
+        )
+        return json_error("internal_error", 500)
+    return web.json_response({"status": "success", **result})
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/records/cleanup")
