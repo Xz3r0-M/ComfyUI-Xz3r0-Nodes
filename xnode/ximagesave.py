@@ -180,7 +180,6 @@ class XImageSave(io.ComfyNode):
             NodeOutput: 包含原始输入和保存的相对路径
         """
         normalized_batch = cls._normalize_input_batch(image_or_mask)
-        preview_batch = cls._build_preview_batch(normalized_batch)
 
         # 从隐藏参数获取元数据
         prompt = cls.hidden.prompt if hasattr(cls.hidden, "prompt") else None
@@ -211,6 +210,7 @@ class XImageSave(io.ComfyNode):
 
         # 保存图像序列
         saved_paths = []
+        saved_results = []
         progress_bar = comfy.utils.ProgressBar(len(normalized_batch))
         for i, img_tensor in enumerate(normalized_batch):
             # 转换张量到 PIL 图像
@@ -264,6 +264,13 @@ class XImageSave(io.ComfyNode):
                 output_dir,
             )
             saved_paths.append(relative_path)
+            saved_results.append(
+                ui.SavedResult(
+                    final_filename,
+                    safe_subfolder,
+                    io.FolderType.output,
+                )
+            )
 
             # 更新进度条
             progress_bar.update_absolute(i + 1)
@@ -275,7 +282,7 @@ class XImageSave(io.ComfyNode):
             return io.NodeOutput(
                 image_or_mask,
                 save_path_str,
-                ui=ui.PreviewImage(preview_batch, cls=cls),
+                ui=ui.SavedImages(saved_results),
             )
         return io.NodeOutput(image_or_mask, save_path_str)
 
@@ -320,21 +327,6 @@ class XImageSave(io.ComfyNode):
                 f"got {channels} channels"
             )
         return normalized
-
-    @classmethod
-    def _build_preview_batch(
-        cls,
-        normalized_batch: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        为节点预览构建图像批次。
-        """
-        channels = normalized_batch.shape[-1]
-        if channels == 3:
-            return normalized_batch
-        if channels == 4:
-            return normalized_batch[..., :3]
-        return normalized_batch.repeat(1, 1, 1, 3)
 
     @classmethod
     def _generate_pnginfo(cls, prompt, extra_pnginfo):
