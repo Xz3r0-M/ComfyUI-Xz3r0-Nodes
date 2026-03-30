@@ -1120,6 +1120,38 @@
         "tooltip": "Negative conditioning with reference latents"
       }
     }
+  },
+  "XLoraGet": {
+    "display_name": "XLoraGet",
+    "description": "Receives a LoRA list from XDataHub Lora cards and applies them to the model and CLIP in order.",
+    "inputs": {
+      "model": {
+        "name": "Model",
+        "tooltip": "Base model to apply LoRAs to"
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "Optional CLIP input. When not connected, Clip strength is forced to 0."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Model",
+        "tooltip": "Model with LoRAs applied"
+      },
+      "1": {
+        "name": "CLIP",
+        "tooltip": "CLIP with LoRAs applied"
+      },
+      "2": {
+        "name": "Trigger Words",
+        "tooltip": "Enabled trigger words from all active LoRAs"
+      },
+      "3": {
+        "name": "LoRA Info",
+        "tooltip": "Summary of applied LoRA names, model strength, and Clip strength"
+      }
+    }
   }
 }
 

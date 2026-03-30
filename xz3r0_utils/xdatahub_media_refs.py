@@ -21,9 +21,7 @@ LOGGER = get_logger(__name__)
 PUBLIC_REF_BYTES = 18
 PUBLIC_REF_MIN_LEN = 16
 PUBLIC_REF_ALLOWED = set(
-    "abcdefghijklmnopqrstuvwxyz"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "0123456789-_"
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 )
 
 
@@ -267,13 +265,16 @@ def resolve_media_ref(
             rel_path="",
             resolved_path=None,
         )
-    with sqlite3.connect(target_db) as conn:
+    conn = sqlite3.connect(target_db)
+    try:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT public_ref, real_path, rel_path, filename, media_type "
             "FROM media_index WHERE public_ref = ? AND valid = 1",
             (normalized,),
         ).fetchone()
+    finally:
+        conn.close()
     if row is None:
         return ResolvedMediaRef(
             status="not_found",

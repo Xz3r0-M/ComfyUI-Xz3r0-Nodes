@@ -1120,6 +1120,38 @@
         "tooltip": "追加参考 latent 后的负面条件"
       }
     }
+  },
+  "XLoraGet": {
+    "display_name": "XLoraGet",
+    "description": "从 XDataHub Lora 卡片接收 LoRA 列表并按顺序加载到模型和 CLIP。",
+    "inputs": {
+      "model": {
+        "name": "模型",
+        "tooltip": "待应用 LoRA 的基础模型"
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "可选 CLIP 输入，未连接时 Clip 强度将强制为 0"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "模型",
+        "tooltip": "应用 LoRA 后的模型"
+      },
+      "1": {
+        "name": "CLIP",
+        "tooltip": "应用 LoRA 后的 CLIP"
+      },
+      "2": {
+        "name": "触发词",
+        "tooltip": "已启用的触发词（逐 LoRA，开启状态的触发词）"
+      },
+      "3": {
+        "name": "LoRA 信息",
+        "tooltip": "已应用的 LoRA 名称、模型强度和 Clip 强度摘要"
+      }
+    }
   }
 }
 

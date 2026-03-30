@@ -7,14 +7,18 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import mimetypes
 import os
+import re
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
+from urllib.parse import quote
 
 import server
 from aiohttp import web
@@ -78,12 +82,42 @@ IMAGE_VALIDATE_CACHE_TTL_S = 30.0
 IMAGE_VALIDATE_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
 IMAGE_VALIDATE_LOCK = threading.Lock()
 FAVORITES_DB_NAME = "user_favorites.db"
+LORA_TRIGGER_DB_NAME = "loras_data.db"
+MEDIA_INDEX_DB_NAME = "media_index.db"
+MAX_TRIGGER_WORDS = 256
+MAX_TRIGGER_WORD_LEN = 200
+MAX_TRIGGER_WORD_NOTE_LEN = 300
+MAX_LORA_NOTE_LEN = 1000
 
 MEDIA_TYPE_EXT = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"},
     "video": {".mp4", ".webm", ".mov", ".mkv", ".avi"},
     "audio": {".wav", ".mp3", ".flac", ".ogg", ".m4a"},
 }
+LORA_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+LORA_ROOT_NAME = "loras"
+LORA_FILE_EXT = {
+    ".bin",
+    ".ckpt",
+    ".pkl",
+    ".pt",
+    ".pt2",
+    ".pth",
+    ".safetensors",
+    ".sft",
+}
+if folder_paths is not None:
+    try:
+        supported_exts = getattr(folder_paths, "supported_pt_extensions", ())
+        normalized_exts = {
+            str(ext).strip().lower()
+            for ext in supported_exts
+            if str(ext).strip().startswith(".")
+        }
+        if normalized_exts:
+            LORA_FILE_EXT = normalized_exts
+    except Exception:
+        pass
 
 ERROR_TEXT = {
     "file_not_found": "File not found or moved",
@@ -132,7 +166,7 @@ def _parse_range_header(
     raw = str(range_value or "").strip().lower()
     if not raw.startswith("bytes="):
         return None
-    spec = raw[len("bytes="):].split(",", 1)[0].strip()
+    spec = raw[len("bytes=") :].split(",", 1)[0].strip()
     if "-" not in spec:
         return None
     start_text, end_text = spec.split("-", 1)
@@ -165,11 +199,7 @@ async def _stream_media_file_response(
     file_size = int(stat.st_size)
     content_type = _infer_media_content_type(path, media_type)
     range_value = request.headers.get("Range")
-    span = (
-        _parse_range_header(range_value, file_size)
-        if range_value
-        else None
-    )
+    span = _parse_range_header(range_value, file_size) if range_value else None
 
     if range_value and span is None:
         return web.Response(
@@ -522,6 +552,296 @@ def normalize_dir_query(value: str | None) -> str:
     return "/".join(safe_parts)
 
 
+def normalize_lora_rel_path(value: str | None) -> str:
+    raw = str(value or "").strip().replace("\\", "/").strip("/")
+    if not raw:
+        return ""
+    parts = [part.strip() for part in raw.split("/") if part.strip()]
+    if not parts:
+        return ""
+    if parts[0].lower() == LORA_ROOT_NAME:
+        parts = parts[1:]
+    safe_parts: list[str] = []
+    for part in parts:
+        if part in {".", ".."}:
+            return ""
+        safe_parts.append(part)
+    return "/".join(safe_parts)
+
+
+def normalize_lora_dir_query(value: str | None) -> str:
+    rel_path = normalize_lora_rel_path(value)
+    return f"{LORA_ROOT_NAME}/{rel_path}" if rel_path else LORA_ROOT_NAME
+
+
+def lora_root_dir() -> Path | None:
+    candidates: list[Path] = []
+    if folder_paths is not None:
+        try:
+            for raw in folder_paths.get_folder_paths("loras"):
+                if raw:
+                    candidates.append(Path(raw))
+        except Exception:
+            pass
+        models_dir = getattr(folder_paths, "models_dir", None)
+        if models_dir:
+            candidates.extend(
+                [
+                    Path(models_dir) / "loras",
+                    Path(models_dir) / "Loras",
+                ]
+            )
+    normalized_candidates: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        try:
+            normalized = normalize_path(path)
+        except Exception:
+            continue
+        key = str(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_candidates.append(normalized)
+    for path in normalized_candidates:
+        if path.exists():
+            return path
+    return normalized_candidates[0] if normalized_candidates else None
+
+
+def resolve_lora_dir(rel_dir: str | None) -> tuple[Path | None, Path | None]:
+    root = lora_root_dir()
+    if root is None:
+        return None, None
+    subdir = normalize_lora_rel_path(rel_dir)
+    target = root / subdir if subdir else root
+    if not is_path_within_root_lexical(target, root):
+        return root, None
+    # 返回原始大小写的路径，而不是通过 normalize_path 转换为小写
+    # 只验证路径有效性即可
+    try:
+        # 尝试检查路径是否真实存在，但保留原始大小写
+        if target.exists():
+            return root, target
+    except Exception:
+        pass
+    return root, target
+
+
+def lora_thumb_url(lora_ref: str) -> str:
+    return "/xz3r0/xdatahub/loras/thumb?ref=" + quote(lora_ref, safe="")
+
+
+def find_lora_thumbnail(path: Path) -> Path | None:
+    stem = path.stem
+    parent = path.parent
+    for ext in LORA_IMAGE_EXT:
+        candidate = parent / f"{stem}{ext}"
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def _split_trigger_words_text(value: Any) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    parts = [
+        item.strip() for item in re.split(r"[\n,;/|]+", text) if item.strip()
+    ]
+    return parts
+
+
+def _extract_trigger_words_from_metadata(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    candidates: list[Any] = []
+    if "trainedWords" in payload:
+        candidates.append(payload.get("trainedWords"))
+    if isinstance(payload.get("meta"), dict):
+        meta_dict = payload.get("meta")
+        if "trainedWords" in meta_dict:
+            candidates.append(meta_dict.get("trainedWords"))
+    if isinstance(payload.get("civitai"), dict):
+        civitai_dict = payload.get("civitai")
+        if "trainedWords" in civitai_dict:
+            candidates.append(civitai_dict.get("trainedWords"))
+        if isinstance(civitai_dict.get("model"), dict):
+            model_dict = civitai_dict.get("model")
+            if "trainedWords" in model_dict:
+                candidates.append(model_dict.get("trainedWords"))
+    flattened: list[str] = []
+    for value in candidates:
+        if isinstance(value, str):
+            flattened.extend(_split_trigger_words_text(value))
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    flattened.extend(_split_trigger_words_text(item))
+                elif isinstance(item, dict):
+                    if "text" in item:
+                        flattened.extend(
+                            _split_trigger_words_text(item.get("text"))
+                        )
+                    elif "name" in item:
+                        flattened.extend(
+                            _split_trigger_words_text(item.get("name"))
+                        )
+            continue
+        if isinstance(value, dict):
+            flattened.extend(_split_trigger_words_text(value.get("text")))
+    return normalize_trigger_words(flattened)
+
+
+def _resolve_lora_metadata_file(lora_path: Path) -> Path | None:
+    candidates = [
+        lora_path.with_suffix(".metadata.json"),
+        lora_path.with_suffix(".json"),
+        lora_path.parent / "metadata.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def read_lora_trigger_words_from_metadata(rel_path: str) -> dict[str, Any]:
+    normalized_rel = normalize_lora_rel_path(rel_path)
+    if not normalized_rel:
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "invalid path",
+            "source": "",
+        }
+    root = lora_root_dir()
+    if root is None:
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "lora root not found",
+            "source": "",
+        }
+    lora_path = normalize_path(root / normalized_rel)
+    if not is_path_within_root(lora_path, root):
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "invalid path",
+            "source": "",
+        }
+    if not lora_path.exists() or not lora_path.is_file():
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "lora file not found",
+            "source": "",
+        }
+    metadata_path = _resolve_lora_metadata_file(lora_path)
+    if metadata_path is None:
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "metadata.json not found",
+            "source": "",
+        }
+    try:
+        raw_text = metadata_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raw_text = metadata_path.read_text(encoding="utf-8-sig")
+    except Exception:
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "failed to read metadata.json",
+            "source": metadata_path.name,
+        }
+    try:
+        payload = json.loads(raw_text)
+    except Exception:
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "metadata.json is not valid json",
+            "source": metadata_path.name,
+        }
+    trigger_words = _extract_trigger_words_from_metadata(payload)
+    if not trigger_words:
+        return {
+            "found": False,
+            "trigger_words": [],
+            "message": "no trigger words in metadata.json",
+            "source": metadata_path.name,
+        }
+    return {
+        "found": True,
+        "trigger_words": trigger_words,
+        "message": "ok",
+        "source": metadata_path.name,
+    }
+
+
+def _lora_item_payload(
+    root: Path,
+    path: Path,
+    include_datetime: bool = True,
+    include_size: bool = True,
+) -> dict[str, Any]:
+    stat = path.stat()
+    rel_path = path.relative_to(root).as_posix()
+    thumb_path = find_lora_thumbnail(path)
+    saved_at = ""
+    if include_datetime:
+        saved_at = datetime.fromtimestamp(
+            float(stat.st_mtime),
+            tz=timezone.utc,
+        ).isoformat(timespec="seconds")
+    extra: dict[str, Any] = {
+        "entry_type": "lora",
+        "media_type": "lora",
+        "rel_path": rel_path,
+        "file_ext": path.suffix.lower(),
+    }
+    if include_datetime:
+        extra["mtime"] = float(stat.st_mtime)
+    if include_size:
+        extra["size"] = int(stat.st_size)
+    if thumb_path is not None:
+        # 旧目录扫描函数不再向前端暴露真实路径，thumb_url 由数据库列表生成。
+        extra["thumb_url"] = ""
+    return {
+        "id": f"lora:{rel_path}",
+        "kind": "lora",
+        "title": path.name,
+        "saved_at": saved_at,
+        "path": f"{LORA_ROOT_NAME}/{rel_path}",
+        "previewable": False,
+        "extra": extra,
+    }
+
+
+def list_lora_directory(
+    directory: str,
+    page: int,
+    page_size: int,
+    keyword: str = "",
+    include_datetime: bool = True,
+    include_size: bool = True,
+    sort_by: str = "mtime",
+    sort_order: str = "desc",
+) -> dict[str, Any]:
+    # 委托给LORA_STORE从数据库查询（替代实时文件系统扫描）
+    return LORA_STORE.list(
+        directory=directory,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+
 def split_rel_path(value: str) -> list[str] | None:
     normalized = value.strip().replace("\\", "/").strip("/")
     if not normalized:
@@ -568,15 +888,15 @@ def build_directory_items(
         if dir_parts:
             if len(rel_parts) <= len(dir_parts):
                 continue
-            if rel_parts[:len(dir_parts)] != dir_parts:
+            if rel_parts[: len(dir_parts)] != dir_parts:
                 continue
-            remain = rel_parts[len(dir_parts):]
+            remain = rel_parts[len(dir_parts) :]
         else:
             remain = rel_parts
         if len(remain) == 1:
             file_rows.append(row)
             continue
-        child_path = "/".join(rel_parts[:len(dir_parts) + 1])
+        child_path = "/".join(rel_parts[: len(dir_parts) + 1])
         folder_children[remain[0]] = child_path
 
     folder_items = [
@@ -586,9 +906,7 @@ def build_directory_items(
             key=lambda item: item[0].lower(),
         )
     ]
-    safe_sort_by = (
-        sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
-    )
+    safe_sort_by = sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
     safe_sort_order = (
         sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
     )
@@ -807,7 +1125,11 @@ class MediaStore:
         self.thumb_root.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, create: bool = False) -> sqlite3.Connection:
+        if not create and not self.db_path.exists():
+            raise FileNotFoundError(
+                f"media_index.db not found: {self.db_path}"
+            )
         conn = sqlite3.connect(
             self.db_path,
             timeout=SQLITE_BUSY_TIMEOUT_MS / 1000,
@@ -815,6 +1137,20 @@ class MediaStore:
         conn.row_factory = sqlite3.Row
         conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
         return conn
+
+    @contextmanager
+    def _conn(
+        self, create: bool = False
+    ) -> Generator[sqlite3.Connection, None, None]:
+        conn = self._connect(create=create)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _create_media_index_table(
         self,
@@ -874,9 +1210,7 @@ class MediaStore:
 
     @staticmethod
     def _all_public_refs(conn: sqlite3.Connection) -> set[str]:
-        rows = conn.execute(
-            "SELECT public_ref FROM media_index"
-        ).fetchall()
+        rows = conn.execute("SELECT public_ref FROM media_index").fetchall()
         return {
             ref
             for ref in (
@@ -950,7 +1284,7 @@ class MediaStore:
             "mtime": float(stat.st_mtime),
             "size": int(stat.st_size),
         }
-        with self._connect() as conn:
+        with self._conn(create=True) as conn:
             existing_row = conn.execute(
                 "SELECT public_ref FROM media_index WHERE rel_path = ?",
                 (entry["rel_path"],),
@@ -979,7 +1313,7 @@ class MediaStore:
         return map_media_item(row)
 
     def _init_schema(self) -> None:
-        with self._connect() as conn:
+        with self._conn(create=True) as conn:
             self._create_media_index_table(conn)
             columns = {
                 str(row["name"])
@@ -993,9 +1327,7 @@ class MediaStore:
                 or "path" in columns
             )
             if needs_migrate:
-                rows = conn.execute(
-                    "SELECT * FROM media_index"
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM media_index").fetchall()
                 self._create_media_index_table(conn, "media_index_new")
                 reserved_refs: set[str] = set()
                 for row in rows:
@@ -1054,7 +1386,7 @@ class MediaStore:
         last_exc = None
         for _ in range(RETRY_COUNT + 1):
             try:
-                with self._connect() as conn:
+                with self._conn() as conn:
                     return callback(conn)
             except sqlite3.OperationalError as exc:
                 last_exc = exc
@@ -1082,9 +1414,16 @@ class MediaStore:
         sort_by: str = "mtime",
         sort_order: str = "desc",
     ) -> dict[str, Any]:
-        safe_sort_by = (
-            sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
-        )
+        if not self.db_path.exists():
+            return {
+                "items": [],
+                "page": 1,
+                "page_size": page_size,
+                "total": 0,
+                "total_pages": 1,
+                "directory": directory,
+            }
+        safe_sort_by = sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
         safe_sort_order = (
             sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
         )
@@ -1093,13 +1432,10 @@ class MediaStore:
             "name": "filename",
             "size": "size",
         }
-        sql_order = (
-            "ASC" if safe_sort_order == "asc" else "DESC"
-        )
+        sql_order = "ASC" if safe_sort_order == "asc" else "DESC"
         sql_field = sql_field_map[safe_sort_by]
         order_clause = (
-            f"ORDER BY {sql_field} {sql_order}, "
-            "filename ASC, rel_path ASC"
+            f"ORDER BY {sql_field} {sql_order}, filename ASC, rel_path ASC"
         )
 
         def _query(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -1199,7 +1535,7 @@ class MediaStore:
             safe_page = min(max(1, page), total_pages)
             offset = (safe_page - 1) * page_size
             return {
-                "items": all_items[offset:offset + page_size],
+                "items": all_items[offset : offset + page_size],
                 "page": safe_page,
                 "page_size": page_size,
                 "total": total,
@@ -1236,10 +1572,9 @@ class MediaStore:
                 )
                 changed = True
                 continue
-            if (
-                abs(float(row["mtime"]) - float(stat.st_mtime)) > 1e-6
-                or int(row["size"]) != int(stat.st_size)
-            ):
+            if abs(float(row["mtime"]) - float(stat.st_mtime)) > 1e-6 or int(
+                row["size"]
+            ) != int(stat.st_size):
                 conn.execute(
                     "UPDATE media_index SET mtime = ?, size = ?, valid = 1, "
                     "updated_at = ? WHERE id = ?",
@@ -1338,7 +1673,9 @@ class MediaStore:
     def refresh(self, media_type: str | None) -> dict[str, int]:
         inserted = 0
         updated = 0
-        with self._connect() as conn:
+        if not self.db_path.exists():
+            self._init_schema()
+        with self._conn() as conn:
             existing_map = self._row_public_ref_map(conn, media_type)
             reserved_refs = self._all_public_refs(conn)
             for entry in scan_media(media_type):
@@ -1361,9 +1698,11 @@ class MediaStore:
         return {"inserted": inserted, "updated": updated}
 
     def cleanup_invalid(self, media_type: str | None) -> dict[str, int]:
+        if not self.db_path.exists():
+            return {"checked": 0, "marked_invalid": 0, "deleted": 0}
         checked = 0
         marked = 0
-        with self._connect() as conn:
+        with self._conn() as conn:
             params: list[Any] = []
             where = ""
             if media_type:
@@ -1409,7 +1748,9 @@ class MediaStore:
 
     def rebuild(self, media_type: str) -> dict[str, int]:
         preserved_refs: dict[str, str] = {}
-        with self._connect() as conn:
+        if not self.db_path.exists():
+            self._init_schema()
+        with self._conn() as conn:
             preserved_refs = self._row_public_ref_map(conn, media_type)
             deleted = int(
                 conn.execute(
@@ -1418,7 +1759,7 @@ class MediaStore:
                 ).rowcount
             )
             conn.commit()
-        with self._connect() as conn:
+        with self._conn() as conn:
             existing_map = self._row_public_ref_map(conn, None)
             reserved_refs = self._all_public_refs(conn)
             inserted = 0
@@ -1443,7 +1784,9 @@ class MediaStore:
         return {"deleted": deleted, **refreshed}
 
     def clear(self) -> int:
-        with self._connect() as conn:
+        if not self.db_path.exists():
+            return 0
+        with self._conn() as conn:
             deleted = int(conn.execute("DELETE FROM media_index").rowcount)
             conn.commit()
         return deleted
@@ -1457,7 +1800,7 @@ class MediaStore:
         if not normalized:
             return
         try:
-            with self._connect() as conn:
+            with self._conn() as conn:
                 conn.execute(
                     "UPDATE media_index SET real_path = ?, filename = ?, "
                     "valid = 1, updated_at = ? WHERE public_ref = ?",
@@ -1478,14 +1821,420 @@ class MediaStore:
 
     def clear_thumbs(self, media_type: str | None) -> int:
         target = (
-            self.thumb_root / media_type
-            if media_type
-            else self.thumb_root
+            self.thumb_root / media_type if media_type else self.thumb_root
         )
         return clear_tree(target)
 
 
+class LoraStore:
+    """LORA数据库管理器，基于loras_data.db的lora_items表"""
+
+    def __init__(self) -> None:
+        pass
+
+    def _get_root(self) -> Path | None:
+        """获取LORA根目录"""
+        return lora_root_dir()
+
+    def scan_lora_files(self) -> dict[str, int]:
+        """扫描所有LORA根目录中的文件并插入数据库"""
+        root = self._get_root()
+        if root is None:
+            LOGGER.warning("[xdatahub-lora] no lora root directory found")
+            return {"scanned": 0, "added": 0, "updated": 0}
+
+        scanned = 0
+        added = 0
+        updated = 0
+        conn = connect_lora_trigger_db(create=True)
+        try:
+            ensure_lora_trigger_schema(conn)
+            reserved_refs = _all_lora_public_refs(conn)
+            # 先将现有记录标记为无效，扫描到的文件会被重新置为 valid=1。
+            conn.execute("UPDATE lora_items SET valid = 0")
+            for path in iter_media_files(root):
+                if path.suffix.lower() not in LORA_FILE_EXT:
+                    continue
+                scanned += 1
+                try:
+                    stat = path.stat()
+                    rel_path_str = path.relative_to(root).as_posix()
+                    real_path_str = str(path.resolve(strict=True))
+                    filename_str = path.name
+                    mtime_float = float(stat.st_mtime)
+                    size_int = int(stat.st_size)
+
+                    # 检查是否已存在
+                    existing = conn.execute(
+                        "SELECT lora_key FROM lora_items WHERE rel_path = ?",
+                        (rel_path_str,),
+                    ).fetchone()
+
+                    if existing:
+                        # 更新现有记录
+                        conn.execute(
+                            "UPDATE lora_items SET "
+                            "real_path=?, filename=?, mtime=?, size=?, "
+                            "valid=1, updated_at=? "
+                            "WHERE rel_path=?",
+                            (
+                                real_path_str,
+                                filename_str,
+                                mtime_float,
+                                size_int,
+                                datetime.now(timezone.utc).isoformat(
+                                    timespec="seconds"
+                                ),
+                                rel_path_str,
+                            ),
+                        )
+                        updated += 1
+                    else:
+                        # 插入新记录
+                        now_iso = datetime.now(timezone.utc).isoformat(
+                            timespec="seconds"
+                        )
+                        public_ref = _coerce_lora_public_ref(
+                            "",
+                            reserved_refs,
+                        )
+                        conn.execute(
+                            "INSERT INTO lora_items ("
+                            "lora_key, public_ref, rel_path, title, real_path, "
+                            "filename, mtime, size, valid, "
+                            "trigger_words_json, "
+                            "strength_model, strength_clip, "
+                            "source, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, '[]', "
+                            "1.0, 1.0, 'user', ?, ?)",
+                            (
+                                rel_path_str,
+                                public_ref,
+                                rel_path_str,
+                                filename_str,
+                                real_path_str,
+                                filename_str,
+                                mtime_float,
+                                size_int,
+                                now_iso,
+                                now_iso,
+                            ),
+                        )
+                        added += 1
+                except OSError as e:
+                    LOGGER.warning(
+                        "[xdatahub-lora] scan file error: %s, path=%s",
+                        type(e).__name__,
+                        path.name,
+                    )
+                    continue
+            conn.commit()
+        finally:
+            conn.close()
+
+        LOGGER.info(
+            "[xdatahub-lora] scan complete: scanned=%d, added=%d, updated=%d",
+            scanned,
+            added,
+            updated,
+        )
+        return {"scanned": scanned, "added": added, "updated": updated}
+
+    def upsert_lora_file(self, path: Path, rel_path: str) -> dict[str, Any]:
+        """插入或更新单个LORA文件"""
+        try:
+            stat = path.stat()
+            real_path_str = str(path.resolve(strict=True))
+            filename_str = path.name
+            mtime_float = float(stat.st_mtime)
+            size_int = int(stat.st_size)
+
+            conn = connect_lora_trigger_db(create=True)
+            try:
+                ensure_lora_trigger_schema(conn)
+                now_iso = datetime.now(timezone.utc).isoformat(
+                    timespec="seconds"
+                )
+                public_ref = _lora_public_ref_for_rel_path(conn, rel_path)
+                conn.execute(
+                    "INSERT INTO lora_items ("
+                    "lora_key, public_ref, rel_path, title, real_path, "
+                    "filename, mtime, size, valid, "
+                    "trigger_words_json, "
+                    "strength_model, strength_clip, "
+                    "source, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, '[]', "
+                    "1.0, 1.0, 'user', ?, ?) "
+                    "ON CONFLICT(rel_path) DO UPDATE SET "
+                    "real_path=excluded.real_path, "
+                    "filename=excluded.filename, "
+                    "mtime=excluded.mtime, "
+                    "size=excluded.size, "
+                    "valid=1, "
+                    "updated_at=excluded.updated_at",
+                    (
+                        rel_path,
+                        public_ref,
+                        rel_path,
+                        filename_str,
+                        real_path_str,
+                        filename_str,
+                        mtime_float,
+                        size_int,
+                        now_iso,
+                        now_iso,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            return {
+                "rel_path": rel_path,
+                "filename": filename_str,
+                "mtime": mtime_float,
+                "size": size_int,
+            }
+        except OSError as e:
+            LOGGER.error(
+                "[xdatahub-lora] upsert error: %s, path=%s",
+                type(e).__name__,
+                str(path),
+            )
+            raise
+
+    def list(
+        self,
+        directory: str = "",
+        page: int = 1,
+        page_size: int = 20,
+        keyword: str = "",
+        sort_by: str = "mtime",
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        """从数据库查询LORA列表（替代list_lora_directory）"""
+        root = self._get_root()
+        if root is None:
+            return {
+                "items": [],
+                "page": 1,
+                "page_size": page_size,
+                "total": 0,
+                "total_pages": 1,
+            }
+
+        # 解析目录路径
+        subdir_prefix = normalize_lora_rel_path(directory)
+        if subdir_prefix:
+            subdir_prefix = subdir_prefix + "/"
+
+        keyword_normalized = keyword.strip().casefold()
+        db_path = lora_trigger_db_path()
+        if not db_path.exists():
+            return {
+                "items": [],
+                "page": 1,
+                "page_size": page_size,
+                "total": 0,
+                "total_pages": 1,
+            }
+        conn = connect_lora_trigger_db()
+        try:
+            ensure_lora_trigger_schema(conn)
+
+            # 统计总数（只计算有效文件）
+            query_count = (
+                "SELECT COUNT(DISTINCT SUBSTR(rel_path, 1, "
+                "INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')-1)) as dir, "
+                "COUNT(CASE WHEN INSTR(SUBSTR(rel_path, LENGTH(?)+1), "
+                "'/')=0 THEN 1 END) as file "
+                "FROM lora_items WHERE valid=1"
+            )
+            params_count = [subdir_prefix, subdir_prefix]
+            if subdir_prefix:
+                query_count += " AND rel_path LIKE ?"
+                params_count.append(subdir_prefix + "%")
+            if keyword_normalized:
+                query_count += (
+                    " AND (LOWER(filename) LIKE ? OR LOWER(rel_path) LIKE ?)"
+                )
+                kw = f"%{keyword_normalized}%"
+                params_count.extend([kw, kw])
+
+            # 获取项目列表
+            folder_items: list[dict[str, Any]] = []
+            file_items: list[dict[str, Any]] = []
+
+            # 查询该目录级别的子目录
+            query_dirs = (
+                "SELECT DISTINCT "
+                "SUBSTR(SUBSTR(rel_path, LENGTH(?)+1), 1, "
+                "INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')-1) as dir "
+                "FROM lora_items WHERE valid=1"
+            )
+            params_dirs = [subdir_prefix, subdir_prefix]
+            if subdir_prefix:
+                query_dirs += " AND rel_path LIKE ?"
+                params_dirs.append(subdir_prefix + "%")
+            query_dirs += " AND INSTR(SUBSTR(rel_path, LENGTH(?)+1), "
+            query_dirs += "'/')>0 ORDER BY dir"
+            params_dirs.append(subdir_prefix)
+
+            for row in conn.execute(query_dirs, params_dirs):
+                dir_name = row[0]
+                if keyword_normalized and (
+                    keyword_normalized not in dir_name.casefold()
+                ):
+                    continue
+                rel_path = (
+                    subdir_prefix + dir_name if subdir_prefix else dir_name
+                )
+                folder_items.append(
+                    map_folder_item(f"{LORA_ROOT_NAME}/{rel_path}", dir_name)
+                )
+
+            # 查询该目录级别的LORA文件
+            query_files = (
+                "SELECT public_ref, rel_path, filename, mtime, size "
+                "FROM lora_items WHERE valid=1"
+            )
+            params_files = []
+            if subdir_prefix:
+                query_files += " AND rel_path LIKE ?"
+                params_files.append(subdir_prefix + "%")
+            query_files += " AND INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')=0"
+            params_files.append(subdir_prefix)
+            if keyword_normalized:
+                query_files += (
+                    " AND (LOWER(filename) LIKE ? OR LOWER(rel_path) LIKE ?)"
+                )
+                kw = f"%{keyword_normalized}%"
+                params_files.extend([kw, kw])
+
+            # 排序
+            sort_col = "mtime" if sort_by == "mtime" else "filename"
+            if sort_by == "size":
+                sort_col = "size"
+            order = "DESC" if sort_order == "desc" else "ASC"
+            query_files += f" ORDER BY {sort_col} {order}, filename"
+
+            for row in conn.execute(query_files, params_files):
+                public_ref = str(row[0] or "")
+                rel_path = str(row[1] or "")
+                filename = str(row[2] or "")
+                mtime = float(row[3] or 0)
+                size = int(row[4] or 0)
+                file_items.append(
+                    _lora_item_payload_from_db(
+                        root,
+                        public_ref,
+                        rel_path,
+                        filename,
+                        mtime,
+                        size,
+                    )
+                )
+
+            items = folder_items + file_items
+            total = len(items)
+            safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
+            total_pages = max(
+                1, (total + safe_page_size - 1) // safe_page_size
+            )
+
+            start_idx = (page - 1) * safe_page_size
+            end_idx = start_idx + safe_page_size
+            paginated_items = items[start_idx:end_idx]
+
+            return {
+                "items": paginated_items,
+                "page": page,
+                "page_size": safe_page_size,
+                "total": total,
+                "total_pages": total_pages,
+            }
+        finally:
+            conn.close()
+
+    def cleanup_invalid(self) -> int:
+        """清理标记为invalid（已删除）的文件记录"""
+        if not lora_trigger_db_path().exists():
+            return 0
+        conn = connect_lora_trigger_db()
+        try:
+            ensure_lora_trigger_schema(conn)
+            result = conn.execute("DELETE FROM lora_items WHERE valid=0")
+            conn.commit()
+            count = result.rowcount
+            LOGGER.info(
+                "[xdatahub-lora] cleanup: deleted %d invalid records", count
+            )
+            return count
+        finally:
+            conn.close()
+
+    def rebuild(self) -> dict[str, int]:
+        """清空并重建LORA索引"""
+        conn = connect_lora_trigger_db(create=True)
+        try:
+            ensure_lora_trigger_schema(conn)
+            conn.execute("DELETE FROM lora_items")
+            conn.commit()
+            LOGGER.info("[xdatahub-lora] rebuild: cleared all records")
+        finally:
+            conn.close()
+
+        # 重新扫描
+        result = self.scan_lora_files()
+        return result
+
+
+def _lora_item_payload_from_db(
+    root: Path | None,
+    public_ref: str,
+    rel_path: str,
+    filename: str,
+    mtime: float,
+    size: int,
+) -> dict[str, Any]:
+    """从数据库记录构建LORA项目的载体"""
+    saved_at = ""
+    if mtime:
+        saved_at = datetime.fromtimestamp(
+            float(mtime),
+            tz=timezone.utc,
+        ).isoformat(timespec="seconds")
+    extra: dict[str, Any] = {
+        "entry_type": "lora",
+        "media_type": "lora",
+        "media_ref": normalize_lora_public_ref(public_ref),
+        "file_ext": Path(rel_path).suffix.lower(),
+    }
+    if mtime:
+        extra["mtime"] = float(mtime)
+    if size:
+        extra["size"] = int(size)
+    if root is not None:
+        try:
+            lora_path = root / rel_path
+            thumb_path = find_lora_thumbnail(lora_path)
+            if thumb_path is not None:
+                extra["thumb_url"] = lora_thumb_url(public_ref)
+        except Exception:
+            pass
+    return {
+        "id": f"lora:{public_ref}",
+        "kind": "lora",
+        "title": filename,
+        "saved_at": saved_at,
+        "path": f"{LORA_ROOT_NAME}/{public_ref}",
+        "previewable": False,
+        "extra": extra,
+    }
+
+
 STORE = MediaStore()
+LORA_STORE = LoraStore()
 
 
 def media_ref_payload(
@@ -1630,20 +2379,534 @@ def map_media_item(
 
 
 def list_record_db_files() -> list[Path]:
+    return list_all_db_files()
+
+
+def lora_trigger_db_path() -> Path:
+    settings = read_xdatahub_settings()
+    use_lora_root = parse_bool(settings.get("store_lora_db_in_loras"))
+    if use_lora_root:
+        root = lora_root_dir()
+        if root is not None:
+            return root / LORA_TRIGGER_DB_NAME
+    return data_root() / LORA_TRIGGER_DB_NAME
+
+
+def _sqlite_sidecar_paths(db_path: Path) -> list[Path]:
     return [
-        p
-        for p in data_root().glob("*.db")
-        if p.is_file()
-        and p.name not in {"media_index.db", FAVORITES_DB_NAME}
+        Path(f"{db_path}-wal"),
+        Path(f"{db_path}-shm"),
     ]
+
+
+def migrate_lora_trigger_db_location(
+    current_settings: dict[str, Any],
+    merged_settings: dict[str, Any],
+) -> None:
+    current_use_lora_root = parse_bool(
+        current_settings.get("store_lora_db_in_loras")
+    )
+    merged_use_lora_root = parse_bool(
+        merged_settings.get("store_lora_db_in_loras")
+    )
+    if current_use_lora_root == merged_use_lora_root:
+        return
+
+    if current_use_lora_root:
+        current_root = lora_root_dir()
+        current_db_path = (
+            current_root / LORA_TRIGGER_DB_NAME
+            if current_root is not None
+            else data_root() / LORA_TRIGGER_DB_NAME
+        )
+    else:
+        current_db_path = data_root() / LORA_TRIGGER_DB_NAME
+
+    if merged_use_lora_root:
+        target_root = lora_root_dir()
+        if target_root is None:
+            raise RuntimeError("lora root dir not found")
+        target_db_path = target_root / LORA_TRIGGER_DB_NAME
+    else:
+        target_db_path = data_root() / LORA_TRIGGER_DB_NAME
+
+    if str(normalize_path(current_db_path)) == str(
+        normalize_path(target_db_path)
+    ):
+        return
+
+    entries: list[tuple[Path, Path]] = [
+        (current_db_path, target_db_path),
+    ]
+    current_sidecars = _sqlite_sidecar_paths(current_db_path)
+    target_sidecars = _sqlite_sidecar_paths(target_db_path)
+    for idx, src in enumerate(current_sidecars):
+        entries.append((src, target_sidecars[idx]))
+
+    target_db_path.parent.mkdir(parents=True, exist_ok=True)
+    for src, dst in entries:
+        if not src.exists():
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(str(src), str(dst))
+
+
+def connect_lora_trigger_db(
+    path: Path | None = None,
+    create: bool = False,
+) -> sqlite3.Connection:
+    db_path = path or lora_trigger_db_path()
+    if not create and not db_path.exists():
+        raise FileNotFoundError(f"loras_data.db not found: {db_path}")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def normalize_lora_public_ref(value: Any) -> str:
+    return normalize_media_ref(str(value or ""))
+
+
+def _coerce_lora_public_ref(value: Any, reserved: set[str]) -> str:
+    normalized = normalize_lora_public_ref(value)
+    if normalized and normalized not in reserved:
+        reserved.add(normalized)
+        return normalized
+    while True:
+        generated = normalize_media_ref(generate_public_ref())
+        if generated and generated not in reserved:
+            reserved.add(generated)
+            return generated
+
+
+def _all_lora_public_refs(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("SELECT public_ref FROM lora_items").fetchall()
+    return {
+        ref
+        for ref in (
+            normalize_lora_public_ref(str(row["public_ref"] or ""))
+            for row in rows
+        )
+        if ref
+    }
+
+
+def _lora_public_ref_for_rel_path(
+    conn: sqlite3.Connection,
+    rel_path: str,
+) -> str:
+    row = conn.execute(
+        "SELECT public_ref FROM lora_items WHERE rel_path = ?",
+        (rel_path,),
+    ).fetchone()
+    current_ref = ""
+    if row is not None:
+        current_ref = str(row["public_ref"] or "")
+    reserved = _all_lora_public_refs(conn)
+    normalized_current = normalize_lora_public_ref(current_ref)
+    if normalized_current in reserved:
+        reserved.remove(normalized_current)
+    public_ref = _coerce_lora_public_ref(current_ref, reserved)
+    if row is not None and public_ref != current_ref:
+        conn.execute(
+            "UPDATE lora_items SET public_ref = ? WHERE rel_path = ?",
+            (public_ref, rel_path),
+        )
+    return public_ref
+
+
+def lora_rel_path_from_ref(lora_ref: str) -> str | None:
+    safe_ref = normalize_lora_public_ref(lora_ref)
+    if not safe_ref or not lora_trigger_db_path().exists():
+        return None
+    conn = connect_lora_trigger_db()
+    try:
+        ensure_lora_trigger_schema(conn)
+        row = conn.execute(
+            "SELECT rel_path FROM lora_items WHERE public_ref = ?",
+            (safe_ref,),
+        ).fetchone()
+        if row is None:
+            return None
+        return normalize_lora_rel_path(str(row["rel_path"] or ""))
+    finally:
+        conn.close()
+
+
+def ensure_lora_trigger_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS lora_items ("
+        "lora_key TEXT PRIMARY KEY,"
+        "public_ref TEXT NOT NULL UNIQUE,"
+        "rel_path TEXT NOT NULL UNIQUE,"
+        "title TEXT NOT NULL,"
+        "sha256 TEXT NOT NULL DEFAULT '',"
+        "mtime REAL NOT NULL DEFAULT 0,"
+        "trigger_words_json TEXT NOT NULL DEFAULT '[]',"
+        "strength_model REAL NOT NULL DEFAULT 1.0,"
+        "strength_clip REAL NOT NULL DEFAULT 1.0,"
+        "lora_note TEXT NOT NULL DEFAULT '',"
+        "trigger_words_ver INTEGER NOT NULL DEFAULT 1,"
+        "source TEXT NOT NULL DEFAULT 'user',"
+        "created_at TEXT NOT NULL,"
+        "updated_at TEXT NOT NULL"
+        ")"
+    )
+    existing_columns = {
+        str(row[1]).strip().lower()
+        for row in conn.execute("PRAGMA table_info(lora_items)").fetchall()
+    }
+    if "strength_model" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE lora_items ADD COLUMN "
+            "strength_model REAL NOT NULL DEFAULT 1.0"
+        )
+    if "strength_clip" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE lora_items ADD COLUMN "
+            "strength_clip REAL NOT NULL DEFAULT 1.0"
+        )
+    if "lora_note" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE lora_items ADD COLUMN "
+            "lora_note TEXT NOT NULL DEFAULT ''"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lora_items_updated_at "
+        "ON lora_items(updated_at)"
+    )
+    if "real_path" not in existing_columns:
+        conn.execute("ALTER TABLE lora_items ADD COLUMN real_path TEXT")
+    if "filename" not in existing_columns:
+        conn.execute("ALTER TABLE lora_items ADD COLUMN filename TEXT")
+    if "size" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE lora_items ADD COLUMN size INTEGER DEFAULT 0"
+        )
+    if "valid" not in existing_columns:
+        conn.execute(
+            "ALTER TABLE lora_items ADD COLUMN valid INTEGER DEFAULT 1"
+        )
+    if "public_ref" not in existing_columns:
+        conn.execute("ALTER TABLE lora_items ADD COLUMN public_ref TEXT")
+
+    # 为历史行补齐 public_ref，避免暴露真实路径。
+    rows = conn.execute(
+        "SELECT rel_path, public_ref FROM lora_items"
+    ).fetchall()
+    reserved: set[str] = set()
+    updates: list[tuple[str, str]] = []
+    for row in rows:
+        rel_path = normalize_lora_rel_path(str(row["rel_path"] or ""))
+        if not rel_path:
+            continue
+        normalized = normalize_lora_public_ref(str(row["public_ref"] or ""))
+        if normalized and normalized not in reserved:
+            reserved.add(normalized)
+            continue
+        updates.append((rel_path, ""))
+    for rel_path, _ in updates:
+        new_ref = _coerce_lora_public_ref("", reserved)
+        conn.execute(
+            "UPDATE lora_items SET public_ref = ? WHERE rel_path = ?",
+            (new_ref, rel_path),
+        )
+
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_lora_items_public_ref "
+        "ON lora_items(public_ref)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lora_items_valid ON lora_items(valid)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lora_items_rel_path "
+        "ON lora_items(rel_path)"
+    )
+    conn.commit()
+
+
+def ensure_lora_trigger_db_file() -> None:
+    conn = connect_lora_trigger_db(create=True)
+    try:
+        ensure_lora_trigger_schema(conn)
+    finally:
+        conn.close()
+
+
+def normalize_trigger_word_item(
+    value: Any,
+    default_order: int,
+) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        raw_text = value.get("text")
+    else:
+        raw_text = value
+    text = " ".join(str(raw_text or "").strip().split())
+    if not text:
+        return None
+    text = text[:MAX_TRIGGER_WORD_LEN]
+    note = ""
+    lang = ""
+    enabled = True
+    weight = 1.0
+    order = default_order
+    if isinstance(value, dict):
+        note = str(value.get("note") or "").strip()
+        note = note[:MAX_TRIGGER_WORD_NOTE_LEN]
+        lang = str(value.get("lang") or "").strip()[:24]
+        enabled = parse_bool(value.get("enabled", True))
+        try:
+            parsed_weight = float(value.get("weight", 1))
+            if parsed_weight == parsed_weight:
+                weight = parsed_weight
+        except Exception:
+            weight = 1.0
+        try:
+            parsed_order = int(value.get("order", default_order))
+            order = parsed_order if parsed_order >= 0 else default_order
+        except Exception:
+            order = default_order
+    return {
+        "text": text,
+        "weight": weight,
+        "enabled": enabled,
+        "order": order,
+        "lang": lang,
+        "note": note,
+    }
+
+
+def normalize_trigger_words(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(value):
+        normalized = normalize_trigger_word_item(item, idx)
+        if not normalized:
+            continue
+        key = str(normalized["text"]).strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        items.append(normalized)
+        if len(items) >= MAX_TRIGGER_WORDS:
+            break
+    return items
+
+
+def normalize_lora_strength(value: Any, default: float = 1.0) -> float:
+    try:
+        parsed = float(value)
+    except Exception:
+        return default
+    if not math.isfinite(parsed):
+        return default
+    return parsed
+
+
+def _parse_lora_trigger_words_json(raw: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return []
+    return normalize_trigger_words(payload)
+
+
+def read_lora_trigger_record(rel_path: str) -> dict[str, Any] | None:
+    if not lora_trigger_db_path().exists():
+        return None
+    conn = connect_lora_trigger_db()
+    try:
+        ensure_lora_trigger_schema(conn)
+        row = conn.execute(
+            "SELECT public_ref, rel_path, title, sha256, mtime, "
+            "trigger_words_json, "
+            "strength_model, strength_clip, lora_note, "
+            "trigger_words_ver, source, "
+            "created_at, updated_at "
+            "FROM lora_items WHERE rel_path = ?",
+            (rel_path,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "media_ref": normalize_lora_public_ref(
+                str(row["public_ref"] or "")
+            ),
+            "rel_path": str(row["rel_path"]),
+            "title": str(row["title"]),
+            "sha256": str(row["sha256"] or ""),
+            "mtime": float(row["mtime"] or 0),
+            "trigger_words": _parse_lora_trigger_words_json(
+                str(row["trigger_words_json"] or "[]")
+            ),
+            "strength_model": normalize_lora_strength(
+                row["strength_model"],
+                1.0,
+            ),
+            "strength_clip": normalize_lora_strength(
+                row["strength_clip"],
+                1.0,
+            ),
+            "lora_note": str(row["lora_note"] or ""),
+            "trigger_words_ver": int(row["trigger_words_ver"] or 1),
+            "source": str(row["source"] or "user"),
+            "created_at": str(row["created_at"] or ""),
+            "updated_at": str(row["updated_at"] or ""),
+        }
+    finally:
+        conn.close()
+
+
+def save_lora_trigger_words(
+    rel_path: str,
+    trigger_words: Any,
+    title: str,
+    sha256: str,
+    mtime: float,
+    strength_model: Any = 1.0,
+    strength_clip: Any = 1.0,
+    lora_note: Any = "",
+) -> dict[str, Any]:
+    words = normalize_trigger_words(trigger_words)
+    now_iso = utc_now_iso()
+    safe_title = str(title or Path(rel_path).name).strip()
+    safe_title = safe_title or Path(rel_path).name
+    safe_sha = str(sha256 or "").strip()
+    safe_mtime = float(mtime) if isinstance(mtime, (int, float)) else 0.0
+    safe_strength_model = normalize_lora_strength(strength_model, 1.0)
+    safe_strength_clip = normalize_lora_strength(strength_clip, 1.0)
+    safe_lora_note = str(lora_note or "").strip()[:MAX_LORA_NOTE_LEN]
+    payload_json = json.dumps(
+        words,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    conn = connect_lora_trigger_db(create=True)
+    try:
+        ensure_lora_trigger_schema(conn)
+        public_ref = _lora_public_ref_for_rel_path(conn, rel_path)
+        conn.execute(
+            "INSERT INTO lora_items ("
+            "lora_key, public_ref, rel_path, title, sha256, mtime, "
+            "trigger_words_json, strength_model, strength_clip, lora_note, "
+            "trigger_words_ver, source, "
+            "created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'user', ?, ?) "
+            "ON CONFLICT(rel_path) DO UPDATE SET "
+            "title=excluded.title, "
+            "sha256=excluded.sha256, "
+            "mtime=excluded.mtime, "
+            "trigger_words_json=excluded.trigger_words_json, "
+            "strength_model=excluded.strength_model, "
+            "strength_clip=excluded.strength_clip, "
+            "lora_note=excluded.lora_note, "
+            "trigger_words_ver=lora_items.trigger_words_ver + 1, "
+            "source='user', "
+            "updated_at=excluded.updated_at",
+            (
+                rel_path,
+                public_ref,
+                rel_path,
+                safe_title,
+                safe_sha,
+                safe_mtime,
+                payload_json,
+                safe_strength_model,
+                safe_strength_clip,
+                safe_lora_note,
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    saved = read_lora_trigger_record(rel_path)
+    if saved is None:
+        raise RuntimeError("save lora trigger words failed")
+    return saved
+
+
+def lora_items_count(path: Path) -> int:
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='lora_items'"
+            ).fetchone()
+            if row is None:
+                return 0
+            result = conn.execute("SELECT COUNT(1) FROM lora_items").fetchone()
+            return int(result[0] or 0) if result else 0
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
+
+
+def media_index_count(path: Path) -> int:
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='media_index'"
+            ).fetchone()
+            if row is None:
+                return 0
+            result = conn.execute(
+                "SELECT COUNT(1) FROM media_index"
+            ).fetchone()
+            return int(result[0] or 0) if result else 0
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
+
+
+def favorites_count(path: Path) -> int:
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='favorites'"
+            ).fetchone()
+            if row is None:
+                return 0
+            result = conn.execute("SELECT COUNT(1) FROM favorites").fetchone()
+            return int(result[0] or 0) if result else 0
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
 
 
 def list_all_db_files() -> list[Path]:
-    return [
-        p
-        for p in data_root().glob("*.db")
-        if p.is_file()
-    ]
+    files: dict[str, Path] = {}
+    for path in data_root().glob("*.db"):
+        if not path.is_file():
+            continue
+        try:
+            key = str(normalize_path(path))
+        except Exception:
+            key = str(path)
+        files[key] = path
+
+    lora_db_path = lora_trigger_db_path()
+    if lora_db_path.exists() and lora_db_path.is_file():
+        try:
+            key = str(normalize_path(lora_db_path))
+        except Exception:
+            key = str(lora_db_path)
+        files[key] = lora_db_path
+    return list(files.values())
 
 
 def parse_name_list(value: Any) -> list[str]:
@@ -1687,6 +2950,7 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "media_sort_order": "desc",
         "media_card_size_preset": "standard",
         "node_send_close_after_send": True,
+        "store_lora_db_in_loras": False,
         "theme_mode": "dark",
     }
 
@@ -1740,20 +3004,20 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         if sort_by in MEDIA_SORT_BY_VALUES:
             patch["media_sort_by"] = sort_by
     if "media_sort_order" in value:
-        sort_order = str(
-            value.get("media_sort_order") or ""
-        ).strip().lower()
+        sort_order = str(value.get("media_sort_order") or "").strip().lower()
         if sort_order in MEDIA_SORT_ORDER_VALUES:
             patch["media_sort_order"] = sort_order
     if "media_card_size_preset" in value:
-        preset = str(
-            value.get("media_card_size_preset") or ""
-        ).strip().lower()
+        preset = str(value.get("media_card_size_preset") or "").strip().lower()
         if preset in MEDIA_CARD_SIZE_PRESET_VALUES:
             patch["media_card_size_preset"] = preset
     if "node_send_close_after_send" in value:
         patch["node_send_close_after_send"] = parse_bool(
             value.get("node_send_close_after_send")
+        )
+    if "store_lora_db_in_loras" in value:
+        patch["store_lora_db_in_loras"] = parse_bool(
+            value.get("store_lora_db_in_loras")
         )
     if "theme_mode" in value:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()
@@ -1819,6 +3083,7 @@ def update_xdatahub_settings(payload: Any) -> dict[str, Any]:
             **current,
             **incoming,
         }
+        migrate_lora_trigger_db_location(current, merged)
         write_xdatahub_settings(merged)
         return merged
 
@@ -1930,9 +3195,7 @@ def db_record_count(path: Path) -> int:
         try:
             if not has_records_table(conn):
                 return 0
-            row = conn.execute(
-                "SELECT COUNT(1) FROM records"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(1) FROM records").fetchone()
             return int(row[0] or 0) if row else 0
         finally:
             conn.close()
@@ -1949,7 +3212,14 @@ def db_file_item(
     is_builtin = path.name in builtin_set
     is_effective = path.name in critical_set
     stat = path.stat()
-    record_count = db_record_count(path)
+    if path.name == LORA_TRIGGER_DB_NAME:
+        record_count = lora_items_count(path)
+    elif path.name == MEDIA_INDEX_DB_NAME:
+        record_count = media_index_count(path)
+    elif path.name == FAVORITES_DB_NAME:
+        record_count = favorites_count(path)
+    else:
+        record_count = db_record_count(path)
     mtime_iso = datetime.fromtimestamp(
         stat.st_mtime,
         tz=timezone.utc,
@@ -1957,6 +3227,8 @@ def db_file_item(
     purpose = "Other DB"
     if path.name == FAVORITES_DB_NAME:
         purpose = "Favorites DB"
+    elif path.name == LORA_TRIGGER_DB_NAME:
+        purpose = "Lora DB"
     elif path.name == "seed_data.db":
         purpose = "Seed Values DB"
     elif path.name == "media_index.db":
@@ -1976,6 +3248,14 @@ def db_file_item(
 
 
 def list_db_files() -> dict[str, Any]:
+    if lora_trigger_db_path().exists():
+        try:
+            ensure_lora_trigger_db_file()
+        except sqlite3.Error as exc:
+            LOGGER.warning(
+                "[xdatahub] ensure lora trigger db failed: %s",
+                type(exc).__name__,
+            )
     builtin_set = set(get_critical_db_names())
     user_set = read_user_critical_db_names(sync=True)
     critical_set = builtin_set | user_set
@@ -2015,10 +3295,7 @@ def delete_db_files(payload: dict[str, Any]) -> dict[str, Any]:
     if missing:
         raise ValueError("unknown targets")
 
-    critical_targets = [
-        name for name in targets
-        if name in critical_set
-    ]
+    critical_targets = [name for name in targets if name in critical_set]
     if critical_targets and not unlock_critical:
         raise PermissionError("critical locked")
 
@@ -2060,8 +3337,13 @@ def parse_saved_at(value: str) -> float:
         return 0.0
 
 
-def connect_favorites_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(favorites_db_path())
+def connect_favorites_db(
+    create: bool = False,
+) -> sqlite3.Connection:
+    path = favorites_db_path()
+    if not create and not path.exists():
+        raise FileNotFoundError(f"user_favorites.db not found: {path}")
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA journal_mode=WAL")
@@ -2146,7 +3428,21 @@ def list_favorites(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     header_kw = extra_header.strip().lower()
-    with connect_favorites_db() as conn:
+    if not favorites_db_path().exists():
+        return {
+            "items": [],
+            "page": 1,
+            "page_size": page_size,
+            "total": 0,
+            "total_pages": 1,
+            "facets": {
+                "db_names": [],
+                "data_types": [],
+                "sources": [],
+            },
+        }
+    conn = connect_favorites_db()
+    try:
         ensure_favorites_schema(conn)
         for row in conn.execute(
             "SELECT id, created_at, source_record_key, extra_header, "
@@ -2177,6 +3473,8 @@ def list_favorites(
                     "payload": payload,
                 }
             )
+    finally:
+        conn.close()
     safe_sort_order = (
         sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
     )
@@ -2189,8 +3487,7 @@ def list_favorites(
     safe_page = min(max(1, page), total_pages)
     offset = (safe_page - 1) * page_size
     items = [
-        map_favorite_item(row)
-        for row in rows[offset:offset + page_size]
+        map_favorite_item(row) for row in rows[offset : offset + page_size]
     ]
     return {
         "items": items,
@@ -2224,7 +3521,8 @@ def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
         data_type,
         source,
     )
-    with connect_favorites_db() as conn:
+    conn = connect_favorites_db(create=True)
+    try:
         ensure_favorites_schema(conn)
         existing = conn.execute(
             "SELECT id FROM favorites WHERE content_hash = ?",
@@ -2256,6 +3554,8 @@ def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
             (content_hash,),
         ).fetchone()
         conn.commit()
+    finally:
+        conn.close()
     return {
         "created": True,
         "duplicate": False,
@@ -2287,7 +3587,10 @@ def delete_favorites(payload: dict[str, Any]) -> dict[str, int]:
     if not ids:
         raise ValueError("missing ids")
     placeholders = ",".join("?" for _ in ids)
-    with connect_favorites_db() as conn:
+    if not favorites_db_path().exists():
+        return {"deleted": 0}
+    conn = connect_favorites_db()
+    try:
         ensure_favorites_schema(conn)
         cursor = conn.execute(
             f"DELETE FROM favorites WHERE id IN ({placeholders})",
@@ -2295,6 +3598,8 @@ def delete_favorites(payload: dict[str, Any]) -> dict[str, int]:
         )
         deleted = int(cursor.rowcount or 0)
         conn.commit()
+    finally:
+        conn.close()
     return {"deleted": deleted}
 
 
@@ -2381,7 +3686,7 @@ def list_records(
     total_pages = max(1, (total + page_size - 1) // page_size)
     safe_page = min(max(1, page), total_pages)
     offset = (safe_page - 1) * page_size
-    items = [map_record_item(row) for row in rows[offset:offset + page_size]]
+    items = [map_record_item(row) for row in rows[offset : offset + page_size]]
     return {
         "items": items,
         "page": safe_page,
@@ -2427,7 +3732,46 @@ def cleanup_records(payload: dict[str, Any]) -> dict[str, int]:
         if db_name and db_path.name.lower() != db_name.lower():
             continue
         conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
         try:
+            if db_path.name == LORA_TRIGGER_DB_NAME:
+                if mode == "all":
+                    ensure_lora_trigger_schema(conn)
+                    cursor = conn.execute("DELETE FROM lora_items")
+                    deleted = int(cursor.rowcount or 0)
+                    deleted_total += deleted
+                    if deleted:
+                        touched += 1
+                    conn.commit()
+                continue
+            if db_path.name == MEDIA_INDEX_DB_NAME:
+                if mode == "all":
+                    row = conn.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' AND name='media_index'"
+                    ).fetchone()
+                    if row is not None:
+                        cursor = conn.execute("DELETE FROM media_index")
+                        deleted = int(cursor.rowcount or 0)
+                        deleted_total += deleted
+                        if deleted:
+                            touched += 1
+                        conn.commit()
+                continue
+            if db_path.name == FAVORITES_DB_NAME:
+                if mode == "all":
+                    row = conn.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' AND name='favorites'"
+                    ).fetchone()
+                    if row is not None:
+                        cursor = conn.execute("DELETE FROM favorites")
+                        deleted = int(cursor.rowcount or 0)
+                        deleted_total += deleted
+                        if deleted:
+                            touched += 1
+                        conn.commit()
+                continue
             if not has_records_table(conn):
                 continue
             if mode == "all":
@@ -2488,7 +3832,7 @@ def lock_payload() -> dict[str, Any]:
 
 def write_guard() -> web.Response | None:
     if LOCK.snapshot()["readonly"]:
-        return json_error("resource_busy", 409)
+        return json_error("resource_busy", status=409)
     return None
 
 
@@ -2550,7 +3894,7 @@ async def api_settings(request: web.Request) -> web.Response:
             "[xdatahub] settings read failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", "settings": settings})
 
 
@@ -2578,7 +3922,7 @@ async def api_settings_update(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         settings = update_xdatahub_settings(payload)
     except Exception as exc:
@@ -2586,7 +3930,7 @@ async def api_settings_update(request: web.Request) -> web.Response:
             "[xdatahub] settings write failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", "settings": settings})
 
 
@@ -2616,7 +3960,7 @@ async def api_records(request: web.Request) -> web.Response:
             "[xdatahub] records list failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **list_payload(data)})
 
 
@@ -2643,7 +3987,7 @@ async def api_favorites(request: web.Request) -> web.Response:
             "[xdatahub] favorites list failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **list_payload(data)})
 
 
@@ -2655,23 +3999,46 @@ async def api_favorites_create(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return json_error("invalid_payload", 400)
+        return json_error("invalid_payload", status=400)
     try:
         result = save_favorite(payload)
     except ValueError:
-        return json_error("invalid_payload", 400)
+        return json_error("invalid_payload", status=400)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] favorite save failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
-@server.PromptServer.instance.routes.post(
-    "/xz3r0/xdatahub/favorites/delete"
-)
+# ============================================================================
+# 模块初始化：LORA 数据库索引扫描
+# ============================================================================
+
+
+def _init_lora_index() -> None:
+    """在模块加载时初始化LORA数据库索引"""
+    try:
+        ensure_lora_trigger_db_file()
+        LOGGER.info("[xdatahub-lora] schema initialized")
+        result = LORA_STORE.scan_lora_files()
+        LOGGER.info(
+            "[xdatahub-lora] initialization complete: %s",
+            result,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub-lora] init failed: %s",
+            type(exc).__name__,
+        )
+
+
+_init_lora_index()
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/favorites/delete")
 async def api_favorites_delete(request: web.Request) -> web.Response:
     denied = write_guard()
     if denied:
@@ -2679,17 +4046,17 @@ async def api_favorites_delete(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return json_error("invalid_payload", 400)
+        return json_error("invalid_payload", status=400)
     try:
         result = delete_favorites(payload)
     except ValueError:
-        return json_error("invalid_payload", 400)
+        return json_error("invalid_payload", status=400)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] favorites delete failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
@@ -2701,17 +4068,17 @@ async def api_records_cleanup(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         result = cleanup_records(payload)
     except ValueError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] records cleanup failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
@@ -2724,7 +4091,7 @@ async def api_record_db_files(request: web.Request) -> web.Response:
             "[xdatahub] db files list failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **list_payload(payload)})
 
 
@@ -2740,20 +4107,20 @@ async def api_record_db_files_critical_mark(
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         result = set_user_critical_mark(
             name=str(payload.get("name") or ""),
             marked=parse_bool(payload.get("marked")),
         )
     except ValueError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] db files critical mark failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
@@ -2767,20 +4134,20 @@ async def api_record_db_files_delete(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
 
     try:
         result = delete_db_files(payload)
     except PermissionError:
-        return json_error("permission_denied", 403)
+        return json_error("permission_denied", status=403)
     except ValueError:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] db files delete failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
 
     return web.json_response({"status": "success", **result})
 
@@ -2790,7 +4157,7 @@ async def api_media(request: web.Request) -> web.Response:
     q = request.query
     media_type = str(q.get("media_type") or "image").strip().lower()
     if media_type not in MEDIA_TYPE_EXT:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     validate_page = str(q.get("validate_page") or "0").strip() in {
         "1",
         "true",
@@ -2811,9 +4178,7 @@ async def api_media(request: web.Request) -> web.Response:
         "true",
         "True",
     }
-    include_resolution = str(
-        q.get("include_resolution") or "1"
-    ).strip() in {
+    include_resolution = str(q.get("include_resolution") or "1").strip() in {
         "1",
         "true",
         "True",
@@ -2850,8 +4215,190 @@ async def api_media(request: web.Request) -> web.Response:
             "[xdatahub] media list failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **list_payload(data)})
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras")
+async def api_loras(request: web.Request) -> web.Response:
+    q = request.query
+    include_datetime = str(q.get("include_datetime") or "1").strip() in {
+        "1",
+        "true",
+        "True",
+    }
+    include_size = str(q.get("include_size") or "1").strip() in {
+        "1",
+        "true",
+        "True",
+    }
+    sort_by = str(q.get("sort_by") or "mtime").strip().lower()
+    if sort_by not in MEDIA_SORT_BY_VALUES:
+        sort_by = "mtime"
+    sort_order = str(q.get("sort_order") or "desc").strip().lower()
+    if sort_order not in MEDIA_SORT_ORDER_VALUES:
+        sort_order = "desc"
+    directory = normalize_lora_dir_query(str(q.get("dir") or ""))
+    try:
+        data = list_lora_directory(
+            directory=directory,
+            page=parse_int(q.get("page"), 1),
+            page_size=parse_int(q.get("page_size"), DEFAULT_PAGE_SIZE),
+            keyword=str(q.get("keyword") or "").strip(),
+            include_datetime=include_datetime,
+            include_size=include_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+    except PermissionError:
+        return json_error("permission_denied", status=403)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] lora list failed: %s",
+            type(exc).__name__,
+        )
+        return json_error("internal_error", status=500)
+    return web.json_response({"status": "success", **list_payload(data)})
+
+
+def _build_lora_trigger_item(
+    lora_ref: str,
+    rel_path: str,
+    payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    title = Path(rel_path).name
+    if payload is not None:
+        title = str(payload.get("title") or title)
+    return {
+        "media_ref": normalize_lora_public_ref(lora_ref),
+        "title": title,
+        "sha256": str((payload or {}).get("sha256") or ""),
+        "mtime": float((payload or {}).get("mtime") or 0),
+        "trigger_words": list((payload or {}).get("trigger_words") or []),
+        "strength_model": normalize_lora_strength(
+            (payload or {}).get("strength_model"),
+            1.0,
+        ),
+        "strength_clip": normalize_lora_strength(
+            (payload or {}).get("strength_clip"),
+            1.0,
+        ),
+        "lora_note": str((payload or {}).get("lora_note") or ""),
+        "trigger_words_ver": int(
+            (payload or {}).get("trigger_words_ver") or 1
+        ),
+        "source": str((payload or {}).get("source") or "user"),
+        "created_at": str((payload or {}).get("created_at") or ""),
+        "updated_at": str((payload or {}).get("updated_at") or ""),
+        "exists": payload is not None,
+    }
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/trigger-words")
+async def api_lora_trigger_words_get(request: web.Request) -> web.Response:
+    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    rel_path = lora_rel_path_from_ref(lora_ref)
+    if not rel_path:
+        return json_error(request, "file_not_found", 404)
+    try:
+        item = read_lora_trigger_record(rel_path)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] lora trigger words read failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response(
+        {
+            "status": "success",
+            "item": _build_lora_trigger_item(lora_ref, rel_path, item),
+        }
+    )
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/loras/trigger-words"
+)
+async def api_lora_trigger_words_save(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return json_error(request, "invalid_payload", 400)
+    lora_ref = normalize_lora_public_ref(str(payload.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    rel_path = lora_rel_path_from_ref(lora_ref)
+    if not rel_path:
+        return json_error(request, "file_not_found", 404)
+    title = str(payload.get("title") or Path(rel_path).name).strip()
+    sha256 = str(payload.get("sha256") or "").strip()
+    strength_model = payload.get("strength_model")
+    strength_clip = payload.get("strength_clip")
+    lora_note = payload.get("lora_note")
+    try:
+        mtime = float(payload.get("mtime") or 0)
+    except Exception:
+        mtime = 0.0
+    try:
+        saved = save_lora_trigger_words(
+            rel_path=rel_path,
+            trigger_words=payload.get("trigger_words"),
+            title=title,
+            sha256=sha256,
+            mtime=mtime,
+            strength_model=strength_model,
+            strength_clip=strength_clip,
+            lora_note=lora_note,
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] lora trigger words save failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response(
+        {
+            "status": "success",
+            "item": _build_lora_trigger_item(lora_ref, rel_path, saved),
+        }
+    )
+
+
+@server.PromptServer.instance.routes.get(
+    "/xz3r0/xdatahub/loras/trigger-words/from-metadata"
+)
+async def api_lora_trigger_words_from_metadata(
+    request: web.Request,
+) -> web.Response:
+    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    rel_path = lora_rel_path_from_ref(lora_ref)
+    if not rel_path:
+        return json_error(request, "file_not_found", 404)
+    try:
+        result = read_lora_trigger_words_from_metadata(rel_path)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] lora metadata trigger words read failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response(
+        {
+            "status": "success",
+            "media_ref": lora_ref,
+            "found": bool(result.get("found")),
+            "source": str(result.get("source") or ""),
+            "message": str(result.get("message") or ""),
+            "trigger_words": list(result.get("trigger_words") or []),
+        }
+    )
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/refresh")
@@ -2867,7 +4414,7 @@ async def api_media_refresh(request: web.Request) -> web.Response:
     except Exception:
         media_type = None
     if media_type and media_type not in MEDIA_TYPE_EXT:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         result = STORE.refresh(media_type)
     except Exception as exc:
@@ -2875,11 +4422,13 @@ async def api_media_refresh(request: web.Request) -> web.Response:
             "[xdatahub] media refresh failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
-@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/cleanup-invalid")
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/media/cleanup-invalid"
+)
 async def api_media_cleanup_invalid(request: web.Request) -> web.Response:
     denied = write_guard()
     if denied:
@@ -2892,7 +4441,7 @@ async def api_media_cleanup_invalid(request: web.Request) -> web.Response:
     except Exception:
         media_type = None
     if media_type and media_type not in MEDIA_TYPE_EXT:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         result = STORE.cleanup_invalid(media_type)
     except Exception as exc:
@@ -2900,7 +4449,7 @@ async def api_media_cleanup_invalid(request: web.Request) -> web.Response:
             "[xdatahub] media cleanup invalid failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
@@ -2915,7 +4464,7 @@ async def api_media_rebuild(request: web.Request) -> web.Response:
     except Exception:
         media_type = ""
     if media_type not in MEDIA_TYPE_EXT:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         result = STORE.rebuild(media_type)
     except Exception as exc:
@@ -2923,7 +4472,7 @@ async def api_media_rebuild(request: web.Request) -> web.Response:
             "[xdatahub] media rebuild failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **result})
 
 
@@ -2939,7 +4488,7 @@ async def api_media_clear(request: web.Request) -> web.Response:
             "[xdatahub] media clear failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", "deleted": deleted})
 
 
@@ -2956,7 +4505,7 @@ async def api_thumbs_clear(request: web.Request) -> web.Response:
     except Exception:
         media_type = None
     if media_type and media_type not in MEDIA_TYPE_EXT:
-        return json_error("quota_exceeded", 400)
+        return json_error("quota_exceeded", status=400)
     try:
         deleted = STORE.clear_thumbs(media_type)
     except Exception as exc:
@@ -2964,7 +4513,7 @@ async def api_thumbs_clear(request: web.Request) -> web.Response:
             "[xdatahub] thumbs clear failed: %s",
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
     return web.json_response({"status": "success", "deleted": deleted})
 
 
@@ -2983,9 +4532,9 @@ async def api_media_file(request: web.Request) -> web.Response:
             media_type=resolved.media_type,
         )
     except PermissionError:
-        return json_error("permission_denied", 403)
+        return json_error("permission_denied", status=403)
     except FileNotFoundError:
-        return json_error("file_not_found", 404)
+        return json_error("file_not_found", status=404)
     except Exception as exc:
         if _is_client_disconnect_error(exc):
             LOGGER.info(
@@ -2999,7 +4548,111 @@ async def api_media_file(request: web.Request) -> web.Response:
             media_ref,
             type(exc).__name__,
         )
-        return json_error("internal_error", 500)
+        return json_error("internal_error", status=500)
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/thumb")
+async def api_lora_thumb(request: web.Request) -> web.Response:
+    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    rel_path = lora_rel_path_from_ref(lora_ref)
+    if not rel_path:
+        return json_error(request, "file_not_found", 404)
+    root, _ = resolve_lora_dir("")
+    if root is None:
+        return json_error(request, "file_not_found", 404)
+    lora_path = normalize_path(root / rel_path)
+    if not is_path_within_root(lora_path, root):
+        return json_error(request, "permission_denied", 403)
+    thumb_path = find_lora_thumbnail(lora_path)
+    if thumb_path is None:
+        return json_error(request, "file_not_found", 404)
+    target = normalize_path(thumb_path)
+    if not is_path_within_root(target, root):
+        return json_error(request, "permission_denied", 403)
+    if target.suffix.lower() not in LORA_IMAGE_EXT:
+        return json_error(request, "unsupported_media_type", 415)
+    if not target.exists() or not target.is_file():
+        return json_error(request, "file_not_found", 404)
+    try:
+        return await _stream_media_file_response(
+            request=request,
+            path=target,
+            media_type="image",
+        )
+    except PermissionError:
+        return json_error(request, "permission_denied", 403)
+    except FileNotFoundError:
+        return json_error(request, "file_not_found", 404)
+    except Exception as exc:
+        if _is_client_disconnect_error(exc):
+            return web.Response(status=204)
+        LOGGER.exception(
+            "[xdatahub] lora thumb stream failed: err=%s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/rebuild")
+async def api_lora_rebuild(request: web.Request) -> web.Response:
+    """重建LORA数据库索引"""
+    try:
+        result = LORA_STORE.rebuild()
+        LOGGER.info(
+            "[xdatahub-lora] rebuild requested: %s",
+            result,
+        )
+        return web.json_response(
+            {
+                "status": "success",
+                "message": "LORA index rebuilt",
+                "result": result,
+            }
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub-lora] rebuild failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/refresh")
+async def api_lora_refresh(request: web.Request) -> web.Response:
+    """刷新LORA数据库索引，不清空触发词信息"""
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        result = LORA_STORE.scan_lora_files()
+        return web.json_response({"status": "success", **result})
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub-lora] refresh failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/loras/cleanup-invalid"
+)
+async def api_lora_cleanup_invalid(request: web.Request) -> web.Response:
+    """清理已经失效的LORA记录"""
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        deleted = LORA_STORE.cleanup_invalid()
+        return web.json_response({"status": "success", "deleted": deleted})
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub-lora] cleanup invalid failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
 
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/media/meta")
@@ -3078,9 +4731,7 @@ async def api_media_upload(request: web.Request) -> web.Response:
     if field is None or field.name != "file":
         return json_error(request, "invalid_payload", 400)
     filename = str(field.filename or "").strip()
-    content_type = str(
-        field.headers.get("Content-Type") or ""
-    ).lower()
+    content_type = str(field.headers.get("Content-Type") or "").lower()
     ext = Path(filename).suffix.lower()
     if (
         not content_type.startswith("image/")
@@ -3098,14 +4749,10 @@ async def api_media_upload(request: web.Request) -> web.Response:
         }
         ext = ext_map.get(content_type, ".png")
 
-    safe_stem = (
-        sanitize_path_component(Path(filename).stem)
-        or "xdatahub"
-    )
+    safe_stem = sanitize_path_component(Path(filename).stem) or "xdatahub"
     if folder_paths is not None:
         target_dir = (
-            Path(folder_paths.get_input_directory())
-            / "xdatahub_uploads"
+            Path(folder_paths.get_input_directory()) / "xdatahub_uploads"
         )
     else:
         target_dir = data_root() / "xdatahub_uploads"
@@ -3172,9 +4819,7 @@ async def api_media_upload(request: web.Request) -> web.Response:
     )
 
 
-@server.PromptServer.instance.routes.post(
-    "/xz3r0/xdatahub/media/validate"
-)
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/media/validate")
 async def api_media_validate(request: web.Request) -> web.Response:
     try:
         payload = await request.json()

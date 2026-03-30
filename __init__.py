@@ -45,6 +45,7 @@ from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
 from .xnode.xlatentload import XLatentLoad
 from .xnode.xlatentsave import XLatentSave
+from .xnode.xloraget import XLoraGet
 from .xnode.xmarkdownsave import XMarkdownSave
 from .xnode.xvideoget import XVideoGet
 from .xnode.xvideosave import XVideoSave
@@ -92,6 +93,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XImageSave,
     XLatentLoad,
     XLatentSave,
+    XLoraGet,
     XMarkdownSave,
     XStringGet,
     XVideoGet,

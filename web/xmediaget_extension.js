@@ -90,12 +90,23 @@ const PREVIEW_STATE_MISSING = "missing";
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
 
-function getComfyLocale() {
-    const locale = window.app?.extensionManager?.setting?.get("Comfy.Locale")
-        || localStorage.getItem("Comfy.Locale")
-        || navigator.language
-        || "en";
-    return String(locale).replace("_", "-").split("-")[0].toLowerCase();
+async function fetchXDataHubLocale() {
+    try {
+        const response = await fetch(
+            "/xz3r0/xdatahub/settings",
+            { cache: "no-cache" }
+        );
+        if (!response.ok) {
+            return "en";
+        }
+        const payload = await response.json();
+        const locale = String(
+            payload?.settings?.ui_locale || ""
+        ).toLowerCase();
+        return locale === "zh" ? "zh" : "en";
+    } catch {
+        return "en";
+    }
 }
 
 function readUiText(key, fallback) {
@@ -235,8 +246,9 @@ async function fetchLocaleJson(localeCode) {
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {
-    const locale = String(localeOverride || getComfyLocale() || "en")
-        .toLowerCase();
+    const locale = localeOverride
+        ? String(localeOverride).toLowerCase()
+        : await fetchXDataHubLocale();
     uiLocaleFallback = await fetchLocaleJson("en");
     if (locale === "en") {
         uiLocalePrimary = uiLocaleFallback;
@@ -1891,6 +1903,9 @@ export function initXMediaGetExtension() {
                 if (payload.type === "xdatahub:request_media_get_nodes") {
                     const requestId = payload.request_id;
                     const nodeClass = String(payload.node_class || "");
+                    if (!SUPPORTED_NODE_CLASSES.has(nodeClass)) {
+                        return;
+                    }
                     event.source?.postMessage?.(
                         {
                             type: "xdatahub:media_get_nodes",
@@ -1909,6 +1924,9 @@ export function initXMediaGetExtension() {
                     const mediaRef = String(data.media_ref || "");
                     const textValue = String(data.text_value || "");
                     const nodeClass = String(data.node_class || "");
+                    if (nodeClass && !SUPPORTED_NODE_CLASSES.has(nodeClass)) {
+                        return;
+                    }
                     if (!Number.isFinite(nodeId)) {
                         replyNodeSendAck(
                             requestId,

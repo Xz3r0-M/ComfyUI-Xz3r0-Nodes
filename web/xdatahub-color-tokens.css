@@ -17,6 +17,8 @@ body:not([data-theme]) {
     --xdh-neutral-surface: #353535;
     --xdh-neutral-text: #dddddd;
     --xdh-icon-color: #dddddd;
+    --xdh-pure-white: #ffffff;
+    --xdh-pure-black: #111111;
 
     /* Semantic */
     --theme-bg-main: #353535;
@@ -121,6 +123,8 @@ body[data-theme="light"] {
     --xdh-neutral-surface: #ffffff;
     --xdh-neutral-text: #222222;
     --xdh-icon-color: #222222;
+    --xdh-pure-white: #ffffff;
+    --xdh-pure-black: #111111;
 
     --theme-bg-main: #ffffff;
     --bg: #ffffff;

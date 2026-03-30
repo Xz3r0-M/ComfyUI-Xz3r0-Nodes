@@ -9,6 +9,7 @@ const TABS = [
     { id: "image" },
     { id: "video" },
     { id: "audio" },
+    { id: "lora" },
 ];
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const DEFAULT_TOGGLE_HOTKEY_SPEC = "Alt + X";
@@ -99,6 +100,14 @@ const appState = {
         error: false,
         timer: 0,
     },
+    floatingNotice: {
+        text: "",
+        level: "",
+        scope: "",
+        timer: 0,
+        leaveTimer: 0,
+        leaving: false,
+    },
     historyDetailRaw: false,
     selectedItemCache: new Map(),
     splitDrag: {
@@ -176,15 +185,31 @@ const appState = {
     nodeSendFailureCount: 0,
     nodeSendLastFailureMessage: "",
     nodeSendMediaRef: "",
+    nodeSendMediaThumbUrl: "",
     nodeSendTextValue: "",
     nodeSendTitle: "",
     nodeSendTargetClass: "XImageGet",
+    nodeSendPanelMode: "send",
+    nodeSendInfoLoading: false,
+    nodeSendInfoSaving: false,
+    nodeSendInfoMetaLoading: false,
+    nodeSendInfoError: "",
+    nodeSendInfoNotice: "",
+    nodeSendInfoNoticeLevel: "",
+    nodeSendInfoRequestId: "",
+    nodeSendInfoTriggerWords: "",
+    nodeSendInfoLoraNote: "",
+    nodeSendInfoStrengthModel: "1",
+    nodeSendInfoStrengthClip: "1",
+    nodeSendInfoStrengthLinked: true,
+    nodeSendInfoStrengthLastEdited: "model",
     nodeSendSortKey: "id",
     nodeSendSortDir: "asc",
     nodeSendRequestId: "",
     nodeSendRequestTimer: 0,
     nodeSendValidateId: "",
     nodeSendValidateTimer: 0,
+    nodeSendRefreshNoticePending: false,
     nodeSendError: "",
     nodeSendQuickSlide: null,
     nodeSendQuickFeedback: {
@@ -216,6 +241,7 @@ const appState = {
         mediaSortOrder: "desc",
         mediaCardSizePreset: "standard",
         nodeSendCloseAfterSend: true,
+        storeLoraDbInLoras: false,
         themeMode: "dark",
         hotkeySpec: DEFAULT_TOGGLE_HOTKEY_SPEC,
         uiLocale: "",
@@ -423,7 +449,7 @@ function buildPersistedTabState(tab, state) {
         return next;
     }
     if (isMediaTab(tab)) {
-        next.mediaRoot = normalizeMediaRoot(state?.mediaRoot);
+        next.mediaRoot = normalizeMediaRoot(state?.mediaRoot, tab);
         next.mediaSubdir = normalizeMediaSubdir(state?.mediaSubdir);
     }
     return next;
@@ -635,7 +661,16 @@ async function apiGet(path, query = {}, key = "default") {
         const response = await fetch(apiUrl(path, query), {
             signal: controller.signal,
         });
-        const data = await response.json();
+        let data = {};
+        try {
+            data = await response.json();
+        } catch {
+            const fallbackMessage = t(
+                "xdatahub.ui.app.error.request_failed",
+                "Request Failed"
+            );
+            throw new Error(response.ok ? fallbackMessage : `${response.status} ${response.statusText}`);
+        }
         if (!response.ok || data.status !== "success") {
             throw new Error(resolveApiErrorMessage(
                 data,
@@ -658,7 +693,16 @@ async function apiPost(path, body = {}) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
     });
-    const data = await response.json();
+    let data = {};
+    try {
+        data = await response.json();
+    } catch {
+        const fallbackMessage = t(
+            "xdatahub.ui.app.error.request_failed",
+            "Request Failed"
+        );
+        throw new Error(response.ok ? fallbackMessage : `${response.status} ${response.statusText}`);
+    }
     if (!response.ok || data.status !== "success") {
         throw new Error(resolveApiErrorMessage(
             data,
@@ -752,6 +796,10 @@ function normalizeSettings(value) {
             raw.node_send_close_after_send !== undefined
                 ? raw.node_send_close_after_send !== false
                 : raw.nodeSendCloseAfterSend !== false,
+        storeLoraDbInLoras:
+            raw.store_lora_db_in_loras !== undefined
+                ? raw.store_lora_db_in_loras === true
+                : raw.storeLoraDbInLoras === true,
         themeMode: THEME_MODE_VALUES.has(themeModeRaw)
             ? themeModeRaw
             : "dark",
@@ -817,6 +865,10 @@ function cloneSettings(settings) {
             raw.nodeSendCloseAfterSend !== undefined
                 ? raw.nodeSendCloseAfterSend !== false
                 : raw.node_send_close_after_send !== false,
+        storeLoraDbInLoras:
+            raw.storeLoraDbInLoras !== undefined
+                ? raw.storeLoraDbInLoras === true
+                : raw.store_lora_db_in_loras === true,
         themeMode: THEME_MODE_VALUES.has(themeMode) ? themeMode : "dark",
         hotkeySpec:
             parseHotkeySpec(hotkeySpec)
@@ -1037,6 +1089,10 @@ async function updateSettings(partial) {
                 hasOwn("nodeSendCloseAfterSend")
                     ? partial.nodeSendCloseAfterSend
                     : appState.settings.nodeSendCloseAfterSend,
+            store_lora_db_in_loras:
+                hasOwn("storeLoraDbInLoras")
+                    ? partial.storeLoraDbInLoras
+                    : appState.settings.storeLoraDbInLoras,
             theme_mode:
                 partial?.themeMode
                 ?? appState.settings.themeMode,
@@ -1204,6 +1260,10 @@ function getListTabId(listElement) {
 }
 
 function isMediaTab(tab) {
+    return isIndexedMediaTab(tab) || tab === "lora";
+}
+
+function isIndexedMediaTab(tab) {
     return tab === "image" || tab === "video" || tab === "audio";
 }
 
@@ -1214,8 +1274,11 @@ function mediaTypeOfTab(tab) {
     return "image";
 }
 
-function normalizeMediaRoot(value) {
+function normalizeMediaRoot(value, tab = appState.activeTab) {
     const v = String(value || "").trim().toLowerCase();
+    if (tab === "lora") {
+        return "loras";
+    }
     if (v === "input" || v === "output") {
         return v;
     }
@@ -1246,7 +1309,7 @@ function normalizeMediaPath(pathValue) {
     if (!parts.length) {
         return "";
     }
-    const rootName = normalizeMediaRoot(parts[0]);
+    const rootName = normalizeMediaRoot(parts[0], appState.activeTab);
     const subdir = normalizeMediaSubdir(parts.slice(1).join("/"));
     return subdir ? `${rootName}/${subdir}` : rootName;
 }
@@ -1285,7 +1348,7 @@ function pushMediaNavEntry(stack, pathValue) {
 }
 
 function mediaDirectoryFromState(state) {
-    const rootName = normalizeMediaRoot(state.mediaRoot);
+    const rootName = normalizeMediaRoot(state.mediaRoot, appState.activeTab);
     const subdir = normalizeMediaSubdir(state.mediaSubdir);
     return subdir ? `${rootName}/${subdir}` : rootName;
 }
@@ -1295,7 +1358,10 @@ function currentMediaDirectory() {
 }
 
 function parentMediaDirectoryPath(state = currentTabState()) {
-    const rootName = normalizeMediaRoot(state?.mediaRoot);
+    const rootName = normalizeMediaRoot(
+        state?.mediaRoot,
+        appState.activeTab
+    );
     const subdir = normalizeMediaSubdir(state?.mediaSubdir);
     if (!subdir) {
         return "";
@@ -1313,7 +1379,7 @@ function setMediaDirectoryFromPath(pathValue, options = {}) {
     }
     const { recordHistory = true, clearForward = true } = options;
     const parts = targetPath.split("/");
-    const rootName = normalizeMediaRoot(parts[0]);
+    const rootName = normalizeMediaRoot(parts[0], appState.activeTab);
     const subdir = parts.slice(1).join("/");
     const state = currentTabState();
     ensureMediaNavState(state);
@@ -1420,7 +1486,10 @@ function switchMediaRootDirectory(rootName) {
     if (appState.mediaNavBusy) {
         return false;
     }
-    const normalizedRoot = normalizeMediaRoot(rootName);
+    const normalizedRoot = normalizeMediaRoot(
+        rootName,
+        appState.activeTab
+    );
     const state = currentTabState();
     ensureMediaNavState(state);
     const changed = setMediaDirectoryFromPath(normalizedRoot, {
@@ -1900,6 +1969,30 @@ async function loadList(options = {}) {
                     };
                 }
             }
+        } else if (tab === "lora") {
+            const showDatetimeChip =
+                appState.settings.showMediaChipDatetime !== false;
+            const showSizeChip = appState.settings.showMediaChipSize !== false;
+            const sortBy = normalizeMediaSortBy(
+                appState.settings.mediaSortBy
+            );
+            const sortOrder = normalizeMediaSortOrder(
+                appState.settings.mediaSortOrder
+            );
+            data = await apiGet(
+                "/xz3r0/xdatahub/loras",
+                {
+                    dir: mediaDirectoryFromState(state),
+                    page: state.page,
+                    page_size: state.pageSize,
+                    keyword: state.filters.keyword,
+                    include_datetime: showDatetimeChip ? 1 : 0,
+                    include_size: showSizeChip ? 1 : 0,
+                    sort_by: sortBy,
+                    sort_order: sortOrder,
+                },
+                `list-${tab}`
+            );
         } else {
             const showDatetimeChip =
                 appState.settings.showMediaChipDatetime !== false;
@@ -2504,12 +2597,21 @@ const debouncedFacetDropdownReposition = debounce(() => {
 }, 80);
 
 async function doRefresh() {
-    if (isMediaTab(appState.activeTab)) {
+    if (isIndexedMediaTab(appState.activeTab)) {
         await apiPost("/xz3r0/xdatahub/media/refresh", {
             media_type: mediaTypeOfTab(appState.activeTab),
         });
+    } else if (appState.activeTab === "lora") {
+        await apiPost("/xz3r0/xdatahub/loras/refresh", {});
     }
     await loadList({ validatePage: true });
+    showFloatingNotice(
+        t(
+            "xdatahub.ui.app.notice.media_refresh_done",
+            "刷新完成"
+        ),
+        { level: "success", scope: "top-actions" }
+    );
     return true;
 }
 
@@ -3177,10 +3279,21 @@ async function doCleanupInvalid() {
     if (!isMediaTab(appState.activeTab)) {
         return false;
     }
-    await apiPost("/xz3r0/xdatahub/media/cleanup-invalid", {
-        media_type: mediaTypeOfTab(appState.activeTab),
-    });
+    if (appState.activeTab === "lora") {
+        await apiPost("/xz3r0/xdatahub/loras/cleanup-invalid", {});
+    } else {
+        await apiPost("/xz3r0/xdatahub/media/cleanup-invalid", {
+            media_type: mediaTypeOfTab(appState.activeTab),
+        });
+    }
     await loadList({ validatePage: true });
+    showFloatingNotice(
+        t(
+            "xdatahub.ui.app.notice.cleanup_invalid_done",
+            "清理失效完成"
+        ),
+        { level: "success", scope: "top-actions" }
+    );
     return true;
 }
 
@@ -3191,21 +3304,36 @@ async function doClearIndex() {
     if (!isMediaTab(appState.activeTab)) {
         return false;
     }
-    if (!window.confirm(t(
-        "xdatahub.ui.app.confirm.clear_media_index",
-        "Confirm clearing current media type index?"
-    ))) {
+    const isLoraTab = appState.activeTab === "lora";
+    const confirmKey = isLoraTab
+        ? "xdatahub.ui.app.confirm.rebuild_lora_index"
+        : "xdatahub.ui.app.confirm.clear_media_index";
+    const confirmFallback = isLoraTab
+        ? "Confirm rebuilding current Lora index?"
+        : "Confirm clearing current media type index?";
+    if (!window.confirm(t(confirmKey, confirmFallback))) {
         return false;
     }
-    await apiPost("/xz3r0/xdatahub/media/rebuild", {
-        media_type: mediaTypeOfTab(appState.activeTab),
-    });
+    if (isLoraTab) {
+        await apiPost("/xz3r0/xdatahub/loras/rebuild", {});
+    } else {
+        await apiPost("/xz3r0/xdatahub/media/rebuild", {
+            media_type: mediaTypeOfTab(appState.activeTab),
+        });
+    }
     await loadList({ validatePage: true });
+    showFloatingNotice(
+        t(
+            "xdatahub.ui.app.notice.rebuild_data_done",
+            "重建数据完成"
+        ),
+        { level: "success", scope: "top-actions" }
+    );
     return true;
 }
 
 async function doClearRecords() {
-    if (appState.lockState.readonly || appState.activeTab !== "history") {
+    if (appState.lockState.readonly) {
         return false;
     }
     await openDbDeleteDialog();
@@ -3419,7 +3547,16 @@ async function submitNodeSend(nodeIds, options = {}) {
         return false;
     }
     const mediaRef = String(appState.nodeSendMediaRef || "");
+    const mediaThumbUrl = String(appState.nodeSendMediaThumbUrl || "");
     const textValue = String(appState.nodeSendTextValue || "");
+    const modelStrength = parseNodeSendStrengthInput(
+        appState.nodeSendInfoStrengthModel,
+        1
+    );
+    const clipStrength = parseNodeSendStrengthInput(
+        appState.nodeSendInfoStrengthClip,
+        modelStrength
+    );
     const isStringTarget = (
         String(appState.nodeSendTargetClass || "") === "XStringGet"
     );
@@ -3451,8 +3588,12 @@ async function submitNodeSend(nodeIds, options = {}) {
                     request_id: requestId,
                     node_id: nodeId,
                     media_ref: mediaRef,
+                    thumb_url: mediaThumbUrl,
                     text_value: isStringTarget ? textValue : "",
                     title: appState.nodeSendTitle || "",
+                    lora_note: String(appState.nodeSendInfoLoraNote || ""),
+                    strength_model: modelStrength,
+                    strength_clip: clipStrength,
                     node_class: appState.nodeSendTargetClass || "",
                 },
             },
@@ -3849,6 +3990,9 @@ function resolveNodeClassByMediaType(mediaType) {
     if (type === "text") {
         return "XStringGet";
     }
+    if (type === "lora") {
+        return "XLoraGet";
+    }
     if (type === "video") {
         return "XVideoGet";
     }
@@ -3856,6 +4000,511 @@ function resolveNodeClassByMediaType(mediaType) {
         return "XAudioGet";
     }
     return "XImageGet";
+}
+
+function isLoraNodeSendDialog() {
+    return String(appState.nodeSendTargetClass || "") === "XLoraGet";
+}
+
+function normalizeLoraTriggerRef(value) {
+    return String(value || "").trim();
+}
+
+function formatTriggerWordsText(words) {
+    if (!Array.isArray(words)) {
+        return "";
+    }
+    return words
+        .map((item) => {
+            if (item && typeof item === "object") {
+                return String(item.text || "").trim();
+            }
+            return String(item || "").trim();
+        })
+        .filter((item) => !!item)
+        .join("\n");
+}
+
+function parseTriggerWordsText(rawText) {
+    const lines = String(rawText || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => !!line);
+    const seen = new Set();
+    const payload = [];
+    for (const line of lines) {
+        const key = line.toLowerCase();
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        payload.push({ text: line, enabled: true });
+    }
+    return payload;
+}
+
+function parseNodeSendStrengthInput(rawValue, fallback = 1) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return parsed;
+}
+
+function clearFloatingNoticeTimer() {
+    if (appState.floatingNotice.timer) {
+        clearTimeout(appState.floatingNotice.timer);
+        appState.floatingNotice.timer = 0;
+    }
+}
+
+function clearFloatingNoticeLeaveTimer() {
+    if (appState.floatingNotice.leaveTimer) {
+        clearTimeout(appState.floatingNotice.leaveTimer);
+        appState.floatingNotice.leaveTimer = 0;
+    }
+}
+
+const FLOATING_NOTICE_ENTER_MS = 220;
+
+function renderFloatingNotice() {
+    const text = String(appState.floatingNotice.text || "").trim();
+    if (!text) {
+        return "";
+    }
+    const level = String(appState.floatingNotice.level || "info");
+    const leaving = !!appState.floatingNotice.leaving;
+    const levelClass = level === "error"
+        ? " is-error"
+        : (level === "success" ? " is-success" : " is-info");
+    const leavingClass = leaving ? " is-leaving" : "";
+    return `
+        <div class="floating-notice-overlay" id="floating-notice-overlay" aria-live="polite" aria-atomic="true">
+            <div class="floating-notice${levelClass}${leavingClass}">${escapeHtml(text)}</div>
+        </div>
+    `;
+}
+
+function syncFloatingNoticeUi() {
+    syncOverlayById("floating-notice-overlay", renderFloatingNotice());
+}
+
+function hideFloatingNotice(scope = "", animate = true) {
+    const expectedScope = String(scope || "").trim();
+    if (
+        expectedScope
+        && String(appState.floatingNotice.scope || "") !== expectedScope
+    ) {
+        return;
+    }
+    clearFloatingNoticeTimer();
+    clearFloatingNoticeLeaveTimer();
+    const hasText = String(appState.floatingNotice.text || "").trim().length > 0;
+    if (animate && hasText && !appState.floatingNotice.leaving) {
+        appState.floatingNotice.leaving = true;
+        syncFloatingNoticeUi();
+        appState.floatingNotice.leaveTimer = setTimeout(() => {
+            appState.floatingNotice.leaveTimer = 0;
+            appState.floatingNotice.text = "";
+            appState.floatingNotice.level = "";
+            appState.floatingNotice.scope = "";
+            appState.floatingNotice.leaving = false;
+            syncFloatingNoticeUi();
+        }, 180);
+        return;
+    }
+    appState.floatingNotice.text = "";
+    appState.floatingNotice.level = "";
+    appState.floatingNotice.scope = "";
+    appState.floatingNotice.leaving = false;
+    syncFloatingNoticeUi();
+}
+
+function showFloatingNotice(text, options = {}) {
+    const message = String(text || "").trim();
+    if (!message) {
+        hideFloatingNotice(String(options?.scope || ""));
+        return;
+    }
+    const level = String(options?.level || "info");
+    const scope = String(options?.scope || "").trim();
+    const durationMs = Number(options?.duration);
+    const duration = Number.isFinite(durationMs) && durationMs > 0
+        ? durationMs
+        : 2000;
+    const enterMsRaw = Number(options?.enterDuration);
+    const enterMs = Number.isFinite(enterMsRaw) && enterMsRaw >= 0
+        ? enterMsRaw
+        : FLOATING_NOTICE_ENTER_MS;
+    clearFloatingNoticeTimer();
+    clearFloatingNoticeLeaveTimer();
+    appState.floatingNotice.text = message;
+    appState.floatingNotice.level = level;
+    appState.floatingNotice.scope = scope;
+    appState.floatingNotice.leaving = false;
+    syncFloatingNoticeUi();
+    appState.floatingNotice.timer = setTimeout(() => {
+        if (
+            scope
+            && String(appState.floatingNotice.scope || "") !== scope
+        ) {
+            return;
+        }
+        hideFloatingNotice("", true);
+    }, duration + enterMs);
+}
+
+function setNodeSendInfoNotice(text = "", level = "") {
+    appState.nodeSendInfoNotice = String(text || "");
+    appState.nodeSendInfoNoticeLevel = String(level || "");
+}
+
+function syncNodeSendInfoPanel() {
+    const overlay = document.getElementById("node-send-overlay");
+    if (!(overlay instanceof HTMLElement)) {
+        return;
+    }
+    const panel = overlay.querySelector(".node-send-info-panel");
+    if (!(panel instanceof HTMLElement)) {
+        return;
+    }
+    const isLoading = !!appState.nodeSendInfoLoading;
+    const isSaving = !!appState.nodeSendInfoSaving;
+    const isMetaLoading = !!appState.nodeSendInfoMetaLoading;
+    const isBusy = isLoading || isSaving || isMetaLoading;
+
+    // --- Refresh button ---
+    const refreshBtn = panel.querySelector("#node-send-info-refresh");
+    if (refreshBtn instanceof HTMLButtonElement) {
+        refreshBtn.disabled = isBusy;
+    }
+
+    // --- Save button ---
+    const saveBtn = panel.querySelector("#node-send-info-save");
+    if (saveBtn instanceof HTMLButtonElement) {
+        saveBtn.disabled = isBusy;
+        const saveInfoText = t(
+            "xdatahub.ui.app.media.send_dialog_save_info",
+            "保存编辑"
+        );
+        const savingText = t(
+            "xdatahub.ui.app.media.send_dialog_saving_info",
+            "保存中..."
+        );
+        saveBtn.innerHTML = isSaving
+            ? `${iconSvg("refresh-cw", savingText, "xdatahub-icon btn-icon")} ${escapeHtml(savingText)}`
+            : `${iconSvg("save", saveInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(saveInfoText)}`;
+    }
+
+    // --- Metadata import button ---
+    const metadataBtn = panel.querySelector("#node-send-info-metadata");
+    if (metadataBtn instanceof HTMLButtonElement) {
+        metadataBtn.disabled = isBusy;
+        const metadataInfoText = t(
+            "xdatahub.ui.app.media.send_dialog_metadata_import",
+            "从metadata.json导入"
+        );
+        const fetchingText = t(
+            "xdatahub.ui.app.media.send_dialog_fetching_metadata",
+            "获取中..."
+        );
+        metadataBtn.innerHTML = isMetaLoading
+            ? `${iconSvg("refresh-cw", fetchingText, "xdatahub-icon btn-icon")} ${escapeHtml(fetchingText)}`
+            : `${iconSvg("folder-input", metadataInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(metadataInfoText)}`;
+    }
+
+    // --- Link button ---
+    const linkBtn = panel.querySelector("#node-send-info-link");
+    if (linkBtn instanceof HTMLButtonElement) {
+        linkBtn.disabled = isBusy;
+        const isLinked = !!appState.nodeSendInfoStrengthLinked;
+        linkBtn.classList.toggle("is-linked", isLinked);
+        linkBtn.title = isLinked
+            ? t("xdatahub.ui.app.media.send_dialog_strength_unlink", "取消同步")
+            : t("xdatahub.ui.app.media.send_dialog_strength_link", "同步强度");
+        linkBtn.innerHTML = iconMask(
+            isLinked ? "link-2" : "unlink-2",
+            "",
+            "node-send-info-link-icon"
+        );
+    }
+
+    // --- Strength inputs ---
+    const inputDisabled = isSaving || isLoading;
+    const modelInput = panel.querySelector("#node-send-strength-model");
+    const clipInput = panel.querySelector("#node-send-strength-clip");
+    if (modelInput instanceof HTMLInputElement) {
+        modelInput.disabled = inputDisabled;
+        if (modelInput !== document.activeElement) {
+            modelInput.value = appState.nodeSendInfoStrengthModel || "1";
+        }
+    }
+    if (clipInput instanceof HTMLInputElement) {
+        clipInput.disabled = inputDisabled || !!appState.nodeSendInfoStrengthLinked;
+        if (clipInput !== document.activeElement) {
+            clipInput.value = appState.nodeSendInfoStrengthClip || "1";
+        }
+    }
+
+    // --- Trigger words textarea ---
+    const loraNoteInput = panel.querySelector("#node-send-lora-note");
+    if (loraNoteInput instanceof HTMLTextAreaElement) {
+        loraNoteInput.disabled = inputDisabled;
+        if (loraNoteInput !== document.activeElement) {
+            loraNoteInput.value = appState.nodeSendInfoLoraNote || "";
+        }
+    }
+
+    // --- Trigger words textarea ---
+    const textarea = panel.querySelector("#node-send-trigger-words");
+    if (textarea instanceof HTMLTextAreaElement) {
+        textarea.disabled = inputDisabled;
+        if (textarea !== document.activeElement) {
+            textarea.value = appState.nodeSendInfoTriggerWords || "";
+        }
+    }
+
+    // --- Note bar ---
+    const noteEl = panel.querySelector(".node-send-info-note");
+    if (noteEl instanceof HTMLElement) {
+        const editErrorText = String(appState.nodeSendInfoError || "");
+        const editNoticeText = String(appState.nodeSendInfoNotice || "");
+        const loadingInfoText = t(
+            "xdatahub.ui.app.media.send_dialog_loading_info",
+            "正在加载信息..."
+        );
+        const editNoteText = isLoading
+            ? loadingInfoText
+            : (editErrorText || editNoticeText || t(
+                "xdatahub.ui.app.media.send_dialog_edit_note",
+                "提示：每行一个触发词，保存后将写入 loras_data.db"
+            ));
+        const noticeLevel = String(appState.nodeSendInfoNoticeLevel || "");
+        const editNoteClass = editErrorText
+            ? " is-error"
+            : (noticeLevel === "success" ? " is-success"
+                : (noticeLevel === "info" ? " is-info" : ""));
+        noteEl.textContent = editNoteText;
+        noteEl.className = `node-send-info-note${editNoteClass}`;
+    }
+}
+
+async function requestNodeSendLoraInfo() {
+    if (!isLoraNodeSendDialog() || !appState.nodeSendDialogOpen) {
+        return;
+    }
+    const loraRef = normalizeLoraTriggerRef(appState.nodeSendMediaRef);
+    if (!loraRef) {
+        appState.nodeSendInfoError = t(
+            "xdatahub.ui.app.media.send_dialog_lora_missing_path",
+            "Missing lora path"
+        );
+        syncNodeSendInfoPanel();
+        return;
+    }
+    const requestId = `lora_info_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    appState.nodeSendInfoRequestId = requestId;
+    appState.nodeSendInfoLoading = true;
+    appState.nodeSendInfoError = "";
+    setNodeSendInfoNotice("", "");
+    syncNodeSendInfoPanel();
+    try {
+        const data = await apiGet(
+            "/xz3r0/xdatahub/loras/trigger-words",
+            { ref: loraRef },
+            `lora-info-${loraRef}`
+        );
+        if (appState.nodeSendInfoRequestId !== requestId) {
+            return;
+        }
+        const item = data?.item || {};
+        appState.nodeSendInfoTriggerWords = formatTriggerWordsText(
+            item.trigger_words || []
+        );
+        appState.nodeSendInfoLoraNote = String(item.lora_note || "");
+        const modelStrength = parseNodeSendStrengthInput(
+            item.strength_model,
+            1
+        );
+        const clipStrength = parseNodeSendStrengthInput(
+            item.strength_clip,
+            modelStrength
+        );
+        appState.nodeSendInfoStrengthModel = String(modelStrength);
+        appState.nodeSendInfoStrengthClip = String(clipStrength);
+        appState.nodeSendInfoStrengthLinked = (
+            Math.abs(clipStrength - modelStrength) <= 1e-9
+        );
+        appState.nodeSendInfoStrengthLastEdited = "model";
+        appState.nodeSendInfoLoading = false;
+        appState.nodeSendInfoRequestId = "";
+        appState.nodeSendInfoError = "";
+        setNodeSendInfoNotice("", "");
+        syncNodeSendInfoPanel();
+    } catch (error) {
+        if (appState.nodeSendInfoRequestId !== requestId) {
+            return;
+        }
+        appState.nodeSendInfoLoading = false;
+        appState.nodeSendInfoRequestId = "";
+        appState.nodeSendInfoError = String(error?.message || "");
+        syncNodeSendInfoPanel();
+    }
+}
+
+async function requestNodeSendLoraInfoFromMetadata() {
+    if (!isLoraNodeSendDialog() || !appState.nodeSendDialogOpen) {
+        return;
+    }
+    const loraRef = normalizeLoraTriggerRef(appState.nodeSendMediaRef);
+    if (!loraRef) {
+        appState.nodeSendInfoError = t(
+            "xdatahub.ui.app.media.send_dialog_lora_missing_path",
+            "Missing lora path"
+        );
+        syncNodeSendInfoPanel();
+        return;
+    }
+    appState.nodeSendInfoMetaLoading = true;
+    appState.nodeSendInfoError = "";
+    setNodeSendInfoNotice("", "");
+    syncNodeSendInfoPanel();
+    try {
+        const data = await apiGet(
+            "/xz3r0/xdatahub/loras/trigger-words/from-metadata",
+            { ref: loraRef },
+            `lora-metadata-${loraRef}`
+        );
+        const words = formatTriggerWordsText(data?.trigger_words || []);
+        if (words.trim()) {
+            appState.nodeSendInfoTriggerWords = words;
+            setNodeSendInfoNotice(
+                t(
+                    "xdatahub.ui.app.media.send_dialog_metadata_import_ok",
+                    "已从 metadata.json 获取触发词"
+                ),
+                "success"
+            );
+        } else {
+            setNodeSendInfoNotice("", "");
+            showFloatingNotice(
+                t(
+                    "xdatahub.ui.app.media.send_dialog_metadata_import_empty",
+                    "没有从metadata.json发现触发词"
+                ),
+                { level: "info", duration: 2000, scope: "node-send" }
+            );
+        }
+        appState.nodeSendInfoMetaLoading = false;
+        syncNodeSendInfoPanel();
+    } catch (error) {
+        appState.nodeSendInfoMetaLoading = false;
+        appState.nodeSendInfoError = String(error?.message || "");
+        syncNodeSendInfoPanel();
+    }
+}
+
+async function saveNodeSendLoraInfo() {
+    if (!isLoraNodeSendDialog() || !appState.nodeSendDialogOpen) {
+        return false;
+    }
+    const loraRef = normalizeLoraTriggerRef(appState.nodeSendMediaRef);
+    if (!loraRef) {
+        appState.nodeSendInfoError = t(
+            "xdatahub.ui.app.media.send_dialog_lora_missing_path",
+            "Missing lora path"
+        );
+        syncNodeSendInfoPanel();
+        return false;
+    }
+    appState.nodeSendInfoSaving = true;
+    appState.nodeSendInfoError = "";
+    setNodeSendInfoNotice("", "");
+    syncNodeSendInfoPanel();
+    try {
+        const triggerWords = parseTriggerWordsText(appState.nodeSendInfoTriggerWords);
+        const modelStrength = parseNodeSendStrengthInput(
+            appState.nodeSendInfoStrengthModel,
+            1
+        );
+        const clipStrength = parseNodeSendStrengthInput(
+            appState.nodeSendInfoStrengthClip,
+            modelStrength
+        );
+        const payload = {
+            ref: loraRef,
+            title: appState.nodeSendTitle || loraRef,
+            trigger_words: triggerWords,
+            lora_note: String(appState.nodeSendInfoLoraNote || "").trim(),
+            strength_model: modelStrength,
+            strength_clip: clipStrength,
+            mtime: 0,
+            sha256: "",
+        };
+        const result = await apiPost(
+            "/xz3r0/xdatahub/loras/trigger-words",
+            payload
+        );
+        appState.nodeSendInfoTriggerWords = formatTriggerWordsText(
+            result?.item?.trigger_words || triggerWords
+        );
+        appState.nodeSendInfoLoraNote = String(
+            result?.item?.lora_note || appState.nodeSendInfoLoraNote || ""
+        );
+        appState.nodeSendInfoStrengthModel = String(
+            parseNodeSendStrengthInput(
+                result?.item?.strength_model,
+                modelStrength
+            )
+        );
+        appState.nodeSendInfoStrengthClip = String(
+            parseNodeSendStrengthInput(
+                result?.item?.strength_clip,
+                clipStrength
+            )
+        );
+        const nextModelStrength = parseNodeSendStrengthInput(
+            appState.nodeSendInfoStrengthModel,
+            modelStrength
+        );
+        const nextClipStrength = parseNodeSendStrengthInput(
+            appState.nodeSendInfoStrengthClip,
+            clipStrength
+        );
+        appState.nodeSendInfoStrengthLinked = (
+            Math.abs(nextClipStrength - nextModelStrength) <= 1e-9
+        );
+        appState.nodeSendInfoStrengthLastEdited = "model";
+        window.parent?.postMessage?.(
+            {
+                type: "xdatahub:lora_info_saved",
+                data: {
+                    ref: normalizeLoraTriggerRef(
+                        result?.item?.media_ref || loraRef
+                    ),
+                    trigger_words: result?.item?.trigger_words || triggerWords,
+                },
+            },
+            "*"
+        );
+        appState.nodeSendInfoSaving = false;
+        appState.nodeSendInfoError = "";
+        setNodeSendInfoNotice("", "");
+        showFloatingNotice(
+            t(
+                "xdatahub.ui.app.notice.lora_info_saved",
+                "Lora 信息已保存"
+            ),
+            { level: "success", scope: "node-send" }
+        );
+        syncNodeSendInfoPanel();
+        return true;
+    } catch (error) {
+        appState.nodeSendInfoSaving = false;
+        appState.nodeSendInfoError = String(error?.message || "");
+        syncNodeSendInfoPanel();
+        return false;
+    }
 }
 
 function renderNodeSendTargetHint(targetClass) {
@@ -3906,6 +4555,7 @@ function requestMediaGetNodes() {
             return;
         }
         appState.nodeSendRequestId = "";
+        appState.nodeSendRefreshNoticePending = false;
         appState.nodeSendNodesLoading = false;
         syncNodeSendLoading();
         if (!appState.nodeSendError) {
@@ -3999,26 +4649,61 @@ function openNodeSendDialog(
     mediaRef,
     title,
     mediaType = "",
-    textValue = ""
+    textValue = "",
+    thumbUrl = ""
 ) {
+    hideFloatingNotice("node-send");
     appState.nodeSendDialogOpen = true;
     appState.nodeSendMediaRef = String(mediaRef || "");
+    appState.nodeSendMediaThumbUrl = String(thumbUrl || "");
     appState.nodeSendTextValue = String(textValue || "");
     appState.nodeSendTitle = String(title || "");
     appState.nodeSendTargetClass = resolveNodeClassByMediaType(mediaType);
+    appState.nodeSendPanelMode = "send";
+    appState.nodeSendInfoLoading = false;
+    appState.nodeSendInfoSaving = false;
+    appState.nodeSendInfoMetaLoading = false;
+    appState.nodeSendInfoError = "";
+    setNodeSendInfoNotice("", "");
+    appState.nodeSendInfoRequestId = "";
+    appState.nodeSendInfoTriggerWords = "";
+    appState.nodeSendInfoLoraNote = "";
+    appState.nodeSendInfoStrengthModel = "1";
+    appState.nodeSendInfoStrengthClip = "1";
+    appState.nodeSendInfoStrengthLinked = true;
+    appState.nodeSendInfoStrengthLastEdited = "model";
     appState.nodeSendSending = false;
     appState.nodeSendActiveSource = "";
+    appState.nodeSendRefreshNoticePending = false;
     resetNodeSendQuickFeedbackState();
     resetNodeSendResultState();
     refreshNodeSendTargets();
+    if (isLoraNodeSendDialog()) {
+        void requestNodeSendLoraInfo();
+    }
 }
 
 function closeNodeSendDialog() {
+    hideFloatingNotice("node-send");
     appState.nodeSendDialogOpen = false;
     appState.nodeSendMediaRef = "";
+    appState.nodeSendMediaThumbUrl = "";
     appState.nodeSendTextValue = "";
     appState.nodeSendTitle = "";
     appState.nodeSendTargetClass = "XImageGet";
+    appState.nodeSendPanelMode = "send";
+    appState.nodeSendInfoLoading = false;
+    appState.nodeSendInfoSaving = false;
+    appState.nodeSendInfoMetaLoading = false;
+    appState.nodeSendInfoError = "";
+    setNodeSendInfoNotice("", "");
+    appState.nodeSendInfoRequestId = "";
+    appState.nodeSendInfoTriggerWords = "";
+    appState.nodeSendInfoLoraNote = "";
+    appState.nodeSendInfoStrengthModel = "1";
+    appState.nodeSendInfoStrengthClip = "1";
+    appState.nodeSendInfoStrengthLinked = true;
+    appState.nodeSendInfoStrengthLastEdited = "model";
     appState.nodeSendNodes = [];
     appState.nodeSendSelectedIds = [];
     appState.nodeSendSending = false;
@@ -4030,6 +4715,7 @@ function closeNodeSendDialog() {
     appState.nodeSendRequestId = "";
     appState.nodeSendValidateId = "";
     appState.nodeSendActiveSource = "";
+    appState.nodeSendRefreshNoticePending = false;
     appState.nodeSendQuickSlide = null;
     resetNodeSendQuickFeedbackState();
     resetNodeSendResultState();
@@ -4068,6 +4754,16 @@ function applyNodeSendNodesResponse(payload) {
         )
     ) {
         resetNodeSendQuickFeedbackState();
+    }
+    if (appState.nodeSendRefreshNoticePending) {
+        appState.nodeSendRefreshNoticePending = false;
+        showFloatingNotice(
+            t(
+                "xdatahub.ui.app.notice.node_list_refreshed",
+                "节点列表已刷新"
+            ),
+            { level: "success", scope: "node-send" }
+        );
     }
     refreshNodeSendDialogOverlay();
 }
@@ -4192,6 +4888,9 @@ function dbPurposeIconName(purpose) {
     if (text.includes("video")) {
         return "video";
     }
+    if (text.includes("lora")) {
+        return "wand-sparkles";
+    }
     if (text.includes("workflow")) {
         return "workflow";
     }
@@ -4218,6 +4917,9 @@ function localizeDbPurposeLabel(purpose) {
     }
     if (text === "favorites db") {
         return t("xdatahub.ui.app.db.purpose.favorites", "Favorites DB");
+    }
+    if (text === "lora db") {
+        return t("xdatahub.ui.app.db.purpose.lora", "Lora DB");
     }
     if (text === "other db") {
         return t("xdatahub.ui.app.db.purpose.other", "Other DB");
@@ -4282,6 +4984,13 @@ async function runDbListRefreshNow() {
     try {
         await fetchDbFileList();
         reconcileSelectedDbFiles();
+        showFloatingNotice(
+            t(
+                "xdatahub.ui.app.notice.db_list_refreshed",
+                "数据库列表已刷新"
+            ),
+            { level: "success", scope: "db-delete" }
+        );
     } catch (error) {
         appState.dbDeleteError = error.message || t(
             "xdatahub.ui.app.error.refresh_db_list_failed",
@@ -4437,6 +5146,19 @@ async function submitDbDelete() {
                 "Deleted {deleted} database files",
                 { deleted }
             );
+        showFloatingNotice(
+            failed
+                ? appState.dbDeleteResult
+                : t(
+                    "xdatahub.ui.app.notice.db_delete_done",
+                    "数据库文件删除完成"
+                ),
+            {
+                level: failed ? "info" : "success",
+                scope: "db-delete",
+                duration: failed ? 2600 : 2000,
+            }
+        );
         await fetchDbFileList();
         appState.selectedDbFiles = [];
         appState.confirmYes = "";
@@ -4493,6 +5215,19 @@ async function submitRecordsCleanup() {
                 "Cleared {touched} DB histories ({deleted} records)",
                 { touched, deleted }
             );
+        showFloatingNotice(
+            failed
+                ? appState.dbDeleteResult
+                : t(
+                    "xdatahub.ui.app.notice.db_clear_done",
+                    "历史记录清空完成"
+                ),
+            {
+                level: failed ? "info" : "success",
+                scope: "db-delete",
+                duration: failed ? 2600 : 2000,
+            }
+        );
         await fetchDbFileList();
         appState.selectedDbFiles = [];
         appState.confirmYes = "";
@@ -4652,11 +5387,14 @@ function renderTopActionBar() {
     const sidebarOpen = !!appState.filtersSidebarOpen;
     const readonly = appState.lockState.readonly;
     const isMedia = isMediaTab(tab);
+    const isIndexedMedia = isIndexedMediaTab(tab);
     const dataActionLocked = isDataActionLocked();
     const canRefresh = !dataActionLocked;
-    const canCleanInvalid = isMedia && !readonly && !dataActionLocked;
-    const canClearIndex = isMedia && !readonly && !dataActionLocked;
-    const canClearData = tab === "history" && !readonly && !dataActionLocked;
+    const canCleanInvalid =
+        isMedia && !readonly && !dataActionLocked;
+    const canClearIndex =
+        isMedia && !readonly && !dataActionLocked;
+    const canClearData = !readonly && !dataActionLocked;
     const historySortOrder = normalizeHistorySortOrder(
         state.historySortOrder
     );
@@ -4721,13 +5459,14 @@ function renderTopActionBar() {
         ? `
             ${actionBtn("btn-clean-invalid", "brush-cleaning", t("xdatahub.ui.app.text.h_e5f025789f", "Cleanup Invalid"), "btn", !canCleanInvalid)}
             ${actionBtn("btn-clear-index", "refresh-ccw", t("xdatahub.ui.app.action.rebuild_data", "Rebuild Data"), "btn danger", !canClearIndex)}
+            ${actionBtn("btn-clear-data", "trash-2", t("xdatahub.ui.app.action.data_process", "Data Process"), "btn danger", !canClearData)}
             ${actionBtn("btn-open-settings", "settings", t("xdatahub.ui.app.settings.title", "Settings"), "btn")}
         `
         : `
             ${actionBtn("btn-clear-data", "trash-2", t("xdatahub.ui.app.action.data_process", "Data Process"), "btn danger", !canClearData)}
             ${actionBtn("btn-open-settings", "settings", t("xdatahub.ui.app.settings.title", "Settings"), "btn")}
         `;
-    const topActionCount = isMedia ? 6 : 5;
+    const topActionCount = isMedia ? 7 : 5;
     return `
         <div class="history-list-header compact top-action-bar" style="--top-action-count:${topActionCount}">
             <div class="history-list-header-left">
@@ -5973,12 +6712,21 @@ function renderListRows() {
 
 function writeXDataHubDragPayload(
     dataTransfer,
-    { mediaRef = "", mediaType = "", textValue = "", title = "" } = {}
+    {
+        mediaRef = "",
+        mediaType = "",
+        textValue = "",
+        title = "",
+        loraRef = "",
+        thumbUrl = "",
+    } = {}
 ) {
     const normalizedMediaRef = String(mediaRef || "").trim();
     const normalizedMediaType = String(mediaType || "").trim().toLowerCase();
     const normalizedTextValue = String(textValue || "");
     const finalTitle = String(title || "").trim();
+    const normalizedLoraRef = String(loraRef || "").trim();
+    const normalizedThumbUrl = String(thumbUrl || "").trim();
     dataTransfer.effectAllowed = "copy";
     try {
         const payload = { source: "xdatahub" };
@@ -5999,6 +6747,14 @@ function writeXDataHubDragPayload(
                         ? "video"
                         : "image"
             );
+        } else if (
+            normalizedMediaType === "lora"
+            && normalizedLoraRef
+        ) {
+            payload.media_ref = normalizedLoraRef;
+            payload.media_type = "lora";
+            payload.thumb_url = normalizedThumbUrl;
+            payload.title = finalTitle || "lora";
         } else if (normalizedTextValue.trim()) {
             payload.text_value = normalizedTextValue;
             payload.media_type = "text";
@@ -6044,6 +6800,11 @@ function renderMediaGrid() {
     );
     const untitledText = t("xdatahub.ui.app.title.h_8f9548eaa5", "(Untitled)");
     const audioText = t("xdatahub.ui.app.text.h_461189f186", "Audio");
+    const loraText = t("xdatahub.ui.app.media.lora", "Lora");
+    const loraNoPreviewText = t(
+        "xdatahub.ui.app.media.lora_no_preview",
+        "No preview"
+    );
     const tapToPlayText = t("xdatahub.ui.app.media.tap_to_open_player", "Click to preview");
     const sendToNodeText = t(
         "xdatahub.ui.app.media.send_to_node",
@@ -6154,6 +6915,12 @@ function renderMediaGrid() {
             const audioLikelyUnsupported = mediaType === "audio"
                 ? isLikelyUnsupportedAudio(fileUrl)
                 : false;
+            const loraRef = mediaType === "lora"
+                ? String(item.extra?.media_ref || "")
+                : "";
+            const loraThumbUrl = mediaType === "lora"
+                ? String(item.extra?.thumb_url || "")
+                : "";
             const previewAttrs = (
                 mediaType === "image"
                 || mediaType === "audio"
@@ -6169,6 +6936,10 @@ function renderMediaGrid() {
                 && mediaRef
             )
                 ? ` draggable="true" data-drag-media="1" data-drag-media-type="${escapeAttr(mediaType)}" data-drag-title="${escapeAttr(item.title || "")}"`
+                : (
+                    mediaType === "lora" && loraRef
+                )
+                    ? ` draggable="true" data-drag-media="1" data-drag-media-type="lora" data-drag-title="${escapeAttr(item.title || "")}" data-drag-lora-ref="${escapeAttr(loraRef)}" data-drag-lora-thumb="${escapeAttr(loraThumbUrl)}"`
                 : "";
             const resolutionAttr = canShowResolutionChip
                 ? ` data-resolution-key="${escapeAttr(resolutionKey)}"`
@@ -6188,6 +6959,10 @@ function renderMediaGrid() {
                     : isVideoUnsupported
                     ? renderVideoUnsupportedHtml()
                     : renderVideoPlaceholderHtml();
+            } else if (mediaType === "lora") {
+                previewHtml = loraThumbUrl
+                    ? `<img src="${escapeAttr(loraThumbUrl)}" alt="${escapeAttr(item.title || loraText)}" draggable="false">`
+                    : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("wand-sparkles", loraText, "xdatahub-icon audio-icon-svg")}</div><div class="audio-card-label">${escapeHtml(loraNoPreviewText)}</div></div>`;
             } else {
                 previewHtml = audioLikelyUnsupported
                     ? renderAudioUnsupportedHtml()
@@ -6207,18 +6982,21 @@ function renderMediaGrid() {
             )
                 ? ' data-audio-unsupported="1"'
                 : "";
-            const sendDisabled = !mediaRef;
+            const nodeSendRef = mediaRef;
+            const sendDisabled = !nodeSendRef;
+            const mediaCardHoverTitle = item.title || untitledText;
             const sendBtnHtml = (
                 mediaType === "image"
                 || mediaType === "video"
                 || mediaType === "audio"
+                || mediaType === "lora"
             )
-                ? `<button class="media-send-btn ${sendDisabled ? "disabled" : ""}" type="button" data-media-send="1" data-media-send-ref="${escapeAttr(mediaRef)}" data-media-type="${escapeAttr(mediaType)}" data-media-title="${escapeAttr(item.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}" ${sendDisabled ? "disabled" : ""}>
+                ? `<button class="media-send-btn ${sendDisabled ? "disabled" : ""}" type="button" data-media-send="1" data-media-send-ref="${escapeAttr(nodeSendRef)}" data-media-send-thumb-url="${escapeAttr(loraThumbUrl)}" data-media-type="${escapeAttr(mediaType)}" data-media-title="${escapeAttr(item.title || "")}" title="${escapeAttr(sendToNodeText)}" aria-label="${escapeAttr(sendToNodeText)}" ${sendDisabled ? "disabled" : ""}>
                         ${iconSvg("send", sendToNodeText, "xdatahub-icon btn-icon")}
                     </button>`
                 : "";
             return `
-                <article class="media-card${cardActiveClass}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}"${resolutionAttr}${unsupportedAttr}${permissionDeniedAttr}${missingAttr}${audioUnsupportedAttr}>
+                <article class="media-card${cardActiveClass}" title="${escapeAttr(mediaCardHoverTitle)}" ${previewAttrs}${dragAttrs} data-media-item-id="${escapeAttr(mediaItemId)}" data-media-type="${escapeAttr(mediaType)}" data-media-send-ref="${escapeAttr(nodeSendRef)}" data-media-send-thumb-url="${escapeAttr(loraThumbUrl)}" data-media-send-title="${escapeAttr(item.title || "")}"${resolutionAttr}${unsupportedAttr}${permissionDeniedAttr}${missingAttr}${audioUnsupportedAttr}>
                     <div class="media-thumb">${previewHtml}${sendBtnHtml}</div>
                     ${
                         showMetaSection
@@ -6422,6 +7200,18 @@ function renderSettingsDialog() {
                         <span>${escapeHtml(t("xdatahub.ui.app.settings.audio_loop", "Audio loop"))}</span>
                     </label>
                 </div>
+                <div class="settings-section">
+                    <div class="settings-section-title">${iconSvg("database", t("xdatahub.ui.app.settings.data_storage", "Data Storage"), "xdatahub-icon chip-icon")} ${escapeHtml(t("xdatahub.ui.app.settings.data_storage", "Data Storage"))}</div>
+                    <label class="cleanup-all-toggle settings-toggle-row">
+                        <input
+                            type="checkbox"
+                            id="setting-store-lora-db-in-loras"
+                            ${draft.storeLoraDbInLoras ? "checked" : ""}
+                            ${appState.settingsSaving ? "disabled" : ""}
+                        >
+                        <span>${escapeHtml(t("xdatahub.ui.app.settings.store_lora_db_in_loras", "Store Lora database in models/loras"))}</span>
+                    </label>
+                </div>
                 ${
                     appState.settingsError
                         ? `<div class="status error">${escapeHtml(appState.settingsError)}</div>`
@@ -6445,7 +7235,7 @@ function renderSettingsDialog() {
 function renderMediaExplorerBar() {
     const state = currentTabState();
     ensureMediaNavState(state);
-    const rootName = normalizeMediaRoot(state.mediaRoot);
+    const rootName = normalizeMediaRoot(state.mediaRoot, appState.activeTab);
     const subdir = normalizeMediaSubdir(state.mediaSubdir);
     const fullPath = subdir ? `${rootName}/${subdir}` : rootName;
     const navBusy = !!appState.mediaNavBusy;
@@ -6459,6 +7249,28 @@ function renderMediaExplorerBar() {
     const outputTitle = t("xdatahub.ui.app.aria.h_259396db7f", "Switch to output folder");
     const backTitle = t("xdatahub.ui.app.aria.h_6133ea3cc6", "Back to previous path");
     const forwardTitle = t("xdatahub.ui.app.aria.h_742dbc9cfd", "Forward to next path");
+    if (appState.activeTab === "lora") {
+        const loraRootText = t(
+            "xdatahub.ui.app.media.lora_root",
+            "Loras Folder"
+        );
+        const loraRootTitle = t(
+            "xdatahub.ui.app.media.lora_root_title",
+            "Back to Loras root folder"
+        );
+        return `
+        <div class="media-explorer-bar">
+            <div class="media-root-switch">
+                <button class="btn active" id="btn-media-root-loras" type="button" title="${escapeAttr(loraRootTitle)}" aria-label="${escapeAttr(loraRootTitle)}">${iconSvg("wand-sparkles", loraRootText, "xdatahub-icon btn-icon")} ${escapeHtml(loraRootText)}</button>
+            </div>
+            <div class="media-path-line">
+                <button class="btn" id="btn-media-up" title="${escapeAttr(backTitle)}" aria-label="${escapeAttr(backTitle)}" ${canGoBack ? "" : "disabled"}>${iconSvg("arrow-left", backText, "xdatahub-icon btn-icon")} ${escapeHtml(backText)}</button>
+                <button class="btn" id="btn-media-forward" title="${escapeAttr(forwardTitle)}" aria-label="${escapeAttr(forwardTitle)}" ${canGoForward ? "" : "disabled"}>${iconSvg("arrow-right", forwardText, "xdatahub-icon btn-icon")} ${escapeHtml(forwardText)}</button>
+                <span class="media-path-text" title="${escapeAttr(fullPath)}">${escapeHtml(fullPath)}</span>
+            </div>
+        </div>
+    `;
+    }
     return `
         <div class="media-explorer-bar">
             <div class="media-root-switch">
@@ -6750,6 +7562,23 @@ function renderDetail() {
         return `
             <div id="preview-media" class="preview-box">
                 <video src="${escapeAttr(fileUrl)}" controls muted preload="metadata"></video>
+            </div>
+            <pre>${escapeHtml(JSON.stringify(item.extra || {}, null, 2))}</pre>
+        `;
+    }
+    if (mediaType === "lora") {
+        const loraText = t("xdatahub.ui.app.media.lora", "Lora");
+        const loraNoPreviewText = t(
+            "xdatahub.ui.app.media.lora_no_preview",
+            "No preview"
+        );
+        const thumbUrl = String(item?.extra?.thumb_url || "");
+        const previewHtml = thumbUrl
+            ? `<img src="${escapeAttr(thumbUrl)}" alt="${escapeAttr(item.title || loraText)}" draggable="false">`
+            : `<div class="audio-card-hint"><div class="audio-card-icon">${iconSvg("wand-sparkles", loraText, "xdatahub-icon audio-icon-svg")}</div><div class="audio-card-label">${escapeHtml(loraNoPreviewText)}</div></div>`;
+        return `
+            <div id="preview-media" class="preview-box">
+                ${previewHtml}
             </div>
             <pre>${escapeHtml(JSON.stringify(item.extra || {}, null, 2))}</pre>
         `;
@@ -7299,6 +8128,54 @@ function renderNodeSendDialog() {
     );
     const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
     const closeText = t("xdatahub.ui.shell.btn.close", "Close");
+    const sendTabText = t(
+        "xdatahub.ui.app.media.send_dialog_tab_send",
+        "发送到节点"
+    );
+    const editTabText = t(
+        "xdatahub.ui.app.media.send_dialog_tab_edit",
+        "编辑Lora信息"
+    );
+    const triggerWordsTitle = t(
+        "xdatahub.ui.app.media.send_dialog_trigger_words",
+        "触发词"
+    );
+    const triggerWordsPlaceholder = t(
+        "xdatahub.ui.app.media.send_dialog_trigger_words_placeholder",
+        "每行一个触发词"
+    );
+    const loraNoteTitle = t(
+        "xdatahub.ui.app.media.send_dialog_lora_note",
+        "Lora 备注"
+    );
+    const loraNotePlaceholder = t(
+        "xdatahub.ui.app.media.send_dialog_lora_note_placeholder",
+        "用于记录该 Lora 的说明或使用建议"
+    );
+    const saveInfoText = t(
+        "xdatahub.ui.app.media.send_dialog_save_info",
+        "保存编辑"
+    );
+    const refreshInfoText = t(
+        "xdatahub.ui.app.media.send_dialog_refresh_info",
+        "刷新"
+    );
+    const metadataInfoText = t(
+        "xdatahub.ui.app.media.send_dialog_metadata_import",
+        "从metadata.json导入"
+    );
+    const modelStrengthText = t(
+        "xdatahub.ui.app.media.send_dialog_strength_model",
+        "模型强度"
+    );
+    const clipStrengthText = t(
+        "xdatahub.ui.app.media.send_dialog_strength_clip",
+        "CLIP强度"
+    );
+    const loadingInfoText = t(
+        "xdatahub.ui.app.media.send_dialog_loading_info",
+        "正在加载信息..."
+    );
     const nodes = appState.nodeSendNodes || [];
     const hasNodes = nodes.length > 0;
     const sortDisabled = (
@@ -7307,10 +8184,23 @@ function renderNodeSendDialog() {
         || !!appState.nodeSendError
         || appState.nodeSendSending
     );
+    const isLoraDialog = isLoraNodeSendDialog();
+    const panelMode = isLoraDialog
+        ? (appState.nodeSendPanelMode === "edit" ? "edit" : "send")
+        : "send";
     const subtitle = appState.nodeSendTitle
-        ? `<div class="node-send-file-block">
-                <div class="node-send-subtitle" title="${escapeAttr(appState.nodeSendTitle)}">${escapeHtml(appState.nodeSendTitle)}</div>
-            </div>`
+        ? (
+            isLoraDialog
+                ? `<div class="node-send-file-block">
+                        <div class="node-send-file-head">
+                            ${appState.nodeSendMediaThumbUrl ? `<img class="node-send-file-thumb" src="${escapeAttr(appState.nodeSendMediaThumbUrl)}" alt="${escapeAttr(appState.nodeSendTitle)}" draggable="false">` : `<span class="node-send-file-thumb-fallback" aria-hidden="true">${iconSvg("wand-sparkles", "lora", "xdatahub-icon")}</span>`}
+                            <div class="node-send-subtitle" title="${escapeAttr(appState.nodeSendTitle)}">${escapeHtml(appState.nodeSendTitle)}</div>
+                        </div>
+                    </div>`
+                : `<div class="node-send-file-block">
+                        <div class="node-send-subtitle" title="${escapeAttr(appState.nodeSendTitle)}">${escapeHtml(appState.nodeSendTitle)}</div>
+                    </div>`
+        )
         : "";
     const errorText = appState.nodeSendError;
     let bodyHtml = "";
@@ -7432,15 +8322,89 @@ function renderNodeSendDialog() {
         || !selectedIds.size
         || appState.nodeSendSending
     );
-    return `
-        <div class="node-send-overlay" id="node-send-overlay">
-            <div class="node-send-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(titleText)}">
-                <div class="node-send-title">
-                    <div class="node-send-title-text">${iconSvg("send", titleText, "xdatahub-icon dialog-title-icon")} ${escapeHtml(titleText)}</div>
-                    <button class="btn node-send-title-close" id="node-send-close" title="${escapeAttr(closeText)}" aria-label="${escapeAttr(closeText)}" ${appState.nodeSendSending ? "disabled" : ""}>${iconSvg("x", closeText, "xdatahub-icon btn-icon")}</button>
-                </div>
-                ${subtitle}
-                <div class="node-send-body">${bodyHtml}</div>
+    const tabBarHtml = isLoraDialog
+        ? `
+            <div class="node-send-tabs" role="tablist" aria-label="${escapeAttr(titleText)}">
+                <button class="btn node-send-tab ${panelMode === "send" ? "active" : ""}" id="node-send-tab-send" type="button" role="tab" aria-selected="${panelMode === "send" ? "true" : "false"}" ${appState.nodeSendSending || appState.nodeSendInfoSaving ? "disabled" : ""}>${iconSvg("send", sendTabText, "xdatahub-icon btn-icon")} ${escapeHtml(sendTabText)}</button>
+                <button class="btn node-send-tab ${panelMode === "edit" ? "active" : ""}" id="node-send-tab-edit" type="button" role="tab" aria-selected="${panelMode === "edit" ? "true" : "false"}" ${appState.nodeSendSending || appState.nodeSendInfoSaving ? "disabled" : ""}>${iconSvg("tags", editTabText, "xdatahub-icon btn-icon")} ${escapeHtml(editTabText)}</button>
+            </div>
+        `
+        : "";
+    const editErrorText = String(appState.nodeSendInfoError || "");
+    const editNoticeText = String(appState.nodeSendInfoNotice || "");
+    const editNoticeLevel = String(appState.nodeSendInfoNoticeLevel || "");
+    const editNoteClass = editErrorText
+        ? " is-error"
+        : (editNoticeLevel === "success"
+            ? " is-success"
+            : (editNoticeLevel === "info" ? " is-info" : ""));
+    const editNoteText = appState.nodeSendInfoLoading
+        ? loadingInfoText
+        : (editErrorText || editNoticeText || t(
+            "xdatahub.ui.app.media.send_dialog_edit_note",
+            "提示：每行一个触发词，保存后将写入 loras_data.db"
+        ));
+    const editPanelHtml = `
+        <div class="node-send-info-panel">
+            <div class="node-send-info-tools">
+                <button class="btn" id="node-send-info-refresh" ${appState.nodeSendInfoLoading || appState.nodeSendInfoSaving || appState.nodeSendInfoMetaLoading ? "disabled" : ""}>${iconSvg("refresh-cw", refreshInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(refreshInfoText)}</button>
+                <button class="btn" id="node-send-info-save" ${appState.nodeSendInfoLoading || appState.nodeSendInfoSaving || appState.nodeSendInfoMetaLoading ? "disabled" : ""}>${
+                    appState.nodeSendInfoSaving
+                        ? `${iconSvg("refresh-cw", saveInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.media.send_dialog_saving_info", "保存中..."))}`
+                        : `${iconSvg("save", saveInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(saveInfoText)}`
+                }</button>
+            </div>
+            <label class="node-send-info-label" for="node-send-lora-note">${escapeHtml(loraNoteTitle)}</label>
+            <textarea class="node-send-info-note-input" id="node-send-lora-note" placeholder="${escapeAttr(loraNotePlaceholder)}" ${appState.nodeSendInfoSaving || appState.nodeSendInfoLoading ? "disabled" : ""}>${escapeHtml(appState.nodeSendInfoLoraNote || "")}</textarea>
+            <div class="node-send-info-strength-grid">
+                <label class="node-send-info-strength-field" for="node-send-strength-model">
+                    <span>${escapeHtml(modelStrengthText)}</span>
+                    <input
+                        class="node-send-info-strength-input"
+                        id="node-send-strength-model"
+                        type="number"
+                        inputmode="decimal"
+                        step="0.01"
+                        value="${escapeAttr(appState.nodeSendInfoStrengthModel || "1")}" ${appState.nodeSendInfoSaving || appState.nodeSendInfoLoading ? "disabled" : ""}
+                    >
+                </label>
+                <button
+                    class="node-send-info-strength-link${appState.nodeSendInfoStrengthLinked ? " is-linked" : ""}"
+                    id="node-send-info-link"
+                    type="button"
+                    title="${escapeAttr(appState.nodeSendInfoStrengthLinked ? t("xdatahub.ui.app.media.send_dialog_strength_unlink", "取消同步") : t("xdatahub.ui.app.media.send_dialog_strength_link", "同步强度"))}"
+                    ${appState.nodeSendInfoSaving || appState.nodeSendInfoLoading || appState.nodeSendInfoMetaLoading ? "disabled" : ""}
+                >${iconMask(appState.nodeSendInfoStrengthLinked ? "link-2" : "unlink-2", "", "node-send-info-link-icon")}</button>
+                <label class="node-send-info-strength-field" for="node-send-strength-clip">
+                    <span>${escapeHtml(clipStrengthText)}</span>
+                    <input
+                        class="node-send-info-strength-input"
+                        id="node-send-strength-clip"
+                        type="number"
+                        inputmode="decimal"
+                        step="0.01"
+                        value="${escapeAttr(appState.nodeSendInfoStrengthClip || "1")}" ${appState.nodeSendInfoSaving || appState.nodeSendInfoLoading || appState.nodeSendInfoStrengthLinked ? "disabled" : ""}
+                    >
+                </label>
+            </div>
+            <div class="node-send-trigger-head">
+                <label class="node-send-info-label" for="node-send-trigger-words">${escapeHtml(triggerWordsTitle)}</label>
+                <button class="btn node-send-sort-btn" id="node-send-info-metadata" ${appState.nodeSendInfoLoading || appState.nodeSendInfoSaving || appState.nodeSendInfoMetaLoading ? "disabled" : ""}>${
+                    appState.nodeSendInfoMetaLoading
+                        ? `${iconSvg("refresh-cw", metadataInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.media.send_dialog_fetching_metadata", "获取中..."))}`
+                        : `${iconSvg("folder-input", metadataInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(metadataInfoText)}`
+                }</button>
+            </div>
+            <textarea class="node-send-info-textarea" id="node-send-trigger-words" placeholder="${escapeAttr(triggerWordsPlaceholder)}" ${appState.nodeSendInfoSaving || appState.nodeSendInfoLoading ? "disabled" : ""}>${escapeHtml(appState.nodeSendInfoTriggerWords || "")}</textarea>
+            <div class="node-send-info-note${editNoteClass}">${escapeHtml(editNoteText)}</div>
+        </div>
+    `;
+    const bodyContentHtml = panelMode === "edit"
+        ? editPanelHtml
+        : bodyHtml;
+    const showSendActions = panelMode === "send";
+    const actionsHtml = showSendActions
+        ? `
                 <div class="node-send-actions">
                     <div class="node-send-actions-selected" title="${escapeAttr(selectedSummaryTitle)}">${escapeHtml(selectedSummaryText)}</div>
                     <button class="btn primary" id="node-send-confirm" title="${escapeAttr(appState.nodeSendSending ? sendingText : confirmSendText)}" aria-label="${escapeAttr(appState.nodeSendSending ? sendingText : confirmSendText)}" ${submitDisabled ? "disabled" : ""}>${
@@ -7450,6 +8414,30 @@ function renderNodeSendDialog() {
                     }</button>
                     <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}" ${appState.nodeSendSending ? "disabled" : ""}>${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
                 </div>
+        `
+        : `
+                <div class="node-send-actions">
+                    <div class="node-send-actions-selected" title="${escapeAttr(String(appState.nodeSendInfoError || "") || t("xdatahub.ui.app.common.ready", "Ready"))}">${escapeHtml(
+                        appState.nodeSendInfoSaving
+                            ? t("xdatahub.ui.app.media.send_dialog_saving_info", "保存中...")
+                            : appState.nodeSendInfoLoading
+                                ? loadingInfoText
+                                : (String(appState.nodeSendInfoError || "") || t("xdatahub.ui.app.common.ready", "Ready"))
+                    )}</div>
+                    <button class="btn" id="node-send-cancel" title="${escapeAttr(cancelText)}" aria-label="${escapeAttr(cancelText)}" ${appState.nodeSendInfoSaving ? "disabled" : ""}>${iconSvg("x", cancelText, "xdatahub-icon btn-icon")} ${escapeHtml(cancelText)}</button>
+                </div>
+        `;
+    return `
+        <div class="node-send-overlay" id="node-send-overlay">
+            <div class="node-send-dialog" role="dialog" aria-modal="true" aria-label="${escapeAttr(titleText)}">
+                <div class="node-send-title">
+                    <div class="node-send-title-text">${iconSvg("send", titleText, "xdatahub-icon dialog-title-icon")} ${escapeHtml(titleText)}</div>
+                    <button class="btn node-send-title-close" id="node-send-close" title="${escapeAttr(closeText)}" aria-label="${escapeAttr(closeText)}" ${appState.nodeSendSending || appState.nodeSendInfoSaving ? "disabled" : ""}>${iconSvg("x", closeText, "xdatahub-icon btn-icon")}</button>
+                </div>
+                ${tabBarHtml}
+                ${subtitle}
+                <div class="node-send-body">${bodyContentHtml}</div>
+                ${actionsHtml}
             </div>
         </div>
     `;
@@ -7463,6 +8451,7 @@ function renderOverlays() {
     syncOverlayById("settings-dialog-overlay", renderSettingsDialog());
     syncOverlayById("node-send-overlay", renderNodeSendDialog());
     syncOverlayById("locale-switcher-overlay", renderLocaleSwitcherOverlay());
+    syncOverlayById("floating-notice-overlay", renderFloatingNotice());
 }
 
 function syncLocaleSwitcherUi() {
@@ -7747,6 +8736,7 @@ function syncSettingsDialogControlsFromDraft() {
         "setting-media-card-size-preset",
         normalizeMediaCardSizePreset(draft.mediaCardSizePreset)
     );
+    syncCheckbox("setting-store-lora-db-in-loras", draft.storeLoraDbInLoras);
     syncCheckbox("setting-show-media-title", draft.showMediaTitle);
     syncCheckbox(
         "setting-show-media-chip-resolution",
@@ -7840,6 +8830,13 @@ async function handleDelegatedPrimaryButtonClick(event) {
             return true;
         }
         switchMediaRootDirectory("input");
+        return true;
+    }
+    case "btn-media-root-loras": {
+        if (!isMediaTab(appState.activeTab)) {
+            return true;
+        }
+        switchMediaRootDirectory("loras");
         return true;
     }
     case "btn-media-up": {
@@ -8108,6 +9105,9 @@ function handleDelegatedOverlayBackdropClick(event) {
         return true;
     }
     if (target.id === "node-send-overlay") {
+        if (appState.nodeSendInfoSaving) {
+            return true;
+        }
         closeNodeSendDialog();
         return true;
     }
@@ -8170,6 +9170,18 @@ async function handleDelegatedFavoriteSave(event) {
     }
     try {
         const result = await saveFavoriteItem(item);
+        showFloatingNotice(
+            result?.duplicate
+                ? t(
+                    "xdatahub.ui.app.notice.favorite_duplicate",
+                    "已在收藏中"
+                )
+                : t(
+                    "xdatahub.ui.app.notice.favorite_saved",
+                    "已保存到收藏"
+                ),
+            { level: "success", scope: "history-favorite" }
+        );
         setFavoriteButtonFeedback(
             button,
             result?.duplicate ? "duplicate" : "saved"
@@ -8224,6 +9236,35 @@ function handleDelegatedHistoryRowSelect(event) {
 }
 
 function handleDelegatedMediaCardClick(event) {
+    const loraCard = event.target?.closest?.(
+        ".media-card[data-media-type='lora']"
+    );
+    if (loraCard instanceof HTMLElement) {
+        if (!isMediaTab(appState.activeTab)) {
+            return false;
+        }
+        if (event.target?.closest?.(".media-folder-card")) {
+            return false;
+        }
+        if (event.target?.closest?.("[data-media-send='1']")) {
+            return false;
+        }
+        const mediaRef = String(
+            loraCard.getAttribute("data-media-send-ref") || ""
+        ).trim();
+        if (!mediaRef) {
+            return true;
+        }
+        const title = String(
+            loraCard.getAttribute("data-media-send-title") || ""
+        );
+        const thumbUrl = String(
+            loraCard.getAttribute("data-media-send-thumb-url") || ""
+        );
+        openNodeSendDialog(mediaRef, title, "lora", "", thumbUrl);
+        return true;
+    }
+
     const card = event.target?.closest?.(".media-card[data-preview-url]");
     if (!(card instanceof HTMLElement)) {
         return false;
@@ -8332,10 +9373,13 @@ async function handleDelegatedMediaSend(event) {
         return true;
     }
     const title = String(button.getAttribute("data-media-title") || "");
+    const thumbUrl = String(
+        button.getAttribute("data-media-send-thumb-url") || ""
+    );
     const mediaType = String(
         button.getAttribute("data-media-type") || ""
     ).toLowerCase();
-    openNodeSendDialog(mediaRef, title, mediaType);
+    openNodeSendDialog(mediaRef, title, mediaType, "", thumbUrl);
     flashButton(button);
     return true;
 }
@@ -8448,9 +9492,85 @@ function handleDelegatedNodeSend(event) {
     if (slideArea instanceof HTMLElement) {
         return true;
     }
+    const tabSendBtn = event.target?.closest?.("#node-send-tab-send");
+    if (tabSendBtn instanceof HTMLElement) {
+        if (!isLoraNodeSendDialog() || appState.nodeSendInfoSaving) {
+            return true;
+        }
+        appState.nodeSendPanelMode = "send";
+        refreshNodeSendDialogOverlay();
+        return true;
+    }
+    const tabEditBtn = event.target?.closest?.("#node-send-tab-edit");
+    if (tabEditBtn instanceof HTMLElement) {
+        if (!isLoraNodeSendDialog() || appState.nodeSendInfoSaving) {
+            return true;
+        }
+        appState.nodeSendPanelMode = "edit";
+        refreshNodeSendDialogOverlay();
+        if (!appState.nodeSendInfoTriggerWords.trim()) {
+            void requestNodeSendLoraInfo();
+        }
+        return true;
+    }
+    const infoRefreshBtn = event.target?.closest?.("#node-send-info-refresh");
+    if (infoRefreshBtn instanceof HTMLElement) {
+        if (
+            !isLoraNodeSendDialog()
+            || appState.nodeSendInfoSaving
+            || appState.nodeSendInfoMetaLoading
+        ) {
+            return true;
+        }
+        void requestNodeSendLoraInfo();
+        return true;
+    }
+    const infoLinkBtn = event.target?.closest?.("#node-send-info-link");
+    if (infoLinkBtn instanceof HTMLElement) {
+        if (!isLoraNodeSendDialog() || appState.nodeSendInfoSaving) {
+            return true;
+        }
+        appState.nodeSendInfoStrengthLinked =
+            !appState.nodeSendInfoStrengthLinked;
+        if (appState.nodeSendInfoStrengthLinked) {
+            if (appState.nodeSendInfoStrengthLastEdited === "clip") {
+                appState.nodeSendInfoStrengthModel =
+                    appState.nodeSendInfoStrengthClip;
+            } else {
+                appState.nodeSendInfoStrengthClip =
+                    appState.nodeSendInfoStrengthModel;
+            }
+        }
+        syncNodeSendInfoPanel();
+        return true;
+    }
+    const infoMetadataBtn = event.target?.closest?.("#node-send-info-metadata");
+    if (infoMetadataBtn instanceof HTMLElement) {
+        if (
+            !isLoraNodeSendDialog()
+            || appState.nodeSendInfoSaving
+            || appState.nodeSendInfoMetaLoading
+        ) {
+            return true;
+        }
+        void requestNodeSendLoraInfoFromMetadata();
+        return true;
+    }
+    const infoSaveBtn = event.target?.closest?.("#node-send-info-save");
+    if (infoSaveBtn instanceof HTMLElement) {
+        if (
+            !isLoraNodeSendDialog()
+            || appState.nodeSendInfoLoading
+            || appState.nodeSendInfoMetaLoading
+        ) {
+            return true;
+        }
+        void saveNodeSendLoraInfo();
+        return true;
+    }
     const closeBtn = event.target?.closest?.("#node-send-close");
     if (closeBtn instanceof HTMLElement) {
-        if (appState.nodeSendSending) {
+        if (appState.nodeSendSending || appState.nodeSendInfoSaving) {
             return true;
         }
         closeNodeSendDialog();
@@ -8461,12 +9581,13 @@ function handleDelegatedNodeSend(event) {
         if (appState.nodeSendLoading || appState.nodeSendSending) {
             return true;
         }
+        appState.nodeSendRefreshNoticePending = true;
         refreshNodeSendTargets();
         return true;
     }
     const cancelBtn = event.target?.closest?.("#node-send-cancel");
     if (cancelBtn instanceof HTMLElement) {
-        if (appState.nodeSendSending) {
+        if (appState.nodeSendSending || appState.nodeSendInfoSaving) {
             return true;
         }
         closeNodeSendDialog();
@@ -8578,6 +9699,8 @@ function handleDelegatedMediaDragstart(event) {
         writeOk = writeXDataHubDragPayload(dataTransfer, {
             mediaRef: dragSource.getAttribute("data-media-ref") || "",
             mediaType: dragSource.getAttribute("data-drag-media-type") || "",
+            loraRef: dragSource.getAttribute("data-drag-lora-ref") || "",
+            thumbUrl: dragSource.getAttribute("data-drag-lora-thumb") || "",
             title,
         });
     }
@@ -8637,7 +9760,8 @@ async function handleDelegatedDbCriticalMarkChange(event) {
 function handleDelegatedGlobalInput(event) {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)
-        && !(target instanceof HTMLSelectElement)) {
+        && !(target instanceof HTMLSelectElement)
+        && !(target instanceof HTMLTextAreaElement)) {
         return false;
     }
     switch (target.id) {
@@ -8700,6 +9824,56 @@ function handleDelegatedGlobalInput(event) {
             void updateSettings({
                 nodeSendCloseAfterSend: !!target.checked,
             });
+        }
+        return true;
+    case "node-send-trigger-words":
+        appState.nodeSendInfoTriggerWords = String(target.value || "");
+        appState.nodeSendInfoError = "";
+        if (appState.nodeSendInfoNoticeLevel !== "") {
+            setNodeSendInfoNotice("", "");
+        }
+        return true;
+    case "node-send-lora-note":
+        appState.nodeSendInfoLoraNote = String(target.value || "");
+        appState.nodeSendInfoError = "";
+        if (appState.nodeSendInfoNoticeLevel !== "") {
+            setNodeSendInfoNotice("", "");
+        }
+        return true;
+    case "node-send-strength-model":
+        appState.nodeSendInfoStrengthLastEdited = "model";
+        appState.nodeSendInfoStrengthModel = String(target.value || "");
+        if (appState.nodeSendInfoStrengthLinked) {
+            appState.nodeSendInfoStrengthClip =
+                appState.nodeSendInfoStrengthModel;
+            const clipInput = document.getElementById(
+                "node-send-strength-clip"
+            );
+            if (clipInput instanceof HTMLInputElement) {
+                clipInput.value = appState.nodeSendInfoStrengthModel;
+            }
+        }
+        appState.nodeSendInfoError = "";
+        if (appState.nodeSendInfoNoticeLevel !== "") {
+            setNodeSendInfoNotice("", "");
+        }
+        return true;
+    case "node-send-strength-clip":
+        appState.nodeSendInfoStrengthLastEdited = "clip";
+        appState.nodeSendInfoStrengthClip = String(target.value || "");
+        if (appState.nodeSendInfoStrengthLinked) {
+            appState.nodeSendInfoStrengthModel =
+                appState.nodeSendInfoStrengthClip;
+            const modelInput = document.getElementById(
+                "node-send-strength-model"
+            );
+            if (modelInput instanceof HTMLInputElement) {
+                modelInput.value = appState.nodeSendInfoStrengthClip;
+            }
+        }
+        appState.nodeSendInfoError = "";
+        if (appState.nodeSendInfoNoticeLevel !== "") {
+            setNodeSendInfoNotice("", "");
         }
         return true;
     default:
@@ -8802,6 +9976,10 @@ function handleDelegatedGlobalChange(event) {
     case "setting-show-media-title":
         ensureSettingsDraftState();
         appState.settingsDraft.showMediaTitle = !!target.checked;
+        return true;
+    case "setting-store-lora-db-in-loras":
+        ensureSettingsDraftState();
+        appState.settingsDraft.storeLoraDbInLoras = !!target.checked;
         return true;
     case "setting-show-media-chip-resolution":
         ensureSettingsDraftState();

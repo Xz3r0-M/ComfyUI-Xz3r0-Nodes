@@ -105,6 +105,7 @@ const UI_KEYS = {
     tabImage: "xdatahub.ui.shell.tab.image",
     tabVideo: "xdatahub.ui.shell.tab.video",
     tabAudio: "xdatahub.ui.shell.tab.audio",
+    tabLora: "xdatahub.ui.shell.tab.lora",
 };
 
 const HOST_TABS = [
@@ -112,8 +113,9 @@ const HOST_TABS = [
     { id: "image", icon: "image", textKey: UI_KEYS.tabImage },
     { id: "video", icon: "video", textKey: UI_KEYS.tabVideo },
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
+    { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260327-301";
+const XDATAHUB_ASSET_VER = "20260330-334";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -1619,8 +1621,13 @@ const XDataHub = {
             if (hostTabs.clientWidth <= 0) {
                 return;
             }
-            // XDataHub 仅 4 个主标签，强制保持文字模式，避免快速缩放时误入图标模式。
-            windowEl.classList.remove("compact-tabs");
+            let requiredWidth = 20;
+            hostTabButtons.forEach((button) => {
+                requiredWidth += Math.max(button.scrollWidth, 84);
+            });
+            requiredWidth += Math.max(0, HOST_TABS.length - 1) * 6;
+            const shouldCompact = requiredWidth > hostTabs.clientWidth;
+            windowEl.classList.toggle("compact-tabs", shouldCompact);
             requestAnimationFrame(updateHostTabIndicator);
         };
         const scheduleVisibleLayoutSync = () => {

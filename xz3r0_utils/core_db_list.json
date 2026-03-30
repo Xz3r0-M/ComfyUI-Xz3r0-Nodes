@@ -1,6 +1,7 @@
 {
   "critical_databases": [
     "media_index.db",
+    "loras_data.db",
     "seed_data.db",
     "string_data.db",
     "user_favorites.db"

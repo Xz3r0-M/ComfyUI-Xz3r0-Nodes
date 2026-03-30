@@ -52,14 +52,10 @@ class XDataSave(io.ComfyNode):
         "Custom filename is required when save_type is Custom"
     )
     INVALID_XDATA_ERROR = "Invalid xdata input"
-    EMPTY_PRIMARY_CONTENT_SKIP_MSG = (
-        "Save skipped: XData 输入端口的内容为空"
-    )
+    EMPTY_PRIMARY_CONTENT_SKIP_MSG = "Save skipped: XData 输入端口的内容为空"
     HEADER_TOO_LONG_ERROR = "Header length exceeds 120 characters limit"
     RECORD_TOO_LARGE_ERROR = "Record size exceeds 64KB limit"
-    DB_NAME_TOO_LONG_ERROR = (
-        "Custom filename exceeds 64 characters limit"
-    )
+    DB_NAME_TOO_LONG_ERROR = "Custom filename exceeds 64 characters limit"
     RESERVED_DB_NAME_ERROR = "Custom filename conflicts with core db list"
     SQLITE_CONNECT_TIMEOUT_SECONDS = 5.0
     SQLITE_BUSY_TIMEOUT_MS = 5000
@@ -252,8 +248,7 @@ class XDataSave(io.ComfyNode):
         if len(safe_stem) > cls.MAX_DB_STEM_CHARS:
             raise ValueError(cls.DB_NAME_TOO_LONG_ERROR)
         critical_names = {
-            Path(name).stem.lower()
-            for name in get_critical_db_names()
+            Path(name).stem.lower() for name in get_critical_db_names()
         }
         if safe_stem.lower() in critical_names:
             raise ValueError(cls.RESERVED_DB_NAME_ERROR)
@@ -286,18 +281,12 @@ class XDataSave(io.ComfyNode):
             source = str(xdata_input.get("source") or "unknown")
             if "payload" in xdata_input:
                 payload: Any = xdata_input.get("payload")
-            elif (
-                data_type_normalized == "seed"
-                and "seed" in xdata_input
-            ):
+            elif data_type_normalized == "seed" and "seed" in xdata_input:
                 payload = {
                     "seed": xdata_input.get("seed"),
                     "digits": xdata_input.get("digits"),
                 }
-            elif (
-                data_type_normalized == "string"
-                and "text" in xdata_input
-            ):
+            elif data_type_normalized == "string" and "text" in xdata_input:
                 payload = {
                     "text": xdata_input.get("text"),
                 }
@@ -404,15 +393,20 @@ class XDataSave(io.ComfyNode):
             with lock:
                 for attempt in range(cls.SQLITE_LOCK_RETRY_COUNT + 1):
                     try:
-                        with sqlite3.connect(
+                        conn = sqlite3.connect(
                             path,
                             timeout=cls.SQLITE_CONNECT_TIMEOUT_SECONDS,
-                        ) as conn:
+                        )
+                        try:
                             cls._configure_connection(conn)
                             cls._init_schema(conn)
                             cls._insert_record(conn, record)
                             cls._trim_records(conn)
-                            return cls._count_records(conn)
+                            count = cls._count_records(conn)
+                            conn.commit()
+                            return count
+                        finally:
+                            conn.close()
                     except sqlite3.OperationalError as exc:
                         if not cls._is_db_locked_error(exc):
                             raise
