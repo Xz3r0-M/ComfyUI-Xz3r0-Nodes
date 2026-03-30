@@ -82,10 +82,9 @@ pip install -r requirements.txt
 ---
 
 > [!IMPORTANT]
-> 👇下方链接可以点击查看功能详细说明
->
-> [🎁 节点 和 🧩 网页扩展](wiki.md)
-
+> ## 👇 点击查看功能详细说明
+> - [🎁 节点](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/1-%E2%80%90-Nodes)
+> - [🧩 网页扩展](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/2-%E2%80%90-Extension)
 ---
 
 ## 📞 项目链接
