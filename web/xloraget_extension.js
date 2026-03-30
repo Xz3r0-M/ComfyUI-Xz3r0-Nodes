@@ -109,8 +109,13 @@ function clamp(v, min, max) {
 }
 
 function getNodeAccentIndex(nodeId) {
-    const id = Number(nodeId);
-    if (!Number.isFinite(id) || id < 0 || NODE_ACCENT_PALETTE.length < 1) {
+    if (NODE_ACCENT_PALETTE.length < 1) {
+        return -1;
+    }
+    const id = parseInt(
+        String(nodeId ?? "").split(":").pop() || "0", 10
+    );
+    if (!Number.isFinite(id) || id < 0) {
         return -1;
     }
     return id % NODE_ACCENT_PALETTE.length;
@@ -124,26 +129,111 @@ function getNodeAccentColor(nodeId) {
     return NODE_ACCENT_PALETTE[index] || NODE_ACCENT_PALETTE[0] || "#0066FF";
 }
 
+function buildScopedNodeId(pathIds, nodeId) {
+    const base = String(nodeId ?? "").trim();
+    if (!base) {
+        return "";
+    }
+    if (!Array.isArray(pathIds) || pathIds.length < 1) {
+        return base;
+    }
+    return `${pathIds.join(":")}:${base}`;
+}
+
+function forEachNodeInGraphTree(rootGraph, visitor) {
+    if (!rootGraph || typeof visitor !== "function") {
+        return;
+    }
+    const visited = new Set();
+
+    const walk = (graph, pathIds = []) => {
+        if (!graph || typeof graph !== "object" || visited.has(graph)) {
+            return;
+        }
+        visited.add(graph);
+        const nodes = Array.isArray(graph._nodes) ? graph._nodes : [];
+        for (const node of nodes) {
+            const nodeId = String(node?.id ?? "").trim();
+            if (!nodeId) {
+                continue;
+            }
+            const scopedId = buildScopedNodeId(pathIds, nodeId);
+            visitor(node, scopedId);
+
+            const subgraph = node?.subgraph;
+            if (subgraph && typeof subgraph === "object") {
+                walk(subgraph, [...pathIds, nodeId]);
+            }
+        }
+    };
+
+    walk(rootGraph, []);
+}
+
+function getScopedNodeId(node) {
+    if (!node) {
+        return "";
+    }
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return "";
+    }
+    let scopedId = "";
+    forEachNodeInGraphTree(rootGraph, (graphNode, graphScopedId) => {
+        if (!scopedId && graphNode === node) {
+            scopedId = graphScopedId;
+        }
+    });
+    return scopedId;
+}
+
 function getNodeById(nodeId) {
-    const id = Number(nodeId);
-    if (!Number.isFinite(id)) {
+    const id = String(nodeId ?? "").trim();
+    if (!id) {
         return null;
     }
-    return (app.graph?._nodes || []).find(
-        (node) => Number(node?.id) === id
-    ) || null;
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return null;
+    }
+    let scopedMatch = null;
+    let plainMatch = null;
+    forEachNodeInGraphTree(rootGraph, (node, scopedId) => {
+        if (scopedMatch) {
+            return;
+        }
+        if (scopedId === id) {
+            scopedMatch = node;
+            return;
+        }
+        if (
+            !id.includes(":")
+            && !plainMatch
+            && String(node?.id ?? "").trim() === id
+        ) {
+            plainMatch = node;
+        }
+    });
+    return scopedMatch || plainMatch;
 }
 
 function collectXLoraNodes() {
-    const nodes = app.graph?._nodes || [];
-    return nodes
-        .filter((node) => String(node?.comfyClass || "") === TARGET_NODE_CLASS)
-        .map((node) => ({
-            id: Number(node.id),
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return [];
+    }
+    const items = [];
+    forEachNodeInGraphTree(rootGraph, (node, scopedId) => {
+        if (String(node?.comfyClass || "") !== TARGET_NODE_CLASS) {
+            return;
+        }
+        items.push({
+            id: scopedId,
             title: String(node.title || TARGET_NODE_CLASS),
-            accent_index: getNodeAccentIndex(node.id),
-        }))
-        .filter((item) => Number.isFinite(item.id));
+            accent_index: getNodeAccentIndex(scopedId),
+        });
+    });
+    return items.filter((item) => item.id !== "");
 }
 
 function extractLoraFilename(loraPath) {
@@ -1087,10 +1177,11 @@ function buildPanel() {
 }
 
 function formatNodeSerial(nodeId) {
-    if (!Number.isFinite(Number(nodeId))) {
+    const s = String(nodeId ?? "").trim();
+    if (!s) {
         return "--";
     }
-    return String(nodeId);
+    return s;
 }
 
 function applyNodeBadge(node) {
@@ -1098,12 +1189,12 @@ function applyNodeBadge(node) {
     if (!panel) {
         return;
     }
-    const nodeId = Number(node.id);
-    if (!Number.isFinite(nodeId) || nodeId < 0) {
+    const scopedId = getScopedNodeId(node);
+    if (!scopedId) {
         return;
     }
-    const serial = formatNodeSerial(node.id);
-    const accentColor = getNodeAccentColor(node.id);
+    const serial = formatNodeSerial(scopedId);
+    const accentColor = getNodeAccentColor(scopedId);
     panel.panel.style.setProperty("--xlora-accent", accentColor);
     if (panel.badgeChip) {
         panel.badgeChip.textContent = serial;
@@ -1111,15 +1202,14 @@ function applyNodeBadge(node) {
     if (panel.badge) {
         panel.badge.title = `${TARGET_NODE_CLASS} #${serial}`;
     }
-    node.__xlora_badge_node_id = nodeId;
+    node.__xlora_badge_node_id = scopedId;
 }
 
 function scheduleBadgeSync(node) {
     if (!node || !node.__xlora_panel) {
         return;
     }
-    const nodeId = Number(node.id);
-    if (Number.isFinite(nodeId) && nodeId >= 0) {
+    if (getScopedNodeId(node)) {
         applyNodeBadge(node);
         return;
     }
@@ -1129,7 +1219,7 @@ function scheduleBadgeSync(node) {
     node.__xlora_badge_retry_timer = window.setTimeout(() => {
         node.__xlora_badge_retry_timer = 0;
         applyNodeBadge(node);
-        if (!Number.isFinite(Number(node.id)) || Number(node.id) < 0) {
+        if (!getScopedNodeId(node)) {
             scheduleBadgeSync(node);
         }
     }, 80);
@@ -1139,12 +1229,12 @@ function refreshNodeBadge(node) {
     if (!node || !node.__xlora_panel) {
         return;
     }
-    const nodeId = Number(node.id);
-    if (!Number.isFinite(nodeId) || nodeId < 0) {
+    const scopedId = getScopedNodeId(node);
+    if (!scopedId) {
         scheduleBadgeSync(node);
         return;
     }
-    if (node.__xlora_badge_node_id !== nodeId) {
+    if (node.__xlora_badge_node_id !== scopedId) {
         applyNodeBadge(node);
     }
 }
@@ -2090,7 +2180,7 @@ function initXLoraGetExtension() {
                     return;
                 }
                 const requestId = String(data.request_id || "");
-                const nodeId = Number(data.node_id);
+                const nodeId = String(data.node_id ?? "").trim();
                 const ack = (ok, error = "") => {
                     if (!requestId) {
                         return;
@@ -2108,7 +2198,7 @@ function initXLoraGetExtension() {
                         "*"
                     );
                 };
-                if (!Number.isFinite(nodeId)) {
+                if (!nodeId) {
                     ack(false, "Invalid node id");
                     return;
                 }

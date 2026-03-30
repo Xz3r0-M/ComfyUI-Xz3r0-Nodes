@@ -3484,7 +3484,7 @@ function applyNodeSendAckResponse(payload) {
     pending.resolve({
         ok: payload?.ok !== false,
         error: String(payload?.error || ""),
-        nodeId: Number(payload?.node_id),
+        nodeId: String(payload?.node_id ?? ""),
     });
 }
 
@@ -3538,8 +3538,8 @@ function setNodeSendQuickFeedback(nodeId, state, options = {}) {
 
 async function submitNodeSend(nodeIds, options = {}) {
     const selectedIds = (nodeIds || [])
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id));
+        .map((id) => String(id))
+        .filter((id) => id !== "");
     const source = options.source === "quick-slide"
         ? "quick-slide"
         : "batch";
@@ -3820,8 +3820,10 @@ function beginNodeSendQuickSlide(event, slider) {
     ) {
         return false;
     }
-    const nodeId = Number(slider.getAttribute("data-node-send-slide-id") || "");
-    if (!Number.isFinite(nodeId)) {
+    const nodeId = String(
+        slider.getAttribute("data-node-send-slide-id") || ""
+    ).trim();
+    if (!nodeId) {
         return false;
     }
     if (getNodeSendQuickFeedback(nodeId)) {
@@ -4744,7 +4746,7 @@ function applyNodeSendNodesResponse(payload) {
         ? payload.nodes
         : [];
     appState.nodeSendNodes = nodes.filter(
-        (item) => Number.isFinite(Number(item?.id))
+        (item) => String(item?.id ?? "").trim() !== ""
     );
     const quickFeedbackNodeId = String(appState.nodeSendQuickFeedback.nodeId || "");
     if (
@@ -8278,9 +8280,7 @@ function renderNodeSendDialog() {
                 : String(b?.id || "").localeCompare(String(a?.id || ""));
         });
         const rows = sortedNodes.map((item) => {
-            const nodeId = Number.isFinite(Number(item.id))
-                ? String(item.id)
-                : "--";
+            const nodeId = String(item?.id ?? "").trim() || "--";
             const nodeTitle = String(item.title || targetClass);
             const label = `${nodeTitle} #${nodeId}`;
             const accent = resolveNodeAccentColor(item);
@@ -9596,8 +9596,8 @@ function handleDelegatedNodeSend(event) {
     const confirmBtn = event.target?.closest?.("#node-send-confirm");
     if (confirmBtn instanceof HTMLElement) {
         const selectedIds = (appState.nodeSendSelectedIds || [])
-            .map((id) => Number(id))
-            .filter((id) => Number.isFinite(id));
+            .map((id) => String(id))
+            .filter((id) => id !== "");
         submitNodeSend(selectedIds);
         return true;
     }
@@ -9614,9 +9614,8 @@ function handleDelegatedNodeSend(event) {
     }
     const nodeIdText = String(
         option.getAttribute("data-node-send-id") || ""
-    );
-    const nodeId = Number(nodeIdText);
-    if (!Number.isFinite(nodeId)) {
+    ).trim();
+    if (!nodeIdText) {
         return true;
     }
     const selected = new Set(

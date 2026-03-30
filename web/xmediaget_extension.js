@@ -789,6 +789,42 @@ function getNodeMinSize(node) {
     return [DEFAULT_MIN_NODE_WIDTH, DEFAULT_MIN_NODE_HEIGHT];
 }
 
+function readPanelHorizontalPadding(panelEl) {
+    if (!(panelEl instanceof HTMLElement)) {
+        return 0;
+    }
+    const styles = window.getComputedStyle(panelEl);
+    const left = Number.parseFloat(styles.paddingLeft || "0");
+    const right = Number.parseFloat(styles.paddingRight || "0");
+    const total = left + right;
+    return Number.isFinite(total) ? total : 0;
+}
+
+function resolveAdaptiveMinWidth(node, baseMinWidth) {
+    const fallbackMin = Number.isFinite(baseMinWidth)
+        ? baseMinWidth
+        : DEFAULT_MIN_NODE_WIDTH;
+    const panelInfo = node?.__ximageget_panel;
+    const meta = panelInfo?.meta;
+    const scopedId = getScopedNodeId(node);
+    const idText = scopedId
+        || String(panelInfo?.badgeChip?.textContent || "").trim();
+    const extraByIdLength = idText.length > 5
+        ? (idText.length - 5) * 8
+        : 0;
+    let domRequired = 0;
+    if (meta instanceof HTMLElement) {
+        const measured = Math.ceil(meta.scrollWidth || 0);
+        domRequired = Number.isFinite(measured) ? measured : 0;
+    }
+    const panelPadding = readPanelHorizontalPadding(panelInfo?.panel);
+    const layoutSlack = 12;
+    const requiredByDom = Math.ceil(domRequired + panelPadding + layoutSlack);
+    const requiredById = Math.ceil(fallbackMin + extraByIdLength);
+    const required = Math.max(requiredByDom, requiredById);
+    return Math.max(fallbackMin, required);
+}
+
 function syncTextPreviewEmptyState(panelInfo, textValue = "") {
     if (panelInfo?.mediaKind !== "text" || !panelInfo.preview) {
         return;
@@ -941,23 +977,24 @@ function setPreview(panelInfo, data) {
 }
 
 function formatNodeSerial(nodeId) {
-    if (!Number.isFinite(Number(nodeId))) {
+    const s = String(nodeId ?? "").trim();
+    if (!s) {
         return "--";
     }
-    return String(nodeId);
+    return s;
 }
 
 function applyNodeBadge(panelInfo, node) {
     if (!panelInfo || !node) {
         return;
     }
-    const nodeId = Number(node.id);
-    if (!Number.isFinite(nodeId) || nodeId < 0) {
+    const scopedId = getScopedNodeId(node);
+    if (!scopedId) {
         return;
     }
-    const serial = formatNodeSerial(node.id);
-    const accentIndex = getNodeAccentIndex(node.id);
-    const accentColor = getNodeAccentColor(node.id);
+    const serial = formatNodeSerial(scopedId);
+    const accentIndex = getNodeAccentIndex(scopedId);
+    const accentColor = getNodeAccentColor(scopedId);
     panelInfo.panel.style.setProperty("--ximageget-accent", accentColor);
     if (panelInfo.badgeChip) {
         panelInfo.badgeChip.textContent = serial;
@@ -969,15 +1006,16 @@ function applyNodeBadge(panelInfo, node) {
         );
     }
     node.__ximageget_accent_index = accentIndex >= 0 ? accentIndex : null;
-    node.__ximageget_badge_node_id = nodeId;
+    node.__ximageget_badge_node_id = scopedId;
+    // Long scoped IDs can expand header content; keep node width adaptive.
+    ensureNodeMinSize(node);
 }
 
 function scheduleBadgeSync(node, panelInfo) {
     if (!node || !panelInfo) {
         return;
     }
-    const nodeId = Number(node.id);
-    if (Number.isFinite(nodeId) && nodeId >= 0) {
+    if (getScopedNodeId(node)) {
         applyNodeBadge(panelInfo, node);
         return;
     }
@@ -987,7 +1025,7 @@ function scheduleBadgeSync(node, panelInfo) {
     node.__ximageget_badge_retry_timer = window.setTimeout(() => {
         node.__ximageget_badge_retry_timer = 0;
         applyNodeBadge(panelInfo, node);
-        if (!Number.isFinite(Number(node.id)) || Number(node.id) < 0) {
+        if (!getScopedNodeId(node)) {
             scheduleBadgeSync(node, panelInfo);
         }
     }, 80);
@@ -998,12 +1036,12 @@ function refreshNodeBadge(node) {
         return;
     }
     const panelInfo = node.__ximageget_panel;
-    const nodeId = Number(node.id);
-    if (!Number.isFinite(nodeId) || nodeId < 0) {
+    const scopedId = getScopedNodeId(node);
+    if (!scopedId) {
         scheduleBadgeSync(node, panelInfo);
         return;
     }
-    if (node.__ximageget_badge_node_id !== nodeId) {
+    if (node.__ximageget_badge_node_id !== scopedId) {
         applyNodeBadge(panelInfo, node);
     }
 }
@@ -1663,7 +1701,8 @@ function ensureNodeMinSize(node) {
     if (!node) {
         return;
     }
-    const [minWidth, minHeight] = getNodeMinSize(node);
+    const [baseMinWidth, minHeight] = getNodeMinSize(node);
+    const minWidth = resolveAdaptiveMinWidth(node, baseMinWidth);
     if (!node.min_size || node.min_size.length < 2) {
         node.min_size = [minWidth, minHeight];
     } else {
@@ -1686,7 +1725,8 @@ function ensureNodeMinSize(node) {
     node.__ximageget_resize_guard = true;
     const origOnResize = node.onResize;
     node.onResize = function (size) {
-        const [resizeMinWidth, resizeMinHeight] = getNodeMinSize(this);
+        const [resizeBaseMinWidth, resizeMinHeight] = getNodeMinSize(this);
+        const resizeMinWidth = resolveAdaptiveMinWidth(this, resizeBaseMinWidth);
         const sourceSize = Array.isArray(size) ? size : this.size;
         const nextWidth = Math.max(sourceSize?.[0] ?? 0, resizeMinWidth);
         const nextHeight = Math.max(sourceSize?.[1] ?? 0, resizeMinHeight);
@@ -1758,9 +1798,92 @@ function installExistingNodes() {
     }
 }
 
+function buildScopedNodeId(pathIds, nodeId) {
+    const base = String(nodeId ?? "").trim();
+    if (!base) {
+        return "";
+    }
+    if (!Array.isArray(pathIds) || pathIds.length < 1) {
+        return base;
+    }
+    return `${pathIds.join(":")}:${base}`;
+}
+
+function forEachNodeInGraphTree(rootGraph, visitor) {
+    if (!rootGraph || typeof visitor !== "function") {
+        return;
+    }
+    const visited = new Set();
+
+    const walk = (graph, pathIds = []) => {
+        if (!graph || typeof graph !== "object" || visited.has(graph)) {
+            return;
+        }
+        visited.add(graph);
+        const nodes = Array.isArray(graph._nodes) ? graph._nodes : [];
+        for (const node of nodes) {
+            const nodeId = String(node?.id ?? "").trim();
+            if (!nodeId) {
+                continue;
+            }
+            const scopedId = buildScopedNodeId(pathIds, nodeId);
+            visitor(node, scopedId);
+
+            const subgraph = node?.subgraph;
+            if (subgraph && typeof subgraph === "object") {
+                walk(subgraph, [...pathIds, nodeId]);
+            }
+        }
+    };
+
+    walk(rootGraph, []);
+}
+
+function getScopedNodeId(node) {
+    if (!node) {
+        return "";
+    }
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return "";
+    }
+    let scopedId = "";
+    forEachNodeInGraphTree(rootGraph, (graphNode, graphScopedId) => {
+        if (!scopedId && graphNode === node) {
+            scopedId = graphScopedId;
+        }
+    });
+    return scopedId;
+}
+
 function getNodeById(nodeId) {
-    const nodes = app.graph?._nodes || [];
-    return nodes.find((node) => node?.id === nodeId) || null;
+    const targetId = String(nodeId ?? "").trim();
+    if (!targetId) {
+        return null;
+    }
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return null;
+    }
+    let scopedMatch = null;
+    let plainMatch = null;
+    forEachNodeInGraphTree(rootGraph, (node, scopedId) => {
+        if (scopedMatch) {
+            return;
+        }
+        if (scopedId === targetId) {
+            scopedMatch = node;
+            return;
+        }
+        if (
+            !targetId.includes(":")
+            && !plainMatch
+            && String(node?.id ?? "").trim() === targetId
+        ) {
+            plainMatch = node;
+        }
+    });
+    return scopedMatch || plainMatch;
 }
 
 function updateNodeMediaRef(node, mediaRef, title) {
@@ -1805,17 +1928,23 @@ function collectNodesByClass(nodeClass) {
     if (!SUPPORTED_NODE_CLASSES.has(targetClass)) {
         return [];
     }
-    const nodes = app.graph?._nodes || [];
-    return nodes
-        .filter((node) => node?.comfyClass === targetClass)
-        .map((node) => {
-            const accentIndex = getNodeAccentIndex(node.id);
-            return {
-                id: node.id,
-                title: String(node.title || targetClass),
-                accent_index: accentIndex >= 0 ? accentIndex : null,
-            };
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return [];
+    }
+    const items = [];
+    forEachNodeInGraphTree(rootGraph, (node, scopedId) => {
+        if (node?.comfyClass !== targetClass) {
+            return;
+        }
+        const accentIndex = getNodeAccentIndex(scopedId);
+        items.push({
+            id: scopedId,
+            title: String(node.title || targetClass),
+            accent_index: accentIndex >= 0 ? accentIndex : null,
         });
+    });
+    return items;
 }
 
 export function initXMediaGetExtension() {
@@ -1923,14 +2052,14 @@ export function initXMediaGetExtension() {
                 if (payload.type === "xdatahub:send_to_node") {
                     const data = payload.data || {};
                     const requestId = String(data.request_id || "");
-                    const nodeId = Number(data.node_id);
+                    const nodeId = String(data.node_id ?? "").trim();
                     const mediaRef = String(data.media_ref || "");
                     const textValue = String(data.text_value || "");
                     const nodeClass = String(data.node_class || "");
                     if (nodeClass && !SUPPORTED_NODE_CLASSES.has(nodeClass)) {
                         return;
                     }
-                    if (!Number.isFinite(nodeId)) {
+                    if (!nodeId) {
                         replyNodeSendAck(
                             requestId,
                             data.node_id,
