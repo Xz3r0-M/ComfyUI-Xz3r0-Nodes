@@ -15,7 +15,7 @@
 
 ## 📖 项目简介
 
-ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标为创建增强的基础功能节点
+- ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标为创建增强的基础功能节点
 
 ### 🎯 设计特点
 
@@ -24,12 +24,9 @@ ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标
 
 ### ✨ 当前项目节点和工具数量
 
-🎁 自定义节点（数量总计：`24`）
+- 🎁 自定义节点（数量总计：`24`）
 
-🧩 网页扩展与工具（数量总计：`5`）
-
-
-
+- 🧩 网页扩展与工具（数量总计：`5`）
 
 ---
 
@@ -83,8 +80,8 @@ pip install -r requirements.txt
 
 > [!IMPORTANT]
 > ## 👇 点击查看功能详细说明
-> - [🎁 节点](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/1-%E2%80%90-Nodes)
-> - [🧩 网页扩展](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/2-%E2%80%90-Extension)
+> - [🎁 Nodes - 节点](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/1-%E2%80%90-Nodes)
+> - [🧩 Extensions - 网页扩展](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/2-%E2%80%90-Extension)
 ---
 
 ## 📞 项目链接
@@ -107,8 +104,4 @@ pip install -r requirements.txt
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
-
-
-
+- 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
