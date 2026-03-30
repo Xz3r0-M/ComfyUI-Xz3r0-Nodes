@@ -34,12 +34,9 @@ ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标
 ---
 
 > [!WARNING]
->
-
-## 📦 依赖说明（重要必看）
-
-本项目当前需要在您的电脑中安装有以下依赖程序：
-- **⚠️ [FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装 FFmpeg，那么 `XVideoSave` 和 `XAudioSave` 节点将无法正常使用‼️
+> ## 📦 依赖说明（重要必看）
+> 本项目当前需要在您的电脑中安装有以下依赖程序：
+> - **⚠️ [FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装 FFmpeg，那么 `XVideoSave` 和 `XAudioSave` 节点将无法正常使用‼️
 
 ---
 
@@ -85,9 +82,9 @@ pip install -r requirements.txt
 ---
 
 > [!IMPORTANT]
+> 👇下方链接可以点击查看功能详细说明
 >
-
-[👉点击此处查看 [🎁节点] 和 [🧩网页扩展] 的功能详细说明](wiki.md)
+> [🎁 节点 和 🧩 网页扩展](wiki.md)
 
 ---
 
