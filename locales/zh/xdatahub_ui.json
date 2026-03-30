@@ -128,6 +128,7 @@
   "xdatahub.ui.node.xmediaget.missing_audio": "音频已丢失",
   "xdatahub.ui.node.xmediaget.missing_text": "文本已丢失",
   "xdatahub.ui.node.xmediaget.title_placeholder": "头部信息",
+  "xdatahub.ui.node.xmediaget.title_placeholder_media": "文件名",
   "xdatahub.ui.node.xmediaget.open_mask_editor": "编辑遮罩",
   "xdatahub.ui.node.xmediaget.mask_editor_unavailable": "遮罩编辑器不可用",
   "xdatahub.ui.app.media.send_dialog_title": "发送到节点",

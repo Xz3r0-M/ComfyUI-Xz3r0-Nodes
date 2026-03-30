@@ -19,6 +19,8 @@ const NODE_UI_CONFIG = {
         placeholderFallback: "Drop an XDataHub image card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_image",
         missingFallback: "Image missing",
+        titlePlaceholderKey: "xdatahub.ui.node.xmediaget.title_placeholder_media",
+        titlePlaceholderFallback: "Filename",
     },
     XVideoGet: {
         kind: "video",
@@ -27,6 +29,8 @@ const NODE_UI_CONFIG = {
         placeholderFallback: "Drop an XDataHub video card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_video",
         missingFallback: "Video missing",
+        titlePlaceholderKey: "xdatahub.ui.node.xmediaget.title_placeholder_media",
+        titlePlaceholderFallback: "Filename",
     },
     XAudioGet: {
         kind: "audio",
@@ -35,6 +39,8 @@ const NODE_UI_CONFIG = {
         placeholderFallback: "Drop an XDataHub audio card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_audio",
         missingFallback: "Audio missing",
+        titlePlaceholderKey: "xdatahub.ui.node.xmediaget.title_placeholder_media",
+        titlePlaceholderFallback: "Filename",
     },
     XStringGet: {
         kind: "text",
@@ -43,6 +49,8 @@ const NODE_UI_CONFIG = {
         placeholderFallback: "Drop an XDataHub text card here",
         missingKey: "xdatahub.ui.node.xmediaget.missing_text",
         missingFallback: "Text missing",
+        titlePlaceholderKey: "xdatahub.ui.node.xmediaget.title_placeholder",
+        titlePlaceholderFallback: "Header",
     },
 };
 const MEDIA_REF_WIDGET = "media_ref";
@@ -303,6 +311,10 @@ function getNodeUiConfig(nodeClass) {
         missing: t(
             config.missingKey,
             config.missingFallback || "Media missing"
+        ),
+        titlePlaceholder: t(
+            config.titlePlaceholderKey || TEXT_TITLE_PLACEHOLDER_KEY,
+            config.titlePlaceholderFallback || TEXT_TITLE_PLACEHOLDER_FALLBACK
         ),
     };
 }
@@ -651,10 +663,7 @@ function buildPanel(nodeClass) {
     title.className = "ximageget-title";
     title.type = "text";
     title.value = "";
-    title.placeholder = t(
-        TEXT_TITLE_PLACEHOLDER_KEY,
-        TEXT_TITLE_PLACEHOLDER_FALLBACK
-    );
+    title.placeholder = config.titlePlaceholder;
     title.spellcheck = false;
 
     const footer = document.createElement("div");
@@ -701,14 +710,8 @@ function applyPanelLocale(panelInfo) {
     if (panelInfo.mediaKind === "text" && panelInfo.textEl) {
         panelInfo.textEl.placeholder = config.placeholder || "";
     }
-    if (
-        panelInfo.mediaKind === "text"
-        && panelInfo.title instanceof HTMLInputElement
-    ) {
-        panelInfo.title.placeholder = t(
-            TEXT_TITLE_PLACEHOLDER_KEY,
-            TEXT_TITLE_PLACEHOLDER_FALLBACK
-        );
+    if (panelInfo.title instanceof HTMLInputElement) {
+        panelInfo.title.placeholder = config.titlePlaceholder;
     }
     const clearBtnLabel = t(CLEAR_BTN_LABEL_KEY, CLEAR_BTN_LABEL_FALLBACK);
     const maskBtnLabel = t(

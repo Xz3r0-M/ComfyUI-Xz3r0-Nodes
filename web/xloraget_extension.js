@@ -13,6 +13,7 @@ const GLOBAL_CLIP_MODE_PROP = "xloraget.globalSeparateClipStrength";
 const DEFAULT_MIN_NODE_WIDTH = 614;
 const DEFAULT_MIN_NODE_HEIGHT = 560;
 const TRIGGER_PANEL_HEIGHT_DELTA = 220;
+const AUTO_RESIZE_TRIGGER_PANEL = false;
 const TRIGGER_WORDS_ENDPOINT = "/xz3r0/xdatahub/loras/trigger-words";
 const TRIGGER_WORD_INLINE_LIMIT = 3;
 const NODE_ACCENT_PALETTE = [
@@ -226,12 +227,17 @@ function mergeTriggerWords(existingValue, incomingValue) {
 }
 
 function filterTriggerWords(triggerWords, query) {
-    const list = normalizeTriggerWords(triggerWords);
+    const list = Array.isArray(triggerWords)
+        ? triggerWords
+        : [];
     const key = String(query || "").trim().toLowerCase();
     if (!key) {
         return list;
     }
-    return list.filter((item) => item.text.toLowerCase().includes(key));
+    return list.filter((item) => {
+        const text = String(item?.text || "").toLowerCase();
+        return text.includes(key);
+    });
 }
 
 async function fetchLoraTriggerWords(loraRef) {
@@ -459,9 +465,11 @@ function ensureStyles() {
         }
         .xlora-meta {
             display: flex;
-            align-items: flex-end;
+            align-items: center;
             gap: 8px;
             min-height: 20px;
+            height: 20px;
+            flex: 0 0 20px;
         }
         .xlora-list {
             display: flex;
@@ -475,6 +483,7 @@ function ensureStyles() {
             padding: 8px;
             box-sizing: border-box;
             overflow: auto;
+            overflow-anchor: none;
         }
         .xlora-toolbar {
             display: flex;
@@ -742,6 +751,7 @@ function ensureStyles() {
             gap: 6px;
             max-height: 168px;
             overflow-y: auto;
+            overscroll-behavior: contain;
             padding-right: 2px;
         }
         .xlora-trigger-panel-empty {
@@ -953,11 +963,19 @@ function syncRowTriggerWords(node, row, options = {}) {
         return;
     }
     const force = options.force === true;
+    const state = node.__xlora_panel?.state;
     if (row.trigger_words_loading) {
         return;
     }
     if (!force && row.trigger_words_synced === true) {
         return;
+    }
+    if (
+        state
+        && state.expandedTriggerRowId != null
+        && String(state.expandedTriggerRowId) === String(row.id)
+    ) {
+        setExpandedTriggerPanel(node, state, null);
     }
     row.trigger_words_loading = true;
     row.trigger_words_error = "";
@@ -1373,6 +1391,12 @@ function setExpandedTriggerPanel(node, state, nextExpandedRowId) {
     if (previousExpanded === nextExpanded) {
         return;
     }
+    if (!AUTO_RESIZE_TRIGGER_PANEL) {
+        if (!nextExpanded) {
+            state.triggerPanelBaseHeight = null;
+        }
+        return;
+    }
     if (typeof node?.setSize !== "function") {
         return;
     }
@@ -1384,13 +1408,33 @@ function setExpandedTriggerPanel(node, state, nextExpandedRowId) {
         Number(node.size?.[1]) || 0,
         DEFAULT_MIN_NODE_HEIGHT
     );
+    if (nextExpanded && !previousExpanded) {
+        state.triggerPanelBaseHeight = currentHeight;
+    }
+    const baseHeight = Math.max(
+        Number(state.triggerPanelBaseHeight) || DEFAULT_MIN_NODE_HEIGHT,
+        DEFAULT_MIN_NODE_HEIGHT
+    );
     const nextHeight = nextExpanded
-        ? currentHeight + TRIGGER_PANEL_HEIGHT_DELTA
+        ? Math.max(currentHeight, baseHeight) + TRIGGER_PANEL_HEIGHT_DELTA
         : Math.max(
             DEFAULT_MIN_NODE_HEIGHT,
-            currentHeight - TRIGGER_PANEL_HEIGHT_DELTA
+            Math.min(baseHeight, currentHeight - TRIGGER_PANEL_HEIGHT_DELTA)
         );
+    if (!nextExpanded) {
+        state.triggerPanelBaseHeight = null;
+    }
+    const prevX = Number(node.pos?.[0]);
+    const prevY = Number(node.pos?.[1]);
     node.setSize([width, nextHeight]);
+    if (Number.isFinite(prevX) && Number.isFinite(prevY)) {
+        if (!Array.isArray(node.pos) || node.pos.length < 2) {
+            node.pos = [prevX, prevY];
+        } else {
+            node.pos[0] = prevX;
+            node.pos[1] = prevY;
+        }
+    }
 }
 
 function renderNodeRows(node) {
@@ -1399,16 +1443,23 @@ function renderNodeRows(node) {
         return;
     }
     const { list, empty, state, tooltip } = panel;
+    const prevScrollTop = list.scrollTop;
+    const prevScrollLeft = list.scrollLeft;
     clearDragTarget(state);
     list.innerHTML = "";
     panel.globalToggleInput.checked = !!state.globalSeparateClip;
     const rows = enforcePinLayout(state.rows);
     state.rows = rows;
-    const expandedRowExists = rows.some(
+    const expandedRow = rows.find(
         (rowItem) => rowItem.id === state.expandedTriggerRowId
     );
-    if (!expandedRowExists && state.expandedTriggerRowId != null) {
-        setExpandedTriggerPanel(node, state, null);
+    if (state.expandedTriggerRowId != null) {
+        const canKeepExpanded = !!expandedRow
+            && normalizeTriggerWords(expandedRow.trigger_words).length
+                > TRIGGER_WORD_INLINE_LIMIT;
+        if (!canKeepExpanded) {
+            setExpandedTriggerPanel(node, state, null);
+        }
     }
     if (!rows.length) {
         if (state.expandedTriggerRowId != null) {
@@ -1416,6 +1467,8 @@ function renderNodeRows(node) {
         }
         list.appendChild(empty);
         writeStoredRows(node, rows);
+        list.scrollTop = prevScrollTop;
+        list.scrollLeft = prevScrollLeft;
         return;
     }
     rows.forEach((item, index) => {
@@ -1601,6 +1654,16 @@ function renderNodeRows(node) {
         triggerRefreshBtn.title = t("xdatahub.ui.node.xloraget.trigger_refresh", "Refresh trigger words and notes from XDataHub");
         triggerRefreshBtn.disabled = item.trigger_words_loading;
         triggerRefreshBtn.addEventListener("click", () => {
+            const panelState = node.__xlora_panel?.state;
+            if (
+                panelState
+                && panelState.expandedTriggerRowId != null
+                && String(panelState.expandedTriggerRowId)
+                    === String(item.id)
+            ) {
+                setExpandedTriggerPanel(node, panelState, null);
+                renderNodeRows(node);
+            }
             syncRowTriggerWords(node, item, { force: true });
         });
         triggerMain.appendChild(triggerRefreshBtn);
@@ -1675,7 +1738,18 @@ function renderNodeRows(node) {
             searchInput.value = state.triggerSearchQuery || "";
             searchInput.addEventListener("input", () => {
                 state.triggerSearchQuery = String(searchInput.value || "");
+                const start = searchInput.selectionStart;
+                const end = searchInput.selectionEnd;
                 renderNodeRows(node);
+                const nextInput = node.__xlora_panel?.panel?.querySelector(
+                    ".xlora-trigger-search"
+                );
+                if (nextInput instanceof HTMLInputElement) {
+                    nextInput.focus();
+                    if (start != null && end != null) {
+                        nextInput.setSelectionRange(start, end);
+                    }
+                }
             });
             panelHeader.appendChild(searchInput);
 
@@ -1711,6 +1785,9 @@ function renderNodeRows(node) {
 
             const panelList = document.createElement("div");
             panelList.className = "xlora-trigger-panel-list";
+            panelList.addEventListener("wheel", (event) => {
+                event.stopPropagation();
+            });
             const filteredWords = filterTriggerWords(
                 item.trigger_words,
                 state.triggerSearchQuery
@@ -1790,6 +1867,8 @@ function renderNodeRows(node) {
         list.appendChild(row);
     });
     writeStoredRows(node, rows);
+    list.scrollTop = prevScrollTop;
+    list.scrollLeft = prevScrollLeft;
 }
 
 function bindDnD(node) {

@@ -29,6 +29,7 @@ except ImportError:
 LOGGER = get_logger(__name__)
 
 DEFAULT_STRENGTH = 1.0
+LORA_TRIGGER_DB_NAME = "loras_data.db"
 
 
 class XLoraGet(io.ComfyNode):
@@ -160,8 +161,8 @@ class XLoraGet(io.ComfyNode):
         return io.NodeOutput(
             current_model,
             current_clip,
-            "\n".join(applied_lines),
             ", ".join(enabled_trigger_words),
+            "\n".join(applied_lines),
         )
 
     @classmethod
@@ -289,16 +290,72 @@ class XLoraGet(io.ComfyNode):
         except Exception:
             return float(fallback)
 
+    @staticmethod
+    def _parse_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        text = str(value or "").strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        return False
+
+    @staticmethod
+    def _data_root() -> Path:
+        return Path(__file__).resolve().parent.parent / "XDataSaved"
+
+    @classmethod
+    def _lora_root_dir(cls) -> Path | None:
+        candidates: list[Path] = []
+        if folder_paths is not None:
+            try:
+                for raw in folder_paths.get_folder_paths("loras"):
+                    if raw:
+                        candidates.append(Path(raw))
+            except Exception:
+                pass
+            models_dir = getattr(folder_paths, "models_dir", None)
+            if models_dir:
+                candidates.extend(
+                    [
+                        Path(models_dir) / "loras",
+                        Path(models_dir) / "Loras",
+                    ]
+                )
+        for path in candidates:
+            try:
+                resolved = path.resolve()
+            except Exception:
+                resolved = path
+            if resolved.exists():
+                return resolved
+        return candidates[0] if candidates else None
+
+    @classmethod
+    def _resolve_lora_trigger_db_path(cls) -> Path:
+        data_db = cls._data_root() / LORA_TRIGGER_DB_NAME
+        try:
+            settings_path = cls._data_root() / "xdatahub_settings.json"
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+
+        use_lora_root = cls._parse_bool(payload.get("store_lora_db_in_loras"))
+        if use_lora_root:
+            lora_root = cls._lora_root_dir()
+            if lora_root is not None:
+                return lora_root / LORA_TRIGGER_DB_NAME
+        return data_db
+
     @classmethod
     def _resolve_lora_name_from_ref(cls, value: Any) -> str:
         lora_ref = str(value or "").strip()
         if not lora_ref:
             return ""
-        db_path = (
-            Path(__file__).resolve().parent.parent
-            / "XDataSaved"
-            / "loras_data.db"
-        )
+        db_path = cls._resolve_lora_trigger_db_path()
         if not db_path.exists():
             return ""
         conn = sqlite3.connect(db_path)

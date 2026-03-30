@@ -52,7 +52,7 @@ class XDataSave(io.ComfyNode):
         "Custom filename is required when save_type is Custom"
     )
     INVALID_XDATA_ERROR = "Invalid xdata input"
-    EMPTY_PRIMARY_CONTENT_SKIP_MSG = "Save skipped: XData 输入端口的内容为空"
+    EMPTY_PRIMARY_CONTENT_SKIP_MSG = "Save skipped: xdata input is empty"
     HEADER_TOO_LONG_ERROR = "Header length exceeds 120 characters limit"
     RECORD_TOO_LARGE_ERROR = "Record size exceeds 64KB limit"
     DB_NAME_TOO_LONG_ERROR = "Custom filename exceeds 64 characters limit"
