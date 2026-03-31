@@ -6721,6 +6721,8 @@ function writeXDataHubDragPayload(
         title = "",
         loraRef = "",
         thumbUrl = "",
+        loraStrengthModel = "",
+        loraStrengthClip = "",
     } = {}
 ) {
     const normalizedMediaRef = String(mediaRef || "").trim();
@@ -6729,6 +6731,16 @@ function writeXDataHubDragPayload(
     const finalTitle = String(title || "").trim();
     const normalizedLoraRef = String(loraRef || "").trim();
     const normalizedThumbUrl = String(thumbUrl || "").trim();
+    const parseOptionalNumber = (value) => {
+        const text = String(value ?? "").trim();
+        if (!text) {
+            return null;
+        }
+        const n = Number(text);
+        return Number.isFinite(n) ? n : null;
+    };
+    const parsedLoraStrengthModel = parseOptionalNumber(loraStrengthModel);
+    const parsedLoraStrengthClip = parseOptionalNumber(loraStrengthClip);
     dataTransfer.effectAllowed = "copy";
     try {
         const payload = { source: "xdatahub" };
@@ -6757,6 +6769,12 @@ function writeXDataHubDragPayload(
             payload.media_type = "lora";
             payload.thumb_url = normalizedThumbUrl;
             payload.title = finalTitle || "lora";
+            if (parsedLoraStrengthModel !== null) {
+                payload.strength_model = parsedLoraStrengthModel;
+            }
+            if (parsedLoraStrengthClip !== null) {
+                payload.strength_clip = parsedLoraStrengthClip;
+            }
         } else if (normalizedTextValue.trim()) {
             payload.text_value = normalizedTextValue;
             payload.media_type = "text";
@@ -6923,6 +6941,23 @@ function renderMediaGrid() {
             const loraThumbUrl = mediaType === "lora"
                 ? String(item.extra?.thumb_url || "")
                 : "";
+            const loraStrengthModel = mediaType === "lora"
+                ? Number(item.extra?.strength_model)
+                : NaN;
+            const loraStrengthClip = mediaType === "lora"
+                ? Number(item.extra?.strength_clip)
+                : NaN;
+            const loraStrengthDragAttrs = mediaType === "lora"
+                ? `${
+                    Number.isFinite(loraStrengthModel)
+                        ? ` data-drag-strength-model="${escapeAttr(String(loraStrengthModel))}"`
+                        : ""
+                }${
+                    Number.isFinite(loraStrengthClip)
+                        ? ` data-drag-strength-clip="${escapeAttr(String(loraStrengthClip))}"`
+                        : ""
+                }`
+                : "";
             const previewAttrs = (
                 mediaType === "image"
                 || mediaType === "audio"
@@ -6941,7 +6976,7 @@ function renderMediaGrid() {
                 : (
                     mediaType === "lora" && loraRef
                 )
-                    ? ` draggable="true" data-drag-media="1" data-drag-media-type="lora" data-drag-title="${escapeAttr(item.title || "")}" data-drag-lora-ref="${escapeAttr(loraRef)}" data-drag-lora-thumb="${escapeAttr(loraThumbUrl)}"`
+                    ? ` draggable="true" data-drag-media="1" data-drag-media-type="lora" data-drag-title="${escapeAttr(item.title || "")}" data-drag-lora-ref="${escapeAttr(loraRef)}" data-drag-lora-thumb="${escapeAttr(loraThumbUrl)}"${loraStrengthDragAttrs}`
                 : "";
             const resolutionAttr = canShowResolutionChip
                 ? ` data-resolution-key="${escapeAttr(resolutionKey)}"`
@@ -9700,6 +9735,12 @@ function handleDelegatedMediaDragstart(event) {
             mediaType: dragSource.getAttribute("data-drag-media-type") || "",
             loraRef: dragSource.getAttribute("data-drag-lora-ref") || "",
             thumbUrl: dragSource.getAttribute("data-drag-lora-thumb") || "",
+            loraStrengthModel: dragSource.getAttribute(
+                "data-drag-strength-model"
+            ) || "",
+            loraStrengthClip: dragSource.getAttribute(
+                "data-drag-strength-clip"
+            ) || "",
             title,
         });
     }

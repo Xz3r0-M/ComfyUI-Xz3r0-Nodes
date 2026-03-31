@@ -4,6 +4,51 @@
 `Workflow-Processing`
 
 <details>
+<summary><strong> XAnyGate10 </strong> | 🚦 10 路任意类型门控</summary>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+10 路任意类型数据门控节点，每一路独立开关控制，并提供可自定义顺序的递归输出端口。
+
+**这个节点是做什么的**:
+- 替代使用繁琐的 ComfyUI 原生 `bypass`/`unbypass` 功能，通过开关按钮直接控制每一路数据是否输出
+- 适合多路候选数据的优先级透传与分流控制，例如：控制参考图是否输出到 `XKleinRefConditioning`，或按递归顺序从多个提示词中输出第一个有效值
+
+**功能**:
+- 10 路任意类型的独立输入/输出端口
+  - `input_1 ~ input_10`
+  - `output_1 ~ output_10`
+- 每一路都有独立开关按钮 `enable_1 ~ enable_10`，关闭时对应输出为空值 (`None`)
+- 递归输出端口 `recursive_output`，开启后按 `recursive_order` 指定顺序返回第一个有效输出
+  - 如果所有通道均无有效输出，递归输出为空值 (`None`)
+- 可自定义 `recursive_order` 递归顺序
+  - 格式为 `-` 分隔的数字列表，仅允许 `1~10`，不允许重复
+  - 支持跳号（例如：`1-3-5-7-9`）和插队（例如：`5-9-3-7-1`）
+
+**输入**:
+- `input_1 ~ input_10` (ANY, 可选): 各路任意类型输入
+- `enable_1 ~ enable_10` (BOOLEAN): 各路输出开关（默认：`Enabled`）
+- `enable_recursive` (BOOLEAN): 递归输出开关（默认：`Enabled`）
+- `recursive_order` (STRING): 递归顺序列表（默认：`1-2-3-4-5-6-7-8-9-10`）
+
+**输出**:
+- `output_1 ~ output_10` (ANY): 各路原始数据输出（关闭时为 `None`）
+- `recursive_output` (ANY): 按递归顺序找到的第一个有效输出（全部无效时为 `None`）
+
+**使用示例**:
+```
+# 示例: 控制参考图是否传递
+input_1 = 参考图A, enable_1 = Enabled
+input_2 = 参考图B, enable_2 = Disabled
+recursive_order = "1-2"
+
+output_1 = 参考图A
+output_2 = None
+recursive_output = 参考图A（第一个有效值）
+```
+</details>
+
+<details>
 <summary><strong> XAnyToString </strong> | 🔤 任意数据转字符串</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
@@ -31,6 +76,7 @@
 **输出**:
 - `anything` (ANY): 原始输入数据，原样透传
 - `string` (STRING): 转换后的字符串结果
+- `xdata_string` (xdata_string): 字符串 xdata 协议输出，可链接 `XDataSave` 节点的 `xdata_input` 端口将转换后的字符串内容保存到数据库
 
 **使用示例**:
 ```
@@ -46,6 +92,7 @@ string = "123"
 - 把数字转成字符串后拿去保存到文本文件
 - 把上游节点结果转成字符串后接到 `XStringGroup`
 - 把任意数据转成字符串后接到 `XMarkdownSave`
+- 把转换结果通过 `xdata_string` 接到 `XDataSave` 保存到历史数据库
 </details>
 
 <details>
@@ -173,6 +220,36 @@ negative_out = N + ref(image_1) + ref(image_3)
 </details>
 
 <details>
+<summary><strong> XMemoryCleanup </strong> | 🧹 内存/显存清理</summary>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+内存与显存资源占用清理节点，提供三种可选清理动作，可独立执行或接入工作流透传数据。
+
+**这个节点是做什么的**:
+- 在工作流的指定位置手动触发 Python 级别的资源清理
+- 支持清理内存（Python GC）、清理节点模型占用（卸载已加载模型）和清理显存缓存
+- 由于使用 Python 提供的清理方式（相对安全），在工作流执行过程中可能无法完全清理所有占用
+
+**功能**:
+- 三种清理动作，均由独立开关按钮控制，默认全部关闭
+  - `cleanup_memory`: 执行 Python 垃圾回收（`gc.collect`）
+  - `cleanup_node_usage`: 卸载已加载模型并运行模型清理（通常为最大占用项）
+  - `cleanup_vram`: 清空设备缓存（`soft_empty_cache`）
+- 可选数据透传输入/输出端口（MatchType，自动保持类型一致）
+- 可独立执行（不需要任何输入）
+
+**输入**:
+- `anything` (ANY, 可选): 透传输入，不处理数据，仅用于工作流连接
+- `cleanup_memory` (BOOLEAN): 执行 Python GC（默认：`Disabled`）
+- `cleanup_node_usage` (BOOLEAN): 卸载模型（默认：`Disabled`）
+- `cleanup_vram` (BOOLEAN): 清理显存缓存（默认：`Disabled`）
+
+**输出**:
+- `anything` (ANY): 原始输入数据，原样透传
+</details>
+
+<details>
 <summary><strong> XResolution </strong> | 📐 分辨率设置</summary>
 
 `♾️ Xz3r0/Workflow-Processing`
@@ -189,8 +266,8 @@ negative_out = N + ref(image_1) + ref(image_3)
 
 **输入**:
 - `preset` (下拉选择): 预设分辨率
-- `width` (INT): 自定义宽度
-- `height` (INT): 自定义高度
+- `width` (INT): 自定义宽度（仅在 preset 为 Custom 且未连接 `image_or_mask` 时生效）
+- `height` (INT): 自定义高度（仅在 preset 为 Custom 且未连接 `image_or_mask` 时生效）
 - `scale` (FLOAT): 缩放倍率
 - `swap` (BOOLEAN): 是否交换宽高
 - `divisible` (INT): 整除数（默认：16，范围 1-128）
@@ -201,6 +278,7 @@ negative_out = N + ref(image_1) + ref(image_3)
   - `Down`: 向下取整
 - `width_offset` (INT): 宽度偏移（默认：0，范围 -128 到 128）
 - `height_offset` (INT): 高度偏移（默认：0，范围 -128 到 128）
+- `image_or_mask` (IMAGE/MASK, 可选): 图像或遮罩输入，连接后优先使用其分辨率作为基础宽高，优先级高于预设和自定义宽高
 
 **取整方式说明**:
 - `Disabled` - 禁用整除调整功能（默认）
@@ -238,6 +316,29 @@ preset="1024×1024 (1:1)", width_offset=-1, height_offset=-1
 preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, height_offset=1
 输出：width=1921, height=1089 (1920x1088 + 偏移)
 ```
+</details>
+
+<details>
+<summary><strong> XSeed </strong> | 🎲 种子值生成</summary>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+种子值生成节点，使用原生 seed 输入控件，并提供位数截断和补零功能，以及 `xdata_seed` 协议输出端口用于接入数据保存流程。
+
+**功能**:
+- 使用 ComfyUI 原生 seed 控件（支持 control_after_generate）
+- 数值位数上限截断（默认 20 位数值，超过时取低位截断）
+- 可选补零功能：不足位数上限时使用 0 在末尾补全（通常用不上）
+- `xdata_seed` 输出端口，可链接 `XDataSave` 节点的 `xdata_input` 端口将种子值保存到历史数据库
+
+**输入**:
+- `seed_value` (INT): 基础种子值（0 到 2^64-1，支持自动生成控制）
+- `digits` (INT): 位数上限（1 到 20，默认 20）
+- `pad_to_limit` (BOOLEAN): 不足位数时末尾补零（默认：`Disabled`）
+
+**输出**:
+- `seed_int` (INT): 经过截断/补零处理的最终种子整数
+- `xdata_seed` (xdata_seed): 种子 xdata 协议输出，可链接 `XDataSave` 保存到数据库
 </details>
 
 <details>
@@ -291,8 +392,69 @@ preset="1920×1080 (16:9)", divisible=16, divisible_mode="Up", width_offset=1, h
 - 工作流中的文本处理和组合
 </details>
 
+<details>
+<summary><strong> XStringWrap </strong> | 🎀 自动分隔包装字符串</summary>
+
+`♾️ Xz3r0/Workflow-Processing`
+
+自动带前后分隔符的单字符串节点，仅当文本有内容时才会应用分隔符，适合将上游传入的 Lora 触发词包装后输出。
+
+**这个节点是做什么的**:
+- 对输入文本按照所选分隔方式自动添加前缀和/或后缀分隔符
+- 仅在文本有内容时才应用分隔符；文本为空时输出空字符串，分隔符不会添加
+- 适合在工作流中接收 `XLoraGet` 的触发词输出后自动加上分隔，再接入提示词组合节点
+
+**功能**:
+- 前后分隔符与 `XStringGroup` 的分隔方式一致
+  - 可选：`none`、`newline`、`space`、`comma`、`comma_space`、`period`、`period_space`
+- 分隔生效模式：
+  - `both`: 前后都生效
+  - `prefix_only`: 仅前分隔生效
+  - `suffix_only`: 仅后分隔生效
+- 节点开关（`enabled`）：关闭时输出空字符串
+
+**输入**:
+- `enabled` (BOOLEAN): 节点开关（默认：`Enabled`）
+- `apply_mode` (下拉选择): 分隔生效模式（默认：`both`）
+- `prefix_separator` (下拉选择): 前分隔方式（默认：`none`）
+- `text` (STRING, 多行): 要包装的主文本
+- `suffix_separator` (下拉选择): 后分隔方式（默认：`none`）
+
+**输出**:
+- `wrapped_text` (STRING): 包装后的字符串结果
+
+**使用示例**:
+```
+text = "masterpiece, best quality"
+apply_mode = "both"
+prefix_separator = "comma_space"
+suffix_separator = "comma_space"
+
+输出：", masterpiece, best quality, "
+（文本为空时输出空字符串，不添加分隔符）
+```
+</details>
+
 ---
 `File-Processing`
+
+<details>
+<summary><strong> XAudioGet </strong> | 🎵 音频数据接收</summary>
+
+`♾️ Xz3r0/File-Processing`
+
+与 XDataHub 配套的音频数据接收节点，接收从 XDataHub 发送的音频文件并输出为 AUDIO 类型。
+
+**功能**:
+- 接收 XDataHub 通过 3 种发送方式（拖拽、滑动、多选）发送的音频数据
+- 在节点前端显示音频播放器和文件名
+- 使用节点 ID 和颜色作为唯一性区分
+- 清空已接收数据按钮
+- 前端组件中英文本地化显示基于 XDataHub 的语言选择
+
+**输出**:
+- `audio` (AUDIO): 从 XDataHub 接收并解码的音频对象
+</details>
 
 <details>
 <summary><strong> XAudioSave </strong> | 🎵 音频保存</summary>
@@ -356,6 +518,70 @@ LUFS 标准化以及峰值限制
 </details>
 
 <details>
+<summary><strong> XDataSave </strong> | 💾 文本历史数据保存</summary>
+
+`♾️ Xz3r0/File-Processing`
+
+接收 `xdata_seed` 或 `xdata_string` 类型数据并保存到本地 SQLite 数据库文件，可在 XDataHub 的历史标签页中查看。
+
+**这个节点是做什么的**:
+- 配合 `XSeed`（`xdata_seed` 输出）和 `XAnyToString`（`xdata_string` 输出）使用，将生成过程中的种子值或字符串内容持久化存储
+- 数据库文件存储在 `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
+- 每个数据库最多保存 500 条历史记录，超过后覆盖最早的条目
+
+**功能**:
+- 保存类型（数据库文件名）可选：
+  - `Custom`（默认）：自定义文件名.db
+  - `Seed`：固定写入 `seed_data.db`
+  - `String`：固定写入 `string_data.db`
+- 可选「自定义文件名」输入（选择 Custom 时生效，为空时报错）
+  - 支持外部字符串输入端口（优先级高于文本框）
+- 可选「额外头部信息」（最多 120 字符）
+  - 推荐：将提示词连接 `xdata_input`，将种子值转字符串后连接额外头部信息
+  - 支持外部字符串输入端口（优先级高于文本框）
+- `enabled` 开关按钮：关闭时不会执行保存
+
+**输入**:
+- `xdata_input` (xdata_seed/xdata_string): xdata 复合输入，接收上游的 xdata 协议数据
+- `save_type` (下拉选择): 保存类型（Custom / Seed / String）
+- `custom_filename_input` (STRING, 可选): 自定义文件名输入端口
+- `custom_filename_text` (STRING): 自定义文件名文本框（备用）
+- `extra_header_input` (STRING, 可选): 额外头部信息输入端口
+- `extra_header_text` (STRING): 额外头部信息文本框（备用）
+- `enabled` (BOOLEAN): 启用保存开关（默认：`Enabled`）
+
+**限制**:
+- 每个数据库最多 500 条历史记录
+- 额外头部信息最多 120 字符
+- 单条记录最大 64KB
+- 自定义文件名最多 64 字符
+</details>
+
+<details>
+<summary><strong> XImageGet </strong> | 🖼️ 图片数据接收</summary>
+
+`♾️ Xz3r0/File-Processing`
+
+与 XDataHub 配套的图片数据接收节点，接收从 XDataHub 发送的图片文件并输出为 IMAGE 和 MASK 类型。
+
+**功能**:
+- 接收 XDataHub 通过 3 种发送方式（拖拽、滑动、多选）发送的图片数据
+- 在节点前端显示图片内容和文件名
+- 编辑遮罩按钮：调用 ComfyUI 原生遮罩编辑工具（MaskEditor）
+- 占位黑图输出开关：开启后无图片数据时使用 1×1 像素黑色图片作为输出而非空值
+- 使用节点 ID 和颜色作为唯一性区分
+- 清空已接收数据按钮
+- 前端组件中英文本地化显示基于 XDataHub 的语言选择
+
+**输入**:
+- `output_placeholder` (BOOLEAN): 无图片时输出占位黑图（默认：`Disabled`）
+
+**输出**:
+- `image` (IMAGE): 从 XDataHub 接收的图片张量
+- `mask` (MASK): 遮罩数据（来自 MaskEditor 编辑结果；未编辑时为空值）
+</details>
+
+<details>
 <summary><strong> XImageResize </strong> | 🔎 图像缩放</summary>
 
 `♾️ Xz3r0/File-Processing`
@@ -391,7 +617,7 @@ LUFS 标准化以及峰值限制
   - `Always`: 总是缩放
   - `Only if Larger`: 仅当图像大于目标时缩放
   - `Only if Smaller`: 仅当图像小于目标时缩放
-- `target_edge` (INT): 目标边长（范围 64-8192）
+- `target_edge` (INT): 目标边长（范围 64-8192，步进为 1，可精确设置）
 - `megapixels` (FLOAT): 百万像素数（范围 0.1-100，默认 1.0，仅在 Megapixels 模式下使用）
 - `scale_multiplier` (FLOAT): 缩放倍率（范围 0.1-10）
 - `divisible` (INT): 整除数（默认：16，范围 1-128）
@@ -402,11 +628,15 @@ LUFS 标准化以及峰值限制
   - `Down`: 向下取整
 - `width_offset` (INT): 宽度偏移（范围 -128 到 128）
 - `height_offset` (INT): 高度偏移（范围 -128 到 128）
+- `resize_setting_in` (RESIZE_SETTING, 可选): 上游 `XImageResize` 节点传递来的缩放设置参数包，连接后可使用上游传递的所有缩放设置参数
+- `use_passed_settings` (BOOLEAN): 是否使用上游传递的缩放设置参数（默认：`Enabled`，关闭后忽略上游传递，继续使用自身参数）
+- `output_resize_settings` (BOOLEAN): 是否向下游继续传递缩放设置参数（默认：`Enabled`，关闭后 `resize_setting_out` 输出为空值 `None`）
 
 **输出**:
 - `Processed_Images` (IMAGE): 缩放后的图像
 - `width` (INT): 输出分辨率宽度
 - `height` (INT): 输出分辨率高度
+- `resize_setting_out` (RESIZE_SETTING): 向下游 `XImageResize` 节点传递的缩放设置参数包（当 `output_resize_settings` 关闭时输出为空值 `None`）
 
 **使用示例**:
 ```
@@ -466,9 +696,10 @@ LUFS 标准化以及峰值限制
 
 `♾️ Xz3r0/File-Processing`
 
-图像保存节点，支持自定义文件名和子文件夹管理
+图像保存节点，支持自定义文件名和子文件夹管理，支持图像和遮罩保存
 
 **功能**:
+- 支持保存图像（IMAGE）和遮罩（MASK），输入端口同时兼容两种类型
 - 支持自定义文件名和子文件夹
 - 日期时间标识符替换 (%Y%, %m%, %d%, %H%, %M%, %S%)
 - 路径安全防护 (防止路径遍历攻击)
@@ -476,19 +707,21 @@ LUFS 标准化以及峰值限制
 - 批量图像保存支持
 - PNG 压缩级别可调节 (0-9)
 - 元数据保存 (工作流提示词、种子值、模型信息等)
+- `enable_preview` 开关可控制节点预览图是否显示
 
 **输入**:
-- `images` (IMAGE): 输入图像张量
+- `image_or_mask` (IMAGE/MASK): 输入图像或遮罩张量
 - `filename_prefix` (STRING): 文件名前缀
 - `subfolder` (STRING): 子文件夹名称
 - `compression_level` (INT): PNG 压缩级别 (0-9，0=无压缩，9=最大压缩)
+- `enable_preview` (BOOLEAN): 启用预览 (默认：`Enabled`，关闭后节点不显示预览图)
 
 **隐藏输入**:
 - `prompt` (PROMPT): 工作流提示词 (自动注入)
 - `extra_pnginfo` (EXTRA_PNGINFO): 额外元数据 (自动注入)
 
 **输出**:
-- `images` (IMAGE): 原始图像 (透传)
+- `image_or_mask` (IMAGE/MASK): 原始图像或遮罩 (透传)
 - `save_path` (STRING): 保存的相对路径
 </details>
 
@@ -567,6 +800,38 @@ Latent 保存节点，支持自定义文件名和元数据保存
 - 维度验证：samples 必须是 4D [B,C,H,W] 或 5D [B,C,T,H,W]
 - 兼容：图像、音频、3D、视频、Inpaint、批量处理等所有 ComfyUI 标准 4D 或 5D 的 Latent 类型
 - 注意：节点不验证 Latent 可能带有的额外可选键（如 noise_mask、batch_index、type），这些由上游生成 Latent 的节点负责
+</details>
+
+<details>
+<summary><strong> XLoraGet </strong> | 🧬 Lora 数据接收与加载</summary>
+
+`♾️ Xz3r0/File-Processing`
+
+与 XDataHub 配套的 Lora 数据接收和加载节点，支持多条 Lora 按列表顺序加载，并提供触发词汇总输出。
+
+**功能**:
+- 前端显示 Lora 加载列表，支持拖拽排序，加载顺序从上至下
+- 每条 Lora 可独立开关（取消勾选后仅显示在列表中，不实际加载）
+- 首/尾位置锁定按钮
+- Lora 文件名鼠标悬停浮动提示窗：显示缩略图、文件名和备注（来自 XDataHub 编辑的 Lora 信息）
+- 模型强度（M）和 Clip 强度（C）输入框（数值默认加载自 XDataHub 的 Lora 编辑信息）
+- 单独调整 Clip 强度勾选开关：关闭时 Clip 强度与模型强度保持一致
+- 触发词显示区域：
+  - 默认加载自 XDataHub Lora 编辑信息中保存的触发词
+  - 支持鼠标点击以开启/关闭单个触发词
+  - 多触发词显示栏按钮（超过 3 个触发词时显示 +数字 按钮）
+  - 刷新按钮：重新从 XDataHub 获取触发词和备注
+  - 多触发词输出时使用 `, ` 分隔
+
+**输入**:
+- `model` (MODEL): 基础模型输入（必填）
+- `clip` (CLIP, 可选): CLIP 输入（未连接时 Clip 强度设置无效）
+
+**输出**:
+- `model` (MODEL): 已按顺序应用全部启用 Lora 的模型
+- `clip` (CLIP): 已应用 Lora 的 CLIP（无 CLIP 输入时透传 `None`）
+- `trigger_words` (STRING): 已启用触发词汇总（多个触发词用 `, ` 分隔）
+- `lora_info` (STRING): 实际加载的 Lora 列表及强度信息摘要
 </details>
 
 <details>
@@ -650,6 +915,43 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 - 保存提示词记录、参数说明、生成备注
 - 把 `XAnyToString` 转出来的字符串写成 Markdown 文件
 - 把多个字符串节点整理后输出成可阅读的文档
+</details>
+
+<details>
+<summary><strong> XStringGet </strong> | 📝 文本数据接收</summary>
+
+`♾️ Xz3r0/File-Processing`
+
+与 XDataHub 配套的文本数据接收节点，接收从 XDataHub 发送的历史记录文本并分别输出正文内容和头部信息。
+
+**功能**:
+- 接收 XDataHub 通过 3 种发送方式（拖拽、滑动、多选）发送的文本数据
+- 在节点前端显示正文内容和额外头部信息
+- 使用节点 ID 和颜色作为唯一性区分
+- 清空已接收数据按钮
+- 前端组件中英文本地化显示基于 XDataHub 的语言选择
+
+**输出**:
+- `Content` (STRING): 接收的主要文本内容
+- `Header` (STRING): 接收的额外头部信息
+</details>
+
+<details>
+<summary><strong> XVideoGet </strong> | 🎞️ 视频数据接收</summary>
+
+`♾️ Xz3r0/File-Processing`
+
+与 XDataHub 配套的视频数据接收节点，接收从 XDataHub 发送的视频文件并输出为 VIDEO 类型。
+
+**功能**:
+- 接收 XDataHub 通过 3 种发送方式（拖拽、滑动、多选）发送的视频数据
+- 在节点前端显示视频播放器和文件名
+- 使用节点 ID 和颜色作为唯一性区分
+- 清空已接收数据按钮
+- 前端组件中英文本地化显示基于 XDataHub 的语言选择
+
+**输出**:
+- `video` (VIDEO): 从 XDataHub 接收的视频对象
 </details>
 
 <details>
@@ -792,37 +1094,81 @@ save_path = "Markdown/PromptNotes_2026-03-11_00001.md"
 </details>
 
 <details>
-<summary><strong> XDataHub </strong> | 🖥️ 浮动窗口</summary>
+<summary><strong> XDataHub </strong> | ♾️ 数据中心 & 浮动窗口</summary>
 
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
 
-为 ComfyUI 网页界面增加可打开的浮动窗口（顶部菜单栏 按钮）
+XDataHub 是 ComfyUI 网页界面的独立浮动窗口数据中心，支持预览和发送文本、图片、视频、音频和 Lora 五种数据类型，配合专属接收节点使用。
 
-**窗口功能**
-- `XMetadataWorkflow`（工作流元数据查看器）
-- 窗口透明度调整 (20% - 100%)
-- 窗口最大化按钮
-- `Alt + Left mouse button` 快捷拖动窗口
-
-**使用按钮**:
-- 在 ComfyUI 网页界面顶部菜单栏中的 ♾️ 按钮，点击可 打开或关闭 浮动窗口
+**打开方式**:
+- 点击 ComfyUI 网页界面顶部栏执行按钮左侧的粉红色 ♾️ 按钮（或按默认快捷键 `Alt + X`）
 <img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/bl.png" alt="Button" width="500">
 
-**设置选项**:
-- Enable ♾️ XDataHub (Button) (启用浮动窗口按钮):
-  - 控制是否在顶部菜单栏显示 ♾️ 按钮
-  - 默认：`Enable` (启用)
-  - 位置：ComfyUI 网页界面 ➡️ 设置 (齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XDataHub
+**配套节点**:
+| 数据类型 | 接收节点 |
+|---------|---------|
+| 文本（历史记录）| `XStringGet` |
+| 图片 | `XImageGet` |
+| 视频 | `XVideoGet` |
+| 音频 | `XAudioGet` |
+| Lora | `XLoraGet` |
 
-**禁用按钮**:
-- ComfyUI 网页界面 ➡️ 设置 (齿轮图标) ➡️ ♾️ Xz3r0 ➡️ XDataHub ➡️ 关闭 `Enable ♾️ XDataHub (Button)` 开关
-<img src="https://raw.githubusercontent.com/Xz3r0-M/Xz3r0/refs/heads/main/XDataHub.png" alt="XDataHub" width="700">
+**数据发送方式（3 种）**:
+- 拖拽数据卡片到节点（推荐）
+- 滑动发送
+- 多选发送（从「发送到节点」窗口选择目标节点）
+
+**标签页**:
+- 历史：来自 `XSeed`、`XAnyToString`、`XDataSave` 节点保存的文本数据
+- 图片：从 ComfyUI `input`/`output` 文件夹（含子文件夹和软链接）中读取
+- 视频：同上
+- 音频：同上
+- Lora：从 `models/loras` 文件夹（含子文件夹和软链接）中读取
+
+**Lora 编辑功能**:
+- 备注、模型强度、Clip 强度、触发词
+- 支持从同目录中已存在的 `metadata.json`（ComfyUI-Lora-Manager）导入触发词
+
+**数据库管理**:
+- 清除历史记录和删除数据库文件
+- 预设名称数据库被列为内置关键数据库，默认锁定防止误操作
+- 配置文件（.json）和数据库文件（.db）保存在 `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
+
+**XDataHub 控制面板内设置**:
+- 明亮/暗黑模式切换
+- 快捷键设置（默认 `Alt + X`）
+- 卡片大小
+- 显示/隐藏文件名
+- 卡片标签显示切换
+- 媒体播放相关设置
+- 将 Lora 数据库保存位置切换到 `models/loras`
+- 语言设置按钮（中文/English）——首次使用时会弹出语言选择
+
+**ComfyUI 设置面板中的设置**:
+- `XDataHub 关闭按钮行为`
+  - `隐藏`（推荐）：仅隐藏显示，窗口状态保留，关闭后仍占用系统资源，重新打开快
+  - `销毁`：完全关闭，重新打开稍慢
+- `XDataHub 默认打开布局`
+  - `默认`：视图居中，窗口大小为视图界面的 75%
+  - `左靠边`（推荐）：最小窗口宽度靠左
+  - `右靠边`：最小窗口宽度靠右
+  - `最大化`
+- 将 ♾️ XDataHub 置于 ComfyUI 界面组件之下
+- 启用 ♾️ XDataHub（按钮）
+
+**其他功能**:
+- 自动轮询检测工作流是否正在执行（每 2 秒一次，使用 ComfyUI 官方 API），执行期间进入文件仅读取模式
+- 窗口透明度调整 (20% - 100%)
+- 窗口最大化按钮
+- `Alt + 鼠标左键` 快捷拖动窗口
+- 内嵌 `XMetadataWorkflow` 工作流元数据查看器
+
 </details>
 
 <details>
 <summary><strong> XMetadataWorkflow </strong> | 📊 工作流元数据可视化查看</summary>
 
-`🖥️ XDataHub` `🌐 web/xmetadataworkflow.html`
+`🌐 web/xmetadataworkflow.html`
 
 简易且独立的工作流元数据的可视化查看网页工具，将多种包含有工作流元数据的文件在网页视图中以 ComfyUI 相似的节点界面风格进行展示
 

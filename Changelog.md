@@ -121,6 +121,7 @@
     - 超过 500 条后会开始覆盖最早的历史条目
 
 ### 3. ⭐ 新增 `XSeed` 种子值生成节点
+`♾️ Xz3r0/Workflow-Processing`
 - `xdata_seed` 输出端口
     - 可链接 XDataSave 节点的 xdata_input 输入端口将种子值以字符串进行传递
 - 数值位数上限截断
@@ -129,10 +130,12 @@
     - 一般情况用不上
 
 ### 4. 🛠️ 增强 `XAnyToString`
+`♾️ Xz3r0/Workflow-Processing`
 - 新增 `xdata_string` 输出端口
     - 可链接 XDataSave 节点的 xdata_input 输入端口将转换后的字符串内容进行传递
 
 ### 5. ⭐ 新增 `XStringGet` 与 XDataHub 配套的 文本数据接收节点
+`♾️ Xz3r0/File-Processing`
 - 主要内容 和 头部信息 字符串输出端口
 - 支持 XDataHub 的 3 种数据发送方式接收文本数据
 - 可显示 主要内容文本 和 额外头部信息
@@ -141,6 +144,7 @@
 - 前端组件的中英文本地化显示基于 XDataHub 的语言选择
 
 ### 6. ⭐ 新增 `XImageGet` 与 XDataHub 配套的 图片数据接收节点
+`♾️ Xz3r0/File-Processing`
 - 图像 和 遮罩 输出端口
 - 支持 XDataHub 的 3 种数据发送方式接收图片数据
 - 可显示 图片内容 和 文件名
@@ -153,6 +157,7 @@
 - 前端组件的中英文本地化显示基于 XDataHub 的语言选择
 
 ### 7. ⭐ 新增 `XVideoGet` 与 XDataHub 配套的 视频数据接收节点
+`♾️ Xz3r0/File-Processing`
 - 视频 输出端口
 - 支持 XDataHub 的 3 种数据发送方式接收视频数据
 - 可显示 视频内容 和 文件名
@@ -161,6 +166,7 @@
 - 前端组件的中英文本地化显示基于 XDataHub 的语言选择
 
 ### 8. ⭐ 新增 `XAudioGet` 与 XDataHub 配套的 音频数据接收节点
+`♾️ Xz3r0/File-Processing`
 - 音频 输出端口
 - 支持 XDataHub 的 3 种数据发送方式接收音频数据
 - 可显示 音频内容 和 文件名
@@ -169,6 +175,7 @@
 - 前端组件的中英文本地化显示基于 XDataHub 的语言选择
 
 ### 9. ⭐ 新增 `XLoraGet` 与 XDataHub 配套的 Lora 数据接收和加载节点
+`♾️ Xz3r0/File-Processing`
 - 模型 输入输出端口
 - Clip 输入输出端口（可选）
     - 未链接 Clip 时设置的强度值无效
@@ -257,17 +264,20 @@
 - 调整输入端口的代码内部类型以提高兼容性，降低未来链接下游节点出错的可能性
 
 ### 15. 🛠️ 增强 `XResolution` 分辨率设置节点
+`♾️ Xz3r0/Workflow-Processing`
 - 新增 `image_or_mask` 图像或遮罩 (可选) 输入端口
 - 基于输入 图像或遮罩 的分辨率来处理
 - 图像或遮罩 的分辨率优先级高于 预设 和 `Custom` 自定义 分辨率
 
 ### 16. 🛠️ 增强 `XImageSave` 图像保存节点
+`♾️ Xz3r0/File-Processing`
 - 新增支持 `mask` 遮罩保存
 - 新增 `enable_preview` 启用预览 开关按钮
     - 按钮开启时能预览图片
     - 默认为 `Enabled` 开启
 
 ### 17. 🛠️ 增强和修改 `XImageResize` 图像缩放节点
+`♾️ Xz3r0/File-Processing`
 - 新增 `resize_setting_in` 和 `resize_setting_out` 将所有缩放设置参数进行传递的 (可选) 输入/输出 端口
     - 可以将传递链中首个 `XImageResize` 的所有缩放设置参数继续向后传递至下游 `XImageResize` 节点
         - 在对于需要同时缩放多个不同图片且需要缩放参数相同时能让工作流保持快捷和简洁
@@ -304,12 +314,318 @@
 > - 而 XDataHub 就是我解决这些问题的方案，一个使用缩略图预览但非节点形式且不受 ComfyUI 影响的独立浮动窗口。使用快捷键切换窗口，XDataHub 窗口不显示时浏览器不会渲染，对性能影响的程度最低，同时通过配套的接收节点也不会影响文件传递给其他节点使用
 > - 我知道这或许不是最好的方案，但这是我目前能想到并可以实现的了
 
+---
 
-> [!CAUTION]
-> 已知问题：
-> - FitView 在某些场景会失效
-> - 
+> [!IMPORTANT]
+> Brand-new launch: XDataHub - Text & Image & Video & Audio & Lora Data Center
+> - Possibly the best (relatively speaking) data-file selection and loading solution available right now
+
+### 1. ⭐ Added `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Click the pink infinity icon ♾️ button on the top bar of the ComfyUI web interface (to the left of the Queue button) to open the XDataHub window
+- 5 data types can be previewed and sent to matching dedicated nodes
+    - Text
+        - `XStringGet`
+    - Images
+        - `XImageGet`
+    - Videos
+        - `XVideoGet`
+    - Audio
+        - `XAudioGet`
+    - Lora
+        - `XLoraGet`
+    - Text-data previews use serial numbers (based on their database) and color labels for distinction
+- 3 ways to send data to nodes
+    - Drag data cards (recommended)
+    - Slide-to-send
+    - Multi-select send
+- The Send to Node window displays a list of matching dedicated nodes currently present in the workflow
+    - Node title name
+    - Uses node ID and color as unique identifiers
+- 5 corresponding tabs for data types
+    - History
+    - Image
+    - Video
+    - Audio
+    - Lora
+- Text can be saved to the database through the following nodes and viewed in XDataHub's History tab
+    - `XSeed`
+        - `xdata_seed`
+    - `XAnyToString`
+        - `xdata_string`
+    - `XDataSave`
+        - `xdata_input`
+    - Supports favoriting text data
+- Image, video, and audio data are read from the following ComfyUI folders
+    - `input` folder (including subfolders)
+    - `output` folder (including subfolders)
+    - Supports file/folder symlinks created under these 2 folders
+        - Direct custom paths are not supported; only symlinks are supported
+    - Unsupported file formats or encodings will show a prompt on the card
+- Lora data is read from the following ComfyUI folder
+    - `loras` folder (`models\loras` and subfolders)
+    - Supports file/folder symlinks created under this folder
+        - Direct custom paths are not supported; only symlinks are supported
+- Image, video, and audio support preview playback
+- Lora supports editing information
+    - Notes
+    - Model strength and Clip strength
+    - Trigger words
+    - Supports importing trigger words from existing `metadata.json` (ComfyUI-Lora-Manager) in the same directory as the Lora file
+- Features for clearing database records and deleting database files
+    - Databases with preset names are listed as built-in critical databases by default
+    - Critical databases have selection checkboxes locked by default to prevent accidental operations
+- XDataHub config files (`.json`) and database files (`.db`) are persistently saved locally
+    - `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
+- Some feature settings are available in the XDataHub control panel
+    - Supports Light and Dark theme color schemes
+    - Shortcut key for toggling (open/close) the window
+        - Default: `Alt + X`
+    - Card size
+    - Show filename
+        - When off, the filename section is hidden on cards
+    - Card label display toggle
+    - Media playback related settings
+    - Save Lora database to `models/loras`
+        - After enabling and saving, Lora database files will no longer be saved in `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
+        - When enabled and the Save button is clicked, existing Lora database files will be automatically moved to `models/loras`
+- Some feature settings are available in the ComfyUI settings panel
+    - XDataHub close button behavior
+        - Hide (recommended)
+            - Only hides the window display; window state is preserved, but it continues to use system resources. Reopening is fast
+        - Destroy
+            - Completely closes XDataHub; window state is not preserved, no resources are used after closing. Reopening is slower
+    - XDataHub default opening layout
+        - Default
+            - Centered in the view; window size is 75% of the viewport (never smaller than XDataHub's minimum window size)
+        - Left Dock (recommended)
+            - Minimum window width is docked to the left side of the viewport
+        - Right Dock
+            - Minimum window width is docked to the right side of the viewport
+        - Maximized
+    - Place ♾️ XDataHub below ComfyUI UI components
+    - Enable ♾️ XDataHub (button)
+- A language settings button is provided at the bottom-right corner of the window
+    - Supports Chinese and English
+    - On first use (when config file does not exist), the window pops up a language-selection setup
+- Automatically polls whether the workflow is running to enter file read-only mode
+    - Uses ComfyUI official API
+    - Checks every 2 seconds
+
+### 2. ⭐ Added `XDataSave` Text Data (History) Save Node
+`♾️ Xz3r0/File-Processing`
+- Accepts special `xdata_*` string-type data
+    - `xdata_seed`
+    - `xdata_string`
+- Save type (database filename)
+    - `Custom` (default, custom_name.db)
+    - `Seed` (preset name: seed_data.db)
+    - `String` (preset name: string_data.db)
+- Optional custom filename (length-limited)
+    - Enabled when save type is Custom
+    - Default is empty; if Custom is selected by default and no custom filename is provided, an error is raised
+- Optional extra header info (length-limited)
+    - You can input any custom text as additional info to save together
+    - Recommended: connect prompt text to the xdata_input port, then convert seed value to string and connect it to the extra header info
+- Enable Save toggle button
+    - Does not work when off
+- Database files are saved to `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
+- Text saved in each database file is capped at `500` history records
+    - After exceeding 500, the earliest history entries are overwritten
+
+### 3. ⭐ Added `XSeed` Seed Value Generation Node
+`♾️ Xz3r0/Workflow-Processing`
+- `xdata_seed` output port
+    - Can be connected to XDataSave node's xdata_input input port to pass seed values as strings
+- Numeric digit-length upper-limit truncation
+    - Default: 20 digits
+- Pads with 0 when digit length is below the upper limit
+    - Usually not needed
+
+### 4. 🛠️ Enhanced `XAnyToString`
+`♾️ Xz3r0/Workflow-Processing`
+- Added `xdata_string` output port
+    - Can be connected to XDataSave node's xdata_input input port to pass converted string content
+
+### 5. ⭐ Added `XStringGet` Text Data Receiving Node Paired with XDataHub
+`♾️ Xz3r0/File-Processing`
+- Main-content and header-info string output ports
+- Supports receiving text data from XDataHub's 3 send methods
+- Can display main text content and extra header info
+- Uses node ID and color as unique identifiers
+- Clear received data button
+- Frontend component zh/en localization display is based on XDataHub language selection
+
+### 6. ⭐ Added `XImageGet` Image Data Receiving Node Paired with XDataHub
+`♾️ Xz3r0/File-Processing`
+- Image and mask output ports
+- Supports receiving image data from XDataHub's 3 send methods
+- Can display image content and filename
+- Edit Mask feature button
+    - Uses ComfyUI official native mask editor tool
+- Placeholder black-image output toggle button
+    - When enabled, outputs a 1x1 pixel black image when no image data is available
+- Uses node ID and color as unique identifiers
+- Clear received data button
+- Frontend component zh/en localization display is based on XDataHub language selection
+
+### 7. ⭐ Added `XVideoGet` Video Data Receiving Node Paired with XDataHub
+`♾️ Xz3r0/File-Processing`
+- Video output port
+- Supports receiving video data from XDataHub's 3 send methods
+- Can display video content and filename
+- Uses node ID and color as unique identifiers
+- Clear received data button
+- Frontend component zh/en localization display is based on XDataHub language selection
+
+### 8. ⭐ Added `XAudioGet` Audio Data Receiving Node Paired with XDataHub
+`♾️ Xz3r0/File-Processing`
+- Audio output port
+- Supports receiving audio data from XDataHub's 3 send methods
+- Can display audio content and filename
+- Uses node ID and color as unique identifiers
+- Clear received data button
+- Frontend component zh/en localization display is based on XDataHub language selection
+
+### 9. ⭐ Added `XLoraGet` Lora Data Receiving and Loading Node Paired with XDataHub
+`♾️ Xz3r0/File-Processing`
+- Model input/output ports
+- Clip input/output port (optional)
+    - If Clip is not connected, the configured strength value is ineffective
+- Lora trigger-words string output port
+- Lora load-info string output port
+    - Displays the actually loaded Lora and the configured strength values
+- Separate Clip strength adjustment checkbox toggle
+    - When checked, a Clip strength input box is shown in the list
+    - When unchecked, Clip strength stays the same as Model strength
+- Lora loading list
+    - Supports drag-and-drop sorting
+    - Loading order is top to bottom
+    - First/last position lock buttons
+    - Lora checkbox toggle
+        - When unchecked, it is shown only in the list and will not actually be used
+    - Lora filename hover tooltip window
+        - Shows Lora thumbnail
+        - Shows Lora filename
+        - Shows Lora notes
+            - Loaded from Lora notes saved in XDataHub's Edit Lora Info window
+    - Model strength (M) value input box
+        - Value defaults to the Model strength saved in XDataHub's Edit Lora Info window
+    - Clip strength (C) value input box, hidden by default
+        - Value defaults to the CLIP strength saved in XDataHub's Edit Lora Info window
+    - Trigger words
+        - Some Lora models require specific prompt words to activate effects
+        - Trigger words default to those saved in XDataHub's Edit Lora Info window
+        - Refresh button
+            - Clicking refresh re-fetches trigger words and notes from XDataHub
+        - Trigger words can be toggled on/off by mouse click
+        - Multi-trigger display-panel button
+            - When the number of trigger words is greater than 3, a +number button appears to the left of trigger words
+            - The display panel can show all trigger words
+            - Search trigger words
+            - Enable all, disable all
+        - When multiple trigger words are output, they are separated by `, ` (comma + space)
+- Frontend component zh/en localization display is based on XDataHub language selection
+
+### 10. ⭐ Added `XMemoryCleanup` Memory/VRAM Resource Cleanup Node
+`♾️ Xz3r0/Workflow-Processing`
+- 3 Python-provided resource cleanup options (controlled by toggle buttons)
+    - `cleanup_memory` memory cleanup
+    - `cleanup_node_usage` node usage cleanup (usually the largest usage)
+    - `cleanup_vram` VRAM cleanup
+- Data passthrough (optional) input and output ports
+- Can run independently
+- Because it uses Python-based cleanup (relatively safe), it may not fully clean all usage when used in workflows
+
+### 11. ⭐ Added `XStringWrap` Auto-Wrapped Single String Node with Separators
+`♾️ Xz3r0/Workflow-Processing`
+- Automatically applies separators
+    - When the text input box has content (or input), separators are applied automatically; if there is no content, separators are not applied
+- Provides separator effect modes
+    - `both` both effective
+    - `prefix-only` prefix only
+    - `suffix-only` suffix only
+- Based on `XStringGroup` separator style
+    - Provides 2 separators: prefix/suffix
+- Independent node output-control toggle
+    - When off, the node outputs no data
+- Suitable for outputting upstream Lora trigger words in workflows
+
+### 12. ⭐ Added `XAnyGate10` 10-Channel Any-Type Gating Node
+`♾️ Xz3r0/Workflow-Processing`
+- Input/output ports for 10 channels of any-type data
+    - `input_1 ~ 10` inputs
+    - `output_1 ~ 10` outputs
+- Each channel has an independent toggle button to control whether it outputs; when off, output is empty (`None`)
+    - `enable_1 ~ 10`
+- Recursive output port and corresponding toggle button (enabled by default)
+    - `recursive_output` recursive output
+    - When enabled, returns the first valid output according to `recursive_order`
+    - If all ports have no valid output, recursive output is empty (`None`)
+- Customizable `recursive_order`
+    - A number list separated by `-` is used as recursive order, supports skipping and queue-jumping (e.g. skip: `1-3-5-7-9`, or jump: `5-9-3-7-1`)
+        - Only numbers `1 ~ 10` are allowed, and duplicates are not allowed
+- This node is suitable for priority passthrough and split-flow control of multi-channel candidate data
+    - Reduces use of cumbersome ComfyUI native `bypass` `unbypass` node features
+    - For example, controlling whether reference images are output to `XKleinRefConditioning`, or outputting multiple different prompt words by recursive order
+
+### 13. 🪛 Adjusted All Nodes That Contain Toggle Buttons
+- Unified toggle value names to `Enabled` (on) and `Disabled` (off)
+    - The original `true` and `false` were too programming-language-like
+
+### 14. 🪛 Adjusted `XAnyToString` `XMath` `XWorkflowSave` Nodes
+- Adjusted internal code types of input ports to improve compatibility and reduce possible downstream link errors in the future
+
+### 15. 🛠️ Enhanced `XResolution` Resolution Setting Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added `image_or_mask` image or mask (optional) input port
+- Processes based on the resolution of input image or mask
+- Resolution from image or mask has higher priority than Preset and `Custom` custom resolution
+
+### 16. 🛠️ Enhanced `XImageSave` Image Save Node
+`♾️ Xz3r0/File-Processing`
+- Added support for saving `mask`
+- Added `enable_preview` preview-enable toggle button
+    - When enabled, images can be previewed
+    - Default is `Enabled`
+
+### 17. 🛠️ Enhanced and Modified `XImageResize` Image Resize Node
+`♾️ Xz3r0/File-Processing`
+- Added `resize_setting_in` and `resize_setting_out` (optional) input/output ports for passing all resize setting parameters
+    - Can pass all resize setting parameters from the first `XImageResize` in a pass-through chain to downstream `XImageResize` nodes
+        - Keeps workflows fast and concise when resizing multiple different images with the same resize parameters
+- Added `use_passed_settings` toggle for using upstream-passed resize settings
+    - When off, upstream-passed settings are not used; node keeps using its own settings
+    - Default is `Enabled`
+- Added `output_resize_settings` control button for outputting and passing resize settings
+    - When off, resize settings are no longer passed to downstream `XImageResize` nodes (equivalent to disconnecting the output port link; output is empty `None`)
+    - Default is `Enabled`
+- Changed `target_edge` value step to `1`
+    - Target edge length can now be set precisely
+
+### 18. 🩹 Fixed `XFitView` `XFloatingWindow` Web Extensions
+- Fixed an issue where corresponding options in ComfyUI page settings did not correctly show zh/en localization
+
+### 19. 🩹 Fixed Some Bugs
+- Actually I already forgot what I fixed 🤣
+- But I'm sure fixing bugs also introduced some new bugs I haven't found yet 🫠
+
+> [!NOTE]
+> If in any update I changed (adjusted) node input/output ports and setting parameters, causing your workflows to require fixing (reloading) these nodes, I'm sorry 🥺
+> - Usually these changes (adjustments) are made because node functionality changed (added or removed), or because the original naming was later re-reviewed and deemed not intuitive enough or not standard enough
+> - Although new features can also change node UI and require node fixes (reloading), feature additions are generally more positive feedback than pure modifications and are easier to accept
+> - I also have my own long-term stable workflows, so I understand it's unpleasant to spend extra time fixing old node versions in workflows after updates
+>    - I try to make each version have more new features than modifications, hoping more positive feedback can offset some negative feedback 😇
 >
+> ---
+>
+> XDataHub is a way of selecting and loading files that I have wanted for a very long time - so long that I had this idea when I first started using ComfyUI (back in the early days of the ComfyUI project)
+> - I kept waiting for ComfyUI to natively have a similar feature, but to this day ComfyUI still hasn't released a suitable usable solution, only the very rough Assets browser in the sidebar that I don't know who would use. I really don't understand how frontend developers in the Comfy-Org team are thinking
+> - Many people in the community have developed various file-loading nodes, and these selfless community members' nodes have always been my way of use, but these nodes all have serious issues that kept bothering me. These two are the worst:
+>    - 1. Thumbnail-based preview is great for viewing files (such as images), but showing all thumbnails in node frontend windows reduces performance smoothness (FPS) of the whole web view. One or two such nodes may be okay, but once a workflow gets large or has special needs requiring multiple such nodes (for example, image-editing models needing multiple different reference images), web-view smoothness drops sharply, and FPS can fall to only single digits to teens
+>    - 2. With thumbnail nodes, switching is not practical: either minimize and hide node windows, or zoom out to trigger Level of Detail so nodes show nothing. Obviously both methods make nodes non-interactive, and switching is very cumbersome, creating more problems instead of solving them
+> - XDataHub is my solution to these problems: an independent floating window that uses thumbnail preview but is not in node form and is not affected by ComfyUI. Toggle the window with a shortcut key; when XDataHub is hidden, the browser does not render it, minimizing performance impact. At the same time, paired receiving nodes also ensure file transfer to other nodes is not affected
+> - I know this may not be the best solution, but it is what I can currently think of and implement
 
 </details>
 

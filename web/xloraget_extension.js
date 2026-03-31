@@ -453,6 +453,7 @@ function makeRow(partial = {}) {
         trigger_words_loading: false,
         trigger_words_synced: false,
         trigger_words_error: "",
+        strength_sync_pending: partial.strength_sync_pending === true,
         thumb_url: String(partial.thumb_url || ""),
         pin: partial.pin === "head" || partial.pin === "tail"
             ? partial.pin
@@ -505,10 +506,18 @@ function parseDragPayload(dataTransfer) {
         }
         const title = String(payload?.title || "lora");
         const thumbUrl = String(payload?.thumb_url || "");
+        const strengthModel = Number(payload?.strength_model);
+        const strengthClip = Number(payload?.strength_clip);
         return {
             lora_ref: loraRef,
             title,
             thumb_url: thumbUrl,
+            strength_model: Number.isFinite(strengthModel)
+                ? strengthModel
+                : null,
+            strength_clip: Number.isFinite(strengthClip)
+                ? strengthClip
+                : null,
         };
     } catch {
         return null;
@@ -1075,10 +1084,28 @@ function syncRowTriggerWords(node, row, options = {}) {
             const words = normalizeTriggerWords(payload?.trigger_words || []);
             row.trigger_words = mergeTriggerWords(row.trigger_words, words);
             row.lora_note = String(payload?.lora_note || "").trim();
+            if (row.strength_sync_pending === true) {
+                const fetchedModel = Number(payload?.strength_model);
+                const fetchedClip = Number(payload?.strength_clip);
+                const nextModel = Number.isFinite(fetchedModel)
+                    ? fetchedModel
+                    : row.strength_model;
+                const nextClip = Number.isFinite(fetchedClip)
+                    ? fetchedClip
+                    : nextModel;
+                row.strength_model = nextModel;
+                row.strength_clip = nextClip;
+                row.separate_clip_strength = nextClip !== nextModel;
+                if (row.separate_clip_strength && state) {
+                    state.globalSeparateClip = true;
+                }
+                row.strength_sync_pending = false;
+            }
             row.trigger_words_synced = true;
             row.trigger_words_error = "";
         })
         .catch(() => {
+            row.strength_sync_pending = false;
             row.trigger_words_synced = true;
             row.trigger_words_error = "load_failed";
         })
@@ -1244,9 +1271,10 @@ function upsertLoraRowFromMediaRef(
     mediaRef,
     title = "",
     thumbUrl = "",
-    strengthModel = 1,
-    strengthClip = 1,
-    loraNote = ""
+    strengthModel = undefined,
+    strengthClip = undefined,
+    loraNote = "",
+    options = {}
 ) {
     const loraRef = String(mediaRef || "").trim();
     if (!loraRef) {
@@ -1257,6 +1285,10 @@ function upsertLoraRowFromMediaRef(
     const rows = readStoredRows(node);
     const existing = rows.find((item) => item.lora_ref === loraRef);
     const normalizedThumb = String(thumbUrl || "").trim();
+    const hasExplicitStrengthModel = Number.isFinite(Number(strengthModel));
+    const hasExplicitStrengthClip = Number.isFinite(Number(strengthClip));
+    const strengthSyncPending = options.syncStrengthFromRemote === true
+        || (!hasExplicitStrengthModel && !hasExplicitStrengthClip);
     const normalizedModelStrength = toFloat(strengthModel, 1);
     const normalizedClipStrength = toFloat(
         strengthClip,
@@ -1279,6 +1311,7 @@ function upsertLoraRowFromMediaRef(
         existing.strength_clip = normalizedClipStrength;
         existing.separate_clip_strength = separateClipStrength;
         existing.lora_note = normalizedLoraNote;
+        existing.strength_sync_pending = strengthSyncPending;
     } else {
         rows.push(
             makeRow({
@@ -1288,6 +1321,7 @@ function upsertLoraRowFromMediaRef(
                 separate_clip_strength: separateClipStrength,
                 strength_model: normalizedModelStrength,
                 strength_clip: normalizedClipStrength,
+                strength_sync_pending: strengthSyncPending,
                 lora_note: normalizedLoraNote,
                 thumb_url: normalizedThumb,
                 pin: "none",
@@ -1403,6 +1437,8 @@ function installNodeUi(node) {
         globalSeparateClip: readGlobalClipMode(node, initialRows),
         dragIndex: -1,
         dragTargetEl: null,
+        lastExternalDropKey: "",
+        lastExternalDropAt: 0,
         expandedTriggerRowId: null,
         triggerSearchQuery: "",
     };
@@ -2024,13 +2060,30 @@ function bindDnD(node) {
         if (!payload) {
             return;
         }
+        const dropKey = `${payload.lora_ref}|${payload.title}|${payload.thumb_url}`;
+        const now = Date.now();
+        if (
+            dropKey === state.lastExternalDropKey
+            && now - Number(state.lastExternalDropAt || 0) < 260
+        ) {
+            return;
+        }
+        state.lastExternalDropKey = dropKey;
+        state.lastExternalDropAt = now;
         upsertLoraRowFromMediaRef(
             node,
             payload.lora_ref,
             payload.title,
             payload.thumb_url,
-            1,
-            1
+            payload.strength_model,
+            payload.strength_clip,
+            "",
+            {
+                syncStrengthFromRemote: (
+                    payload.strength_model == null
+                    && payload.strength_clip == null
+                ),
+            }
         );
     });
 }
