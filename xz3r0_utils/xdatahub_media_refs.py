@@ -4,8 +4,8 @@ XDataHub 媒体不透明引用工具。
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import secrets
 import sqlite3
 import sys
@@ -21,6 +21,7 @@ LOGGER = get_logger(__name__)
 
 PUBLIC_REF_BYTES = 18
 PUBLIC_REF_MIN_LEN = 16
+PUBLIC_REF_MAX_LEN = (PUBLIC_REF_BYTES * 4 + 2) // 3
 PUBLIC_REF_ALLOWED = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 )
@@ -120,6 +121,8 @@ def normalize_public_ref(value: str | None) -> str:
     """
     raw = str(value or "").strip()
     if len(raw) < PUBLIC_REF_MIN_LEN:
+        return ""
+    if len(raw) > PUBLIC_REF_MAX_LEN:
         return ""
     if any(ch not in PUBLIC_REF_ALLOWED for ch in raw):
         return ""
