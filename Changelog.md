@@ -44,15 +44,12 @@
         - `xdata_input`
     - 支持收藏保存文本数据
 - 图片 & 视频 & 音频 数据从以下 ComfyUI 文件夹中读取
-    - `input` 文件夹（以及 子文件夹）
-    - `output` 文件夹（以及 子文件夹）
-    - 支持在这 2 个文件夹中创建的 文件或文件夹 软链接
-        - 不支持直接自定义，仅支持软链接
+    - `input` 文件夹
+    - `output` 文件夹
+    - 自定义文件夹（XDataHub 设置）
     - 不支持的格式或编码的文件会在卡片显示提示
 - Lora 数据从以下 ComfyUI 文件夹中读取
-    - `loras` 文件夹（`models\loras` 以及 子文件夹）
-    - 支持在这个文件夹中创建的 文件或文件夹 软链接
-        - 不支持直接自定义，仅支持软链接
+    - `loras` 文件夹（`models\loras`）
 - 图片 & 视频 & 音频 支持预览播放
 - Lora 支持编辑信息
     - 备注
@@ -76,6 +73,7 @@
     - 将 Lora 数据库保存到 `models/loras`
         - 勾选启用并保存后，Lora 的数据库文件将不再保存于 `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
         - 勾选启用并点击 保存 按钮时，现有的 Lora 数据库文件会自动移动到 `models/loras`
+    - 设置 媒体文件 自定义文件夹（路径）
 - 在 ComfyUI 设置面板 中提供一些功能设置
     - XDataHub 关闭按钮行为
         - 隐藏（推荐）
@@ -357,15 +355,12 @@
         - `xdata_input`
     - Supports favoriting text data
 - Image, video, and audio data are read from the following ComfyUI folders
-    - `input` folder (including subfolders)
-    - `output` folder (including subfolders)
-    - Supports file/folder symlinks created under these 2 folders
-        - Direct custom paths are not supported; only symlinks are supported
+    - `input` folder
+    - `output` folder
+    - Custom folders (XDataHub settings)
     - Unsupported file formats or encodings will show a prompt on the card
 - Lora data is read from the following ComfyUI folder
-    - `loras` folder (`models\loras` and subfolders)
-    - Supports file/folder symlinks created under this folder
-        - Direct custom paths are not supported; only symlinks are supported
+    - `loras` folder (`models\loras`)
 - Image, video, and audio support preview playback
 - Lora supports editing information
     - Notes
