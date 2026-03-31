@@ -116,7 +116,7 @@
   "xdatahub.ui.app.media.parent_folder": "返回上层",
   "xdatahub.ui.app.media.lora": "Lora",
   "xdatahub.ui.app.media.lora_no_preview": "无缩略图",
-  "xdatahub.ui.app.media.lora_root": "Loras 文件夹",
+  "xdatahub.ui.app.media.lora_root": "loras",
   "xdatahub.ui.app.media.lora_root_title": "返回 Loras 根目录",
   "xdatahub.ui.node.xmediaget.clear_loaded_media": "清除已加载内容",
   "xdatahub.ui.node.xmediaget.placeholder_image": "可将 XDataHub 图片卡片拖拽到这",

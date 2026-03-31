@@ -116,7 +116,7 @@
   "xdatahub.ui.app.media.parent_folder": "Back to parent",
   "xdatahub.ui.app.media.lora": "Lora",
   "xdatahub.ui.app.media.lora_no_preview": "No preview",
-  "xdatahub.ui.app.media.lora_root": "Loras Folder",
+  "xdatahub.ui.app.media.lora_root": "loras",
   "xdatahub.ui.app.media.lora_root_title": "Back to Loras root folder",
   "xdatahub.ui.node.xmediaget.clear_loaded_media": "Clear loaded content",
   "xdatahub.ui.node.xmediaget.placeholder_image": "Drop an XDataHub image card here",

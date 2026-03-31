@@ -7458,7 +7458,7 @@ function renderMediaExplorerBar() {
     if (appState.activeTab === "lora") {
         const loraRootText = t(
             "xdatahub.ui.app.media.lora_root",
-            "Loras Folder"
+            "loras"
         );
         const loraRootTitle = t(
             "xdatahub.ui.app.media.lora_root_title",

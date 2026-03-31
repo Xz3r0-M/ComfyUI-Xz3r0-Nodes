@@ -1917,7 +1917,44 @@ function renderNodeRows(node) {
 
             const panelList = document.createElement("div");
             panelList.className = "xlora-trigger-panel-list";
+
+            const hasPanelScrollableRange = (el) => {
+                if (!(el instanceof HTMLElement)) {
+                    return false;
+                }
+                // Use a small tolerance to avoid sub-pixel false positives.
+                const maxScroll = el.scrollHeight - el.clientHeight;
+                if (maxScroll > 1) {
+                    return true;
+                }
+                const prevTop = el.scrollTop;
+                el.scrollTop = prevTop + 2;
+                const moved = el.scrollTop !== prevTop;
+                el.scrollTop = prevTop;
+                return moved;
+            };
+
+            const syncPanelWheelIsolation = (el) => {
+                if (!(el instanceof HTMLElement)) {
+                    return false;
+                }
+                // Only rely on real scrollable range. Visible scrollbar width
+                // can be always-on depending on OS/browser settings.
+                const hasScrollbar = hasPanelScrollableRange(el);
+                el.style.overscrollBehavior = hasScrollbar ? "contain" : "auto";
+                return hasScrollbar;
+            };
+
             panelList.addEventListener("wheel", (event) => {
+                const el = event.currentTarget;
+                if (!(el instanceof HTMLElement)) {
+                    return;
+                }
+                // Strict rule: isolate only when this panel is truly scrollable.
+                const hasScrollbar = syncPanelWheelIsolation(el);
+                if (!hasScrollbar) {
+                    return;
+                }
                 event.stopPropagation();
             });
             const filteredWords = filterTriggerWords(
@@ -1938,6 +1975,10 @@ function renderNodeRows(node) {
             triggerPanel.appendChild(panelHeader);
             triggerPanel.appendChild(panelList);
             triggerRow.appendChild(triggerPanel);
+            // Re-evaluate after attach to get correct clientHeight.
+            requestAnimationFrame(() => {
+                syncPanelWheelIsolation(panelList);
+            });
         }
 
         row.appendChild(rowMain);
