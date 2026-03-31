@@ -14,10 +14,11 @@ import re
 import sqlite3
 import threading
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 from urllib.parse import quote
 
 import server
@@ -831,7 +832,7 @@ def list_lora_directory(
     sort_by: str = "mtime",
     sort_order: str = "desc",
 ) -> dict[str, Any]:
-    # 委托给LORA_STORE从数据库查询（替代实时文件系统扫描）
+    # 委托给 LORA_STORE 从数据库查询（替代实时文件系统扫描）
     return LORA_STORE.list(
         directory=directory,
         page=page,
@@ -1827,17 +1828,17 @@ class MediaStore:
 
 
 class LoraStore:
-    """LORA数据库管理器，基于loras_data.db的lora_items表"""
+    """LORA 数据库管理器，基于 loras_data.db 的 lora_items 表"""
 
     def __init__(self) -> None:
         pass
 
     def _get_root(self) -> Path | None:
-        """获取LORA根目录"""
+        """获取 LORA 根目录"""
         return lora_root_dir()
 
     def scan_lora_files(self) -> dict[str, int]:
-        """扫描所有LORA根目录中的文件并插入数据库"""
+        """扫描所有 LORA 根目录中的文件并插入数据库"""
         root = self._get_root()
         if root is None:
             LOGGER.warning("[xdatahub-lora] no lora root directory found")
@@ -1900,7 +1901,8 @@ class LoraStore:
                         )
                         conn.execute(
                             "INSERT INTO lora_items ("
-                            "lora_key, public_ref, rel_path, title, real_path, "
+                            "lora_key, public_ref, rel_path, title, "
+                            "real_path, "
                             "filename, mtime, size, valid, "
                             "trigger_words_json, "
                             "strength_model, strength_clip, "
@@ -1941,7 +1943,7 @@ class LoraStore:
         return {"scanned": scanned, "added": added, "updated": updated}
 
     def upsert_lora_file(self, path: Path, rel_path: str) -> dict[str, Any]:
-        """插入或更新单个LORA文件"""
+        """插入或更新单个 LORA 文件"""
         try:
             stat = path.stat()
             real_path_str = str(path.resolve(strict=True))
@@ -2012,7 +2014,7 @@ class LoraStore:
         sort_by: str = "mtime",
         sort_order: str = "desc",
     ) -> dict[str, Any]:
-        """从数据库查询LORA列表（替代list_lora_directory）"""
+        """从数据库查询 LORA 列表（替代 list_lora_directory）"""
         root = self._get_root()
         if root is None:
             return {
@@ -2093,7 +2095,7 @@ class LoraStore:
                     map_folder_item(f"{LORA_ROOT_NAME}/{rel_path}", dir_name)
                 )
 
-            # 查询该目录级别的LORA文件
+            # 查询该目录级别的 LORA 文件
             query_files = (
                 "SELECT public_ref, rel_path, filename, mtime, size "
                 "FROM lora_items WHERE valid=1"
@@ -2157,7 +2159,7 @@ class LoraStore:
             conn.close()
 
     def cleanup_invalid(self) -> int:
-        """清理标记为invalid（已删除）的文件记录"""
+        """清理标记为 invalid（已删除）的文件记录"""
         if not lora_trigger_db_path().exists():
             return 0
         conn = connect_lora_trigger_db()
@@ -2174,7 +2176,7 @@ class LoraStore:
             conn.close()
 
     def rebuild(self) -> dict[str, int]:
-        """清空并重建LORA索引"""
+        """清空并重建 LORA 索引"""
         conn = connect_lora_trigger_db(create=True)
         try:
             ensure_lora_trigger_schema(conn)
@@ -2197,7 +2199,7 @@ def _lora_item_payload_from_db(
     mtime: float,
     size: int,
 ) -> dict[str, Any]:
-    """从数据库记录构建LORA项目的载体"""
+    """从数据库记录构建 LORA 项目的载体"""
     saved_at = ""
     if mtime:
         saved_at = datetime.fromtimestamp(
@@ -4019,7 +4021,7 @@ async def api_favorites_create(request: web.Request) -> web.Response:
 
 
 def _init_lora_index() -> None:
-    """在模块加载时初始化LORA数据库索引"""
+    """在模块加载时初始化 LORA 数据库索引"""
     try:
         ensure_lora_trigger_db_file()
         LOGGER.info("[xdatahub-lora] schema initialized")
@@ -4597,7 +4599,7 @@ async def api_lora_thumb(request: web.Request) -> web.Response:
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/rebuild")
 async def api_lora_rebuild(request: web.Request) -> web.Response:
-    """重建LORA数据库索引"""
+    """重建 LORA 数据库索引"""
     try:
         result = LORA_STORE.rebuild()
         LOGGER.info(
@@ -4621,7 +4623,7 @@ async def api_lora_rebuild(request: web.Request) -> web.Response:
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/refresh")
 async def api_lora_refresh(request: web.Request) -> web.Response:
-    """刷新LORA数据库索引，不清空触发词信息"""
+    """刷新 LORA 数据库索引，不清空触发词信息"""
     denied = write_guard()
     if denied:
         return denied
@@ -4640,7 +4642,7 @@ async def api_lora_refresh(request: web.Request) -> web.Response:
     "/xz3r0/xdatahub/loras/cleanup-invalid"
 )
 async def api_lora_cleanup_invalid(request: web.Request) -> web.Response:
-    """清理已经失效的LORA记录"""
+    """清理已经失效的 LORA 记录"""
     denied = write_guard()
     if denied:
         return denied

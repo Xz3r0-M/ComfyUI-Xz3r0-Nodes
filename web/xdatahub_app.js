@@ -2608,7 +2608,7 @@ async function doRefresh() {
     showFloatingNotice(
         t(
             "xdatahub.ui.app.notice.media_refresh_done",
-            "刷新完成"
+            "Refresh completed"
         ),
         { level: "success", scope: "top-actions" }
     );
@@ -3290,7 +3290,7 @@ async function doCleanupInvalid() {
     showFloatingNotice(
         t(
             "xdatahub.ui.app.notice.cleanup_invalid_done",
-            "清理失效完成"
+            "Cleanup completed"
         ),
         { level: "success", scope: "top-actions" }
     );
@@ -3325,7 +3325,7 @@ async function doClearIndex() {
     showFloatingNotice(
         t(
             "xdatahub.ui.app.notice.rebuild_data_done",
-            "重建数据完成"
+            "Rebuild completed"
         ),
         { level: "success", scope: "top-actions" }
     );
@@ -4187,11 +4187,11 @@ function syncNodeSendInfoPanel() {
         saveBtn.disabled = isBusy;
         const saveInfoText = t(
             "xdatahub.ui.app.media.send_dialog_save_info",
-            "保存编辑"
+            "Save edits"
         );
         const savingText = t(
             "xdatahub.ui.app.media.send_dialog_saving_info",
-            "保存中..."
+            "Saving..."
         );
         saveBtn.innerHTML = isSaving
             ? `${iconSvg("refresh-cw", savingText, "xdatahub-icon btn-icon")} ${escapeHtml(savingText)}`
@@ -4204,11 +4204,11 @@ function syncNodeSendInfoPanel() {
         metadataBtn.disabled = isBusy;
         const metadataInfoText = t(
             "xdatahub.ui.app.media.send_dialog_metadata_import",
-            "从metadata.json导入"
+            "Import from metadata.json"
         );
         const fetchingText = t(
             "xdatahub.ui.app.media.send_dialog_fetching_metadata",
-            "获取中..."
+            "Fetching..."
         );
         metadataBtn.innerHTML = isMetaLoading
             ? `${iconSvg("refresh-cw", fetchingText, "xdatahub-icon btn-icon")} ${escapeHtml(fetchingText)}`
@@ -4222,8 +4222,8 @@ function syncNodeSendInfoPanel() {
         const isLinked = !!appState.nodeSendInfoStrengthLinked;
         linkBtn.classList.toggle("is-linked", isLinked);
         linkBtn.title = isLinked
-            ? t("xdatahub.ui.app.media.send_dialog_strength_unlink", "取消同步")
-            : t("xdatahub.ui.app.media.send_dialog_strength_link", "同步强度");
+            ? t("xdatahub.ui.app.media.send_dialog_strength_unlink", "Unlink strength")
+            : t("xdatahub.ui.app.media.send_dialog_strength_link", "Link strength");
         linkBtn.innerHTML = iconMask(
             isLinked ? "link-2" : "unlink-2",
             "",
@@ -4273,13 +4273,13 @@ function syncNodeSendInfoPanel() {
         const editNoticeText = String(appState.nodeSendInfoNotice || "");
         const loadingInfoText = t(
             "xdatahub.ui.app.media.send_dialog_loading_info",
-            "正在加载信息..."
+            "Loading info..."
         );
         const editNoteText = isLoading
             ? loadingInfoText
             : (editErrorText || editNoticeText || t(
                 "xdatahub.ui.app.media.send_dialog_edit_note",
-                "提示：每行一个触发词，保存后将写入 loras_data.db"
+                "Tip: one trigger word per line. Saving writes to loras_data.db."
             ));
         const noticeLevel = String(appState.nodeSendInfoNoticeLevel || "");
         const editNoteClass = editErrorText
@@ -4383,7 +4383,7 @@ async function requestNodeSendLoraInfoFromMetadata() {
             setNodeSendInfoNotice(
                 t(
                     "xdatahub.ui.app.media.send_dialog_metadata_import_ok",
-                    "已从 metadata.json 获取触发词"
+                    "Imported trigger words from metadata.json"
                 ),
                 "success"
             );
@@ -4392,7 +4392,7 @@ async function requestNodeSendLoraInfoFromMetadata() {
             showFloatingNotice(
                 t(
                     "xdatahub.ui.app.media.send_dialog_metadata_import_empty",
-                    "没有从metadata.json发现触发词"
+                    "No trigger words found in metadata.json"
                 ),
                 { level: "info", duration: 2000, scope: "node-send" }
             );
@@ -4495,7 +4495,7 @@ async function saveNodeSendLoraInfo() {
         showFloatingNotice(
             t(
                 "xdatahub.ui.app.notice.lora_info_saved",
-                "Lora 信息已保存"
+                "Lora info saved"
             ),
             { level: "success", scope: "node-send" }
         );
@@ -4512,10 +4512,10 @@ async function saveNodeSendLoraInfo() {
 function renderNodeSendTargetHint(targetClass) {
     const nodeClassToken = "__XDH_NODE_CLASS__";
     const nodeClassText = String(targetClass || "").trim() || "XImageGet";
-    const locale = readUiLocalePreference();
-    const template = locale === "en"
-        ? `Select a target ${nodeClassToken} node`
-        : `选择目标 ${nodeClassToken} 节点`;
+    const template = t(
+        "xdatahub.ui.app.media.send_dialog_target_hint",
+        `Select a target ${nodeClassToken} node`
+    );
     return escapeHtml(template).replace(
         escapeHtml(nodeClassToken),
         `<code>${escapeHtml(nodeClassText)}</code>`
@@ -4525,10 +4525,10 @@ function renderNodeSendTargetHint(targetClass) {
 function renderNodeSendTargetEmpty(targetClass) {
     const nodeClassToken = "__XDH_NODE_CLASS__";
     const nodeClassText = String(targetClass || "").trim() || "XImageGet";
-    const locale = readUiLocalePreference();
-    const template = locale === "en"
-        ? `No ${nodeClassToken} nodes found`
-        : `未找到 ${nodeClassToken} 节点`;
+    const template = t(
+        "xdatahub.ui.app.media.send_dialog_target_empty",
+        `No ${nodeClassToken} nodes found`
+    );
     return escapeHtml(template).replace(
         escapeHtml(nodeClassToken),
         `<code>${escapeHtml(nodeClassText)}</code>`
@@ -4762,7 +4762,7 @@ function applyNodeSendNodesResponse(payload) {
         showFloatingNotice(
             t(
                 "xdatahub.ui.app.notice.node_list_refreshed",
-                "节点列表已刷新"
+                "Node list refreshed"
             ),
             { level: "success", scope: "node-send" }
         );
@@ -4989,7 +4989,7 @@ async function runDbListRefreshNow() {
         showFloatingNotice(
             t(
                 "xdatahub.ui.app.notice.db_list_refreshed",
-                "数据库列表已刷新"
+                "Database list refreshed"
             ),
             { level: "success", scope: "db-delete" }
         );
@@ -5153,7 +5153,7 @@ async function submitDbDelete() {
                 ? appState.dbDeleteResult
                 : t(
                     "xdatahub.ui.app.notice.db_delete_done",
-                    "数据库文件删除完成"
+                    "Database file deletion completed"
                 ),
             {
                 level: failed ? "info" : "success",
@@ -5222,7 +5222,7 @@ async function submitRecordsCleanup() {
                 ? appState.dbDeleteResult
                 : t(
                     "xdatahub.ui.app.notice.db_clear_done",
-                    "历史记录清空完成"
+                    "History cleared"
                 ),
             {
                 level: failed ? "info" : "success",
@@ -7918,10 +7918,7 @@ function renderLocaleSwitcherOverlay() {
         "Save Settings"
     );
     const cancelText = t("xdatahub.ui.app.common.cancel", "Cancel");
-    // NOTE: Keep "中文" label in English UI intentionally; do not "fix" to "Chinese".
-    const zhDisplayLabel = appState.localePreviewLang === "en"
-        ? "中文"
-        : t("xdatahub.ui.app.locale.zh", "Chinese");
+    const zhDisplayLabel = t("xdatahub.ui.app.locale.zh", "Chinese");
     return `
         <div class="locale-switcher-overlay" id="locale-switcher-overlay">
             <div
@@ -8167,51 +8164,51 @@ function renderNodeSendDialog() {
     const closeText = t("xdatahub.ui.shell.btn.close", "Close");
     const sendTabText = t(
         "xdatahub.ui.app.media.send_dialog_tab_send",
-        "发送到节点"
+        "Send to nodes"
     );
     const editTabText = t(
         "xdatahub.ui.app.media.send_dialog_tab_edit",
-        "编辑Lora信息"
+        "Edit Lora info"
     );
     const triggerWordsTitle = t(
         "xdatahub.ui.app.media.send_dialog_trigger_words",
-        "触发词"
+        "Trigger words"
     );
     const triggerWordsPlaceholder = t(
         "xdatahub.ui.app.media.send_dialog_trigger_words_placeholder",
-        "每行一个触发词"
+        "One trigger word per line"
     );
     const loraNoteTitle = t(
         "xdatahub.ui.app.media.send_dialog_lora_note",
-        "Lora 备注"
+        "Lora note"
     );
     const loraNotePlaceholder = t(
         "xdatahub.ui.app.media.send_dialog_lora_note_placeholder",
-        "用于记录该 Lora 的说明或使用建议"
+        "Notes or usage tips for this Lora"
     );
     const saveInfoText = t(
         "xdatahub.ui.app.media.send_dialog_save_info",
-        "保存编辑"
+        "Save edits"
     );
     const refreshInfoText = t(
         "xdatahub.ui.app.media.send_dialog_refresh_info",
-        "刷新"
+        "Refresh"
     );
     const metadataInfoText = t(
         "xdatahub.ui.app.media.send_dialog_metadata_import",
-        "从metadata.json导入"
+        "Import from metadata.json"
     );
     const modelStrengthText = t(
         "xdatahub.ui.app.media.send_dialog_strength_model",
-        "模型强度"
+        "Model strength"
     );
     const clipStrengthText = t(
         "xdatahub.ui.app.media.send_dialog_strength_clip",
-        "CLIP强度"
+        "CLIP strength"
     );
     const loadingInfoText = t(
         "xdatahub.ui.app.media.send_dialog_loading_info",
-        "正在加载信息..."
+        "Loading info..."
     );
     const nodes = appState.nodeSendNodes || [];
     const hasNodes = nodes.length > 0;
@@ -8377,7 +8374,7 @@ function renderNodeSendDialog() {
         ? loadingInfoText
         : (editErrorText || editNoticeText || t(
             "xdatahub.ui.app.media.send_dialog_edit_note",
-            "提示：每行一个触发词，保存后将写入 loras_data.db"
+            "Tip: one trigger word per line. Saving writes to loras_data.db."
         ));
     const editPanelHtml = `
         <div class="node-send-info-panel">
@@ -8385,7 +8382,7 @@ function renderNodeSendDialog() {
                 <button class="btn" id="node-send-info-refresh" ${appState.nodeSendInfoLoading || appState.nodeSendInfoSaving || appState.nodeSendInfoMetaLoading ? "disabled" : ""}>${iconSvg("refresh-cw", refreshInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(refreshInfoText)}</button>
                 <button class="btn" id="node-send-info-save" ${appState.nodeSendInfoLoading || appState.nodeSendInfoSaving || appState.nodeSendInfoMetaLoading ? "disabled" : ""}>${
                     appState.nodeSendInfoSaving
-                        ? `${iconSvg("refresh-cw", saveInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.media.send_dialog_saving_info", "保存中..."))}`
+                        ? `${iconSvg("refresh-cw", saveInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.media.send_dialog_saving_info", "Saving..."))}`
                         : `${iconSvg("save", saveInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(saveInfoText)}`
                 }</button>
             </div>
@@ -8407,7 +8404,7 @@ function renderNodeSendDialog() {
                     class="node-send-info-strength-link${appState.nodeSendInfoStrengthLinked ? " is-linked" : ""}"
                     id="node-send-info-link"
                     type="button"
-                    title="${escapeAttr(appState.nodeSendInfoStrengthLinked ? t("xdatahub.ui.app.media.send_dialog_strength_unlink", "取消同步") : t("xdatahub.ui.app.media.send_dialog_strength_link", "同步强度"))}"
+                    title="${escapeAttr(appState.nodeSendInfoStrengthLinked ? t("xdatahub.ui.app.media.send_dialog_strength_unlink", "Unlink strength") : t("xdatahub.ui.app.media.send_dialog_strength_link", "Link strength"))}"
                     ${appState.nodeSendInfoSaving || appState.nodeSendInfoLoading || appState.nodeSendInfoMetaLoading ? "disabled" : ""}
                 >${iconMask(appState.nodeSendInfoStrengthLinked ? "link-2" : "unlink-2", "", "node-send-info-link-icon")}</button>
                 <label class="node-send-info-strength-field" for="node-send-strength-clip">
@@ -8426,7 +8423,7 @@ function renderNodeSendDialog() {
                 <label class="node-send-info-label" for="node-send-trigger-words">${escapeHtml(triggerWordsTitle)}</label>
                 <button class="btn node-send-sort-btn" id="node-send-info-metadata" ${appState.nodeSendInfoLoading || appState.nodeSendInfoSaving || appState.nodeSendInfoMetaLoading ? "disabled" : ""}>${
                     appState.nodeSendInfoMetaLoading
-                        ? `${iconSvg("refresh-cw", metadataInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.media.send_dialog_fetching_metadata", "获取中..."))}`
+                        ? `${iconSvg("refresh-cw", metadataInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.media.send_dialog_fetching_metadata", "Fetching..."))}`
                         : `${iconSvg("folder-input", metadataInfoText, "xdatahub-icon btn-icon")} ${escapeHtml(metadataInfoText)}`
                 }</button>
             </div>
@@ -8454,7 +8451,7 @@ function renderNodeSendDialog() {
                 <div class="node-send-actions">
                     <div class="node-send-actions-selected" title="${escapeAttr(String(appState.nodeSendInfoError || "") || t("xdatahub.ui.app.common.ready", "Ready"))}">${escapeHtml(
                         appState.nodeSendInfoSaving
-                            ? t("xdatahub.ui.app.media.send_dialog_saving_info", "保存中...")
+                            ? t("xdatahub.ui.app.media.send_dialog_saving_info", "Saving...")
                             : appState.nodeSendInfoLoading
                                 ? loadingInfoText
                                 : (String(appState.nodeSendInfoError || "") || t("xdatahub.ui.app.common.ready", "Ready"))
@@ -9209,11 +9206,11 @@ async function handleDelegatedFavoriteSave(event) {
             result?.duplicate
                 ? t(
                     "xdatahub.ui.app.notice.favorite_duplicate",
-                    "已在收藏中"
+                    "Already in favorites"
                 )
                 : t(
                     "xdatahub.ui.app.notice.favorite_saved",
-                    "已保存到收藏"
+                    "Saved to favorites"
                 ),
             { level: "success", scope: "history-favorite" }
         );

@@ -1662,7 +1662,10 @@ function renderNodeRows(node) {
         const activeInput = document.createElement("input");
         activeInput.type = "checkbox";
         activeInput.checked = item.active !== false;
-        activeInput.title = "激活此 Lora";
+        activeInput.title = t(
+            "xdatahub.ui.node.xloraget.activate",
+            "Activate this Lora"
+        );
         activeInput.addEventListener("change", () => {
             item.active = !!activeInput.checked;
             writeStoredRows(node, state.rows);
@@ -1860,7 +1863,10 @@ function renderNodeRows(node) {
             const searchInput = document.createElement("input");
             searchInput.className = "xlora-trigger-search";
             searchInput.type = "search";
-            searchInput.placeholder = "搜索触发词...";
+            searchInput.placeholder = t(
+                "xdatahub.ui.node.xloraget.search_trigger_words",
+                "Search trigger words..."
+            );
             searchInput.value = state.triggerSearchQuery || "";
             searchInput.addEventListener("input", () => {
                 state.triggerSearchQuery = String(searchInput.value || "");

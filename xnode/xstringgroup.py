@@ -70,7 +70,7 @@ class XStringGroup(io.ComfyNode):
     }
 
     @classmethod
-    def _resolve_separation_method(cls, method_name: str) -> str:
+    def resolve_separation_method(cls, method_name: str) -> str:
         """
         将前端分隔选项解析为实际分隔符。
 
@@ -81,6 +81,11 @@ class XStringGroup(io.ComfyNode):
         if separator is None:
             raise ValueError(f"Invalid separation method: {method_name}")
         return separator
+
+    @classmethod
+    def _resolve_separation_method(cls, method_name: str) -> str:
+        """兼容旧内部调用，转发到公开分隔解析 API。"""
+        return cls.resolve_separation_method(method_name)
 
     @classmethod
     def _resolve_selected_string(
@@ -264,10 +269,10 @@ class XStringGroup(io.ComfyNode):
         Returns:
             NodeOutput: 包含组合字符串、选中字符串和所有原始字符串
         """
-        sm_1_2 = cls._resolve_separation_method(separation_method_1_2)
-        sm_2_3 = cls._resolve_separation_method(separation_method_2_3)
-        sm_3_4 = cls._resolve_separation_method(separation_method_3_4)
-        sm_4_5 = cls._resolve_separation_method(separation_method_4_5)
+        sm_1_2 = cls.resolve_separation_method(separation_method_1_2)
+        sm_2_3 = cls.resolve_separation_method(separation_method_2_3)
+        sm_3_4 = cls.resolve_separation_method(separation_method_3_4)
+        sm_4_5 = cls.resolve_separation_method(separation_method_4_5)
 
         grouped_string = (
             string_1

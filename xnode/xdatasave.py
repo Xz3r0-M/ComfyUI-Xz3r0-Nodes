@@ -244,7 +244,7 @@ class XDataSave(io.ComfyNode):
         safe_filename = sanitize_path_component(filename).strip(" .")
         if not safe_filename:
             raise ValueError(cls.INVALID_CUSTOM_FILENAME_ERROR)
-        safe_stem = Path(safe_filename).stem
+        safe_stem = cls._normalize_db_stem(safe_filename)
         if len(safe_stem) > cls.MAX_DB_STEM_CHARS:
             raise ValueError(cls.DB_NAME_TOO_LONG_ERROR)
         critical_names = {
@@ -252,7 +252,17 @@ class XDataSave(io.ComfyNode):
         }
         if safe_stem.lower() in critical_names:
             raise ValueError(cls.RESERVED_DB_NAME_ERROR)
-        return safe_filename
+        return safe_stem
+
+    @classmethod
+    def _normalize_db_stem(cls, filename: str) -> str:
+        """归一化自定义数据库名为纯 stem（去除扩展与重复 .db 尾缀）。"""
+        stem = Path(filename).stem.strip(" .")
+        while stem.lower().endswith(".db"):
+            stem = stem[:-3].strip(" .")
+        if not stem:
+            raise ValueError(cls.INVALID_CUSTOM_FILENAME_ERROR)
+        return stem
 
     @classmethod
     def _resolve_extra_header(
@@ -484,11 +494,10 @@ class XDataSave(io.ComfyNode):
             ),
             (overflow,),
         )
-        conn.commit()
 
     @classmethod
     def _init_schema(cls, conn: sqlite3.Connection) -> None:
-        """初始化 SQLite 表结构。"""
+        """初始化 SQLite 表结构，由外层统一提交事务。"""
         conn.execute(
             "CREATE TABLE IF NOT EXISTS records ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -503,7 +512,6 @@ class XDataSave(io.ComfyNode):
             "CREATE INDEX IF NOT EXISTS idx_records_saved_at "
             "ON records(saved_at)"
         )
-        conn.commit()
 
     @classmethod
     def _insert_record(
@@ -511,7 +519,7 @@ class XDataSave(io.ComfyNode):
         conn: sqlite3.Connection,
         record: dict[str, Any],
     ) -> None:
-        """插入单条记录。"""
+        """插入单条记录，由外层统一提交事务。"""
         payload_json = json.dumps(record["payload"], ensure_ascii=False)
         conn.execute(
             (
@@ -526,7 +534,6 @@ class XDataSave(io.ComfyNode):
                 str(record["source"]),
             ),
         )
-        conn.commit()
 
     @classmethod
     def _count_records(

@@ -22,7 +22,7 @@ ComfyUI-Xz3r0-Nodes V3 扩展入口。
 #    - 每个分类内部按节点类名字母序排列（A->Z）
 # 8) 新增节点时必须按上述规则插入，不要按“最近修改”或“功能关联”排序。
 
-import shutil
+import shutil  # noqa: I001
 
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 

@@ -292,6 +292,11 @@ class XImageSave(io.ComfyNode):
     ) -> torch.Tensor:
         """
         将输入统一为可保存的批次张量格式 (B, H, W, C)。
+
+        约定：
+        - 4D 仅视为 IMAGE: (B, H, W, C)
+        - 3D 始终视为 MASK 批次: (B, H, W)
+        - 2D 视为单张 MASK: (H, W)
         """
         if image_or_mask is None:
             raise ValueError("Input image_or_mask cannot be empty")
@@ -304,16 +309,13 @@ class XImageSave(io.ComfyNode):
         if dims == 4:
             normalized = image_or_mask
         elif dims == 3:
-            # 3D 可能是遮罩批次 (B,H,W) 或单张图像 (H,W,C)。
-            if image_or_mask.shape[-1] in (1, 3, 4):
-                normalized = image_or_mask.unsqueeze(0)
-            else:
-                normalized = image_or_mask.unsqueeze(-1)
+            # 3D 始终视为遮罩批次 (B,H,W) -> (B,H,W,1)。
+            normalized = image_or_mask.unsqueeze(-1)
         elif dims == 2:
             normalized = image_or_mask.unsqueeze(0).unsqueeze(-1)
         else:
             raise ValueError(
-                "Expected IMAGE(B,H,W,C) or MASK(B,H,W/H,W), "
+                "Expected IMAGE(B,H,W,C) or MASK(H,W)/(B,H,W), "
                 f"got {dims}D tensor"
             )
 
@@ -323,8 +325,7 @@ class XImageSave(io.ComfyNode):
         channels = normalized.shape[-1]
         if channels not in (1, 3, 4):
             raise ValueError(
-                "Expected channels to be 1, 3, or 4, "
-                f"got {channels} channels"
+                f"Expected channels to be 1, 3, or 4, got {channels} channels"
             )
         return normalized
 
@@ -459,4 +460,3 @@ class Xz3r0Extension(ComfyExtension):
 
 async def comfy_entrypoint() -> Xz3r0Extension:
     return Xz3r0Extension()
-

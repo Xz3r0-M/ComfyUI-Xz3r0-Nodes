@@ -127,8 +127,8 @@ class XStringWrap(io.ComfyNode):
             return io.NodeOutput("")
 
         resolved_mode = cls._resolve_apply_mode(apply_mode)
-        prefix = XStringGroup._resolve_separation_method(prefix_separator)
-        suffix = XStringGroup._resolve_separation_method(suffix_separator)
+        prefix = XStringGroup.resolve_separation_method(prefix_separator)
+        suffix = XStringGroup.resolve_separation_method(suffix_separator)
 
         if resolved_mode == "both":
             result = f"{prefix}{text}{suffix}"

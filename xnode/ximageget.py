@@ -7,7 +7,6 @@ XImageGet 节点模块 (V3 API)
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -243,11 +242,14 @@ class XImageGet(io.ComfyNode):
         root_dir = XImageGet._get_root_dir(root_name)
         if root_dir is None:
             return None
-        path = root_dir
+        root_dir_resolved = root_dir.resolve(strict=False)
+        path = root_dir_resolved
         if subfolder:
             path = path / subfolder
-        candidate = path / filename
-        return Path(os.path.normpath(os.path.abspath(str(candidate))))
+        candidate = (path / filename).resolve(strict=False)
+        if not candidate.is_relative_to(root_dir_resolved):
+            return None
+        return candidate
 
     @staticmethod
     def _parse_annotated_image_ref(value: str) -> dict[str, str] | None:
@@ -259,8 +261,13 @@ class XImageGet(io.ComfyNode):
         base = base.strip()
         if root_name not in {"input", "output", "temp"} or not base:
             return None
-        parts = [part for part in base.split("/") if part]
+        normalized = base.replace("\\", "/")
+        parts = [
+            part.strip() for part in normalized.split("/") if part.strip()
+        ]
         if not parts:
+            return None
+        if any(part in {".", ".."} for part in parts):
             return None
         filename = parts[-1]
         subfolder = "/".join(parts[:-1])

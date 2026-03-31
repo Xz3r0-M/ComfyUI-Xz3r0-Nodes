@@ -1,7 +1,7 @@
 /**
  * XFitView - ComfyUI 自动适应视图扩展
  * ===========================================
- * 版本: 1.3.0 - 2025-03-04
+ * 版本：1.3.0 - 2025-03-04
  *
  * 功能概述:
  * ---------
@@ -12,7 +12,7 @@
  * ---------
  * 1. 工作流加载适应:
  *    - 页面首次加载完成后自动适应视图
- *    - 监听工作流加载事件(onConfigure, loadGraphData)
+ *    - 监听工作流加载事件 (onConfigure, loadGraphData)
  *    - 新工作流载入后自动适应视图
  *
  * 2. 子图页面适应:
@@ -21,13 +21,13 @@
  *    - 支持嵌套子图检测
  *
  * 3. 智能去重机制:
- *    - 基于工作流特征生成唯一标识(节点类型、连接拓扑)
- *    - "first"模式: 同一会话中相同工作流只适应一次
- *    - "always"模式: 每次加载都适应
- *    - "never"模式: 禁用自动适应
+ *    - 基于工作流特征生成唯一标识 (节点类型、连接拓扑)
+ *    - "first"模式：同一会话中相同工作流只适应一次
+ *    - "always"模式：每次加载都适应
+ *    - "never"模式：禁用自动适应
  *
  * 4. 防抖控制:
- *    - 同一工作流200ms内多次触发只执行一次
+ *    - 同一工作流 200ms 内多次触发只执行一次
  *    - 不同工作流之间立即触发
  *
  * 5. 设置选项:
@@ -35,7 +35,7 @@
  *    - Workflow Exit Mode: 从子图退出到主工作流时 (first/always/never)
  *    - Subgraph Enter Mode: 进入子图时 (first/always/never)
  *    - Subgraph Exit Mode: 退出子图时 (first/always/never)
- *    - 适应延迟时间: 0-2000ms可调
+ *    - 适应延迟时间：0-2000ms 可调
  *    - 注册到 Xz3r0 设置分类
  *
  * 技术实现:
@@ -65,10 +65,10 @@ import { app } from "../../scripts/app.js";
 /**
  * cyrb53 哈希算法 - 提供高质量的字符串哈希
  * 基于 https://github.com/bryc/code/blob/master/jshash/experimental/cyrb53.js
- * 相比简单哈希(djb2)，具有更低的冲突概率和更好的分布性
+ * 相比简单哈希 (djb2)，具有更低的冲突概率和更好的分布性
  * @param {string} str - 输入字符串
  * @param {number} seed - 随机种子
- * @returns {string} 16进制哈希字符串（16位）
+ * @returns {string} 16 进制哈希字符串（16 位）
  */
 function cyrb53(str, seed = 0) {
     let h1 = 0xdeadbeef ^ seed;
@@ -85,7 +85,7 @@ function cyrb53(str, seed = 0) {
     h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507)
         ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
 
-    // 返回64位哈希值的16进制字符串（16位字符）
+    // 返回 64 位哈希值的 16 进制字符串（16 位字符）
     return (h2 >>> 0).toString(16).padStart(8, '0')
         + (h1 >>> 0).toString(16).padStart(8, '0');
 }
@@ -93,8 +93,8 @@ function cyrb53(str, seed = 0) {
 /**
  * 获取工作流的唯一标识
  * 基于工作流数据的特征（节点类型、属性值、连接拓扑）
- * 使用稳定的特征组合（不包含位置/大小/运行时ID等会变化的属性）
- * 使用 cyrb53 哈希算法，提供64位哈希值，显著降低冲突概率
+ * 使用稳定的特征组合（不包含位置/大小/运行时 ID 等会变化的属性）
+ * 使用 cyrb53 哈希算法，提供 64 位哈希值，显著降低冲突概率
  * @returns {string|null} 工作流标识符
  */
 function getWorkflowId() {
@@ -109,19 +109,19 @@ function getWorkflowId() {
         nodeIndexMap.set(n.id, idx);
     });
 
-    // 使用稳定的特征：节点类型 + 关键属性（不包含位置、大小等UI相关属性）
+    // 使用稳定的特征：节点类型 + 关键属性（不包含位置、大小等 UI 相关属性）
     const nodeSignatures = nodes
         .map((n, idx) => {
             // 收集节点的关键属性值（widgets_values 包含节点的配置参数）
             const widgetValues = n.widgets_values
                 ? JSON.stringify(n.widgets_values)
                 : '';
-            // 使用节点索引而非运行时ID
+            // 使用节点索引而非运行时 ID
             return `${idx}:${n.type}:${widgetValues}`;
         })
         .join('|');
 
-    // 包含连接信息 - 使用节点索引而非运行时ID
+    // 包含连接信息 - 使用节点索引而非运行时 ID
     const links = app.graph.links || {};
     const linkList = Object.values(links).filter(l => l != null);
 
@@ -134,7 +134,7 @@ function getWorkflowId() {
         .sort()
         .join('|');
 
-    // 使用 cyrb53 生成64位哈希
+    // 使用 cyrb53 生成 64 位哈希
     const str = `${nodes.length}|${nodeSignatures}|${linkList.length}|${linkSignatures}`;
     const hash = cyrb53(str);
 
@@ -163,7 +163,7 @@ const fittedExits = new Set();
 let fitViewTimeout = null;
 let lastFitTime = 0;
 let lastWorkflowId = null;
-const FIT_DEBOUNCE_MS = 200; // 同一工作流200ms内只触发一次
+const FIT_DEBOUNCE_MS = 200; // 同一工作流 200ms 内只触发一次
 
 /**
  * 标记工作流已适应
@@ -268,11 +268,11 @@ function findFitViewButton() {
  * 获取当前子图标识
  * 基于面包屑导航中的子图名称生成唯一标识
  * @param {boolean} silent - 是否静默模式（不输出日志）
- * @returns {string|null} 子图标识符，如果不在子图中则返回null
+ * @returns {string|null} 子图标识符，如果不在子图中则返回 null
  */
 function getCurrentSubgraphId(silent = true) {
     // 查找面包屑导航中的所有子图名称项
-    // 面包屑结构: Unsaved Workflow / SubgraphName
+    // 面包屑结构：Unsaved Workflow / SubgraphName
     const breadcrumbItems = document.querySelectorAll('.p-breadcrumb-item-label');
 
     if (!silent) {
@@ -548,7 +548,7 @@ function initSubgraphObserver() {
                 fitSubgraphToView(delay, checkSubgraph);
             }
         }
-        // ========== 返回上一级子图（层级减少但仍大于1）==========
+        // ========== 返回上一级子图（层级减少但仍大于 1）==========
         else if (currentSubgraphId
             && currentSubgraphId !== lastDetectedSubgraphId
             && currentLevel < lastBreadcrumbLevel
@@ -565,7 +565,7 @@ function initSubgraphObserver() {
                 fitSubgraphToView(delay, checkSubgraph);
             }
         }
-        // ========== 完全退出到主工作流（层级变为1）==========
+        // ========== 完全退出到主工作流（层级变为 1）==========
         else if (!currentSubgraphId && lastDetectedSubgraphId && currentLevel <= 1) {
             debugLog('Mutation detected: exited to main workflow');
             lastDetectedSubgraphId = null;
