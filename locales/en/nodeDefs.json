@@ -1,28 +1,4 @@
 {
-  "XAnyToString": {
-    "display_name": "XAnyToString",
-    "description": "Converts any input data to a string while passing the original input through to downstream nodes.",
-    "inputs": {
-      "anything": {
-        "name": "Any Input",
-        "tooltip": "Optional pass-through input. The pass-through output automatically keeps the same data type as this input while also converting the value with Python str()."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Any Output",
-        "tooltip": "Original input data passed through for downstream nodes"
-      },
-      "1": {
-        "name": "String",
-        "tooltip": "String converted from the input using str()"
-      },
-      "2": {
-        "name": "xdata String",
-        "tooltip": "xdata_string payload for XDataSave"
-      }
-    }
-  },
   "XAnyGate10": {
     "display_name": "XAnyGate10",
     "description": "10-channel gate node with per-channel output switches and recursive output enabled by default, using customizable recursive order.",
@@ -163,6 +139,30 @@
       }
     }
   },
+  "XAnyToString": {
+    "display_name": "XAnyToString",
+    "description": "Converts any input data to a string while passing the original input through to downstream nodes.",
+    "inputs": {
+      "anything": {
+        "name": "Any Input",
+        "tooltip": "Pass-through input. The pass-through output keeps the same data type as this input while also converting the value with Python str()"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Any Output",
+        "tooltip": "Original input data passed through for downstream nodes"
+      },
+      "1": {
+        "name": "String",
+        "tooltip": "String converted from the input using str()"
+      },
+      "2": {
+        "name": "xdata String",
+        "tooltip": "xdata_string payload for XDataSave"
+      }
+    }
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
@@ -184,6 +184,50 @@
       "0": {
         "name": "Datetime String",
         "tooltip": "Formatted datetime string"
+      }
+    }
+  },
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
+    "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning input"
+      },
+      "negative_conditioning": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning input"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "VAE used to encode reference images"
+      },
+      "image_1": {
+        "name": "Reference Image 1",
+        "tooltip": "Reference image 1 (optional)"
+      },
+      "image_2": {
+        "name": "Reference Image 2",
+        "tooltip": "Reference image 2 (optional)"
+      },
+      "image_3": {
+        "name": "Reference Image 3",
+        "tooltip": "Reference image 3 (optional)"
+      },
+      "image_4": {
+        "name": "Reference Image 4",
+        "tooltip": "Reference image 4 (optional)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning with reference latents"
+      },
+      "1": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning with reference latents"
       }
     }
   },
@@ -332,6 +376,34 @@
       "1": {
         "name": "height",
         "tooltip": "Output resolution height (after preset, scaling, swap, divisible adjustment, and offset)"
+      }
+    }
+  },
+  "XSeed": {
+    "display_name": "XSeed",
+    "description": "Generate non-negative seed values with native seed control, then apply max-digit truncation and optional trailing zero-padding.",
+    "inputs": {
+      "digits": {
+        "name": "Digit Limit",
+        "tooltip": "Max output digit limit (1 to 20). Truncation is applied only when seed length exceeds this limit."
+      },
+      "pad_to_limit": {
+        "name": "Pad With Zeros",
+        "tooltip": "When enabled, seeds shorter than the digit limit are padded with trailing zeros to the limit length. Because random seeds in the 64-bit range are usually high-digit values, this option is rarely triggered in practice."
+      },
+      "seed_value": {
+        "name": "Seed Value",
+        "tooltip": "Base non-negative seed value with native generate control. Final output applies digit-limit rules."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Seed Int",
+        "tooltip": "Final non-negative integer seed after limit and padding rules."
+      },
+      "1": {
+        "name": "xdata Seed",
+        "tooltip": "xdata_seed payload for passing to XDataSave as local history data."
       }
     }
   },
@@ -509,6 +581,17 @@
       }
     }
   },
+  "XAudioGet": {
+    "display_name": "XAudioGet",
+    "description": "Load the latest audio sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Audio",
+        "tooltip": "Latest audio received from XDataHub"
+      }
+    }
+  },
   "XAudioSave": {
     "display_name": "XAudioSave",
     "description": "Audio saving node with WAV/FLAC lossless output, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
@@ -585,6 +668,79 @@
       "1": {
         "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XDataSave": {
+    "display_name": "XDataSave",
+    "description": "Save xdata records to SQLite DB files under the project XDataSaved folder with Custom/Seed/String save types, 500-record rotation, a 120-character header limit, and a 64KB per-record limit.",
+    "inputs": {
+      "xdata_input": {
+        "name": "xdata Input",
+        "tooltip": "Composite xdata input. Currently supports xdata_seed and xdata_string."
+      },
+      "save_type": {
+        "name": "Save Type",
+        "tooltip": "Save type: Custom requires a custom filename; Seed always writes to seed_data.db; String always writes to string_data.db.",
+        "options": {
+          "Custom": "Custom",
+          "Seed": "Seed",
+          "String": "String"
+        }
+      },
+      "custom_filename_input": {
+        "name": "Custom Filename Input",
+        "tooltip": "Optional custom filename input port. When connected, it takes priority over the text field."
+      },
+      "custom_filename_text": {
+        "name": "Custom Filename",
+        "tooltip": "Fallback filename for Custom save type. Default is empty; missing filename raises an explicit configuration error."
+      },
+      "extra_header_input": {
+        "name": "Extra Header Input",
+        "tooltip": "Optional extra header input port. When connected, it takes priority over the text field."
+      },
+      "extra_header_text": {
+        "name": "Extra Header Text",
+        "tooltip": "Fallback extra header text. Saved together with the actual timestamp in each record; header length must not exceed 120 characters and each record must not exceed 64KB."
+      },
+      "enable_save": {
+        "name": "Enable Save",
+        "tooltip": "Enable or disable file writing. When disabled, this node returns a skipped status."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Save Status",
+        "tooltip": "Save execution status message."
+      },
+      "1": {
+        "name": "Save Path",
+        "tooltip": "Path relative to project root. Empty string when save is skipped."
+      }
+    }
+  },
+  "XImageGet": {
+    "display_name": "XImageGet",
+    "description": "Load the latest image sent from XDataHub.",
+    "inputs": {
+      "output_placeholder": {
+        "name": "Placeholder Black Image",
+        "tooltip": "Output a 1x1 black placeholder image when no image is available"
+      },
+      "mask_image_ref": {
+        "name": "Mask Ref",
+        "tooltip": "Mask image reference saved by the official mask editor"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Image",
+        "tooltip": "Latest image received from XDataHub"
+      },
+      "1": {
+        "name": "Mask",
+        "tooltip": "Mask extracted from the mask editor output image"
       }
     }
   },
@@ -692,65 +848,6 @@
       }
     }
   },
-  "XImageGet": {
-    "display_name": "XImageGet",
-    "description": "Load the latest image sent from XDataHub.",
-    "inputs": {
-      "output_placeholder": {
-        "name": "Placeholder Black Image",
-        "tooltip": "Output a 1x1 black placeholder image when no image is available"
-      },
-      "mask_image_ref": {
-        "name": "Mask Ref",
-        "tooltip": "Mask image reference saved by the official mask editor"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Image",
-        "tooltip": "Latest image received from XDataHub"
-      },
-      "1": {
-        "name": "Mask",
-        "tooltip": "Mask extracted from the mask editor output image"
-      }
-    }
-  },
-  "XAudioGet": {
-    "display_name": "XAudioGet",
-    "description": "Load the latest audio sent from XDataHub.",
-    "inputs": {},
-    "outputs": {
-      "0": {
-        "name": "Audio",
-        "tooltip": "Latest audio received from XDataHub"
-      }
-    }
-  },
-  "XStringGet": {
-    "display_name": "XStringGet",
-    "description": "Load the latest text sent from XDataHub.",
-    "inputs": {
-      "text_value": {
-        "name": "Content",
-        "tooltip": "Latest body text received from XDataHub"
-      },
-      "title_value": {
-        "name": "Header",
-        "tooltip": "Latest header text received from XDataHub"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Content",
-        "tooltip": "Latest body text received from XDataHub"
-      },
-      "1": {
-        "name": "Header",
-        "tooltip": "Latest header text received from XDataHub"
-      }
-    }
-  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "Advanced image/mask saving node with custom filename, subfolder support, and datetime placeholders.",
@@ -784,17 +881,6 @@
       "1": {
         "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
-      }
-    }
-  },
-  "XVideoGet": {
-    "display_name": "XVideoGet",
-    "description": "Load the latest video sent from XDataHub.",
-    "inputs": {},
-    "outputs": {
-      "0": {
-        "name": "Video",
-        "tooltip": "Latest video received from XDataHub"
       }
     }
   },
@@ -843,6 +929,38 @@
       "1": {
         "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XLoraGet": {
+    "display_name": "XLoraGet",
+    "description": "Receives a LoRA list from XDataHub Lora cards and applies them to the model and CLIP in order.",
+    "inputs": {
+      "model": {
+        "name": "Model",
+        "tooltip": "Base model to apply LoRAs to"
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "Optional CLIP input. When not connected, Clip strength is forced to 0."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Model",
+        "tooltip": "Model with LoRAs applied"
+      },
+      "1": {
+        "name": "CLIP",
+        "tooltip": "CLIP with LoRAs applied"
+      },
+      "2": {
+        "name": "Trigger Words",
+        "tooltip": "Enabled trigger words from all active LoRAs"
+      },
+      "3": {
+        "name": "LoRA Info",
+        "tooltip": "Summary of applied LoRA names, model strength, and Clip strength"
       }
     }
   },
@@ -915,6 +1033,41 @@
       "1": {
         "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XStringGet": {
+    "display_name": "XStringGet",
+    "description": "Load the latest text sent from XDataHub.",
+    "inputs": {
+      "text_value": {
+        "name": "Content",
+        "tooltip": "Latest body text received from XDataHub"
+      },
+      "title_value": {
+        "name": "Header",
+        "tooltip": "Latest header text received from XDataHub"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Content",
+        "tooltip": "Latest body text received from XDataHub"
+      },
+      "1": {
+        "name": "Header",
+        "tooltip": "Latest header text received from XDataHub"
+      }
+    }
+  },
+  "XVideoGet": {
+    "display_name": "XVideoGet",
+    "description": "Load the latest video sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Video",
+        "tooltip": "Latest video received from XDataHub"
       }
     }
   },
@@ -997,159 +1150,6 @@
       "1": {
         "name": "Workflow Info",
         "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
-      }
-    }
-  },
-  "XDataSave": {
-    "display_name": "XDataSave",
-    "description": "Save xdata records to SQLite DB files under the project XDataSaved folder with Custom/Seed/String save types, 500-record rotation, a 120-character header limit, and a 64KB per-record limit.",
-    "inputs": {
-      "xdata_input": {
-        "name": "xdata Input",
-        "tooltip": "Composite xdata input. Currently supports xdata_seed and xdata_string."
-      },
-      "save_type": {
-        "name": "Save Type",
-        "tooltip": "Save type: Custom requires a custom filename; Seed always writes to seed_data.db; String always writes to string_data.db.",
-        "options": {
-          "Custom": "Custom",
-          "Seed": "Seed",
-          "String": "String"
-        }
-      },
-      "custom_filename_input": {
-        "name": "Custom Filename Input",
-        "tooltip": "Optional custom filename input port. When connected, it takes priority over the text field."
-      },
-      "custom_filename_text": {
-        "name": "Custom Filename",
-        "tooltip": "Fallback filename for Custom save type. Default is empty; missing filename raises an explicit configuration error."
-      },
-      "extra_header_input": {
-        "name": "Extra Header Input",
-        "tooltip": "Optional extra header input port. When connected, it takes priority over the text field."
-      },
-      "extra_header_text": {
-        "name": "Extra Header Text",
-        "tooltip": "Fallback extra header text. Saved together with the actual timestamp in each record; header length must not exceed 120 characters and each record must not exceed 64KB."
-      },
-      "enable_save": {
-        "name": "Enable Save",
-        "tooltip": "Enable or disable file writing. When disabled, this node returns a skipped status."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Save Status",
-        "tooltip": "Save execution status message."
-      },
-      "1": {
-        "name": "Save Path",
-        "tooltip": "Path relative to project root. Empty string when save is skipped."
-      }
-    }
-  },
-  "XSeed": {
-    "display_name": "XSeed",
-    "description": "Generate non-negative seed values with native seed control, then apply max-digit truncation and optional trailing zero-padding.",
-    "inputs": {
-      "digits": {
-        "name": "Digit Limit",
-        "tooltip": "Max output digit limit (1 to 20). Truncation is applied only when seed length exceeds this limit."
-      },
-      "pad_to_limit": {
-        "name": "Pad With Zeros",
-        "tooltip": "When enabled, seeds shorter than the digit limit are padded with trailing zeros to the limit length. Because random seeds in the 64-bit range are usually high-digit values, this option is rarely triggered in practice."
-      },
-      "seed_value": {
-        "name": "Seed Value",
-        "tooltip": "Base non-negative seed value with native generate control. Final output applies digit-limit rules."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Seed Int",
-        "tooltip": "Final non-negative integer seed after limit and padding rules."
-      },
-      "1": {
-        "name": "xdata Seed",
-        "tooltip": "xdata_seed payload for passing to XDataSave as local history data."
-      }
-    }
-  },
-  "XKleinRefConditioning": {
-    "display_name": "XKleinRefConditioning",
-    "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
-    "inputs": {
-      "positive_conditioning": {
-        "name": "Positive Conditioning",
-        "tooltip": "Positive conditioning input"
-      },
-      "negative_conditioning": {
-        "name": "Negative Conditioning",
-        "tooltip": "Negative conditioning input"
-      },
-      "vae": {
-        "name": "VAE",
-        "tooltip": "VAE used to encode reference images"
-      },
-      "image_1": {
-        "name": "Reference Image 1",
-        "tooltip": "Reference image 1 (optional)"
-      },
-      "image_2": {
-        "name": "Reference Image 2",
-        "tooltip": "Reference image 2 (optional)"
-      },
-      "image_3": {
-        "name": "Reference Image 3",
-        "tooltip": "Reference image 3 (optional)"
-      },
-      "image_4": {
-        "name": "Reference Image 4",
-        "tooltip": "Reference image 4 (optional)"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Positive Conditioning",
-        "tooltip": "Positive conditioning with reference latents"
-      },
-      "1": {
-        "name": "Negative Conditioning",
-        "tooltip": "Negative conditioning with reference latents"
-      }
-    }
-  },
-  "XLoraGet": {
-    "display_name": "XLoraGet",
-    "description": "Receives a LoRA list from XDataHub Lora cards and applies them to the model and CLIP in order.",
-    "inputs": {
-      "model": {
-        "name": "Model",
-        "tooltip": "Base model to apply LoRAs to"
-      },
-      "clip": {
-        "name": "CLIP",
-        "tooltip": "Optional CLIP input. When not connected, Clip strength is forced to 0."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Model",
-        "tooltip": "Model with LoRAs applied"
-      },
-      "1": {
-        "name": "CLIP",
-        "tooltip": "CLIP with LoRAs applied"
-      },
-      "2": {
-        "name": "Trigger Words",
-        "tooltip": "Enabled trigger words from all active LoRAs"
-      },
-      "3": {
-        "name": "LoRA Info",
-        "tooltip": "Summary of applied LoRA names, model strength, and Clip strength"
       }
     }
   }

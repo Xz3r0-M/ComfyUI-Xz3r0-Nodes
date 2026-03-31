@@ -192,7 +192,7 @@ class XImageGet(io.ComfyNode):
     ) -> io.NodeOutput:
         if output_placeholder:
             return cls._build_placeholder_output()
-        return io.NodeOutput(None)
+        return io.NodeOutput(None, None)
 
     @staticmethod
     def _fingerprint_refs(

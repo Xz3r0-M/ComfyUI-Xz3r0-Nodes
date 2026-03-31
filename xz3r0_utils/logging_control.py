@@ -62,6 +62,50 @@ MODULE_LOG_LEVELS: dict[str, str] = {
 _CONFIGURED = False
 
 
+def _package_prefixes() -> set[str]:
+    """
+    推导扩展包前缀（若存在），用于兼容短模块名与全限定模块名。
+    """
+    prefixes: set[str] = set()
+
+    package_name = __package__ or ""
+    if package_name.endswith(".xz3r0_utils"):
+        root = package_name[: -len(".xz3r0_utils")]
+        if root:
+            prefixes.add(root)
+
+    module_name = __name__
+    if module_name.endswith(".xz3r0_utils.logging_control"):
+        root = module_name[: -len(".xz3r0_utils.logging_control")]
+        if root:
+            prefixes.add(root)
+
+    return prefixes
+
+
+def _expand_module_names(module_name: str) -> set[str]:
+    """
+    将单个模块名展开为可匹配的候选名（短名 + 包前缀名）。
+    """
+    expanded = {module_name}
+
+    for prefix in _package_prefixes():
+        if module_name == "__init__":
+            expanded.add(prefix)
+            expanded.add(f"{prefix}.__init__")
+            continue
+
+        prefix_dot = f"{prefix}."
+        if module_name.startswith(prefix_dot):
+            short_name = module_name[len(prefix_dot) :]
+            if short_name:
+                expanded.add(short_name)
+        else:
+            expanded.add(f"{prefix}.{module_name}")
+
+    return expanded
+
+
 def _normalize_level(level_name: str) -> int:
     """
     将字符串日志级别转换为 logging 常量，非法值回退到 INFO。
@@ -98,10 +142,11 @@ def _read_module_overrides() -> dict[str, int]:
         - 该环境变量会覆盖 MODULE_LOG_LEVELS 中同名模块的级别。
         - 只影响指定模块，不影响其他模块。
     """
-    overrides = {
-        module_name: _normalize_level(level_name)
-        for module_name, level_name in MODULE_LOG_LEVELS.items()
-    }
+    overrides: dict[str, int] = {}
+    for module_name, level_name in MODULE_LOG_LEVELS.items():
+        normalized_level = _normalize_level(level_name)
+        for expanded_name in _expand_module_names(module_name):
+            overrides[expanded_name] = normalized_level
 
     env_overrides = os.getenv("XZ3R0_LOG_MODULE_LEVELS", "").strip()
     if not env_overrides:
@@ -116,7 +161,9 @@ def _read_module_overrides() -> dict[str, int]:
         level_name = level_name.strip()
         if not module_name:
             continue
-        overrides[module_name] = _normalize_level(level_name)
+        normalized_level = _normalize_level(level_name)
+        for expanded_name in _expand_module_names(module_name):
+            overrides[expanded_name] = normalized_level
     return overrides
 
 

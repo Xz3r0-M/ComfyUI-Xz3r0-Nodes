@@ -1,28 +1,4 @@
 {
-  "XAnyToString": {
-    "display_name": "XAnyToString",
-    "description": "将任意输入数据转换为字符串，同时保留原始输入透传给下游节点。",
-    "inputs": {
-      "anything": {
-        "name": "任意输入",
-        "tooltip": "可选透传输入：透传输出会自动保持与该输入一致的数据类型，同时使用 Python str() 转换为字符串"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "任意输出",
-        "tooltip": "原始输入数据透传，可继续连接下游节点"
-      },
-      "1": {
-        "name": "字符串",
-        "tooltip": "使用 str() 从输入转换得到的字符串"
-      },
-      "2": {
-        "name": "xdata 字符串",
-        "tooltip": "用于 XDataSave 的 xdata_string 协议负载"
-      }
-    }
-  },
   "XAnyGate10": {
     "display_name": "XAnyGate10",
     "description": "10 路任意类型开关门控节点：每一路可独立开关控制输出，递归输出默认启用，并可自定义递归顺序。",
@@ -163,6 +139,30 @@
       }
     }
   },
+  "XAnyToString": {
+    "display_name": "XAnyToString",
+    "description": "将任意输入数据转换为字符串，同时保留原始输入透传给下游节点。",
+    "inputs": {
+      "anything": {
+        "name": "任意输入",
+        "tooltip": "透传输入：透传输出会保持与该输入一致的数据类型，同时使用 Python str() 转换为字符串"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "任意输出",
+        "tooltip": "原始输入数据透传，可继续连接下游节点"
+      },
+      "1": {
+        "name": "字符串",
+        "tooltip": "使用 str() 从输入转换得到的字符串"
+      },
+      "2": {
+        "name": "xdata 字符串",
+        "tooltip": "用于 XDataSave 的 xdata_string 协议负载"
+      }
+    }
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "日期时间字符串节点，生成包含日期时间标识符的格式化字符串，用于链接给本身不支持日期标识符的节点。",
@@ -184,6 +184,50 @@
       "0": {
         "name": "日期时间字符串",
         "tooltip": "格式化后的日期时间字符串"
+      }
+    }
+  },
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
+    "description": "自动对已连接参考图执行 VAE 编码，并将参考 latent 同步追加到正面与负面条件链。",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "正面条件",
+        "tooltip": "正面条件输入"
+      },
+      "negative_conditioning": {
+        "name": "负面条件",
+        "tooltip": "负面条件输入"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "用于编码参考图的 VAE"
+      },
+      "image_1": {
+        "name": "参考图 1",
+        "tooltip": "参考图 1（可选）"
+      },
+      "image_2": {
+        "name": "参考图 2",
+        "tooltip": "参考图 2（可选）"
+      },
+      "image_3": {
+        "name": "参考图 3",
+        "tooltip": "参考图 3（可选）"
+      },
+      "image_4": {
+        "name": "参考图 4",
+        "tooltip": "参考图 4（可选）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "正面条件",
+        "tooltip": "追加参考 latent 后的正面条件"
+      },
+      "1": {
+        "name": "负面条件",
+        "tooltip": "追加参考 latent 后的负面条件"
       }
     }
   },
@@ -332,6 +376,34 @@
       "1": {
         "name": "高度",
         "tooltip": "输出分辨率高度（在预设、缩放、交换、取整和偏移后）"
+      }
+    }
+  },
+  "XSeed": {
+    "display_name": "XSeed",
+    "description": "使用原生种子生成控件生成非负种子，并按位数上限规则输出：超过上限时左截断，不足上限可选末尾补 0。",
+    "inputs": {
+      "digits": {
+        "name": "位数上限",
+        "tooltip": "输出种子位数上限（1 到 20）。仅当种子位数超过上限时才会截断。"
+      },
+      "pad_to_limit": {
+        "name": "用 0 补全位数",
+        "tooltip": "当种子位数不足上限时，开启后会在末尾补 0 到上限位数。关闭时保持原值。由于 64 位范围随机种子大多数是高位数，此功能在实际随机场景下通常较少触发。"
+      },
+      "seed_value": {
+        "name": "种子值",
+        "tooltip": "基础非负种子值，启用原生生成控制组件。最终输出会按位数上限规则处理。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "整数种子",
+        "tooltip": "按位数上限和补零开关处理后的最终非负整数种子值。"
+      },
+      "1": {
+        "name": "xdata 种子",
+        "tooltip": "xdata_seed 专用数据，可传给 XDataSave 进行本地历史保存。"
       }
     }
   },
@@ -509,6 +581,17 @@
       }
     }
   },
+  "XAudioGet": {
+    "display_name": "XAudioGet",
+    "description": "从 XDataHub 获取最新发送的音频。",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "音频",
+        "tooltip": "XDataHub 最近发送的音频"
+      }
+    }
+  },
   "XAudioSave": {
     "display_name": "XAudioSave",
     "description": "音频保存节点，支持 WAV/FLAC 无损导出，支持自定义文件名、子文件夹、日期时间标识符、动态范围压缩、音量标准化和峰值限制。",
@@ -585,6 +668,79 @@
       "1": {
         "name": "保存路径",
         "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
+      }
+    }
+  },
+  "XDataSave": {
+    "display_name": "XDataSave",
+    "description": "将 xdata 数据保存到项目目录 XDataSaved 中的 SQLite 数据库文件，支持 Custom/Seed/String 三种保存类型、500 条滚动上限、头部最多 120 字符，以及单条 64KB 上限。",
+    "inputs": {
+      "xdata_input": {
+        "name": "xdata 输入",
+        "tooltip": "复合 xdata 输入。当前支持 xdata_seed 与 xdata_string。"
+      },
+      "save_type": {
+        "name": "保存类型",
+        "tooltip": "保存类型：Custom 需要自定义文件名；Seed 固定保存到 seed_data.db；String 固定保存到 string_data.db。",
+        "options": {
+          "Custom": "自定义",
+          "Seed": "种子",
+          "String": "字符串"
+        }
+      },
+      "custom_filename_input": {
+        "name": "自定义文件名输入",
+        "tooltip": "可选自定义文件名输入端口。已连接时优先于自定义文件名文本框。"
+      },
+      "custom_filename_text": {
+        "name": "自定义文件名",
+        "tooltip": "save_type 为 Custom 时使用的回退文件名。默认留空，未设置会报错提示先配置。"
+      },
+      "extra_header_input": {
+        "name": "额外头部输入",
+        "tooltip": "可选额外头部信息输入端口。已连接时优先于额外头部文本框。"
+      },
+      "extra_header_text": {
+        "name": "额外头部信息",
+        "tooltip": "回退额外头部信息文本。保存时会和实际时间一起写入记录头；头部最多 120 字符，且单条记录总大小不能超过 64KB。"
+      },
+      "enable_save": {
+        "name": "启用保存",
+        "tooltip": "是否执行写入。关闭时不写文件，仅返回跳过状态。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "保存状态",
+        "tooltip": "保存执行状态信息"
+      },
+      "1": {
+        "name": "保存路径",
+        "tooltip": "相对于项目根目录的保存路径，未写入时为空字符串。"
+      }
+    }
+  },
+  "XImageGet": {
+    "display_name": "XImageGet",
+    "description": "从 XDataHub 获取最新发送的图片。",
+    "inputs": {
+      "output_placeholder": {
+        "name": "无图时输出占位黑图",
+        "tooltip": "没有可用图像时，输出 1x1 像素黑色占位图"
+      },
+      "mask_image_ref": {
+        "name": "遮罩引用",
+        "tooltip": "官方遮罩编辑器保存后的遮罩图引用"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "XDataHub 最近发送的图片"
+      },
+      "1": {
+        "name": "遮罩",
+        "tooltip": "从遮罩编辑器输出图中提取的遮罩"
       }
     }
   },
@@ -692,65 +848,6 @@
       }
     }
   },
-  "XImageGet": {
-    "display_name": "XImageGet",
-    "description": "从 XDataHub 获取最新发送的图片。",
-    "inputs": {
-      "output_placeholder": {
-        "name": "无图时输出占位黑图",
-        "tooltip": "没有可用图像时，输出 1x1 像素黑色占位图"
-      },
-      "mask_image_ref": {
-        "name": "遮罩引用",
-        "tooltip": "官方遮罩编辑器保存后的遮罩图引用"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "图像",
-        "tooltip": "XDataHub 最近发送的图片"
-      },
-      "1": {
-        "name": "遮罩",
-        "tooltip": "从遮罩编辑器输出图中提取的遮罩"
-      }
-    }
-  },
-  "XAudioGet": {
-    "display_name": "XAudioGet",
-    "description": "从 XDataHub 获取最新发送的音频。",
-    "inputs": {},
-    "outputs": {
-      "0": {
-        "name": "音频",
-        "tooltip": "XDataHub 最近发送的音频"
-      }
-    }
-  },
-  "XStringGet": {
-    "display_name": "XStringGet",
-    "description": "从 XDataHub 获取最新发送的文本。",
-    "inputs": {
-      "text_value": {
-        "name": "内容",
-        "tooltip": "XDataHub 最近发送的正文内容"
-      },
-      "title_value": {
-        "name": "头部信息",
-        "tooltip": "XDataHub 最近发送的头部信息"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "内容",
-        "tooltip": "XDataHub 最近发送的正文内容"
-      },
-      "1": {
-        "name": "头部信息",
-        "tooltip": "XDataHub 最近发送的头部信息"
-      }
-    }
-  },
   "XImageSave": {
     "display_name": "XImageSave",
     "description": "高级图像/遮罩保存节点，支持自定义文件名、子文件夹和日期时间占位符。",
@@ -784,17 +881,6 @@
       "1": {
         "name": "保存路径",
         "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
-      }
-    }
-  },
-  "XVideoGet": {
-    "display_name": "XVideoGet",
-    "description": "从 XDataHub 获取最新发送的视频。",
-    "inputs": {},
-    "outputs": {
-      "0": {
-        "name": "视频",
-        "tooltip": "XDataHub 最近发送的视频"
       }
     }
   },
@@ -843,6 +929,38 @@
       "1": {
         "name": "保存路径",
         "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
+      }
+    }
+  },
+  "XLoraGet": {
+    "display_name": "XLoraGet",
+    "description": "从 XDataHub Lora 卡片接收 LoRA 列表并按顺序加载到模型和 CLIP。",
+    "inputs": {
+      "model": {
+        "name": "模型",
+        "tooltip": "待应用 LoRA 的基础模型"
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "可选 CLIP 输入，未连接时 Clip 强度将强制为 0"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "模型",
+        "tooltip": "应用 LoRA 后的模型"
+      },
+      "1": {
+        "name": "CLIP",
+        "tooltip": "应用 LoRA 后的 CLIP"
+      },
+      "2": {
+        "name": "触发词",
+        "tooltip": "已启用的触发词（逐 LoRA，开启状态的触发词）"
+      },
+      "3": {
+        "name": "LoRA 信息",
+        "tooltip": "已应用的 LoRA 名称、模型强度和 Clip 强度摘要"
       }
     }
   },
@@ -915,6 +1033,41 @@
       "1": {
         "name": "保存路径",
         "tooltip": "保存的文件路径（相对于 ComfyUI 输出目录）"
+      }
+    }
+  },
+  "XStringGet": {
+    "display_name": "XStringGet",
+    "description": "从 XDataHub 获取最新发送的文本。",
+    "inputs": {
+      "text_value": {
+        "name": "内容",
+        "tooltip": "XDataHub 最近发送的正文内容"
+      },
+      "title_value": {
+        "name": "头部信息",
+        "tooltip": "XDataHub 最近发送的头部信息"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "内容",
+        "tooltip": "XDataHub 最近发送的正文内容"
+      },
+      "1": {
+        "name": "头部信息",
+        "tooltip": "XDataHub 最近发送的头部信息"
+      }
+    }
+  },
+  "XVideoGet": {
+    "display_name": "XVideoGet",
+    "description": "从 XDataHub 获取最新发送的视频。",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "视频",
+        "tooltip": "XDataHub 最近发送的视频"
       }
     }
   },
@@ -997,159 +1150,6 @@
       "1": {
         "name": "工作流信息",
         "tooltip": "工作流信息摘要，包含保存状态、节点数量、数据概览和文件路径。可用于调试和验证。"
-      }
-    }
-  },
-  "XDataSave": {
-    "display_name": "XDataSave",
-    "description": "将 xdata 数据保存到项目目录 XDataSaved 中的 SQLite 数据库文件，支持 Custom/Seed/String 三种保存类型、500 条滚动上限、头部最多 120 字符，以及单条 64KB 上限。",
-    "inputs": {
-      "xdata_input": {
-        "name": "xdata 输入",
-        "tooltip": "复合 xdata 输入。当前支持 xdata_seed 与 xdata_string。"
-      },
-      "save_type": {
-        "name": "保存类型",
-        "tooltip": "保存类型：Custom 需要自定义文件名；Seed 固定保存到 seed_data.db；String 固定保存到 string_data.db。",
-        "options": {
-          "Custom": "自定义",
-          "Seed": "种子",
-          "String": "字符串"
-        }
-      },
-      "custom_filename_input": {
-        "name": "自定义文件名输入",
-        "tooltip": "可选自定义文件名输入端口。已连接时优先于自定义文件名文本框。"
-      },
-      "custom_filename_text": {
-        "name": "自定义文件名",
-        "tooltip": "save_type 为 Custom 时使用的回退文件名。默认留空，未设置会报错提示先配置。"
-      },
-      "extra_header_input": {
-        "name": "额外头部输入",
-        "tooltip": "可选额外头部信息输入端口。已连接时优先于额外头部文本框。"
-      },
-      "extra_header_text": {
-        "name": "额外头部信息",
-        "tooltip": "回退额外头部信息文本。保存时会和实际时间一起写入记录头；头部最多 120 字符，且单条记录总大小不能超过 64KB。"
-      },
-      "enable_save": {
-        "name": "启用保存",
-        "tooltip": "是否执行写入。关闭时不写文件，仅返回跳过状态。"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "保存状态",
-        "tooltip": "保存执行状态信息"
-      },
-      "1": {
-        "name": "保存路径",
-        "tooltip": "相对于项目根目录的保存路径，未写入时为空字符串。"
-      }
-    }
-  },
-  "XSeed": {
-    "display_name": "XSeed",
-    "description": "使用原生种子生成控件生成非负种子，并按位数上限规则输出：超过上限时左截断，不足上限可选末尾补 0。",
-    "inputs": {
-      "digits": {
-        "name": "位数上限",
-        "tooltip": "输出种子位数上限（1 到 20）。仅当种子位数超过上限时才会截断。"
-      },
-      "pad_to_limit": {
-        "name": "用 0 补全位数",
-        "tooltip": "当种子位数不足上限时，开启后会在末尾补 0 到上限位数。关闭时保持原值。由于 64 位范围随机种子大多数是高位数，此功能在实际随机场景下通常较少触发。"
-      },
-      "seed_value": {
-        "name": "种子值",
-        "tooltip": "基础非负种子值，启用原生生成控制组件。最终输出会按位数上限规则处理。"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "整数种子",
-        "tooltip": "按位数上限和补零开关处理后的最终非负整数种子值。"
-      },
-      "1": {
-        "name": "xdata 种子",
-        "tooltip": "xdata_seed 专用数据，可传给 XDataSave 进行本地历史保存。"
-      }
-    }
-  },
-  "XKleinRefConditioning": {
-    "display_name": "XKleinRefConditioning",
-    "description": "自动对已连接参考图执行 VAE 编码，并将参考 latent 同步追加到正面与负面条件链。",
-    "inputs": {
-      "positive_conditioning": {
-        "name": "正面条件",
-        "tooltip": "正面条件输入"
-      },
-      "negative_conditioning": {
-        "name": "负面条件",
-        "tooltip": "负面条件输入"
-      },
-      "vae": {
-        "name": "VAE",
-        "tooltip": "用于编码参考图的 VAE"
-      },
-      "image_1": {
-        "name": "参考图 1",
-        "tooltip": "参考图 1（可选）"
-      },
-      "image_2": {
-        "name": "参考图 2",
-        "tooltip": "参考图 2（可选）"
-      },
-      "image_3": {
-        "name": "参考图 3",
-        "tooltip": "参考图 3（可选）"
-      },
-      "image_4": {
-        "name": "参考图 4",
-        "tooltip": "参考图 4（可选）"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "正面条件",
-        "tooltip": "追加参考 latent 后的正面条件"
-      },
-      "1": {
-        "name": "负面条件",
-        "tooltip": "追加参考 latent 后的负面条件"
-      }
-    }
-  },
-  "XLoraGet": {
-    "display_name": "XLoraGet",
-    "description": "从 XDataHub Lora 卡片接收 LoRA 列表并按顺序加载到模型和 CLIP。",
-    "inputs": {
-      "model": {
-        "name": "模型",
-        "tooltip": "待应用 LoRA 的基础模型"
-      },
-      "clip": {
-        "name": "CLIP",
-        "tooltip": "可选 CLIP 输入，未连接时 Clip 强度将强制为 0"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "模型",
-        "tooltip": "应用 LoRA 后的模型"
-      },
-      "1": {
-        "name": "CLIP",
-        "tooltip": "应用 LoRA 后的 CLIP"
-      },
-      "2": {
-        "name": "触发词",
-        "tooltip": "已启用的触发词（逐 LoRA，开启状态的触发词）"
-      },
-      "3": {
-        "name": "LoRA 信息",
-        "tooltip": "已应用的 LoRA 名称、模型强度和 Clip 强度摘要"
       }
     }
   }
