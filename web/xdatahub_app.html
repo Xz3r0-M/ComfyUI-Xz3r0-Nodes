@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub</title>
-    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260331-340">
+    <link rel="stylesheet" href="./xdatahub-color-tokens.css?v=20260401-348">
     <style>
         /*
            颜色规范：
@@ -1787,7 +1787,7 @@
             justify-content: center;
             align-self: center;
             width: 100%;
-            --switch-btn-width: clamp(126px, 26vw, 158px);
+            --switch-btn-width: clamp(84px, 18vw, 106px);
         }
 
         .media-root-switch > .btn {
@@ -4586,11 +4586,52 @@
             }
         }
 
+        .custom-media-roots-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .custom-media-roots-header {
+            color: var(--text-emphasis);
+            font-size: 12px;
+        }
+
+        .custom-media-roots-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .custom-media-root-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .custom-media-root-row > input {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .btn-remove-custom-media-root {
+            flex-shrink: 0;
+            padding: 4px 7px;
+            color: var(--text-muted);
+            border-color: transparent;
+        }
+
+        .btn-remove-custom-media-root:hover {
+            color: var(--text-warning, var(--text-emphasis));
+            border-color: var(--border-standard);
+        }
+
     </style>
 </head>
 <body>
     <div class="app" id="app"></div>
-    <script type="module" src="./xdatahub_app.js?v=20260331-340"></script>
+    <script type="module" src="./xdatahub_app.js?v=20260401-348"></script>
 </body>
 </html>
 

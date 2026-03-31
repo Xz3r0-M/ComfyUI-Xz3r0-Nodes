@@ -279,9 +279,9 @@
   "xdatahub.ui.app.aria.h_a032e8fdda": "Saving",
   "xdatahub.ui.app.aria.h_bb79ec7c15": "Save",
   "xdatahub.ui.app.aria.h_19e973a912": "Switch to input folder",
-  "xdatahub.ui.app.aria.h_bc5317f9a4": "Input Folder",
+  "xdatahub.ui.app.aria.h_bc5317f9a4": "input",
   "xdatahub.ui.app.aria.h_259396db7f": "Switch to output folder",
-  "xdatahub.ui.app.aria.h_d3938c2496": "Output Folder",
+  "xdatahub.ui.app.aria.h_d3938c2496": "output",
   "xdatahub.ui.app.aria.h_6133ea3cc6": "Back to previous path",
   "xdatahub.ui.app.aria.h_11d0241540": "Backward",
   "xdatahub.ui.app.aria.h_742dbc9cfd": "Forward to next path",
@@ -345,5 +345,10 @@
   "xdatahub.ui.shell.text.h_457d449ce1": "Restore",
   "xdatahub.ui.shell.text.h_242ddb0618": "Dock Left",
   "xdatahub.ui.shell.text.h_ea7ae864e5": "Dock Right",
-  "xdatahub.ui.shell.text.h_61b101b501": "Opacity"
+  "xdatahub.ui.shell.text.h_61b101b501": "Opacity",
+  "xdatahub.ui.app.settings.custom_media_roots": "Custom media folders:",
+  "xdatahub.ui.app.settings.add_custom_folder": "Add folder",
+  "xdatahub.ui.app.settings.remove_folder": "Remove",
+  "xdatahub.ui.app.media.custom_root": "custom",
+  "xdatahub.ui.app.media.custom_root_title": "Switch to custom folders"
 }

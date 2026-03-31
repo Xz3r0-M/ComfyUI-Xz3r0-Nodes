@@ -85,6 +85,8 @@ IMAGE_VALIDATE_LOCK = threading.Lock()
 FAVORITES_DB_NAME = "user_favorites.db"
 LORA_TRIGGER_DB_NAME = "loras_data.db"
 MEDIA_INDEX_DB_NAME = "media_index.db"
+CUSTOM_ROOT_PREFIX = "custom_"
+CUSTOM_VIRTUAL_ROOT = "custom"
 MAX_TRIGGER_WORDS = 256
 MAX_TRIGGER_WORD_LEN = 200
 MAX_TRIGGER_WORD_NOTE_LEN = 300
@@ -460,6 +462,8 @@ def comfy_dirs() -> list[tuple[str, Path]]:
             value = os.getenv(env_name)
             if value:
                 dirs.append((name, Path(value)))
+    for name, path in custom_media_dirs():
+        dirs.append((name, path))
     resolved: list[tuple[str, Path]] = []
     seen: set[tuple[str, str]] = set()
     for name, p in dirs:
@@ -473,6 +477,81 @@ def comfy_dirs() -> list[tuple[str, Path]]:
         except Exception:
             continue
     return resolved
+
+
+def _normalize_custom_root_values(value: Any) -> list[str]:
+    raw_items: list[str] = []
+    if isinstance(value, str):
+        raw_items = [
+            line.strip()
+            for line in value.replace("\r", "\n").split("\n")
+            if line.strip()
+        ]
+    elif isinstance(value, list):
+        raw_items = [
+            str(item or "").strip()
+            for item in value
+            if str(item or "").strip()
+        ]
+    normalized_items: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        try:
+            candidate = Path(raw)
+            abs_text = os.path.normpath(os.path.abspath(str(candidate)))
+            real_text = os.path.normpath(os.path.realpath(str(candidate)))
+            # 严格模式：路径存在且绝对路径必须等于 realpath，拒绝软链接/目录联接。
+            if os.path.normcase(abs_text) != os.path.normcase(real_text):
+                continue
+            resolved = Path(real_text)
+            if not resolved.exists() or not resolved.is_dir():
+                continue
+            key = os.path.normcase(str(resolved))
+            if key in seen:
+                continue
+            seen.add(key)
+            display_path = resolved
+            try:
+                parent = resolved.parent
+                with os.scandir(parent) as entries:
+                    for entry in entries:
+                        if (
+                            entry.is_dir(follow_symlinks=False)
+                            and entry.name.lower() == resolved.name.lower()
+                        ):
+                            display_path = parent / entry.name
+                            break
+            except Exception:
+                pass
+            normalized_items.append(str(display_path))
+        except Exception:
+            continue
+    return normalized_items
+
+
+def custom_media_dirs() -> list[tuple[str, Path]]:
+    path = xdatahub_settings_path()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    values = _normalize_custom_root_values(payload.get("media_custom_roots"))
+    output: list[tuple[str, Path]] = []
+    for index, value in enumerate(values, start=1):
+        output.append((f"{CUSTOM_ROOT_PREFIX}{index}", Path(value)))
+    return output
+
+
+def custom_media_root_titles() -> dict[str, str]:
+    titles: dict[str, str] = {}
+    for name, path in custom_media_dirs():
+        label = path.name.strip() or str(path)
+        titles[name] = label
+    return titles
+
+
+def media_root_names() -> set[str]:
+    return {name for name, _ in comfy_dirs()}
 
 
 def media_type_for(path: Path) -> str | None:
@@ -516,14 +595,18 @@ def is_path_within_root_lexical(path: Path, root: Path) -> bool:
         return False
 
 
-def parse_rel_root(rel_path: str) -> tuple[str | None, Path | None]:
+def parse_rel_root(
+    rel_path: str,
+    root_names: set[str] | None = None,
+) -> tuple[str | None, Path | None]:
     value = rel_path.strip().replace("\\", "/")
     if "/" not in value:
         return None, None
     root_name, rel_value = value.split("/", 1)
     root_name = root_name.strip().lower()
     rel_value = rel_value.strip().lstrip("/")
-    if root_name not in {"input", "output"} or not rel_value:
+    _names = root_names if root_names is not None else media_root_names()
+    if root_name not in _names or not rel_value:
         return None, None
     parts = [part for part in rel_value.split("/") if part]
     if not parts:
@@ -543,7 +626,24 @@ def normalize_dir_query(value: str | None) -> str:
     parts = [part.strip() for part in raw.split("/") if part.strip()]
     if not parts:
         return ""
-    if parts[0] not in {"input", "output"}:
+    root_name = parts[0].lower()
+    active_roots = media_root_names()
+    custom_roots = {
+        name for name in active_roots if name.startswith(CUSTOM_ROOT_PREFIX)
+    }
+    if root_name == CUSTOM_VIRTUAL_ROOT:
+        if len(parts) == 1:
+            return CUSTOM_VIRTUAL_ROOT
+        custom_root_name = parts[1].strip().lower()
+        if custom_root_name not in custom_roots:
+            return CUSTOM_VIRTUAL_ROOT
+        safe_parts = [CUSTOM_VIRTUAL_ROOT, custom_root_name]
+        for part in parts[2:]:
+            if part in {".", ".."}:
+                return ""
+            safe_parts.append(part)
+        return "/".join(safe_parts)
+    if root_name not in active_roots:
         return ""
     safe_parts: list[str] = []
     for part in parts:
@@ -843,14 +943,18 @@ def list_lora_directory(
     )
 
 
-def split_rel_path(value: str) -> list[str] | None:
+def split_rel_path(
+    value: str,
+    root_names: set[str] | None = None,
+) -> list[str] | None:
     normalized = value.strip().replace("\\", "/").strip("/")
     if not normalized:
         return None
     parts = [part for part in normalized.split("/") if part]
     if len(parts) < 2:
         return None
-    if parts[0] not in {"input", "output"}:
+    _names = root_names if root_names is not None else media_root_names()
+    if parts[0] not in _names:
         return None
     return parts
 
@@ -879,11 +983,30 @@ def build_directory_items(
     sort_by: str = "mtime",
     sort_order: str = "desc",
 ) -> list[dict[str, Any]]:
-    dir_parts = directory.split("/") if directory else []
+    if directory == CUSTOM_VIRTUAL_ROOT:
+        custom_titles = custom_media_root_titles()
+        items = [
+            map_folder_item(
+                f"{CUSTOM_VIRTUAL_ROOT}/{name}",
+                custom_titles.get(name, name),
+            )
+            for name in sorted(custom_titles.keys())
+        ]
+        return items
+    custom_scope = False
+    if directory.startswith(f"{CUSTOM_VIRTUAL_ROOT}/"):
+        custom_scope = True
+        custom_parts = [part for part in directory.split("/") if part]
+        if len(custom_parts) < 2:
+            return []
+        dir_parts = custom_parts[1:]
+    else:
+        dir_parts = directory.split("/") if directory else []
+    _root_names = media_root_names()
     folder_children: dict[str, str] = {}
     file_rows: list[sqlite3.Row] = []
     for row in rows:
-        rel_parts = split_rel_path(str(row["rel_path"] or ""))
+        rel_parts = split_rel_path(str(row["rel_path"] or ""), _root_names)
         if rel_parts is None:
             continue
         if dir_parts:
@@ -897,7 +1020,12 @@ def build_directory_items(
         if len(remain) == 1:
             file_rows.append(row)
             continue
-        child_path = "/".join(rel_parts[: len(dir_parts) + 1])
+        child_internal_path = "/".join(rel_parts[: len(dir_parts) + 1])
+        child_path = (
+            f"{CUSTOM_VIRTUAL_ROOT}/{child_internal_path}"
+            if custom_scope
+            else child_internal_path
+        )
         folder_children[remain[0]] = child_path
 
     folder_items = [
@@ -957,8 +1085,11 @@ def build_media_candidates(
 ) -> list[tuple[str, Path]]:
     output: list[tuple[str, Path]] = []
     seen: set[str] = set()
+    _root_names = set(roots.keys())
 
-    rel_root, rel_tail = parse_rel_root(str(row["rel_path"] or ""))
+    rel_root, rel_tail = parse_rel_root(
+        str(row["rel_path"] or ""), _root_names
+    )
     if rel_root and rel_tail is not None and rel_root in roots:
         candidate = roots[rel_root] / rel_tail
         key = os.path.normcase(str(candidate))
@@ -2298,21 +2429,9 @@ def scan_media(media_type: str | None) -> list[dict[str, Any]]:
 
 
 def iter_media_files(root_dir: Path):
-    stack: list[tuple[Path, set[str]]] = [(root_dir, set())]
+    stack: list[Path] = [root_dir]
     while stack:
-        current_dir, ancestors = stack.pop()
-        try:
-            current_real = str(normalize_path(current_dir))
-        except Exception:
-            continue
-        if current_real in ancestors:
-            LOGGER.warning(
-                "[xdatahub] media scan link cycle skipped: dir=%s",
-                current_dir.name,
-            )
-            continue
-        next_ancestors = set(ancestors)
-        next_ancestors.add(current_real)
+        current_dir = stack.pop()
         try:
             with os.scandir(current_dir) as entries:
                 child_entries = list(entries)
@@ -2321,10 +2440,12 @@ def iter_media_files(root_dir: Path):
         for entry in child_entries:
             path = Path(entry.path)
             try:
-                if entry.is_dir(follow_symlinks=True):
-                    stack.append((path, next_ancestors))
+                if entry.is_symlink():
                     continue
-                if entry.is_file(follow_symlinks=True):
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(path)
+                    continue
+                if entry.is_file(follow_symlinks=False):
                     yield path
             except (FileNotFoundError, PermissionError, OSError):
                 continue
@@ -2953,6 +3074,7 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "media_card_size_preset": "standard",
         "node_send_close_after_send": True,
         "store_lora_db_in_loras": False,
+        "media_custom_roots": [],
         "theme_mode": "dark",
     }
 
@@ -3020,6 +3142,10 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
     if "store_lora_db_in_loras" in value:
         patch["store_lora_db_in_loras"] = parse_bool(
             value.get("store_lora_db_in_loras")
+        )
+    if "media_custom_roots" in value:
+        patch["media_custom_roots"] = _normalize_custom_root_values(
+            value.get("media_custom_roots")
         )
     if "theme_mode" in value:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()

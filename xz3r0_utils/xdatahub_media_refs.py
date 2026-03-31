@@ -5,6 +5,7 @@ XDataHub 媒体不透明引用工具。
 from __future__ import annotations
 
 import os
+import json
 import secrets
 import sqlite3
 import sys
@@ -23,6 +24,7 @@ PUBLIC_REF_MIN_LEN = 16
 PUBLIC_REF_ALLOWED = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 )
+CUSTOM_ROOT_PREFIX = "custom_"
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,60 @@ def media_index_db_path() -> Path:
         / "XDataSaved"
         / "media_index.db"
     )
+
+
+def xdatahub_settings_path() -> Path:
+    """
+    返回 XDataHub 设置文件路径。
+    """
+    return (
+        Path(__file__).resolve().parent.parent
+        / "XDataSaved"
+        / "xdatahub_settings.json"
+    )
+
+
+def _normalize_custom_root_values(value: object) -> list[str]:
+    items = value if isinstance(value, list) else []
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        try:
+            raw = str(item or "").strip()
+            if not raw:
+                continue
+            candidate = Path(raw)
+            abs_text = os.path.normpath(os.path.abspath(str(candidate)))
+            real_text = os.path.normpath(os.path.realpath(str(candidate)))
+            if os.path.normcase(abs_text) != os.path.normcase(real_text):
+                continue
+            resolved = Path(real_text)
+            if not resolved.exists() or not resolved.is_dir():
+                continue
+            key = os.path.normcase(str(resolved))
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append(str(resolved))
+        except Exception:
+            continue
+    return output
+
+
+def custom_media_roots() -> list[tuple[str, Path]]:
+    """
+    读取 XDataHub 自定义媒体根目录。
+    """
+    path = xdatahub_settings_path()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    values = _normalize_custom_root_values(payload.get("media_custom_roots"))
+    output: list[tuple[str, Path]] = []
+    for index, value in enumerate(values, start=1):
+        output.append((f"{CUSTOM_ROOT_PREFIX}{index}", Path(value)))
+    return output
 
 
 def generate_public_ref() -> str:
@@ -163,17 +219,35 @@ def comfy_media_roots() -> list[tuple[str, Path]]:
             continue
         seen.add(key)
         resolved.append((name, normalized))
+    for name, path in custom_media_roots():
+        try:
+            normalized = normalize_path(path)
+        except Exception:
+            continue
+        key = (name, str(normalized))
+        if key in seen:
+            continue
+        seen.add(key)
+        resolved.append((name, normalized))
     return resolved
 
 
-def parse_rel_root(rel_path: str) -> tuple[str | None, Path | None]:
+def parse_rel_root(
+    rel_path: str,
+    root_names: set[str] | None = None,
+) -> tuple[str | None, Path | None]:
     value = rel_path.strip().replace("\\", "/")
     if "/" not in value:
         return None, None
     root_name, rel_value = value.split("/", 1)
     root_name = root_name.strip().lower()
     rel_value = rel_value.strip().lstrip("/")
-    if root_name not in {"input", "output"} or not rel_value:
+    _names = (
+        root_names
+        if root_names is not None
+        else {name for name, _ in comfy_media_roots()}
+    )
+    if root_name not in _names or not rel_value:
         return None, None
     parts = [part for part in rel_value.split("/") if part]
     if not parts:
@@ -190,8 +264,9 @@ def _build_media_candidates(
 ) -> list[tuple[str, Path]]:
     output: list[tuple[str, Path]] = []
     seen: set[str] = set()
+    root_names = set(roots.keys())
 
-    rel_root, rel_tail = parse_rel_root(str(row["rel_path"] or ""))
+    rel_root, rel_tail = parse_rel_root(str(row["rel_path"] or ""), root_names)
     if rel_root and rel_tail is not None and rel_root in roots:
         candidate = roots[rel_root] / rel_tail
         key = os.path.normcase(str(candidate))

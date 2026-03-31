@@ -279,9 +279,9 @@
   "xdatahub.ui.app.aria.h_a032e8fdda": "保存中",
   "xdatahub.ui.app.aria.h_bb79ec7c15": "保存",
   "xdatahub.ui.app.aria.h_19e973a912": "切换到 input 文件夹",
-  "xdatahub.ui.app.aria.h_bc5317f9a4": "input 文件夹",
+  "xdatahub.ui.app.aria.h_bc5317f9a4": "input",
   "xdatahub.ui.app.aria.h_259396db7f": "切换到 output 文件夹",
-  "xdatahub.ui.app.aria.h_d3938c2496": "output 文件夹",
+  "xdatahub.ui.app.aria.h_d3938c2496": "output",
   "xdatahub.ui.app.aria.h_6133ea3cc6": "返回上一个路径",
   "xdatahub.ui.app.aria.h_11d0241540": "后退",
   "xdatahub.ui.app.aria.h_742dbc9cfd": "前进到下一个路径",
@@ -345,5 +345,10 @@
   "xdatahub.ui.shell.text.h_457d449ce1": "还原",
   "xdatahub.ui.shell.text.h_242ddb0618": "靠左停靠",
   "xdatahub.ui.shell.text.h_ea7ae864e5": "靠右停靠",
-  "xdatahub.ui.shell.text.h_61b101b501": "透明度"
+  "xdatahub.ui.shell.text.h_61b101b501": "透明度",
+  "xdatahub.ui.app.settings.custom_media_roots": "自定义媒体文件夹：",
+  "xdatahub.ui.app.settings.add_custom_folder": "添加文件夹",
+  "xdatahub.ui.app.settings.remove_folder": "移除",
+  "xdatahub.ui.app.media.custom_root": "自定义",
+  "xdatahub.ui.app.media.custom_root_title": "切换到自定义文件夹"
 }

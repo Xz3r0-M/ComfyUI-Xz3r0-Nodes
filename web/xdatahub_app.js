@@ -242,6 +242,7 @@ const appState = {
         mediaCardSizePreset: "standard",
         nodeSendCloseAfterSend: true,
         storeLoraDbInLoras: false,
+        customMediaRoots: [],
         themeMode: "dark",
         hotkeySpec: DEFAULT_TOGGLE_HOTKEY_SPEC,
         uiLocale: "",
@@ -730,6 +731,11 @@ function normalizeSettings(value) {
     const hotkeySpecRaw = String(
         raw.hotkeySpec || raw.hotkey_spec || ""
     ).trim();
+    const customMediaRoots = normalizeCustomMediaRoots(
+        raw.media_custom_roots !== undefined
+            ? raw.media_custom_roots
+            : raw.customMediaRoots
+    );
     return {
         showMediaTitle:
             raw.show_media_title !== undefined
@@ -800,6 +806,7 @@ function normalizeSettings(value) {
             raw.store_lora_db_in_loras !== undefined
                 ? raw.store_lora_db_in_loras === true
                 : raw.storeLoraDbInLoras === true,
+        customMediaRoots,
         themeMode: THEME_MODE_VALUES.has(themeModeRaw)
             ? themeModeRaw
             : "dark",
@@ -823,6 +830,7 @@ function cloneSettings(settings) {
     const themeMode = String(raw.themeMode || "").trim().toLowerCase();
     const hotkeySpec = String(raw.hotkeySpec || "").trim();
     const uiLocale = String(raw.uiLocale || "").trim().toLowerCase();
+    const customMediaRoots = normalizeCustomMediaRoots(raw.customMediaRoots);
     return {
         showMediaTitle: raw.showMediaTitle !== false,
         showMediaChipResolution: raw.showMediaChipResolution !== false,
@@ -869,6 +877,7 @@ function cloneSettings(settings) {
             raw.storeLoraDbInLoras !== undefined
                 ? raw.storeLoraDbInLoras === true
                 : raw.store_lora_db_in_loras === true,
+        customMediaRoots,
         themeMode: THEME_MODE_VALUES.has(themeMode) ? themeMode : "dark",
         hotkeySpec:
             parseHotkeySpec(hotkeySpec)
@@ -876,6 +885,68 @@ function cloneSettings(settings) {
             : DEFAULT_TOGGLE_HOTKEY_SPEC,
         uiLocale: uiLocale ? normalizeUiLocale(uiLocale) : "",
     };
+}
+
+function normalizeCustomMediaRoots(value) {
+    const source = Array.isArray(value)
+        ? value
+        : typeof value === "string"
+            ? value.split(/\r?\n/g)
+            : [];
+    const out = [];
+    const seen = new Set();
+    for (const item of source) {
+        const text = String(item || "").trim();
+        if (!text) {
+            continue;
+        }
+        if (seen.has(text)) {
+            continue;
+        }
+        seen.add(text);
+        out.push(text);
+    }
+    return out;
+}
+
+function displayMediaPath(pathText) {
+    const normalized = String(pathText || "").trim();
+    if (!normalized) {
+        return "";
+    }
+    const parts = normalized.split("/").filter(Boolean);
+    if (parts.length < 2 || parts[0] !== "custom") {
+        return normalized;
+    }
+    const customRoot = parts[1] || "";
+    const match = /^custom_(\d+)$/i.exec(customRoot);
+    if (!match) {
+        return normalized;
+    }
+    const customRoots = normalizeCustomMediaRoots(
+        appState.settings?.customMediaRoots
+    );
+    const index = Number.parseInt(match[1], 10) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= customRoots.length) {
+        return normalized;
+    }
+    const selectedPath = String(customRoots[index] || "").trim();
+    if (!selectedPath) {
+        return normalized;
+    }
+    const label =
+        selectedPath
+            .replace(/[\\/]+$/, "")
+            .split(/[\\/]/)
+            .filter(Boolean)
+            .pop()
+        || selectedPath;
+    parts[1] = label;
+    return parts.join("/");
+}
+
+function customMediaRootsToText(value) {
+    return normalizeCustomMediaRoots(value).join("\n");
 }
 
 function normalizeThemeMode(value) {
@@ -1093,6 +1164,12 @@ async function updateSettings(partial) {
                 hasOwn("storeLoraDbInLoras")
                     ? partial.storeLoraDbInLoras
                     : appState.settings.storeLoraDbInLoras,
+            media_custom_roots:
+                hasOwn("customMediaRoots")
+                    ? normalizeCustomMediaRoots(partial.customMediaRoots)
+                    : normalizeCustomMediaRoots(
+                        appState.settings.customMediaRoots
+                    ),
             theme_mode:
                 partial?.themeMode
                 ?? appState.settings.themeMode,
@@ -1279,7 +1356,7 @@ function normalizeMediaRoot(value, tab = appState.activeTab) {
     if (tab === "lora") {
         return "loras";
     }
-    if (v === "input" || v === "output") {
+    if (v === "input" || v === "output" || v === "custom") {
         return v;
     }
     return "input";
@@ -2132,7 +2209,60 @@ function syncMediaExplorerBarUi() {
     if (!(bar instanceof HTMLElement)) {
         return;
     }
-    bar.outerHTML = renderMediaExplorerBar();
+    const state = currentTabState();
+    ensureMediaNavState(state);
+    const rootName = normalizeMediaRoot(state.mediaRoot, appState.activeTab);
+    const subdir = normalizeMediaSubdir(state.mediaSubdir);
+    const fullPath = subdir ? `${rootName}/${subdir}` : rootName;
+    const displayPath = displayMediaPath(fullPath);
+    const navBusy = !!appState.mediaNavBusy;
+    const canGoBack = !navBusy && state.mediaBackStack.length > 0;
+    const canGoForward = !navBusy && state.mediaForwardStack.length > 0;
+
+    const pathText = bar.querySelector(".media-path-text");
+    const backBtn = document.getElementById("btn-media-up");
+    const forwardBtn = document.getElementById("btn-media-forward");
+    if (!(pathText instanceof HTMLElement)) {
+        bar.outerHTML = renderMediaExplorerBar();
+        return;
+    }
+    if (backBtn instanceof HTMLButtonElement) {
+        backBtn.disabled = !canGoBack;
+    }
+    if (forwardBtn instanceof HTMLButtonElement) {
+        forwardBtn.disabled = !canGoForward;
+    }
+    pathText.textContent = displayPath;
+    pathText.title = displayPath;
+
+    if (appState.activeTab === "lora") {
+        const loraBtn = document.getElementById("btn-media-root-loras");
+        if (!(loraBtn instanceof HTMLButtonElement)) {
+            bar.outerHTML = renderMediaExplorerBar();
+            return;
+        }
+        loraBtn.classList.add("active");
+        return;
+    }
+
+    const inputBtn = document.getElementById("btn-media-root-input");
+    const outputBtn = document.getElementById("btn-media-root-output");
+    const customBtn = document.getElementById("btn-media-root-custom");
+    if (
+        !(inputBtn instanceof HTMLButtonElement)
+        || !(outputBtn instanceof HTMLButtonElement)
+        || !(customBtn instanceof HTMLButtonElement)
+    ) {
+        bar.outerHTML = renderMediaExplorerBar();
+        return;
+    }
+
+    inputBtn.classList.toggle("active", rootName === "input");
+    outputBtn.classList.toggle("active", rootName === "output");
+    customBtn.classList.toggle("active", rootName === "custom");
+    inputBtn.disabled = false;
+    outputBtn.disabled = false;
+    customBtn.disabled = false;
 }
 
 function syncListContentUi() {
@@ -7248,6 +7378,36 @@ function renderSettingsDialog() {
                         >
                         <span>${escapeHtml(t("xdatahub.ui.app.settings.store_lora_db_in_loras", "Store Lora database in models/loras"))}</span>
                     </label>
+                    <div class="custom-media-roots-wrap">
+                        <div class="custom-media-roots-header">${escapeHtml(t("xdatahub.ui.app.settings.custom_media_roots", "Custom media folders:"))}</div>
+                        <div class="custom-media-roots-list">
+                            ${(draft.customMediaRoots || []).map((folderPath, idx) => `
+                            <div class="custom-media-root-row">
+                                <input
+                                    type="text"
+                                    class="custom-media-root-input"
+                                    data-index="${idx}"
+                                    value="${escapeAttr(folderPath)}"
+                                    placeholder="E:\\Assets"
+                                    ${appState.settingsSaving ? "disabled" : ""}
+                                >
+                                <button
+                                    class="btn btn-remove-custom-media-root"
+                                    data-index="${idx}"
+                                    title="${escapeAttr(t("xdatahub.ui.app.settings.remove_folder", "Remove"))}"
+                                    aria-label="${escapeAttr(t("xdatahub.ui.app.settings.remove_folder", "Remove"))}"
+                                    ${appState.settingsSaving ? "disabled" : ""}
+                                >${iconSvg("x", "Remove", "xdatahub-icon btn-icon")}</button>
+                            </div>
+                            `).join("")}
+                        </div>
+                        <button
+                            class="btn"
+                            id="btn-add-custom-media-root"
+                            title="${escapeAttr(t("xdatahub.ui.app.settings.add_custom_folder", "Add folder"))}"
+                            ${appState.settingsSaving ? "disabled" : ""}
+                        >${iconSvg("folder-plus", "Add folder", "xdatahub-icon btn-icon")} ${escapeHtml(t("xdatahub.ui.app.settings.add_custom_folder", "Add folder"))}</button>
+                    </div>
                 </div>
                 ${
                     appState.settingsError
@@ -7275,15 +7435,24 @@ function renderMediaExplorerBar() {
     const rootName = normalizeMediaRoot(state.mediaRoot, appState.activeTab);
     const subdir = normalizeMediaSubdir(state.mediaSubdir);
     const fullPath = subdir ? `${rootName}/${subdir}` : rootName;
+    const displayPath = displayMediaPath(fullPath);
     const navBusy = !!appState.mediaNavBusy;
     const canGoBack = !navBusy && state.mediaBackStack.length > 0;
     const canGoForward = !navBusy && state.mediaForwardStack.length > 0;
-    const inputFolderText = t("xdatahub.ui.app.aria.h_bc5317f9a4", "input folder");
-    const outputFolderText = t("xdatahub.ui.app.aria.h_d3938c2496", "output folder");
+    const inputFolderText = t("xdatahub.ui.app.aria.h_bc5317f9a4", "input");
+    const outputFolderText = t("xdatahub.ui.app.aria.h_d3938c2496", "output");
+    const customFolderText = t(
+        "xdatahub.ui.app.media.custom_root",
+        "custom"
+    );
     const backText = t("xdatahub.ui.app.aria.h_11d0241540", "Back");
     const forwardText = t("xdatahub.ui.app.aria.h_320ffeefca", "Forward");
     const inputTitle = t("xdatahub.ui.app.aria.h_19e973a912", "Switch to input folder");
     const outputTitle = t("xdatahub.ui.app.aria.h_259396db7f", "Switch to output folder");
+    const customTitle = t(
+        "xdatahub.ui.app.media.custom_root_title",
+        "Switch to custom folders"
+    );
     const backTitle = t("xdatahub.ui.app.aria.h_6133ea3cc6", "Back to previous path");
     const forwardTitle = t("xdatahub.ui.app.aria.h_742dbc9cfd", "Forward to next path");
     if (appState.activeTab === "lora") {
@@ -7303,7 +7472,7 @@ function renderMediaExplorerBar() {
             <div class="media-path-line">
                 <button class="btn" id="btn-media-up" title="${escapeAttr(backTitle)}" aria-label="${escapeAttr(backTitle)}" ${canGoBack ? "" : "disabled"}>${iconSvg("arrow-left", backText, "xdatahub-icon btn-icon")} ${escapeHtml(backText)}</button>
                 <button class="btn" id="btn-media-forward" title="${escapeAttr(forwardTitle)}" aria-label="${escapeAttr(forwardTitle)}" ${canGoForward ? "" : "disabled"}>${iconSvg("arrow-right", forwardText, "xdatahub-icon btn-icon")} ${escapeHtml(forwardText)}</button>
-                <span class="media-path-text" title="${escapeAttr(fullPath)}">${escapeHtml(fullPath)}</span>
+                <span class="media-path-text" title="${escapeAttr(displayPath)}">${escapeHtml(displayPath)}</span>
             </div>
         </div>
     `;
@@ -7311,13 +7480,14 @@ function renderMediaExplorerBar() {
     return `
         <div class="media-explorer-bar">
             <div class="media-root-switch">
-                <button class="btn ${rootName === "input" ? "active" : ""}" id="btn-media-root-input" title="${escapeAttr(inputTitle)}" aria-label="${escapeAttr(inputTitle)}" ${navBusy ? "disabled" : ""}>${iconSvg("folder-input", inputFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(inputFolderText)}</button>
-                <button class="btn ${rootName === "output" ? "active" : ""}" id="btn-media-root-output" title="${escapeAttr(outputTitle)}" aria-label="${escapeAttr(outputTitle)}" ${navBusy ? "disabled" : ""}>${iconSvg("folder-output", outputFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(outputFolderText)}</button>
+                <button class="btn ${rootName === "input" ? "active" : ""}" id="btn-media-root-input" title="${escapeAttr(inputTitle)}" aria-label="${escapeAttr(inputTitle)}">${iconSvg("folder-input", inputFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(inputFolderText)}</button>
+                <button class="btn ${rootName === "output" ? "active" : ""}" id="btn-media-root-output" title="${escapeAttr(outputTitle)}" aria-label="${escapeAttr(outputTitle)}">${iconSvg("folder-output", outputFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(outputFolderText)}</button>
+                <button class="btn ${rootName === "custom" ? "active" : ""}" id="btn-media-root-custom" title="${escapeAttr(customTitle)}" aria-label="${escapeAttr(customTitle)}">${iconSvg("folder", customFolderText, "xdatahub-icon btn-icon")} ${escapeHtml(customFolderText)}</button>
             </div>
             <div class="media-path-line">
                 <button class="btn" id="btn-media-up" title="${escapeAttr(backTitle)}" aria-label="${escapeAttr(backTitle)}" ${canGoBack ? "" : "disabled"}>${iconSvg("arrow-left", backText, "xdatahub-icon btn-icon")} ${escapeHtml(backText)}</button>
                 <button class="btn" id="btn-media-forward" title="${escapeAttr(forwardTitle)}" aria-label="${escapeAttr(forwardTitle)}" ${canGoForward ? "" : "disabled"}>${iconSvg("arrow-right", forwardText, "xdatahub-icon btn-icon")} ${escapeHtml(forwardText)}</button>
-                <span class="media-path-text" title="${escapeAttr(fullPath)}">${escapeHtml(fullPath)}</span>
+                <span class="media-path-text" title="${escapeAttr(displayPath)}">${escapeHtml(displayPath)}</span>
             </div>
         </div>
     `;
@@ -8799,6 +8969,42 @@ function syncFiltersSidebarUi() {
 }
 
 async function handleDelegatedPrimaryButtonClick(event) {
+    // 处理自定义目录移除按钮（通过 class 匹配，无唯一 id）
+    const removeBtn = event.target?.closest?.(".btn-remove-custom-media-root");
+    if (removeBtn instanceof HTMLButtonElement) {
+        const idx = parseInt(removeBtn.dataset.index ?? "", 10);
+        if (!isNaN(idx)) {
+            ensureSettingsDraftState();
+            const roots = [...(appState.settingsDraft.customMediaRoots || [])];
+            // 先同步当前所有 input 的值到 draft（防止 change 事件未触发）
+            const allInputsBefore = document.querySelectorAll(
+                "#settings-dialog-overlay .custom-media-root-input"
+            );
+            allInputsBefore.forEach((el, i) => {
+                if (el instanceof HTMLInputElement) {
+                    roots[i] = String(el.value || "").trim();
+                }
+            });
+            roots.splice(idx, 1);
+            appState.settingsDraft.customMediaRoots = roots;
+            // 直接移除行，重新编号
+            const row = removeBtn.closest(".custom-media-root-row");
+            row?.remove();
+            document.querySelectorAll(
+                "#settings-dialog-overlay .custom-media-root-row"
+            ).forEach((r, i) => {
+                const inp = r.querySelector(".custom-media-root-input");
+                const btn = r.querySelector(".btn-remove-custom-media-root");
+                if (inp instanceof HTMLInputElement) {
+                    inp.dataset.index = String(i);
+                }
+                if (btn instanceof HTMLButtonElement) {
+                    btn.dataset.index = String(i);
+                }
+            });
+            return true;
+        }
+    }
     const button = event.target?.closest?.("button[id]");
     if (!(button instanceof HTMLButtonElement)) {
         return false;
@@ -8850,6 +9056,51 @@ async function handleDelegatedPrimaryButtonClick(event) {
         appState.compactActionsMenuOpen = false;
         setDateRangePanelOpen(!appState.dateRangePanelOpen, false);
         return true;
+    case "btn-add-custom-media-root": {
+        ensureSettingsDraftState();
+        // 先同步当前所有 input 的值到 draft（防止 change 事件未触发）
+        const allInputsNow = document.querySelectorAll(
+            "#settings-dialog-overlay .custom-media-root-input"
+        );
+        const currentRoots = [
+            ...(appState.settingsDraft.customMediaRoots || []),
+        ];
+        allInputsNow.forEach((el, i) => {
+            if (el instanceof HTMLInputElement) {
+                currentRoots[i] = String(el.value || "").trim();
+            }
+        });
+        const newIdx = currentRoots.length;
+        currentRoots.push("");
+        appState.settingsDraft.customMediaRoots = currentRoots;
+        // 直接追加行，不替换整个对话框
+        const list = document.querySelector(
+            "#settings-dialog-overlay .custom-media-roots-list"
+        );
+        if (list instanceof HTMLElement) {
+            const removeTitle = escapeAttr(
+                t("xdatahub.ui.app.settings.remove_folder", "Remove")
+            );
+            const row = document.createElement("div");
+            row.className = "custom-media-root-row";
+            row.innerHTML = [
+                `<input type="text" class="custom-media-root-input"`,
+                ` data-index="${newIdx}" value=""`,
+                ` placeholder="E:\\Assets">`,
+                `<button class="btn btn-remove-custom-media-root"`,
+                ` data-index="${newIdx}"`,
+                ` title="${removeTitle}" aria-label="${removeTitle}">`,
+                iconSvg("x", "Remove", "xdatahub-icon btn-icon"),
+                `</button>`,
+            ].join("");
+            list.appendChild(row);
+            const input = row.querySelector("input");
+            if (input instanceof HTMLInputElement) {
+                input.focus();
+            }
+        }
+        return true;
+    }
     case "btn-media-root-output": {
         if (!isMediaTab(appState.activeTab)) {
             return true;
@@ -8862,6 +9113,13 @@ async function handleDelegatedPrimaryButtonClick(event) {
             return true;
         }
         switchMediaRootDirectory("input");
+        return true;
+    }
+    case "btn-media-root-custom": {
+        if (!isMediaTab(appState.activeTab)) {
+            return true;
+        }
+        switchMediaRootDirectory("custom");
         return true;
     }
     case "btn-media-root-loras": {
@@ -10002,8 +10260,25 @@ function handleDelegatedGlobalChange(event) {
     if (
         !(target instanceof HTMLInputElement)
         && !(target instanceof HTMLSelectElement)
+        && !(target instanceof HTMLTextAreaElement)
     ) {
         return false;
+    }
+    // 处理自定义目录输入框（通过 class 匹配，无唯一 id）
+    if (
+        target instanceof HTMLInputElement
+        && target.classList.contains("custom-media-root-input")
+    ) {
+        const idx = parseInt(target.dataset.index ?? "", 10);
+        if (!isNaN(idx)) {
+            ensureSettingsDraftState();
+            const roots = [
+                ...(appState.settingsDraft.customMediaRoots || []),
+            ];
+            roots[idx] = String(target.value || "").trim();
+            appState.settingsDraft.customMediaRoots = roots;
+            return true;
+        }
     }
     switch (target.id) {
     case "setting-hotkey-spec":
