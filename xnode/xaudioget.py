@@ -94,7 +94,7 @@ class XAudioGet(io.ComfyNode):
             channel_count = stream.channels
 
             frames = []
-            for frame in container.decode(streams=stream.index):
+            for frame in container.decode(streams=stream):
                 array = frame.to_ndarray()
                 tensor = torch.from_numpy(array)
                 if tensor.shape[0] != channel_count:
@@ -115,9 +115,9 @@ class XAudioGet(io.ComfyNode):
         if waveform.dtype.is_floating_point:
             return waveform.to(dtype=torch.float32)
         if waveform.dtype == torch.int16:
-            return waveform.to(dtype=torch.float32) / float(2 ** 15)
+            return waveform.to(dtype=torch.float32) / float(2**15)
         if waveform.dtype == torch.int32:
-            return waveform.to(dtype=torch.float32) / float(2 ** 31)
+            return waveform.to(dtype=torch.float32) / float(2**31)
         raise ValueError(f"Unsupported wav dtype: {waveform.dtype}")
 
     @staticmethod
