@@ -97,6 +97,13 @@ function getDirection(el) {
     return "right";
 }
 
+function getTooltipTargetFromEvent(event) {
+    return event.composedPath().find(
+        (node) => node instanceof Element
+            && node.hasAttribute("data-tooltip")
+    );
+}
+
 export function showTooltip(text, targetRect, direction) {
     clearTimeout(_hideTimer);
     clearDisplayTimer();
@@ -189,10 +196,7 @@ export function installTooltips(shadowRoot) {
     shadowRoot._xdhTooltipsInstalled = true;
 
     shadowRoot.addEventListener("mouseover", (e) => {
-        const path = e.composedPath();
-        const target = path.find(
-            (n) => n instanceof Element && n.hasAttribute("data-tooltip")
-        );
+        const target = getTooltipTargetFromEvent(e);
         if (!target) return;
         const text = target.getAttribute("data-tooltip");
         if (!text) return;
@@ -204,10 +208,7 @@ export function installTooltips(shadowRoot) {
     }, true);
 
     shadowRoot.addEventListener("mouseout", (e) => {
-        const path = e.composedPath();
-        const target = path.find(
-            (n) => n instanceof Element && n.hasAttribute("data-tooltip")
-        );
+        const target = getTooltipTargetFromEvent(e);
         if (!target) return;
         // Only hide if truly leaving the tooltip element (not moving to a child)
         if (!target.contains(e.relatedTarget)) {
@@ -215,7 +216,38 @@ export function installTooltips(shadowRoot) {
         }
     }, true);
 
+    shadowRoot.addEventListener("focusin", (e) => {
+        const target = getTooltipTargetFromEvent(e);
+        if (!target) return;
+        const text = target.getAttribute("data-tooltip");
+        if (!text) return;
+        showTooltip(
+            text,
+            target.getBoundingClientRect(),
+            getDirection(target)
+        );
+    }, true);
+
+    shadowRoot.addEventListener("focusout", (e) => {
+        const target = getTooltipTargetFromEvent(e);
+        if (!target) return;
+        if (!target.contains(e.relatedTarget)) {
+            hideTooltip(true);
+        }
+    }, true);
+
+    shadowRoot.addEventListener("blur", (e) => {
+        const target = getTooltipTargetFromEvent(e);
+        if (!target) return;
+        hideTooltip(true);
+    }, true);
+
     // Also hide on any scroll/key/click events
     shadowRoot.addEventListener("scroll", () => hideTooltip(true), true);
     shadowRoot.addEventListener("mousedown", () => hideTooltip(true), true);
+    shadowRoot.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            hideTooltip(true);
+        }
+    }, true);
 }

@@ -24,11 +24,26 @@ function escapeAttr(value) {
 export class XdhStagingDock extends BaseElement {
     constructor() {
         super();
-        this.selectedCount = 0;
+        const initialSelectedItems = Array.isArray(appStore.state.selectedItems)
+            ? appStore.state.selectedItems
+            : [];
+        const normalizedInitialSelected = initialSelectedItems.length > 0
+            ? [initialSelectedItems[initialSelectedItems.length - 1]]
+            : [];
+        this.selectedCount = normalizedInitialSelected.length;
         this.batchTargetNodeId = '';
         this.batchTargetNodeTitle = '';
         this.batchTargetNodeColor = '';
         this.selectedItemSnapshot = null;
+        if (normalizedInitialSelected.length > 0) {
+            const selectedId = String(normalizedInitialSelected[0]);
+            const liveItem = ((appStore.state && appStore.state.mediaList) || []).find(
+                (entry) => String(entry.id) === selectedId
+            );
+            if (liveItem) {
+                this.selectedItemSnapshot = liveItem;
+            }
+        }
     }
 
     onStoreUpdate(state, key, value) {
@@ -193,7 +208,7 @@ export class XdhStagingDock extends BaseElement {
         const selectedLabelEscaped = escapeAttr(selectedLabel);
         const pickerTargetType = String(state.activeCategory || 'image');
 
-        if (this.selectedCount === 0 || state.loraDetailOpen) {
+        if (selectedIds.length === 0 || state.loraDetailOpen) {
             return `<style>:host { display: none; }</style>`;
         }
 
@@ -416,7 +431,7 @@ export class XdhStagingDock extends BaseElement {
 
                 <div class="dock-body">
                     <div class="selected-item xdh-tooltip xdh-tooltip-up" data-tooltip="${selectedLabelEscaped}">
-                        ${icon('file', 11)} ${selectedLabel}
+                        ${icon('file', 11)} ${selectedLabelEscaped}
                     </div>
                     <div class="batch-target-row">
                         <span class="batch-target-label">${t('dock.batch_target')}</span>

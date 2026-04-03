@@ -53,8 +53,7 @@ export class XdhBanner extends BaseElement {
     connectedCallback() {
         // Host is a zero-size shell; the toast is fixed-positioned inside
         this.style.display = "contents";
-        // Don't call super.connectedCallback() — this component doesn't
-        // use the store and manages its own lifecycle
+        super.connectedCallback();
         this.renderRoot();
         banner._subscribe(this._onBanner);
     }

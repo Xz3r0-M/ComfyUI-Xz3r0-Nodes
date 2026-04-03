@@ -33,6 +33,19 @@ function compareNodeByIdAsc(left, right) {
     return leftId.localeCompare(rightId, undefined, { numeric: true });
 }
 
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function escapeAttr(value) {
+    return escapeHtml(value);
+}
+
 export class XdhNodePicker extends BaseElement {
     constructor() {
         super();
@@ -119,8 +132,22 @@ export class XdhNodePicker extends BaseElement {
         return resolveNodeClassFromCategory(category);
     }
 
+    _isEventInsidePicker(event) {
+        const path = typeof event?.composedPath === 'function'
+            ? event.composedPath()
+            : [];
+        if (path.includes(this)) {
+            return true;
+        }
+        if (this.shadowRoot && path.includes(this.shadowRoot)) {
+            return true;
+        }
+        const target = event?.target;
+        return Boolean(target && this.contains(target));
+    }
+
     _handleDocumentClick(e) {
-        if (this.expanded && !this.contains(e.target)) {
+        if (this.expanded && !this._isEventInsidePicker(e)) {
             this.expanded = false;
             this.renderRoot();
         }
@@ -252,33 +279,52 @@ export class XdhNodePicker extends BaseElement {
         const fallbackColor = this.selectedNodeColor
             ? this.selectedNodeColor
             : 'var(--db-palette-default)';
+        const selectedNodeTitle = sn
+            ? escapeHtml(String(sn.title || ''))
+            : '';
+        const selectedNodeId = sn
+            ? escapeHtml(String(sn.id || ''))
+            : '';
+        const selectedNodeColor = sn
+            ? escapeAttr(getColor(sn))
+            : '';
+        const fallbackTitleText = escapeHtml(fallbackTitle);
+        const fallbackNodeId = escapeHtml(this.selectedNodeId);
+        const fallbackNodeColor = escapeAttr(fallbackColor);
+        const pickerPlaceholder = escapeHtml(t('picker.placeholder'));
+        const pickerLoading = escapeHtml(t('picker.loading'));
+        const pickerEmpty = escapeHtml(t('picker.empty'));
+        const searchPlaceholder = escapeAttr(
+            t('picker.search_placeholder')
+        );
+        const searchQueryValue = escapeAttr(this.searchQuery);
 
         const toggleContent = sn
             ? `<span class="node-color-dot"
-                    style="background:${getColor(sn)};flex-shrink:0">
+                    style="background:${selectedNodeColor};flex-shrink:0">
                </span>
-               <span class="toggle-name">${sn.title}</span>
-               <span class="toggle-id">#${sn.id}</span>`
+               <span class="toggle-name">${selectedNodeTitle}</span>
+               <span class="toggle-id">#${selectedNodeId}</span>`
             : fallbackTitle
                 ? `<span class="node-color-dot"
-                        style="background:${fallbackColor};flex-shrink:0">
+                        style="background:${fallbackNodeColor};flex-shrink:0">
                    </span>
-                   <span class="toggle-name">${fallbackTitle}</span>
-                   <span class="toggle-id">#${this.selectedNodeId}</span>`
-            : `<span class="toggle-placeholder">${t('picker.placeholder')}</span>`;
+                   <span class="toggle-name">${fallbackTitleText}</span>
+                   <span class="toggle-id">#${fallbackNodeId}</span>`
+            : `<span class="toggle-placeholder">${pickerPlaceholder}</span>`;
 
         const listContent = this.loading
-            ? `<div class="picker-empty">${t('picker.loading')}</div>`
+            ? `<div class="picker-empty">${pickerLoading}</div>`
             : filteredNodes.length === 0
-                ? `<div class="picker-empty">${t('picker.empty')}</div>`
+                ? `<div class="picker-empty">${pickerEmpty}</div>`
                 : filteredNodes.map(n => `
                     <div class="node-option${sn && String(sn.id) === String(n.id) ? ' selected' : ''}"
-                         data-id="${n.id}">
+                         data-id="${escapeAttr(String(n.id ?? ''))}">
                         <span class="node-color-dot"
-                              style="background:${getColor(n)}">
+                              style="background:${escapeAttr(getColor(n))}">
                         </span>
-                        <span>${n.title}</span>
-                        <span class="node-id">#${n.id}</span>
+                        <span>${escapeHtml(String(n.title || ''))}</span>
+                        <span class="node-id">#${escapeHtml(String(n.id ?? ''))}</span>
                     </div>
                 `).join('');
 
@@ -496,8 +542,8 @@ export class XdhNodePicker extends BaseElement {
             <div class="picker-dropdown xdh-scroll">
                 <div class="picker-search">
                     <input type="text"
-                        placeholder="${t('picker.search_placeholder')}"
-                        value="${this.searchQuery}" />
+                        placeholder="${searchPlaceholder}"
+                        value="${searchQueryValue}" />
                 </div>
                 <div style="padding: 4px 0;">
                     ${listContent}
