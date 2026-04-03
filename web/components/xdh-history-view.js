@@ -3,7 +3,7 @@ import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
 import { banner } from "../core/banner.js";
-import { t, getLocale } from "../core/i18n.js?v=20260403-5";
+import { t, getLocale } from "../core/i18n.js?v=20260403-8";
 
 function isHistoryCategory(category) {
     return category === "history" || category === "favorites";
@@ -89,7 +89,9 @@ function escapeHtml(value) {
     return String(value || "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 function extractPayloadText(payload) {
@@ -197,6 +199,7 @@ export class XdhHistoryView extends BaseElement {
 
         // ── 点击委托（行选中 + 收藏按钮）───────────────────────────
         root.addEventListener("click", async (e) => {
+            if (!(e.target instanceof Element)) return;
             const favBtn = e.target.closest(".favorite-btn");
             if (favBtn) {
                 e.stopPropagation();
@@ -225,6 +228,7 @@ export class XdhHistoryView extends BaseElement {
 
         // ── 拖拽委托 ─────────────────────────────────────────────
         root.addEventListener("dragstart", (e) => {
+            if (!(e.target instanceof Element)) return;
             const row = e.target.closest(".history-row[draggable='true']");
             if (!row) return;
             const id = row.dataset.id || "";
@@ -256,6 +260,7 @@ export class XdhHistoryView extends BaseElement {
         });
 
         root.addEventListener("dragend", (e) => {
+            if (!(e.target instanceof Element)) return;
             const row = e.target.closest(".history-row");
             if (row) row.style.opacity = "1";
         });
@@ -304,7 +309,7 @@ export class XdhHistoryView extends BaseElement {
                     banner.success(t("history.banner.fav_ok"));
                 }
                 btn.classList.add("active");
-                btn.title = t("history.btn.favorited");
+                btn.setAttribute("data-tooltip", t("history.btn.favorited"));
             } else {
                 banner.error(t("history.banner.fav_fail"));
             }
@@ -537,7 +542,7 @@ export class XdhHistoryView extends BaseElement {
                                                      data-fav-id="${favId}"
                                                      data-selected="${isSelected}">
                                                 <div class="row-header">
-                                                    <div class="row-title" data-tooltip="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                                                    <div class="row-title xdh-tooltip xdh-tooltip-down" data-tooltip="${escapeHtml(title)}">${escapeHtml(title)}</div>
                                                     <div class="row-actions">
                                                         <button class="action-btn favorite-btn xdh-tooltip xdh-tooltip-down ${isFav ? 'active' : ''}" data-id="${item.id}" data-record-id="${recordId}" data-fav-id="${favId}" data-db-name="${escapeHtml(dbName)}" data-extra-header="${escapeHtml(item.raw?.extra?.extra_header || '')}" data-data-type="${escapeHtml(item.raw?.extra?.data_type || '')}" data-source="${escapeHtml(item.raw?.extra?.source || '')}" data-tooltip="${isFav ? t('history.btn.unfavorite') : t('history.btn.favorite')}">
                                                             ${icon('bookmark', 14)}

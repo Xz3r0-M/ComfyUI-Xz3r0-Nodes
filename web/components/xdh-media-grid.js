@@ -1,7 +1,7 @@
 import { BaseElement } from "../core/base-element.js";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260403-5";
+import { t } from "../core/i18n.js?v=20260403-8";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -231,7 +231,6 @@ export class XdhMediaGrid extends BaseElement {
     constructor() {
         super();
         this.items = [];
-        this.lastSelectedIndex = -1;
         this.failedThumbIds = new Set();
         this._gridInitialized = false;
     }
@@ -364,8 +363,6 @@ export class XdhMediaGrid extends BaseElement {
                 e.preventDefault();
                 const id = card.dataset.id;
                 const item = this._itemMap?.get(id);
-                const cards = Array.from(grid.querySelectorAll(".media-card"));
-                const idx = cards.indexOf(card);
 
                 if (item?.isFolder) {
                     const nextFolder = item.childPath || item.raw?.extra?.child_path || "";
@@ -383,27 +380,10 @@ export class XdhMediaGrid extends BaseElement {
                     appStore.state.activeFolder = nextFolder;
                     appStore.state.activeFolderLabel = nextLabel;
                     appStore.state.selectedItems = [];
-                    this.lastSelectedIndex = -1;
                     return;
                 }
 
-                let sel = [...appStore.state.selectedItems];
-                if (e.shiftKey && this.lastSelectedIndex !== -1) {
-                    const start = Math.min(this.lastSelectedIndex, idx);
-                    const end   = Math.max(this.lastSelectedIndex, idx);
-                    for (let i = start; i <= end; i++) {
-                        const tid = cards[i]?.dataset?.id;
-                        if (tid && !sel.includes(tid)) sel.push(tid);
-                    }
-                    appStore.state.selectedItems = sel;
-                } else if (e.ctrlKey || e.metaKey) {
-                    appStore.state.selectedItems = sel.includes(id)
-                        ? sel.filter(i => i !== id) : [...sel, id];
-                    this.lastSelectedIndex = idx;
-                } else {
-                    appStore.state.selectedItems = [id];
-                    this.lastSelectedIndex = idx;
-                }
+                appStore.state.selectedItems = [id];
             });
 
             // 单一 dragstart 委托

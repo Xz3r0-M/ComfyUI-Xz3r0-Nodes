@@ -22,6 +22,7 @@ let _hideTimer = null;
 const MARGIN = 8;   // min distance from viewport edges (px)
 const SHOW_DELAY = 0;  // ms before tooltip appears (0 = instant)
 const HIDE_DELAY = 80; // ms before tooltip hides after mouse leaves
+const SIDE_VERTICAL_OFFSET = 12;
 
 function getEl() {
     if (_el) return _el;
@@ -95,11 +96,13 @@ export function showTooltip(text, targetRect, direction) {
                 break;
             case "left":
                 left = targetRect.left - tw - gap;
-                top  = targetRect.top + (targetRect.height - th) / 2;
+                top  = targetRect.top + (targetRect.height - th) / 2
+                    + SIDE_VERTICAL_OFFSET;
                 break;
             default: // right
                 left = targetRect.right + gap;
-                top  = targetRect.top + (targetRect.height - th) / 2;
+                top  = targetRect.top + (targetRect.height - th) / 2
+                    + SIDE_VERTICAL_OFFSET;
                 break;
         }
 

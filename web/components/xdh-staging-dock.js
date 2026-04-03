@@ -1,87 +1,85 @@
 import { BaseElement } from '../core/base-element.js';
 import { appStore } from '../core/store.js';
-import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from '../core/icon.js';
-import { t } from '../core/i18n.js?v=20260402-393';
+import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
+import { t } from '../core/i18n.js?v=20260403-8';
 import { banner } from '../core/banner.js';
+import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {
     sendToNode,
     CATEGORY_NODE_CLASS,
 } from '../core/node-bridge.js?v=20260402-398';
 
-function getSelectableItems(state = appStore.state) {
-    const query = String(state.searchQuery || '').toLowerCase().trim();
-    const isRecordView = ['history', 'favorites'].includes(
-        state.activeCategory
-    );
-    return (state.mediaList || []).filter(item => {
-        if (!item || item.isFolder) return false;
-        // In history/favorites views, allow record-type items
-        if (!isRecordView && item.type === 'record') return false;
-        const name = String(item.name || item.title || '').toLowerCase();
-        return !query || name.includes(query);
-    });
+function escapeAttr(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 export class XdhStagingDock extends BaseElement {
     constructor() {
         super();
         this.selectedCount = 0;
-        this.expanded = false;
-        // Keep track of which file goes to which node.
-        // e.g., { '1': 10, '2': 11 } where keys are file IDs, values are node IDs
-        this.routingMap = {};
+        this.batchTargetNodeId = '';
+        this.batchTargetNodeTitle = '';
+        this.batchTargetNodeColor = '';
+        this.selectedItemSnapshot = null;
     }
 
     onStoreUpdate(state, key, value) {
         if (key === 'selectedItems') {
-            this.selectedCount = value.length;
-            if (this.selectedCount === 0) {
-                this.expanded = false; // Auto close if empty
+            const incoming = Array.isArray(value) ? value : [];
+            const normalized = incoming.length > 0
+                ? [incoming[incoming.length - 1]]
+                : [];
+            if (
+                incoming.length !== normalized.length
+                || incoming[0] !== normalized[0]
+            ) {
+                appStore.state.selectedItems = normalized;
+                return;
             }
-            // Cleanup routing map for unselected items
-            const newMap = {};
-            value.forEach(id => {
-                if (this.routingMap[id]) newMap[id] = this.routingMap[id];
-            });
-            this.routingMap = newMap;
+            this.selectedCount = normalized.length;
+            if (normalized.length === 0) {
+                this.selectedItemSnapshot = null;
+            } else {
+                const selectedId = String(normalized[0]);
+                const liveItem = (state.mediaList || []).find(
+                    (entry) => String(entry.id) === selectedId
+                );
+                if (liveItem) {
+                    this.selectedItemSnapshot = liveItem;
+                }
+            }
+            this.renderRoot();
+        } else if (key === 'activeCategory') {
+            // Different category may map to different node class.
+            this.batchTargetNodeId = '';
+            this.batchTargetNodeTitle = '';
+            this.batchTargetNodeColor = '';
+            this.selectedItemSnapshot = null;
             this.renderRoot();
         } else if (
             key === 'locale'
             || key === 'mediaList'
-            || key === 'activeCategory'
             || key === 'searchQuery'
             || key === 'loraDetailOpen'
         ) {
+            const selectedId = String((state.selectedItems || [])[0] || '');
+            if (selectedId) {
+                const liveItem = (state.mediaList || []).find(
+                    (entry) => String(entry.id) === selectedId
+                );
+                if (liveItem) {
+                    this.selectedItemSnapshot = liveItem;
+                }
+            }
             this.renderRoot();
         }
     }
 
     bindEvents() {
-        const toggleBtn = this.$('.dock-header');
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                if (this.selectedCount > 0) {
-                    this.expanded = !this.expanded;
-                    this.renderRoot();
-                }
-            });
-        }
-
-        const selectToggleBtn = this.$('.select-toggle-btn');
-        if (selectToggleBtn) {
-            selectToggleBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const selectableIds = getSelectableItems(appStore.state)
-                    .map(item => item.id);
-                const selectedIds = appStore.state.selectedItems || [];
-                const allSelected = selectableIds.length > 0
-                    && selectableIds.every(id => selectedIds.includes(id));
-                appStore.state.selectedItems = allSelected
-                    ? selectedIds.filter(id => !selectableIds.includes(id))
-                    : [...new Set([...selectedIds, ...selectableIds])];
-            });
-        }
-
         const clearBtn = this.$('.clear-btn');
         if (clearBtn) {
             clearBtn.addEventListener('click', (e) => {
@@ -90,160 +88,101 @@ export class XdhStagingDock extends BaseElement {
             });
         }
 
-        const dragHandle = this.$('.dock-drag-handle');
-        if (dragHandle) {
-            dragHandle.addEventListener('dragstart', (e) => {
-                const selectedIds = appStore.state.selectedItems;
-                e.dataTransfer.setData('text/plain', JSON.stringify({
-                    type: 'batch',
-                    items: selectedIds,
-                }));
-                // Also set the first item's payload for single-node drops
-                const firstItem = (appStore.state.mediaList || []).find(
-                    m => selectedIds.includes(m.id)
-                );
-                if (firstItem) {
-                    const extra = firstItem.raw?.extra || {};
-                    const mediaRef = String(
-                        extra.media_ref || firstItem.raw?.media_ref
-                        || firstItem.raw?.ref || ""
-                    );
-                    const xdhPayload = {
-                        source: "xdatahub",
-                        media_ref: mediaRef,
-                        media_type: String(
-                            firstItem.type || "image"
-                        ).toLowerCase(),
-                        title: String(
-                            firstItem.title || firstItem.name || ""
-                        ),
-                    };
-                    e.dataTransfer.setData(
-                        "application/x-xdatahub-media+json",
-                        JSON.stringify(xdhPayload)
-                    );
-                }
-                e.stopPropagation();
+        const applyBtn = this.$('.apply-btn');
+        if (applyBtn) {
+            applyBtn.addEventListener('click', () => {
+                this._sendSelected();
             });
         }
 
-        // Listen for node-picker events
-        const pickers = this.$$('xdh-node-picker');
-        pickers.forEach(picker => {
-            picker.addEventListener('node-selected', (e) => {
-                const fileId = e.target.dataset.fileId;
-                const nodeId = e.detail.nodeId;
-                this.routingMap[fileId] = nodeId;
-            });
-        });
-
-        // Apply All — send each selected item to its target node
-        const applyBtn = this.$('.apply-all-btn');
-        if (applyBtn) {
-            applyBtn.addEventListener('click', () => {
-                this._sendAll();
+        const batchPicker = this.$('xdh-node-picker[data-batch]');
+        if (batchPicker) {
+            batchPicker.addEventListener('node-selected', (e) => {
+                this.batchTargetNodeId = String(e.detail?.nodeId || '').trim();
+                this.batchTargetNodeTitle = String(
+                    e.detail?.node?.title || ''
+                ).trim();
+                this.batchTargetNodeColor = e.detail?.node
+                    ? String(resolveTokenAccentFromNode(e.detail.node))
+                    : '';
             });
         }
     }
 
-    async _sendAll() {
+    async _sendSelected() {
         const state = appStore.state;
         const selectedIds = state.selectedItems || [];
+        const selectedId = selectedIds[0];
+        if (!selectedId) {
+            return;
+        }
         const mediaList   = state.mediaList   || [];
         const category    = state.activeCategory || 'image';
         const nodeClass   = CATEGORY_NODE_CLASS[category] || 'XImageGet';
-
-        // Get the batch picker's selected node
         const batchPicker = this.$('xdh-node-picker[data-batch]');
-        const batchNode   = batchPicker?.selectedNode || null;
+        const batchNodeId = String(
+            batchPicker?.selectedNode?.id
+            || this.batchTargetNodeId
+            || ''
+        ).trim();
 
-        let successCount = 0;
-        let failCount    = 0;
-
-        for (const itemId of selectedIds) {
-            // Per-item target from routingMap, else fall back to batch picker node
-            const targetNodeId = this.routingMap[itemId] != null
-                ? String(this.routingMap[itemId])
-                : batchNode ? String(batchNode.id) : null;
-
-            if (!targetNodeId) {
-                failCount += 1;
-                continue;
-            }
-
-            const item = mediaList.find(
-                (m) => String(m.id) === String(itemId)
-            );
-            const extra     = item?.raw?.extra || {};
-            const mediaRef  = item
-                ? String(
-                    extra.media_ref || item.media_ref || item.ref || ''
-                  )
-                : '';
-            // For text/history items, extract text payload
-            const rawPayload = extra?.payload;
-            let textValue = '';
-            if (!mediaRef) {
-                if (typeof rawPayload === 'string') {
-                    textValue = rawPayload.trim();
-                } else if (rawPayload && typeof rawPayload === 'object') {
-                    textValue = String(rawPayload.text || rawPayload.payload || '')
-                        .trim();
-                }
-            }
-            const title = item
-                ? String(item.title || item.name || '')
-                : '';
-
-            if (!mediaRef && !textValue) {
-                failCount += 1;
-                continue;
-            }
-
-            const result = await sendToNode({
-                nodeId: targetNodeId,
-                nodeClass,
-                mediaRef,
-                textValue,
-                title,
-            });
-
-            if (result.ok) {
-                successCount += 1;
-            } else {
-                failCount += 1;
-            }
+        if (!batchNodeId) {
+            banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
+            return;
         }
 
-        // Clear after send
-        appStore.state.selectedItems = [];
-        this.routingMap = {};
+        const item = mediaList.find((m) => String(m.id) === String(selectedId))
+            || this.selectedItemSnapshot;
+        const extra = item?.raw?.extra || {};
+        const mediaRef = item
+            ? String(extra.media_ref || item.media_ref || item.ref || '')
+            : '';
+        const rawPayload = extra?.payload;
+        let textValue = '';
+        if (!mediaRef) {
+            if (typeof rawPayload === 'string') {
+                textValue = rawPayload.trim();
+            } else if (rawPayload && typeof rawPayload === 'object') {
+                textValue = String(rawPayload.text || rawPayload.payload || '')
+                    .trim();
+            }
+        }
+        const title = item ? String(item.title || item.name || '') : '';
 
-        // Show result banner
-        if (failCount === 0) {
-            banner.success(t('dock.send_success', { count: successCount }));
+        if (!mediaRef && !textValue) {
+            banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
+            return;
+        }
+
+        const result = await sendToNode({
+            nodeId: batchNodeId,
+            nodeClass,
+            mediaRef,
+            textValue,
+            title,
+        });
+
+        if (result.ok) {
+            appStore.state.selectedItems = [];
+            this.selectedItemSnapshot = null;
+            banner.success(t('dock.send_success', { count: 1 }));
         } else {
-            banner.warn(t('dock.send_partial', {
-                success: successCount,
-                fail: failCount,
-            }));
+            banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
         }
     }
 
     render() {
         const state = appStore.state;
-        const isRecordView = ['history', 'favorites'].includes(
-            state.activeCategory
-        );
-        const selectableItems = getSelectableItems(state);
-        const selectableIds = selectableItems.map(item => item.id);
         const selectedIds = state.selectedItems || [];
-        const allSelectableSelected = selectableIds.length > 0
-            && selectableIds.every(id => selectedIds.includes(id));
-        const selectedPreviewItems = selectedIds.slice(0, 10).map(id => {
-            const item = (state.mediaList || []).find(entry => entry.id === id);
-            return item || { id, name: id };
-        });
+        const selectedItem = selectedIds.length > 0
+            ? (state.mediaList || []).find(
+                (entry) => String(entry.id) === String(selectedIds[0])
+            ) || this.selectedItemSnapshot
+            : null;
+        const selectedLabel = String(
+            selectedItem?.title || selectedItem?.name || selectedIds[0] || ''
+        );
+        const selectedLabelEscaped = escapeAttr(selectedLabel);
 
         if (this.selectedCount === 0 || state.loraDetailOpen) {
             return `<style>:host { display: none; }</style>`;
@@ -252,7 +191,6 @@ export class XdhStagingDock extends BaseElement {
         return `
             <style>
                 ${ICON_CSS}
-                ${SCROLLBAR_CSS}
                 ${TOOLTIP_CSS}
                 :host {
                     position: fixed;
@@ -331,9 +269,9 @@ export class XdhStagingDock extends BaseElement {
                         box-shadow 0.15s ease,
                         border-color 0.15s ease,
                         background-color 0.15s ease;
-                    width: ${this.expanded ? '400px' : 'auto'};
+                    width: 420px;
                     max-width: 90vw;
-                    overflow: visible; /* Need visible for picker dropdown to bleed out */
+                    overflow: visible;
                     display: flex;
                     flex-direction: column;
                 }
@@ -343,10 +281,9 @@ export class XdhStagingDock extends BaseElement {
                     align-items: center;
                     justify-content: space-between;
                     padding: 8px 12px;
-                    cursor: pointer;
                     background: var(--dock-header-bg);
                     gap: 12px;
-                    border-radius: ${this.expanded ? '12px 12px 0 0' : '12px'};
+                    border-radius: 12px 12px 0 0;
                     white-space: nowrap;
                     transition: background-color 0.15s ease, color 0.15s ease;
                 }
@@ -416,68 +353,21 @@ export class XdhStagingDock extends BaseElement {
                     flex-shrink: 0;
                 }
 
-                .dock-drag-handle {
-                    cursor: grab;
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 6px;
-                    border: 1px solid var(--dock-border);
-                    background: transparent;
-                    color: var(--dock-secondary-text);
-                    font-size: 12px;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    flex-shrink: 0;
-                    transition: background-color 0.15s ease,
-                        color 0.15s ease;
-                }
-
-                .dock-drag-handle:hover {
-                    background: var(--dock-hover-bg);
-                    color: var(--xdh-color-text-primary, #eeeeee);
-                }
-
-                .dock-drag-handle:active {
-                    cursor: grabbing;
-                }
-
-                .clear-btn-wrap {
-                    flex-shrink: 0;
-                }
-
                 .dock-body {
-                    display: ${this.expanded ? 'block' : 'none'};
+                    display: block;
                     padding: 16px;
                 }
 
-                .compact-item-list {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                    margin-bottom: 16px;
-                    max-height: 150px;
-                    overflow-y: auto;
+                .selected-item {
+                    margin-bottom: 12px;
                     background: var(--dock-inner-bg);
-                    padding: 8px;
-                    border-radius: 8px;
                     border: 1px solid var(--dock-border);
-                }
-
-                .pill {
-                    background: var(--dock-muted-bg);
-                    color: var(--xdh-color-text-primary, #dddddd);
+                    border-radius: 8px;
+                    padding: 8px 10px;
                     font-size: 12px;
-                    padding: 4px 8px;
-                    border-radius: 12px;
-                    white-space: nowrap;
-                }
-
-                .more-pill {
-                    background: transparent;
-                    color: var(--dock-active-color);
-                    border: 1px solid var(--dock-active-color);
-                    font-weight: bold;
+                    color: var(--xdh-color-text-primary, #dddddd);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
 
                 .batch-target-row {
@@ -495,12 +385,10 @@ export class XdhStagingDock extends BaseElement {
                 }
 
                 .actions {
-                    padding: 16px;
+                    padding: 0 16px 16px;
                     display: flex;
                     justify-content: flex-end;
                     gap: 8px;
-                    background: var(--dock-inner-bg);
-                    border-top: 1px solid var(--dock-border);
                     border-radius: 0 0 12px 12px;
                 }
             </style>
@@ -508,36 +396,34 @@ export class XdhStagingDock extends BaseElement {
             <div class="dock-container">
                 <div class="dock-header">
                     <div class="dock-title">
-                        ${icon('shopping-cart', 15)} <span>${t('dock.title')}</span>
-                        <span class="badge">${this.selectedCount}</span>
+                        ${icon('send', 15)} <span>${t('dock.title')}</span>
                     </div>
                     <div class="dock-actions">
-                        <button class="dock-action-btn select-toggle-btn xdh-tooltip xdh-tooltip-up ${allSelectableSelected ? 'active' : ''}"
-                                data-tooltip="${allSelectableSelected ? t('nav.btn.deselect_all') : t('nav.btn.select_all')}"
-                                ${selectableIds.length === 0 ? 'disabled' : ''}>
-                            ${icon(allSelectableSelected ? 'square-check-big' : 'square', 14)}
+                        <button class="dock-action-btn clear-btn xdh-tooltip xdh-tooltip-up" data-tooltip="${t('dock.clear')}">
+                            ${icon('trash-2', 14)}
                         </button>
-                        ${this.selectedCount > 0 ? `<div class="dock-drag-handle xdh-tooltip xdh-tooltip-up" draggable="true" data-tooltip="${t('dock.drag_all')}">${icon('hand-grab', 14)}</div>` : ''}
-                        ${this.selectedCount > 0 ? `<button class="dock-action-btn clear-btn xdh-tooltip xdh-tooltip-up" data-tooltip="${t('dock.clear')}">${icon('trash-2', 14)}</button>` : ''}
                     </div>
                 </div>
 
-                ${this.expanded ? `
-                    <div class="dock-body">
-                        <div style="font-size: 13px; color: #888; margin-bottom: 8px;">${t('dock.selected', { count: appStore.state.selectedItems.length })}</div>
-                        <div class="compact-item-list xdh-scroll">
-                            ${selectedPreviewItems.map(item => `<span class="pill">${icon('file', 11)} ${String(item.title || item.name || item.id)}</span>`).join('')}
-                            ${appStore.state.selectedItems.length > 10 ? `<span class="pill more-pill">${t('dock.more_items', { count: appStore.state.selectedItems.length - 10 })}</span>` : ''}
-                        </div>
-                        <div class="batch-target-row">
-                            <span class="batch-target-label">${t('dock.batch_target')}</span>
-                            <xdh-node-picker data-batch="true"></xdh-node-picker>
-                        </div>
+                <div class="dock-body">
+                    <div class="selected-item xdh-tooltip xdh-tooltip-up" data-tooltip="${selectedLabelEscaped}">
+                        ${icon('file', 11)} ${selectedLabel}
                     </div>
-                    <div class="actions">
-                        <xdh-button variant="primary" class="apply-all-btn">${icon('send', 14)} ${t('dock.send')}</xdh-button>
+                    <div class="batch-target-row">
+                        <span class="batch-target-label">${t('dock.batch_target')}</span>
+                        <xdh-node-picker
+                            data-batch="true"
+                            selected-node-id="${escapeAttr(this.batchTargetNodeId)}"
+                            selected-node-title="${escapeAttr(this.batchTargetNodeTitle)}"
+                            selected-node-color="${escapeAttr(this.batchTargetNodeColor)}">
+                        </xdh-node-picker>
                     </div>
-                ` : ''}
+                </div>
+                <div class="actions">
+                    <xdh-button variant="primary" class="apply-btn">
+                        ${icon('send', 14)} ${t('dock.send')}
+                    </xdh-button>
+                </div>
             </div>
         `;
     }

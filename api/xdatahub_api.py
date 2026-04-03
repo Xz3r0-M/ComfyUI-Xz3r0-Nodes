@@ -86,6 +86,12 @@ IMAGE_VALIDATE_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
 IMAGE_VALIDATE_LOCK = threading.Lock()
 FAVORITES_DB_NAME = "user_favorites.db"
 LORA_TRIGGER_DB_NAME = "loras_data.db"
+LORA_DB_CONFLICT_ACTION_REPLACE = "replace"
+LORA_DB_CONFLICT_ACTION_USE_EXISTING = "use_existing"
+LORA_DB_CONFLICT_ACTION_VALUES = {
+    LORA_DB_CONFLICT_ACTION_REPLACE,
+    LORA_DB_CONFLICT_ACTION_USE_EXISTING,
+}
 MEDIA_INDEX_DB_NAME = "media_index.db"
 CUSTOM_ROOT_PREFIX = "custom_"
 CUSTOM_VIRTUAL_ROOT = "custom"
@@ -138,7 +144,26 @@ ERROR_TEXT = {
     "resource_busy": "Resource is busy, read-only mode only",
     "internal_error": "System busy, please retry later",
     "unsupported_media_type": "Unsupported media type",
+    "lora_db_conflict": "Target Lora database already exists",
 }
+
+
+class LoraDbConflictError(RuntimeError):
+    def __init__(self, current_db_path: Path, target_db_path: Path):
+        super().__init__("lora db conflict")
+        self.current_db_path = current_db_path
+        self.target_db_path = target_db_path
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "status": "error",
+            "code": "lora_db_conflict",
+            "message_key": "xdatahub.api.error.lora_db_conflict",
+            "message": ERROR_TEXT["lora_db_conflict"],
+            "file_name": LORA_TRIGGER_DB_NAME,
+            "current_location": "xdatahub_database",
+            "target_location": "models_loras",
+        }
 
 
 def _infer_media_content_type(path: Path, media_type: str | None) -> str:
@@ -2581,6 +2606,7 @@ def _sqlite_sidecar_paths(db_path: Path) -> list[Path]:
 def migrate_lora_trigger_db_location(
     current_settings: dict[str, Any],
     merged_settings: dict[str, Any],
+    conflict_action: str | None = None,
 ) -> None:
     current_use_lora_root = parse_bool(
         current_settings.get("store_lora_db_in_loras")
@@ -2613,6 +2639,17 @@ def migrate_lora_trigger_db_location(
         normalize_path(target_db_path)
     ):
         return
+
+    if (
+        not current_use_lora_root
+        and merged_use_lora_root
+        and current_db_path.exists()
+        and target_db_path.exists()
+    ):
+        if conflict_action == LORA_DB_CONFLICT_ACTION_USE_EXISTING:
+            return
+        if conflict_action != LORA_DB_CONFLICT_ACTION_REPLACE:
+            raise LoraDbConflictError(current_db_path, target_db_path)
 
     entries: list[tuple[Path, Path]] = [
         (current_db_path, target_db_path),
@@ -3221,6 +3258,16 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
     return patch
 
 
+def _parse_lora_db_conflict_action(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    action = str(value.get("lora_db_conflict_action") or "").strip()
+    normalized = action.lower()
+    if normalized in LORA_DB_CONFLICT_ACTION_VALUES:
+        return normalized
+    return None
+
+
 def normalize_xdatahub_settings(value: Any) -> dict[str, Any]:
     base = default_xdatahub_settings()
     base.update(_parse_media_chip_patch(value))
@@ -3268,11 +3315,16 @@ def update_xdatahub_settings(payload: Any) -> dict[str, Any]:
     with XDATAHUB_SETTINGS_FILE_LOCK:
         current = read_xdatahub_settings()
         incoming = _parse_media_chip_patch(payload)
+        conflict_action = _parse_lora_db_conflict_action(payload)
         merged = {
             **current,
             **incoming,
         }
-        migrate_lora_trigger_db_location(current, merged)
+        migrate_lora_trigger_db_location(
+            current,
+            merged,
+            conflict_action=conflict_action,
+        )
         write_xdatahub_settings(merged)
         return merged
 
@@ -4114,6 +4166,8 @@ async def api_settings_update(request: web.Request) -> web.Response:
         return json_error("quota_exceeded", status=400)
     try:
         settings = update_xdatahub_settings(payload)
+    except LoraDbConflictError as exc:
+        return web.json_response(exc.to_payload(), status=409)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] settings write failed: %s",

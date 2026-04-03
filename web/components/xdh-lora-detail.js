@@ -1,9 +1,9 @@
 import { BaseElement } from "../core/base-element.js";
-import { icon, ICON_CSS, SCROLLBAR_CSS } from "../core/icon.js";
+import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { apiGet, apiPost } from "../core/api.js";
 import { appStore } from "../core/store.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260403-5";
+import { t } from "../core/i18n.js?v=20260403-8";
 
 export class XdhLoraDetail extends BaseElement {
     constructor() {
@@ -160,11 +160,11 @@ export class XdhLoraDetail extends BaseElement {
             if (this._isLinked) {
                 btn.classList.add("linked");
                 btn.innerHTML = icon("link-2", 14);
-                btn.title = t("lora.btn.unlink");
+                btn.setAttribute("data-tooltip", t("lora.btn.unlink"));
             } else {
                 btn.classList.remove("linked");
                 btn.innerHTML = icon("unlink-2", 14);
-                btn.title = t("lora.btn.link");
+                btn.setAttribute("data-tooltip", t("lora.btn.link"));
             }
         }
 
@@ -194,7 +194,7 @@ export class XdhLoraDetail extends BaseElement {
 
     render() {
         if (!this._currentRef) {
-            return `<style>${ICON_CSS} :host { display: contents; }</style>
+            return `<style>${ICON_CSS} ${TOOLTIP_CSS} :host { display: contents; }</style>
                     <div class="drawer-wrap"></div>`;
         }
 
@@ -236,8 +236,8 @@ export class XdhLoraDetail extends BaseElement {
                                 value="${sM}"/>
                         </div>
                         <button
-                            class="link-btn ${this._isLinked ? "linked" : ""}"
-                            title="${this._isLinked ? t('lora.btn.unlink') : t('lora.btn.link')}">
+                            class="link-btn xdh-tooltip xdh-tooltip-down ${this._isLinked ? "linked" : ""}"
+                            data-tooltip="${this._isLinked ? t('lora.btn.unlink') : t('lora.btn.link')}">
                             ${icon(this._isLinked ? "link-2" : "unlink-2", 14)}
                         </button>
                         <div class="field-group">
@@ -260,8 +260,8 @@ export class XdhLoraDetail extends BaseElement {
                     <div class="field-group">
                         <div class="tw-label-row">
                             <label>${t('lora.label.trigger_words')}</label>
-                            <button class="import-meta-btn"
-                                title="${t('lora.btn.import_meta_title')}">
+                            <button class="import-meta-btn xdh-tooltip xdh-tooltip-down"
+                                data-tooltip="${t('lora.btn.import_meta_title')}">
                                 ${icon("database", 12)} ${t('lora.btn.import_meta')}
                             </button>
                         </div>
@@ -282,6 +282,7 @@ export class XdhLoraDetail extends BaseElement {
         return `
             <style>
                 ${ICON_CSS}
+                ${TOOLTIP_CSS}
                 :host { display: contents; }
 
                 /* ── Wrapper ─────────────────────────── */

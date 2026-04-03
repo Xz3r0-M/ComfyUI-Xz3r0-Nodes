@@ -1,6 +1,6 @@
 import { BaseElement } from '../core/base-element.js';
 import { appStore } from '../core/store.js';
-import { t } from '../core/i18n.js?v=20260403-5';
+import { t } from '../core/i18n.js?v=20260403-8';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import { SCROLLBAR_CSS } from '../core/icon.js';
 import {
@@ -8,18 +8,90 @@ import {
     CATEGORY_NODE_CLASS,
 } from '../core/node-bridge.js?v=20260402-398';
 
+function compareNodeByIdAsc(left, right) {
+    const leftId = String(left?.id ?? '');
+    const rightId = String(right?.id ?? '');
+    const leftNum = Number.parseInt(leftId, 10);
+    const rightNum = Number.parseInt(rightId, 10);
+    const leftNumValid = Number.isFinite(leftNum);
+    const rightNumValid = Number.isFinite(rightNum);
+
+    if (leftNumValid && rightNumValid && leftNum !== rightNum) {
+        return leftNum - rightNum;
+    }
+    if (leftNumValid && !rightNumValid) {
+        return -1;
+    }
+    if (!leftNumValid && rightNumValid) {
+        return 1;
+    }
+    return leftId.localeCompare(rightId, undefined, { numeric: true });
+}
+
 export class XdhNodePicker extends BaseElement {
     constructor() {
         super();
         this.expanded = false;
         this.searchQuery = '';
         this.selectedNode = null;
+        this.selectedNodeId = '';
+        this.selectedNodeTitle = '';
+        this.selectedNodeColor = '';
         this.nodes = [];
         this.loading = false;
+        this.docsListenerAdded = false;
+        this._onDocumentClick = this._handleDocumentClick.bind(this);
     }
 
     static get observedAttributes() {
-        return ['target-type'];
+        return [
+            'target-type',
+            'selected-node-id',
+            'selected-node-title',
+            'selected-node-color',
+        ];
+    }
+
+    attributeChangedCallback(name, _oldValue, newValue) {
+        if (name === 'selected-node-id') {
+            this.selectedNodeId = String(newValue || '').trim();
+            this._syncSelectedNodeFromId();
+            return;
+        }
+        if (name === 'selected-node-title') {
+            this.selectedNodeTitle = String(newValue || '').trim();
+            this.renderRoot();
+            return;
+        }
+        if (name === 'selected-node-color') {
+            this.selectedNodeColor = String(newValue || '').trim();
+            this.renderRoot();
+        }
+    }
+
+    _syncSelectedNodeFromId() {
+        if (!this.selectedNodeId) {
+            return;
+        }
+        if (!Array.isArray(this.nodes) || this.nodes.length === 0) {
+            return;
+        }
+        const matched = this.nodes.find(
+            (node) => String(node.id) === this.selectedNodeId
+        ) || null;
+        if (!matched) {
+            return;
+        }
+        this.selectedNode = matched;
+        this.selectedNodeTitle = String(matched.title || '').trim();
+        this.selectedNodeColor = String(resolveTokenAccentFromNode(matched));
+    }
+
+    _handleDocumentClick(e) {
+        if (this.expanded && !this.contains(e.target)) {
+            this.expanded = false;
+            this.renderRoot();
+        }
     }
 
     bindEvents() {
@@ -58,6 +130,13 @@ export class XdhNodePicker extends BaseElement {
                 this.selectedNode = this.nodes.find(
                     n => String(n.id) === nodeId
                 ) || null;
+                this.selectedNodeId = nodeId;
+                this.selectedNodeTitle = String(
+                    this.selectedNode?.title || ''
+                ).trim();
+                this.selectedNodeColor = this.selectedNode
+                    ? String(resolveTokenAccentFromNode(this.selectedNode))
+                    : '';
                 this.dispatchEvent(new CustomEvent('node-selected', {
                     detail: {
                         nodeId,
@@ -73,13 +152,16 @@ export class XdhNodePicker extends BaseElement {
 
         // Click outside to close
         if (!this.docsListenerAdded) {
-            document.addEventListener('click', (e) => {
-                if (this.expanded && !this.contains(e.target)) {
-                    this.expanded = false;
-                    this.renderRoot();
-                }
-            });
+            document.addEventListener('click', this._onDocumentClick);
             this.docsListenerAdded = true;
+        }
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback?.();
+        if (this.docsListenerAdded) {
+            document.removeEventListener('click', this._onDocumentClick);
+            this.docsListenerAdded = false;
         }
     }
 
@@ -89,7 +171,10 @@ export class XdhNodePicker extends BaseElement {
         this.loading = true;
         this.renderRoot();
         requestNodes(nodeClass).then((nodes) => {
-            this.nodes = nodes;
+            this.nodes = Array.isArray(nodes)
+                ? [...nodes].sort(compareNodeByIdAsc)
+                : [];
+            this._syncSelectedNodeFromId();
             if (this.selectedNode) {
                 const selectedId = String(this.selectedNode.id || '');
                 this.selectedNode = this.nodes.find(
@@ -121,12 +206,27 @@ export class XdhNodePicker extends BaseElement {
         const getColor = (node) => resolveTokenAccentFromNode(node);
 
         const sn = this.selectedNode;
+        const fallbackTitle = this.selectedNodeTitle
+            ? this.selectedNodeTitle
+            : this.selectedNodeId
+                ? `#${this.selectedNodeId}`
+                : '';
+        const fallbackColor = this.selectedNodeColor
+            ? this.selectedNodeColor
+            : 'var(--db-palette-default)';
+
         const toggleContent = sn
             ? `<span class="node-color-dot"
                     style="background:${getColor(sn)};flex-shrink:0">
                </span>
                <span class="toggle-name">${sn.title}</span>
                <span class="toggle-id">#${sn.id}</span>`
+            : fallbackTitle
+                ? `<span class="node-color-dot"
+                        style="background:${fallbackColor};flex-shrink:0">
+                   </span>
+                   <span class="toggle-name">${fallbackTitle}</span>
+                   <span class="toggle-id">#${this.selectedNodeId}</span>`
             : `<span class="toggle-placeholder">${t('picker.placeholder')}</span>`;
 
         const listContent = this.loading

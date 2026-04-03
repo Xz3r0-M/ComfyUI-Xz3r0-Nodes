@@ -1,7 +1,7 @@
 import { BaseElement } from "../core/base-element.js";
 import { appStore as store } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260403-5";
+import { t } from "../core/i18n.js?v=20260403-8";
 
 // Categories definition — single source of truth
 const MEDIA_CATEGORIES = [

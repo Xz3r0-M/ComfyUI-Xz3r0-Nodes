@@ -3,7 +3,7 @@ import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260403-5";
+import { t } from "../core/i18n.js?v=20260403-8";
 
 function getSortOptions() {
     return [
@@ -230,8 +230,9 @@ export class XdhContentNav extends BaseElement {
         const meta = lockMeta(lockState);
         status.dataset.state = meta.key;
         status.dataset.busy = lockState.is_executing ? "true" : "false";
-        status.title = meta.title;
-        panel.title = meta.title;
+        status.removeAttribute("title");
+        panel.removeAttribute("title");
+        panel.setAttribute("data-tooltip", meta.title);
         panel.setAttribute("aria-label", meta.title);
         text.textContent = meta.label;
         if (popHead) popHead.dataset.state = meta.key;
@@ -873,7 +874,7 @@ export class XdhContentNav extends BaseElement {
                     <div class="nav-status" data-state="${lock.key}" data-busy="${state.lockState?.is_executing ? "true" : "false"}"></div>
                     <span class="status-text">${lock.label}</span>
                 </div>
-                <div class="status-popover" role="dialog" aria-label="${t("nav.status.detail")}">
+                <div class="status-popover" role="dialog" aria-label="${t("nav.status.aria_label")}">
                     <div class="status-popover-head" data-state="${lock.key}">
                         <span class="status-popover-dot"></span>
                         <span class="status-popover-title status-detail-state">${lock.label}</span>
@@ -899,7 +900,7 @@ export class XdhContentNav extends BaseElement {
                 <button class="nav-arrow nav-refresh xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.refresh")}">${icon('refresh-cw', 15)}</button>
                 <button class="nav-arrow nav-home xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.home")}" ${folder ? "" : "disabled"}>${icon('house', 15)}</button>
                 <div class="breadcrumb" style="margin-left: 4px;">
-                    <span class="bc-folder" data-tooltip="${breadcrumbPathEscaped}">${breadcrumbPathEscaped}</span>
+                    <span class="bc-folder xdh-tooltip xdh-tooltip-down" data-tooltip="${breadcrumbPathEscaped}">${breadcrumbPathEscaped}</span>
                 </div>
             </div>
 

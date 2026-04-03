@@ -6,22 +6,22 @@ import {
     buildMediaUrl,
 } from "./core/api.js?v=20260402-411";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260403-5";
+import { setLocale, t } from "./core/i18n.js?v=20260403-8";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260402-381";
-import "./components/xdh-sidebar-filter.js?v=20260403-12";
-import "./components/xdh-media-grid.js?v=20260403-8";
-import "./components/xdh-staging-dock.js?v=20260403-402";
-import "./components/xdh-node-picker.js?v=20260403-401";
+import "./components/xdh-sidebar-filter.js?v=20260403-13";
+import "./components/xdh-media-grid.js?v=20260403-10";
+import "./components/xdh-staging-dock.js?v=20260403-409";
+import "./components/xdh-node-picker.js?v=20260403-407";
 import "./core/node-bridge.js?v=20260402-398";
-import "./components/xdh-content-nav.js?v=20260403-13";
-import "./components/xdh-pagination.js?v=20260403-8";
+import "./components/xdh-content-nav.js?v=20260403-15";
+import "./components/xdh-pagination.js?v=20260403-9";
 import "./components/xdh-lightbox.js?v=20260403-21";
-import "./components/xdh-history-view.js?v=20260403-1";
-import "./components/xdh-banner.js?v=20260402-381";
-import "./components/xdh-lora-detail.js?v=20260402-401";
-import "./components/xdh-settings-dialog.js?v=20260403-1";
+import "./components/xdh-history-view.js?v=20260403-3";
+import "./components/xdh-banner.js?v=20260403-382";
+import "./components/xdh-lora-detail.js?v=20260403-403";
+import "./components/xdh-settings-dialog.js?v=20260403-8";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -56,6 +56,31 @@ const PERSISTED_SORT_ORDERS = new Set([
 const PERSISTED_CARD_SIZES = new Set(["small", "medium", "large"]);
 
 const URL_CATEGORY_PARAM = "tab";
+const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
+const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
+const THEME_MODE_VALUES = new Set(["dark", "light"]);
+
+let lockRefreshTimer = 0;
+let lockRefreshInFlight = null;
+let lockRefreshQueued = false;
+
+function normalizeThemeMode(mode) {
+    const nextMode = String(mode || "").trim().toLowerCase();
+    return THEME_MODE_VALUES.has(nextMode) ? nextMode : "dark";
+}
+
+function postThemeModeToHost(mode) {
+    if (!window.parent || window.parent === window) {
+        return;
+    }
+    window.parent.postMessage(
+        {
+            type: "xdatahub:theme-mode",
+            theme_mode: normalizeThemeMode(mode),
+        },
+        "*"
+    );
+}
 
 function readCategoryFromUrl() {
     try {
@@ -165,8 +190,19 @@ window.addEventListener("message", (event) => {
     if (!payload || typeof payload !== "object") {
         return;
     }
+    if (payload.type === "xdatahub:theme-mode") {
+        applyThemeV2(payload.theme_mode, { notifyHost: false });
+        return;
+    }
     if (payload.type === "xdatahub:ui-locale") {
         setLocale(payload.locale);
+        return;
+    }
+    if (
+        payload.type === "xdatahub:lock-state-dirty"
+        || payload.type === "xdatahub:interrupt-requested"
+    ) {
+        scheduleLockStateRefresh(0);
     }
 });
 
@@ -196,15 +232,20 @@ async function loadAppSettings() {
             ...appStore.state.xdatahubSettings,
             ...(payload.settings || {}),
         };
-        applyThemeV2(appStore.state.xdatahubSettings.theme_mode);
     } catch (error) {
         console.warn("[xdh-v2] Failed to load settings", error);
     }
 }
 
-function applyThemeV2(mode) {
-    document.body.dataset.theme =
-        (mode === "light") ? "light" : "dark";
+function applyThemeV2(mode, options = {}) {
+    const normalized = normalizeThemeMode(mode);
+    if (document.body.dataset.theme === normalized) {
+        return;
+    }
+    document.body.dataset.theme = normalized;
+    if (options.notifyHost !== false) {
+        postThemeModeToHost(normalized);
+    }
 }
 
 function categoryToMediaType(category) {
@@ -307,13 +348,45 @@ async function runMenuAction(action) {
     }
 }
 
-async function refreshLockState() {
-    try {
-        const res = await loadLockStatus();
-        setLockState(res);
-    } catch (e) {
-        console.warn("[xdh-v2] Failed to refresh lock state", e);
+function scheduleLockStateRefresh(delay = LOCK_EVENT_REFRESH_DEBOUNCE_MS) {
+    if (lockRefreshTimer) {
+        window.clearTimeout(lockRefreshTimer);
+        lockRefreshTimer = 0;
     }
+
+    if (delay <= 0) {
+        void refreshLockState();
+        return;
+    }
+
+    lockRefreshTimer = window.setTimeout(() => {
+        lockRefreshTimer = 0;
+        void refreshLockState();
+    }, delay);
+}
+
+async function refreshLockState() {
+    if (lockRefreshInFlight) {
+        lockRefreshQueued = true;
+        return lockRefreshInFlight;
+    }
+
+    lockRefreshInFlight = (async () => {
+        try {
+            const res = await loadLockStatus();
+            setLockState(res);
+        } catch (e) {
+            console.warn("[xdh-v2] Failed to refresh lock state", e);
+        } finally {
+            lockRefreshInFlight = null;
+            if (lockRefreshQueued) {
+                lockRefreshQueued = false;
+                scheduleLockStateRefresh(LOCK_EVENT_REFRESH_DEBOUNCE_MS);
+            }
+        }
+    })();
+
+    return lockRefreshInFlight;
 }
 
 function normalizeLockState(lock = {}) {
@@ -352,6 +425,38 @@ function setLockState(lock) {
     return true;
 }
 
+function buildStableFallbackId(item, category, scope) {
+    const stableParts = [
+        category,
+        scope,
+        item.path,
+        item.extra?.child_path,
+        item.extra?.media_ref,
+        item.media_ref,
+        item.ref,
+        item.title,
+        item.name,
+    ].map(value => String(value || "").trim()).filter(Boolean);
+
+    if (stableParts.length > 0) {
+        return stableParts.join("::");
+    }
+
+    try {
+        return [
+            String(category || "unknown"),
+            String(scope || "item"),
+            JSON.stringify(item),
+        ].join("::");
+    } catch {
+        return [
+            String(category || "unknown"),
+            String(scope || "item"),
+            "missing",
+        ].join("::");
+    }
+}
+
 /**
  * Map a raw API item to the uniform card model:
  * { id, name, type, thumbUrl, raw }
@@ -365,7 +470,7 @@ function mapItem(item, category) {
     // ── Folder shape ─────────────────────────────────────
     if (item.kind === "folder") {
         return {
-            id: item.id || String(Math.random()),
+            id: item.id || buildStableFallbackId(item, category, "folder"),
             name: item.title || item.path || "Folder",
             type: "folder",
             thumbUrl: "icons/folder.svg",
@@ -382,7 +487,7 @@ function mapItem(item, category) {
         const name = item.title || item.name || ref || "Unnamed";
         const thumbUrl = item.extra?.thumb_url || item.thumb_url || "";
         return {
-            id: item.id || ref || String(Math.random()),
+            id: item.id || ref || buildStableFallbackId(item, category, "lora"),
             name,
             type: "lora",
             thumbUrl,
@@ -393,7 +498,7 @@ function mapItem(item, category) {
 
     // ── Record / Favorites shape ─────────────────────────
     if (category === "history" || category === "favorites") {
-        const id   = item.id || String(Math.random());
+        const id = item.id || buildStableFallbackId(item, category, "record");
         const name = item.title || id;
         // Records don't have a thumb — use a placeholder
         return {
@@ -407,7 +512,8 @@ function mapItem(item, category) {
     }
 
     // ── Media shape (image / video / audio) ─────────────
-    const id   = item.id || String(Math.random());
+    const mediaType = item.kind || item.extra?.media_type || "image";
+    const id = item.id || buildStableFallbackId(item, category, mediaType);
     const name = item.title || item.extra?.media_ref || id;
     const ref  = item.extra?.media_ref || "";
     const isMock = item.extra?.isMock;
@@ -416,7 +522,6 @@ function mapItem(item, category) {
         : ref
             ? buildMediaUrl(ref)
             : MOCK_THUMB;
-    const mediaType = item.kind || item.extra?.media_type || "image";
     return {
         id,
         name,
@@ -480,23 +585,26 @@ appStore.subscribe((state, key) => {
 
 // ── Data loader ──────────────────────────────────────────────────────────────
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
+let latestListLoadToken = 0;
 
-async function fetchCategory(category) {
+async function fetchCategory(category, page, folder) {
+    const safePage = page || 1;
+    const safeFolder = folder || "";
     if (category === "lora") {
         return loadLoraList(
-            appStore.state.currentPage || 1,
+            safePage,
             50,
-            appStore.state.activeFolder || ""
+            safeFolder
         );
     }
-    if (category === "history")   return loadRecords(appStore.state.currentPage || 1, 50);
-    if (category === "favorites") return loadFavorites(appStore.state.currentPage || 1, 50);
+    if (category === "history") return loadRecords(safePage, 50);
+    if (category === "favorites") return loadFavorites(safePage, 50);
     if (MEDIA_CATEGORIES.has(category)) {
         return loadMediaList(
             category,
-            appStore.state.currentPage || 1,
+            safePage,
             50,
-            appStore.state.activeFolder || ""
+            safeFolder
         );
     }
     return { items: [], page: 1, total_pages: 1 };
@@ -511,15 +619,33 @@ appStore.subscribe(async (state, key) => {
     ) {
         return;
     }
+
+    const requestToken = ++latestListLoadToken;
+    const categorySnapshot = state.activeCategory;
+    const folderSnapshot = state.activeFolder || "";
+    const pageSnapshot = state.currentPage || 1;
+
     appStore.state.isLoading = true;
-    if ((appStore.state.selectedItems || []).length > 0) {
+    const shouldResetSelection = key !== "currentPage";
+    if (
+        shouldResetSelection
+        && (appStore.state.selectedItems || []).length > 0
+    ) {
         appStore.state.selectedItems = [];
     }
     try {
-        const category = state.activeCategory;
-        const res = await fetchCategory(category);
+        const res = await fetchCategory(
+            categorySnapshot,
+            pageSnapshot,
+            folderSnapshot
+        );
+        if (requestToken !== latestListLoadToken) {
+            return;
+        }
         const raw = res.items || res.data || [];
-        appStore.state.mediaList   = raw.map(item => mapItem(item, category));
+        appStore.state.mediaList = raw.map(
+            item => mapItem(item, categorySnapshot)
+        );
         appStore.state.currentPage = res.page        || 1;
         appStore.state.totalPages  = res.total_pages || 1;
         if (res.lock_state) {
@@ -529,9 +655,15 @@ appStore.subscribe(async (state, key) => {
             });
         }
     } catch (e) {
+        if (requestToken !== latestListLoadToken) {
+            return;
+        }
         console.error("[xdh-v2] Failed to load list", e);
         appStore.state.mediaList = [];
     } finally {
+        if (requestToken !== latestListLoadToken) {
+            return;
+        }
         appStore.state.isLoading = false;
         if (key === "refreshTrigger") {
             appStore.state.dbTaskBusy = false;
@@ -567,7 +699,7 @@ const _execOverlay = (() => {
         inset: "0",
         zIndex: "4500",
         backdropFilter: "blur(8px)",
-        webkitBackdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
         background: "rgba(0,0,0,0.35)",
         display: "flex",
         alignItems: "center",
@@ -615,4 +747,14 @@ customElements.whenDefined("xdh-sidebar-filter").then(async () => {
 });
 
 refreshLockState();
-window.setInterval(refreshLockState, 1500);
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        scheduleLockStateRefresh(0);
+    }
+});
+window.setInterval(() => {
+    if (document.hidden) {
+        return;
+    }
+    scheduleLockStateRefresh();
+}, LOCK_FALLBACK_POLL_INTERVAL_MS);

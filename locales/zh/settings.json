@@ -70,36 +70,8 @@
     "name": "XDataHub 快捷键",
     "tooltip": "切换 XDataHub 窗口的键盘快捷键。格式：Ctrl+Alt+X、Alt+X、Shift+F2 等。"
   },
-  "Xz3r0_XDataHub_VideoAutoplay": {
-    "name": "视频预览 - 自动播放",
-    "tooltip": "在 XDataHub 中预览视频时自动播放。"
-  },
-  "Xz3r0_XDataHub_VideoMuted": {
-    "name": "视频预览 - 静音",
-    "tooltip": "在 XDataHub 中预览视频时默认静音。"
-  },
-  "Xz3r0_XDataHub_VideoLoop": {
-    "name": "视频预览 - 循环播放",
-    "tooltip": "在 XDataHub 中循环播放视频。"
-  },
-  "Xz3r0_XDataHub_AudioAutoplay": {
-    "name": "音频预览 - 自动播放",
-    "tooltip": "在 XDataHub 中预览音频时自动播放。"
-  },
-  "Xz3r0_XDataHub_AudioMuted": {
-    "name": "音频预览 - 静音",
-    "tooltip": "在 XDataHub 中预览音频时默认静音。"
-  },
-  "Xz3r0_XDataHub_AudioLoop": {
-    "name": "音频预览 - 循环播放",
-    "tooltip": "在 XDataHub 中循环播放音频。"
-  },
-  "Xz3r0_XDataHub_StoreLoraDbInLoras": {
-    "name": "Lora 数据库保存到 models/loras",
-    "tooltip": "开启后，Lora 触发词数据库将保存到 models/loras 文件夹，而非 XDataHub 数据目录。"
-  },
-  "Xz3r0_XDataHub_CustomMediaFolder": {
-    "name": "自定义媒体文件夹路径",
-    "tooltip": "额外要在 XDataHub 媒体标签页中浏览的文件夹绝对路径。留空则禁用。"
+  "Xz3r0_XDataHub_AutoShow": {
+    "name": "启动时显示 XDataHub",
+    "tooltip": "ComfyUI 加载完成后自动打开 XDataHub 窗口。"
   }
 }

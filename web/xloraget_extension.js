@@ -22,6 +22,9 @@ const TRIGGER_WORDS_ENDPOINT = "/xz3r0/xdatahub/loras/trigger-words";
 const TRIGGER_WORD_INLINE_LIMIT = 3;
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const LOCALE_SYNC_INTERVAL_MS = 1000;
+const TOOLTIP_VIEWPORT_MARGIN = 12;
+const TOOLTIP_CURSOR_OFFSET_X = 16;
+const TOOLTIP_CURSOR_OFFSET_Y = 26;
 
 let rowSeq = 1;
 
@@ -405,7 +408,62 @@ async function fetchLoraTriggerWords(loraRef) {
     };
 }
 
-function showTooltip(tooltip, event, text, thumbUrl = "", noteText = "") {
+function positionTooltip(tooltip, event) {
+    if (!(tooltip instanceof HTMLElement) || !event) {
+        return;
+    }
+    const rect = tooltip.getBoundingClientRect();
+    const tooltipWidth = rect.width || tooltip.offsetWidth || 212;
+    const tooltipHeight = rect.height || tooltip.offsetHeight || 48;
+    const viewportWidth = window.innerWidth
+        || document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight
+        || document.documentElement.clientHeight;
+
+    let left = event.clientX + TOOLTIP_CURSOR_OFFSET_X;
+    let top = event.clientY + TOOLTIP_CURSOR_OFFSET_Y;
+
+    if (left + tooltipWidth > viewportWidth - TOOLTIP_VIEWPORT_MARGIN) {
+        left = event.clientX - tooltipWidth - TOOLTIP_CURSOR_OFFSET_X;
+    }
+    if (top + tooltipHeight > viewportHeight - TOOLTIP_VIEWPORT_MARGIN) {
+        top = event.clientY - tooltipHeight - TOOLTIP_CURSOR_OFFSET_Y;
+    }
+
+    left = Math.max(
+        TOOLTIP_VIEWPORT_MARGIN,
+        Math.min(
+            viewportWidth - tooltipWidth - TOOLTIP_VIEWPORT_MARGIN,
+            left
+        )
+    );
+    top = Math.max(
+        TOOLTIP_VIEWPORT_MARGIN,
+        Math.min(
+            viewportHeight - tooltipHeight - TOOLTIP_VIEWPORT_MARGIN,
+            top
+        )
+    );
+
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function resolveTooltipContent(source, target) {
+    if (typeof source === "function") {
+        return source(target);
+    }
+    return source;
+}
+
+function showTooltip(
+    tooltip,
+    event,
+    text,
+    thumbUrl = "",
+    noteText = "",
+    target = null
+) {
     const img = tooltip?.querySelector("img");
     const label = tooltip?.querySelector(".xlora-tooltip-name");
     const divider = tooltip?.querySelector(".xlora-tooltip-divider");
@@ -417,14 +475,21 @@ function showTooltip(tooltip, event, text, thumbUrl = "", noteText = "") {
         || !(note instanceof HTMLElement)) {
         return;
     }
-    const displayName = extractLoraFilename(String(text || ""));
-    const displayNote = String(noteText || "").trim();
+    const resolvedText = resolveTooltipContent(text, target);
+    const resolvedThumbUrl = resolveTooltipContent(thumbUrl, target);
+    const resolvedNoteText = resolveTooltipContent(noteText, target);
+    const displayName = extractLoraFilename(String(resolvedText || ""));
+    const displayNote = String(resolvedNoteText || "").trim();
+    if (!displayName && !displayNote && !resolvedThumbUrl) {
+        hideTooltip(tooltip);
+        return;
+    }
     label.textContent = displayName;
     note.textContent = displayNote;
     divider.style.display = displayNote ? "block" : "none";
     note.style.display = displayNote ? "block" : "none";
-    if (thumbUrl) {
-        img.src = thumbUrl;
+    if (resolvedThumbUrl) {
+        img.src = resolvedThumbUrl;
         img.style.display = "block";
         tooltip.classList.add("has-thumb");
     } else {
@@ -432,17 +497,15 @@ function showTooltip(tooltip, event, text, thumbUrl = "", noteText = "") {
         img.style.display = "none";
         tooltip.classList.remove("has-thumb");
     }
-    tooltip.style.left = `${event.clientX + 14}px`;
-    tooltip.style.top = `${event.clientY + 12}px`;
     tooltip.style.display = "block";
+    positionTooltip(tooltip, event);
 }
 
 function moveTooltip(tooltip, event) {
     if (!(tooltip instanceof HTMLElement) || tooltip.style.display !== "block") {
         return;
     }
-    tooltip.style.left = `${event.clientX + 14}px`;
-    tooltip.style.top = `${event.clientY + 12}px`;
+    positionTooltip(tooltip, event);
 }
 
 function hideTooltip(tooltip) {
@@ -462,7 +525,7 @@ function bindTooltip(
         return;
     }
     target.addEventListener("mouseenter", (event) => {
-        showTooltip(tooltip, event, text, thumbUrl, noteText);
+        showTooltip(tooltip, event, text, thumbUrl, noteText, target);
     });
     target.addEventListener("mousemove", (event) => {
         moveTooltip(tooltip, event);
@@ -1232,6 +1295,7 @@ function buildPanel() {
         <div class="xlora-tooltip-note"></div>
     `;
     document.body.appendChild(tooltip);
+    bindTooltip(badge, tooltip, () => badge.dataset.tooltipLabel || "");
     return {
         panel,
         toolbar,
@@ -1271,7 +1335,7 @@ function applyNodeBadge(node) {
         panel.badgeChip.textContent = serial;
     }
     if (panel.badge) {
-        panel.badge.title = `${TARGET_NODE_CLASS} #${serial}`;
+        panel.badge.dataset.tooltipLabel = `${TARGET_NODE_CLASS} #${serial}`;
     }
     node.__xlora_badge_node_id = scopedId;
 }
@@ -1658,7 +1722,11 @@ function renderNodeRows(node) {
             lockBtn.type = "button";
             if (index === 0) {
                 lockBtn.textContent = "⤒";
-                lockBtn.title = t("xdatahub.ui.node.xloraget.pin_head", "Pin to top");
+                bindTooltip(
+                    lockBtn,
+                    tooltip,
+                    t("xdatahub.ui.node.xloraget.pin_head", "Pin to top")
+                );
                 if (item.pin === "head") {
                     lockBtn.classList.add("active");
                 }
@@ -1676,7 +1744,11 @@ function renderNodeRows(node) {
                 });
             } else {
                 lockBtn.textContent = "⤓";
-                lockBtn.title = t("xdatahub.ui.node.xloraget.pin_tail", "Pin to bottom");
+                bindTooltip(
+                    lockBtn,
+                    tooltip,
+                    t("xdatahub.ui.node.xloraget.pin_tail", "Pin to bottom")
+                );
                 if (item.pin === "tail") {
                     lockBtn.classList.add("active");
                 }
@@ -1706,9 +1778,10 @@ function renderNodeRows(node) {
         const activeInput = document.createElement("input");
         activeInput.type = "checkbox";
         activeInput.checked = item.active !== false;
-        activeInput.title = t(
-            "xdatahub.ui.node.xloraget.activate",
-            "Activate this Lora"
+        bindTooltip(
+            activeInput,
+            tooltip,
+            t("xdatahub.ui.node.xloraget.activate", "Activate this Lora")
         );
         activeInput.addEventListener("change", () => {
             item.active = !!activeInput.checked;
@@ -1783,7 +1856,11 @@ function renderNodeRows(node) {
         const removeBtn = document.createElement("button");
         removeBtn.className = "xlora-remove";
         removeBtn.type = "button";
-        removeBtn.title = t("xdatahub.ui.node.xloraget.remove", "Remove");
+        bindTooltip(
+            removeBtn,
+            tooltip,
+            t("xdatahub.ui.node.xloraget.remove", "Remove")
+        );
         removeBtn.textContent = "✕";
         removeBtn.addEventListener("click", () => {
             if (state.expandedTriggerRowId === item.id) {
@@ -1824,7 +1901,14 @@ function renderNodeRows(node) {
         triggerRefreshBtn.className = "xlora-trigger-refresh";
         triggerRefreshBtn.type = "button";
         triggerRefreshBtn.textContent = "↻";
-        triggerRefreshBtn.title = t("xdatahub.ui.node.xloraget.trigger_refresh", "Refresh trigger words and notes from XDataHub");
+        bindTooltip(
+            triggerRefreshBtn,
+            tooltip,
+            t(
+                "xdatahub.ui.node.xloraget.trigger_refresh",
+                "Refresh trigger words and notes from XDataHub"
+            )
+        );
         triggerRefreshBtn.disabled = item.trigger_words_loading;
         triggerRefreshBtn.addEventListener("click", () => {
             const panelState = node.__xlora_panel?.state;
@@ -1865,12 +1949,19 @@ function renderNodeRows(node) {
                 moreBtn.className = "xlora-trigger-more";
                 moreBtn.type = "button";
                 const expanded = state.expandedTriggerRowId === item.id;
+                const moreTooltip = expanded
+                    ? t(
+                        "xdatahub.ui.node.xloraget.collapse_title",
+                        "Collapse full trigger word list"
+                    )
+                    : t(
+                        "xdatahub.ui.node.xloraget.expand_title",
+                        "Expand {count} more trigger words"
+                    ).replace("{count}", String(extraCount));
                 moreBtn.textContent = expanded
                     ? t("xdatahub.ui.node.xloraget.collapse", "Collapse")
                     : `+${extraCount}`;
-                moreBtn.title = expanded
-                    ? t("xdatahub.ui.node.xloraget.collapse_title", "Collapse full trigger word list")
-                    : t("xdatahub.ui.node.xloraget.expand_title", "Expand {count} more trigger words").replace("{count}", String(extraCount));
+                bindTooltip(moreBtn, tooltip, moreTooltip);
                 moreBtn.addEventListener("click", () => {
                     if (state.expandedTriggerRowId === item.id) {
                         setExpandedTriggerPanel(node, state, null);

@@ -51,6 +51,7 @@
  * 3) 文本与边框命名必须镜像：standard/hover/active/emphasis。
  */
 
+import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 
 /**
@@ -116,6 +117,17 @@ const UI_KEYS = {
     tabLora: "xdatahub.ui.shell.tab.lora",
 };
 
+const LOCK_EVENT_TYPES = [
+    "status",
+    "progress",
+    "execution_start",
+    "execution_cached",
+    "executing",
+    "execution_success",
+    "execution_error",
+    "execution_interrupted",
+];
+
 const HOST_TABS = [
     { id: "history", icon: "history", textKey: UI_KEYS.tabHistory },
     { id: "image", icon: "image", textKey: UI_KEYS.tabImage },
@@ -123,13 +135,14 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260403-21";
+const XDATAHUB_ASSET_VER = "20260403-38";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
     + `?v=${XDATAHUB_ASSET_VER}`;
 const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light"]);
 let currentThemeMode = "dark";
+let lockEventBridgeInstalled = false;
 
 function normalizeThemeMode(value) {
     const mode = String(value || "").trim().toLowerCase();
@@ -225,7 +238,27 @@ function notifyInterruptRequested() {
     } catch {
         // 忽略同步失败，避免影响官方中断按钮。
     }
+    xdataHubRef?.instance?.postLockEventToDataFrame?.("interrupt_requested");
     xdataHubRef?.instance?.postInterruptRequestedToDataFrame?.();
+}
+
+function installLockEventBridge() {
+    if (lockEventBridgeInstalled) {
+        return;
+    }
+    if (!api || typeof api.addEventListener !== "function") {
+        return;
+    }
+
+    const forwardLockEvent = (event) => {
+        const eventName = String(event?.type || "unknown");
+        xdataHubRef?.instance?.postLockEventToDataFrame?.(eventName);
+    };
+
+    LOCK_EVENT_TYPES.forEach((eventName) => {
+        api.addEventListener(eventName, forwardLockEvent);
+    });
+    lockEventBridgeInstalled = true;
 }
 
 function installInterruptObserver() {
@@ -1806,6 +1839,19 @@ const XDataHub = {
                 "*"
             );
         };
+        const postLockEventToDataFrame = (reason = "host_event") => {
+            if (!dataFrame.contentWindow) {
+                return;
+            }
+            dataFrame.contentWindow.postMessage(
+                {
+                    type: "xdatahub:lock-state-dirty",
+                    reason: String(reason || "host_event"),
+                    at: Date.now(),
+                },
+                "*"
+            );
+        };
         const postSharedStateToDataFrame = () => {
             postThemeModeToDataFrame();
             postHotkeySpecToDataFrame();
@@ -1875,6 +1921,7 @@ const XDataHub = {
         windowEl.setAttribute("data-theme", currentThemeMode);
         dataFrame.addEventListener("load", () => {
             postSharedStateToDataFrame();
+            postLockEventToDataFrame("frame_loaded");
         });
 
         // 创建拉伸手柄
@@ -2953,6 +3000,9 @@ const XDataHub = {
             postInterruptRequestedToDataFrame() {
                 postInterruptRequestedToDataFrame();
             },
+            postLockEventToDataFrame(reason) {
+                postLockEventToDataFrame(reason);
+            },
 
             /**
              * 显示窗口
@@ -3064,6 +3114,7 @@ const XDataHub = {
 };
 xdataHubRef = XDataHub;
 installInterruptObserver();
+installLockEventBridge();
 
 window.addEventListener("message", (event) => {
     const payload = event.data;

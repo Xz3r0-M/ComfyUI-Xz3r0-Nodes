@@ -86,6 +86,10 @@ const PREVIEW_STATE_LOADED = "loaded";
 const PREVIEW_STATE_MISSING = "missing";
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const LOCALE_SYNC_INTERVAL_MS = 1000;
+const TOOLTIP_ID = "xmediaget-global-tooltip";
+const TOOLTIP_VIEWPORT_MARGIN = 12;
+const TOOLTIP_CURSOR_OFFSET_X = 16;
+const TOOLTIP_CURSOR_OFFSET_Y = 26;
 
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
@@ -122,6 +126,138 @@ function readUiText(key, fallback) {
 
 function t(key, fallback = "") {
     return readUiText(key, fallback || key);
+}
+
+function getTooltipElement() {
+    let tooltip = document.getElementById(TOOLTIP_ID);
+    if (tooltip instanceof HTMLElement) {
+        return tooltip;
+    }
+    tooltip = document.createElement("div");
+    tooltip.id = TOOLTIP_ID;
+    Object.assign(tooltip.style, {
+        position: "fixed",
+        zIndex: "999999",
+        pointerEvents: "none",
+        background: "rgba(16, 16, 16, 0.97)",
+        border: "1px solid #666",
+        borderRadius: "8px",
+        padding: "6px 10px",
+        maxWidth: "240px",
+        boxSizing: "border-box",
+        color: "#f2f2f2",
+        boxShadow: "0 8px 22px rgba(0, 0, 0, 0.55)",
+        fontSize: "12px",
+        lineHeight: "1.35",
+        whiteSpace: "normal",
+        overflowWrap: "break-word",
+        wordBreak: "break-word",
+        display: "none",
+    });
+    document.body.appendChild(tooltip);
+    return tooltip;
+}
+
+function setTooltipText(target, text) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    const value = String(text || "").trim();
+    if (value) {
+        target.dataset.xmediagetTooltip = value;
+    } else {
+        delete target.dataset.xmediagetTooltip;
+    }
+    target.removeAttribute("title");
+}
+
+function readTooltipText(target) {
+    if (!(target instanceof HTMLElement)) {
+        return "";
+    }
+    return String(target.dataset.xmediagetTooltip || "").trim();
+}
+
+function positionTooltip(tooltip, event) {
+    if (!(tooltip instanceof HTMLElement) || !event) {
+        return;
+    }
+    const rect = tooltip.getBoundingClientRect();
+    const tooltipWidth = rect.width || tooltip.offsetWidth || 240;
+    const tooltipHeight = rect.height || tooltip.offsetHeight || 40;
+    const viewportWidth = window.innerWidth
+        || document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight
+        || document.documentElement.clientHeight;
+
+    let left = event.clientX + TOOLTIP_CURSOR_OFFSET_X;
+    let top = event.clientY + TOOLTIP_CURSOR_OFFSET_Y;
+
+    if (left + tooltipWidth > viewportWidth - TOOLTIP_VIEWPORT_MARGIN) {
+        left = event.clientX - tooltipWidth - TOOLTIP_CURSOR_OFFSET_X;
+    }
+    if (top + tooltipHeight > viewportHeight - TOOLTIP_VIEWPORT_MARGIN) {
+        top = event.clientY - tooltipHeight - TOOLTIP_CURSOR_OFFSET_Y;
+    }
+
+    left = Math.max(
+        TOOLTIP_VIEWPORT_MARGIN,
+        Math.min(
+            viewportWidth - tooltipWidth - TOOLTIP_VIEWPORT_MARGIN,
+            left
+        )
+    );
+    top = Math.max(
+        TOOLTIP_VIEWPORT_MARGIN,
+        Math.min(
+            viewportHeight - tooltipHeight - TOOLTIP_VIEWPORT_MARGIN,
+            top
+        )
+    );
+
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function showTooltip(target, event) {
+    const text = readTooltipText(target);
+    const tooltip = getTooltipElement();
+    if (!text) {
+        tooltip.style.display = "none";
+        return;
+    }
+    tooltip.textContent = text;
+    tooltip.style.display = "block";
+    positionTooltip(tooltip, event);
+}
+
+function hideTooltip() {
+    const tooltip = document.getElementById(TOOLTIP_ID);
+    if (tooltip instanceof HTMLElement) {
+        tooltip.style.display = "none";
+    }
+}
+
+function bindTooltipTarget(target) {
+    if (!(target instanceof HTMLElement) || target.__xmediagetTooltipBound) {
+        return;
+    }
+    target.__xmediagetTooltipBound = true;
+    target.addEventListener("mouseenter", (event) => {
+        showTooltip(target, event);
+    });
+    target.addEventListener("mousemove", (event) => {
+        const tooltip = document.getElementById(TOOLTIP_ID);
+        if (tooltip instanceof HTMLElement && tooltip.style.display === "block") {
+            positionTooltip(tooltip, event);
+        }
+    });
+    target.addEventListener("mouseleave", () => {
+        hideTooltip();
+    });
+    target.addEventListener("blur", () => {
+        hideTooltip();
+    });
 }
 
 function buildMediaFileUrl(mediaRef) {
@@ -639,8 +775,9 @@ function buildPanel(nodeClass) {
     clearBtn.type = "button";
     clearBtn.textContent = "🗑️";
     const clearBtnLabel = t(CLEAR_BTN_LABEL_KEY, CLEAR_BTN_LABEL_FALLBACK);
-    clearBtn.title = clearBtnLabel;
+    setTooltipText(clearBtn, clearBtnLabel);
     clearBtn.setAttribute("aria-label", clearBtnLabel);
+    bindTooltipTarget(clearBtn);
 
     meta.appendChild(badge);
     if (maskBtn) {
@@ -697,6 +834,13 @@ function buildPanel(nodeClass) {
     title.value = "";
     title.placeholder = config.titlePlaceholder;
     title.spellcheck = false;
+    bindTooltipTarget(title);
+
+    bindTooltipTarget(badge);
+
+    if (maskBtn) {
+        bindTooltipTarget(maskBtn);
+    }
 
     const footer = document.createElement("div");
     footer.className = "ximageget-footer";
@@ -751,12 +895,12 @@ function applyPanelLocale(panelInfo) {
         OPEN_MASK_EDITOR_LABEL_FALLBACK
     );
     if (panelInfo.clearBtn instanceof HTMLButtonElement) {
-        panelInfo.clearBtn.title = clearBtnLabel;
+        setTooltipText(panelInfo.clearBtn, clearBtnLabel);
         panelInfo.clearBtn.setAttribute("aria-label", clearBtnLabel);
     }
     if (panelInfo.maskBtn instanceof HTMLButtonElement) {
         panelInfo.maskBtn.textContent = maskBtnLabel;
-        panelInfo.maskBtn.title = maskBtnLabel;
+        setTooltipText(panelInfo.maskBtn, maskBtnLabel);
         panelInfo.maskBtn.setAttribute("aria-label", maskBtnLabel);
     }
     const state = String(
@@ -904,11 +1048,7 @@ function setPreview(panelInfo, data) {
             placeholder.textContent = "";
             if (title instanceof HTMLInputElement) {
                 title.value = String(label || "");
-                if (label) {
-                    title.setAttribute("title", label);
-                } else {
-                    title.removeAttribute("title");
-                }
+                setTooltipText(title, label);
             }
             return;
         }
@@ -922,11 +1062,7 @@ function setPreview(panelInfo, data) {
         const finalTitle = String(label || "");
         if (title instanceof HTMLInputElement) {
             title.value = finalTitle;
-            if (finalTitle) {
-                title.setAttribute("title", finalTitle);
-            } else {
-                title.removeAttribute("title");
-            }
+            setTooltipText(title, finalTitle);
         }
         syncMaskButtonState(panelInfo.__ximageget_node);
         return;
@@ -946,7 +1082,7 @@ function setPreview(panelInfo, data) {
             placeholderText || "Drop an XDataHub media card here";
         if (title instanceof HTMLInputElement) {
             title.value = "";
-            title.removeAttribute("title");
+            setTooltipText(title, "");
         }
         if (textEl) {
             textEl.textContent = "";
@@ -1006,11 +1142,7 @@ function setPreview(panelInfo, data) {
     }
     if (title instanceof HTMLInputElement) {
         title.value = label;
-        if (label) {
-            title.setAttribute("title", label);
-        } else {
-            title.removeAttribute("title");
-        }
+        setTooltipText(title, label);
     }
 }
 
@@ -1038,8 +1170,8 @@ function applyNodeBadge(panelInfo, node) {
         panelInfo.badgeChip.textContent = serial;
     }
     if (panelInfo.badge) {
-        panelInfo.badge.setAttribute(
-            "title",
+        setTooltipText(
+            panelInfo.badge,
             `${String(node.comfyClass || "XImageGet")} #${serial}`
         );
     }
@@ -1687,11 +1819,7 @@ function installNodeUi(node) {
                     return;
                 }
                 setStoredNodeTitle(node, nextTitle);
-                if (nextTitle) {
-                    panelInfo.title.setAttribute("title", nextTitle);
-                } else {
-                    panelInfo.title.removeAttribute("title");
-                }
+                setTooltipText(panelInfo.title, nextTitle);
             });
         }
         panelInfo.textEl.addEventListener("input", () => {

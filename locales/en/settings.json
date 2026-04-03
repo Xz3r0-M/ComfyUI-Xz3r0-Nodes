@@ -70,36 +70,8 @@
     "name": "XDataHub Toggle Hotkey",
     "tooltip": "Keyboard shortcut to toggle the XDataHub window. Format: Ctrl+Alt+X, Alt+X, Shift+F2, etc."
   },
-  "Xz3r0_XDataHub_VideoAutoplay": {
-    "name": "Video Preview - Autoplay",
-    "tooltip": "Automatically play video when previewing in XDataHub."
-  },
-  "Xz3r0_XDataHub_VideoMuted": {
-    "name": "Video Preview - Muted",
-    "tooltip": "Mute video by default when previewing in XDataHub."
-  },
-  "Xz3r0_XDataHub_VideoLoop": {
-    "name": "Video Preview - Loop",
-    "tooltip": "Loop video playback when previewing in XDataHub."
-  },
-  "Xz3r0_XDataHub_AudioAutoplay": {
-    "name": "Audio Preview - Autoplay",
-    "tooltip": "Automatically play audio when previewing in XDataHub."
-  },
-  "Xz3r0_XDataHub_AudioMuted": {
-    "name": "Audio Preview - Muted",
-    "tooltip": "Mute audio by default when previewing in XDataHub."
-  },
-  "Xz3r0_XDataHub_AudioLoop": {
-    "name": "Audio Preview - Loop",
-    "tooltip": "Loop audio playback when previewing in XDataHub."
-  },
-  "Xz3r0_XDataHub_StoreLoraDbInLoras": {
-    "name": "Store Lora DB in models/loras",
-    "tooltip": "Save the Lora trigger-word database inside models/loras instead of XDataHub's data folder."
-  },
-  "Xz3r0_XDataHub_CustomMediaFolder": {
-    "name": "Custom Media Folder Path",
-    "tooltip": "Absolute path to an extra folder to browse in XDataHub media tabs. Leave empty to disable."
+  "Xz3r0_XDataHub_AutoShow": {
+    "name": "Show XDataHub on startup",
+    "tooltip": "Automatically open the XDataHub window when ComfyUI loads."
   }
 }
