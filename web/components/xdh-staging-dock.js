@@ -264,15 +264,73 @@ export class XdhStagingDock extends BaseElement {
                     flex-direction: column;
                     align-items: center;
                     pointer-events: none; /* Let clicks pass through container */
+                    --dock-panel-bg: var(--xdh-color-surface-2, #2a2a2a);
+                    --dock-header-bg: var(--xdh-color-surface-3, #333333);
+                    --dock-inner-bg: var(--xdh-color-surface-1, #1e1e1e);
+                    --dock-muted-bg: var(--xdh-color-surface-3, #3a3a3a);
+                    --dock-hover-bg: var(--xdh-color-surface-4, #3d3d3d);
+                    --dock-border: var(--xdh-color-border, #444444);
+                    --dock-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+                    --dock-active-bg: var(--xdh-color-primary-muted, #1a3050);
+                    --dock-active-color: var(--xdh-color-primary, #4499ff);
+                    --dock-secondary-text: var(
+                        --xdh-color-text-secondary,
+                        #aaaaaa
+                    );
+                }
+
+                :host-context(body[data-theme="light"]) {
+                    --dock-panel-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 92%,
+                        var(--xdh-color-surface-2) 8%
+                    );
+                    --dock-header-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 88%,
+                        var(--xdh-color-surface-3) 12%
+                    );
+                    --dock-inner-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 96%,
+                        var(--xdh-color-surface-1) 4%
+                    );
+                    --dock-muted-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 88%,
+                        var(--xdh-color-surface-3) 12%
+                    );
+                    --dock-hover-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 82%,
+                        var(--xdh-color-surface-4) 18%
+                    );
+                    --dock-border: color-mix(
+                        in oklch,
+                        var(--xdh-color-border) 72%,
+                        var(--xdh-pure-black) 28%
+                    );
+                    --dock-shadow: 0 12px 28px rgba(0, 0, 0, 0.16),
+                        0 2px 6px rgba(0, 0, 0, 0.06);
+                    --dock-active-bg: color-mix(
+                        in oklch,
+                        var(--xdh-brand-pink) 10%,
+                        var(--xdh-pure-white) 90%
+                    );
+                    --dock-active-color: var(--xdh-brand-pink);
+                    --dock-secondary-text: var(--xdh-color-text-secondary);
                 }
 
                 .dock-container {
-                    background: var(--xdh-color-surface-2, #2a2a2a);
-                    border: 1px solid var(--xdh-color-border, #444);
+                    background: var(--dock-panel-bg);
+                    border: 1px solid var(--dock-border);
                     border-radius: 12px;
-                    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+                    box-shadow: var(--dock-shadow);
                     pointer-events: auto;
-                    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+                    transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                        box-shadow 0.15s ease,
+                        border-color 0.15s ease,
+                        background-color 0.15s ease;
                     width: ${this.expanded ? '400px' : 'auto'};
                     max-width: 90vw;
                     overflow: visible; /* Need visible for picker dropdown to bleed out */
@@ -286,14 +344,15 @@ export class XdhStagingDock extends BaseElement {
                     justify-content: space-between;
                     padding: 8px 12px;
                     cursor: pointer;
-                    background: var(--xdh-color-surface-3, #333);
+                    background: var(--dock-header-bg);
                     gap: 12px;
                     border-radius: ${this.expanded ? '12px 12px 0 0' : '12px'};
                     white-space: nowrap;
+                    transition: background-color 0.15s ease, color 0.15s ease;
                 }
 
                 .dock-header:hover {
-                    background: var(--xdh-color-surface-4, #3d3d3d);
+                    background: var(--dock-hover-bg);
                 }
 
                 .dock-title {
@@ -313,8 +372,8 @@ export class XdhStagingDock extends BaseElement {
 
                 .dock-action-btn {
                     background: transparent;
-                    border: 1px solid var(--xdh-color-border, #444);
-                    color: var(--xdh-color-text-secondary, #aaa);
+                    border: 1px solid var(--dock-border);
+                    color: var(--dock-secondary-text);
                     cursor: pointer;
                     white-space: nowrap;
                     flex-shrink: 0;
@@ -326,19 +385,20 @@ export class XdhStagingDock extends BaseElement {
                     align-items: center;
                     justify-content: center;
                     gap: 6px;
-                    transition: background 0.15s ease, color 0.15s ease,
+                    transition: background-color 0.15s ease,
+                        color 0.15s ease,
                         border-color 0.15s ease;
                 }
 
                 .dock-action-btn:hover {
-                    background: var(--xdh-color-surface-4, #3d3d3d);
-                    color: var(--xdh-color-text-primary, #eee);
+                    background: var(--dock-hover-bg);
+                    color: var(--xdh-color-text-primary, #eeeeee);
                 }
 
                 .dock-action-btn.active {
-                    background: var(--xdh-color-primary-muted, #1a3050);
-                    color: var(--xdh-color-primary, #4499ff);
-                    border-color: var(--xdh-color-primary, #4499ff);
+                    background: var(--dock-active-bg);
+                    color: var(--dock-active-color);
+                    border-color: var(--dock-active-color);
                 }
 
                 .dock-action-btn:disabled {
@@ -361,20 +421,21 @@ export class XdhStagingDock extends BaseElement {
                     width: 28px;
                     height: 28px;
                     border-radius: 6px;
-                    border: 1px solid var(--xdh-color-border, #444);
+                    border: 1px solid var(--dock-border);
                     background: transparent;
-                    color: var(--xdh-color-text-secondary, #aaa);
+                    color: var(--dock-secondary-text);
                     font-size: 12px;
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
                     flex-shrink: 0;
-                    transition: background 0.15s ease, color 0.15s ease;
+                    transition: background-color 0.15s ease,
+                        color 0.15s ease;
                 }
 
                 .dock-drag-handle:hover {
-                    background: var(--xdh-color-surface-4, #3d3d3d);
-                    color: var(--xdh-color-text-primary, #eee);
+                    background: var(--dock-hover-bg);
+                    color: var(--xdh-color-text-primary, #eeeeee);
                 }
 
                 .dock-drag-handle:active {
@@ -397,15 +458,15 @@ export class XdhStagingDock extends BaseElement {
                     margin-bottom: 16px;
                     max-height: 150px;
                     overflow-y: auto;
-                    background: var(--xdh-color-surface-1, #1e1e1e);
+                    background: var(--dock-inner-bg);
                     padding: 8px;
                     border-radius: 8px;
-                    scrollbar-width: thin;
+                    border: 1px solid var(--dock-border);
                 }
 
                 .pill {
-                    background: var(--xdh-color-surface-3, #3a3a3a);
-                    color: #ddd;
+                    background: var(--dock-muted-bg);
+                    color: var(--xdh-color-text-primary, #dddddd);
                     font-size: 12px;
                     padding: 4px 8px;
                     border-radius: 12px;
@@ -414,8 +475,8 @@ export class XdhStagingDock extends BaseElement {
 
                 .more-pill {
                     background: transparent;
-                    color: var(--xdh-color-primary, #0066cc);
-                    border: 1px solid var(--xdh-color-primary, #0066cc);
+                    color: var(--dock-active-color);
+                    border: 1px solid var(--dock-active-color);
                     font-weight: bold;
                 }
 
@@ -428,7 +489,7 @@ export class XdhStagingDock extends BaseElement {
 
                 .batch-target-label {
                     font-size: 11px;
-                    color: var(--xdh-color-text-secondary, #888);
+                    color: var(--dock-secondary-text);
                     text-transform: uppercase;
                     letter-spacing: 0.04em;
                 }
@@ -438,8 +499,8 @@ export class XdhStagingDock extends BaseElement {
                     display: flex;
                     justify-content: flex-end;
                     gap: 8px;
-                    background: var(--xdh-color-surface-1, #1e1e1e);
-                    border-top: 1px solid var(--xdh-color-border, #444);
+                    background: var(--dock-inner-bg);
+                    border-top: 1px solid var(--dock-border);
                     border-radius: 0 0 12px 12px;
                 }
             </style>

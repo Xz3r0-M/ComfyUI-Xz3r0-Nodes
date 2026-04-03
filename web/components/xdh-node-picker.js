@@ -2,6 +2,7 @@ import { BaseElement } from '../core/base-element.js';
 import { appStore } from '../core/store.js';
 import { t } from '../core/i18n.js?v=20260403-5';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
+import { SCROLLBAR_CSS } from '../core/icon.js';
 import {
     requestNodes,
     CATEGORY_NODE_CLASS,
@@ -145,18 +146,70 @@ export class XdhNodePicker extends BaseElement {
 
         return `
             <style>
+                ${SCROLLBAR_CSS}
                 :host {
                     display: block;
                     position: relative;
                     font-family: sans-serif;
                     width: 100%;
+                    --picker-toggle-bg: var(--xdh-color-surface-1, #1e1e1e);
+                    --picker-panel-bg: var(--xdh-color-surface-2, #2a2a2a);
+                    --picker-input-bg: var(--xdh-color-surface-1, #111111);
+                    --picker-muted-bg: var(--xdh-color-surface-3, #3a3a3a);
+                    --picker-hover-bg: var(--xdh-color-surface-3, #3d3d3d);
+                    --picker-border: var(--xdh-color-border, #444444);
+                    --picker-shadow: 0 -6px 20px rgba(0, 0, 0, 0.5);
+                    --picker-active-bg: var(--xdh-color-primary-muted, #1a3050);
+                    --picker-active-color: var(--xdh-color-primary, #4499ff);
+                    --picker-secondary-text: var(
+                        --xdh-color-text-secondary,
+                        #777777
+                    );
+                }
+
+                :host-context(body[data-theme="light"]) {
+                    --picker-toggle-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 96%,
+                        var(--xdh-color-surface-1) 4%
+                    );
+                    --picker-panel-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 90%,
+                        var(--xdh-color-surface-2) 10%
+                    );
+                    --picker-input-bg: var(--xdh-pure-white);
+                    --picker-muted-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 86%,
+                        var(--xdh-color-surface-3) 14%
+                    );
+                    --picker-hover-bg: color-mix(
+                        in oklch,
+                        var(--xdh-pure-white) 82%,
+                        var(--xdh-color-surface-3) 18%
+                    );
+                    --picker-border: color-mix(
+                        in oklch,
+                        var(--xdh-color-border) 72%,
+                        var(--xdh-pure-black) 28%
+                    );
+                    --picker-shadow: 0 -10px 24px rgba(0, 0, 0, 0.14),
+                        0 2px 6px rgba(0, 0, 0, 0.06);
+                    --picker-active-bg: color-mix(
+                        in oklch,
+                        var(--xdh-brand-pink) 10%,
+                        var(--xdh-pure-white) 90%
+                    );
+                    --picker-active-color: var(--xdh-brand-pink);
+                    --picker-secondary-text: var(--xdh-color-text-secondary);
                 }
 
                 .picker-toggle {
-                    background: var(--xdh-color-surface-1, #1e1e1e);
+                    background: var(--picker-toggle-bg);
                     border: 1px solid ${sn
-                        ? 'var(--xdh-color-primary, #0066cc)'
-                        : 'var(--xdh-color-border, #444)'};
+                        ? 'var(--picker-active-color)'
+                        : 'var(--picker-border)'};
                     color: var(--xdh-color-text-primary, #eee);
                     padding: 6px 10px;
                     border-radius: 6px;
@@ -167,14 +220,17 @@ export class XdhNodePicker extends BaseElement {
                     width: 100%;
                     box-sizing: border-box;
                     font-size: 13px;
-                    transition: border-color 0.15s;
+                    transition: background-color 0.15s ease,
+                        border-color 0.15s ease,
+                        color 0.15s ease,
+                        box-shadow 0.15s ease;
                 }
                 .picker-toggle:hover {
-                    border-color: var(--xdh-color-primary, #0066cc);
+                    border-color: var(--picker-active-color);
                 }
 
                 .toggle-placeholder {
-                    color: var(--xdh-color-text-secondary, #777);
+                    color: var(--picker-secondary-text);
                     flex: 1;
                     overflow: hidden;
                     text-overflow: ellipsis;
@@ -188,14 +244,14 @@ export class XdhNodePicker extends BaseElement {
                 }
                 .toggle-id {
                     font-size: 11px;
-                    color: var(--xdh-color-text-secondary, #888);
-                    background: var(--xdh-color-surface-3, #3a3a3a);
+                    color: var(--picker-secondary-text);
+                    background: var(--picker-muted-bg);
                     padding: 1px 5px;
                     border-radius: 4px;
                     flex-shrink: 0;
                 }
                 .toggle-chevron {
-                    color: var(--xdh-color-text-secondary, #888);
+                    color: var(--picker-secondary-text);
                     flex-shrink: 0;
                     font-size: 10px;
                     margin-left: auto;
@@ -214,30 +270,29 @@ export class XdhNodePicker extends BaseElement {
                     bottom: calc(100% + 4px);
                     left: 0;
                     right: 0;
-                    background: var(--xdh-color-surface-2, #2a2a2a);
-                    border: 1px solid var(--xdh-color-border, #555);
+                    background: var(--picker-panel-bg);
+                    border: 1px solid var(--picker-border);
                     border-radius: 8px;
-                    box-shadow: 0 -6px 20px rgba(0,0,0,0.5);
+                    box-shadow: var(--picker-shadow);
                     max-height: 240px;
                     overflow-y: auto;
                     z-index: 2000;
-                    scrollbar-width: thin;
                 }
 
                 .picker-search {
                     padding: 8px;
                     position: sticky;
                     top: 0;
-                    background: var(--xdh-color-surface-2, #2a2a2a);
-                    border-bottom: 1px solid var(--xdh-color-border, #444);
+                    background: var(--picker-panel-bg);
+                    border-bottom: 1px solid var(--picker-border);
                     z-index: 10;
                 }
 
                 .picker-search input {
                     width: 100%;
                     box-sizing: border-box;
-                    background: var(--xdh-color-surface-1, #111);
-                    border: 1px solid var(--xdh-color-border, #444);
+                    background: var(--picker-input-bg);
+                    border: 1px solid var(--picker-border);
                     color: var(--xdh-color-text-primary, #fff);
                     padding: 5px 8px;
                     border-radius: 5px;
@@ -245,34 +300,44 @@ export class XdhNodePicker extends BaseElement {
                     font-size: 12px;
                 }
                 .picker-search input:focus {
-                    border-color: var(--xdh-color-primary, #0066cc);
+                    border-color: var(--picker-active-color);
                 }
 
                 .node-option {
                     padding: 7px 12px;
                     font-size: 13px;
-                    color: var(--xdh-color-text-secondary, #ccc);
+                    color: var(--picker-secondary-text);
                     cursor: pointer;
                     display: flex;
                     align-items: center;
                     gap: 8px;
-                    transition: background 0.1s;
+                    transition: background-color 0.12s ease,
+                        color 0.12s ease;
                 }
                 .node-option:hover {
-                    background: var(--xdh-color-surface-3, #3d3d3d);
-                    color: var(--xdh-color-text-primary, #fff);
+                    background: var(--picker-hover-bg);
+                    color: var(--xdh-color-text-primary, #ffffff);
                 }
                 .node-option.selected {
-                    background: var(--xdh-color-primary-muted, #1a3050);
-                    color: var(--xdh-color-primary, #4499ff);
+                    background: var(--picker-active-bg);
+                    color: var(--picker-active-color);
+                }
+
+                .node-option.selected .node-id {
+                    background: color-mix(
+                        in oklch,
+                        var(--picker-active-color) 12%,
+                        var(--picker-panel-bg) 88%
+                    );
+                    color: var(--picker-active-color);
                 }
 
                 .node-id {
-                    background: var(--xdh-color-surface-3, #444);
+                    background: var(--picker-muted-bg);
                     font-size: 10px;
                     padding: 2px 5px;
                     border-radius: 4px;
-                    color: var(--xdh-color-text-secondary, #aaa);
+                    color: var(--picker-secondary-text);
                     margin-left: auto;
                     flex-shrink: 0;
                 }
@@ -280,7 +345,7 @@ export class XdhNodePicker extends BaseElement {
                 .picker-empty {
                     padding: 16px 12px;
                     font-size: 12px;
-                    color: var(--xdh-color-text-secondary, #777);
+                    color: var(--picker-secondary-text);
                     text-align: center;
                 }
             </style>
@@ -290,7 +355,7 @@ export class XdhNodePicker extends BaseElement {
                 <span class="toggle-chevron">${this.expanded ? '▴' : '▾'}</span>
             </div>
 
-            <div class="picker-dropdown">
+            <div class="picker-dropdown xdh-scroll">
                 <div class="picker-search">
                     <input type="text"
                         placeholder="${t('picker.search_placeholder')}"
