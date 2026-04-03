@@ -1,5 +1,10 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import {
+    NODE_ACCENT_HEX_DEFAULT,
+    getHashedAccentIndex as getNodeAccentIndex,
+    getHexAccentFromHashedKey as getNodeAccentColor,
+} from "./core/node-accent.js";
 
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
@@ -74,47 +79,37 @@ const TEXT_TITLE_PLACEHOLDER_KEY = "xdatahub.ui.node.xmediaget.title_placeholder
 const TEXT_TITLE_PLACEHOLDER_FALLBACK = "Header";
 
 const STYLE_ID = "xmediaget-extension-style";
-const NODE_ACCENT_DEFAULT = "#0066FF";
-const NODE_ACCENT_PALETTE = [
-    "#0066FF",
-    "#D90429",
-    "#00A86B",
-    "#FFBF00",
-    "#CC00CC",
-    "#00CCCC",
-    "#FF6600",
-    "#0066FF",
-    "#D90429",
-    "#00A86B",
-    "#FFBF00",
-    "#CC00CC",
-];
 const CLEAR_BTN_LABEL_KEY = "xdatahub.ui.node.xmediaget.clear_loaded_media";
 const CLEAR_BTN_LABEL_FALLBACK = "Clear loaded media";
 const PREVIEW_STATE_EMPTY = "empty";
 const PREVIEW_STATE_LOADED = "loaded";
 const PREVIEW_STATE_MISSING = "missing";
+const COMFY_LOCALE_KEY = "Comfy.Locale";
+const LOCALE_SYNC_INTERVAL_MS = 1000;
 
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
+let currentUiLocale = "en";
+let localeSyncInstalled = false;
 
-async function fetchXDataHubLocale() {
-    try {
-        const response = await fetch(
-            "/xz3r0/xdatahub/settings",
-            { cache: "no-cache" }
-        );
-        if (!response.ok) {
-            return "en";
-        }
-        const payload = await response.json();
-        const locale = String(
-            payload?.settings?.ui_locale || ""
-        ).toLowerCase();
-        return locale === "zh" ? "zh" : "en";
-    } catch {
-        return "en";
+function normalizeLocaleCode(value) {
+    const text = String(value || "")
+        .trim()
+        .replace(/_/g, "-")
+        .toLowerCase();
+    if (!text) {
+        return "";
     }
+    return text === "zh" || text.startsWith("zh-") ? "zh" : "en";
+}
+
+function resolveComfyLocale() {
+    const locale = app.extensionManager?.setting?.get?.(COMFY_LOCALE_KEY)
+        || localStorage.getItem(COMFY_LOCALE_KEY)
+        || document.documentElement?.lang
+        || navigator.language
+        || "en";
+    return normalizeLocaleCode(locale) || "en";
 }
 
 function readUiText(key, fallback) {
@@ -254,9 +249,8 @@ async function fetchLocaleJson(localeCode) {
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {
-    const locale = localeOverride
-        ? String(localeOverride).toLowerCase()
-        : await fetchXDataHubLocale();
+    const locale = normalizeLocaleCode(localeOverride || resolveComfyLocale())
+        || "en";
     uiLocaleFallback = await fetchLocaleJson("en");
     if (locale === "en") {
         uiLocalePrimary = uiLocaleFallback;
@@ -265,37 +259,75 @@ async function loadUiLocaleBundle(localeOverride = null) {
     uiLocalePrimary = await fetchLocaleJson(locale);
 }
 
-function normalizeNodeColorKey(value) {
-    return String(value || "").trim().toLowerCase();
-}
+function installLocaleSync() {
+    if (localeSyncInstalled) {
+        return;
+    }
+    localeSyncInstalled = true;
 
-function hashColorKeyU32(rawKey) {
-    const key = normalizeNodeColorKey(rawKey);
-    if (!key) {
-        return 0;
-    }
-    let hash = 2166136261;
-    for (let i = 0; i < key.length; i += 1) {
-        hash ^= key.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    return hash >>> 0;
-}
+    const refreshLocale = () => {
+        applyUiLocale().catch(() => {});
+    };
 
-function getNodeAccentIndex(rawKey) {
-    const key = normalizeNodeColorKey(rawKey);
-    if (!key) {
-        return -1;
+    try {
+        const setting = app.extensionManager?.setting;
+        if (setting && typeof setting.set === "function"
+            && setting.__xmediagetLocaleHookInstalled !== true) {
+            const originalSet = setting.set.bind(setting);
+            setting.set = (...args) => {
+                const result = originalSet(...args);
+                if (String(args[0] || "") === COMFY_LOCALE_KEY) {
+                    Promise.resolve(result).finally(refreshLocale);
+                }
+                return result;
+            };
+            setting.__xmediagetLocaleHookInstalled = true;
+        }
+    } catch {
+        // Ignore setting hook failures.
     }
-    return hashColorKeyU32(key) % NODE_ACCENT_PALETTE.length;
-}
 
-function getNodeAccentColor(rawKey) {
-    const index = getNodeAccentIndex(rawKey);
-    if (index < 0) {
-        return NODE_ACCENT_DEFAULT;
+    ROOT.addEventListener("storage", (event) => {
+        if (!event.key || event.key === COMFY_LOCALE_KEY) {
+            refreshLocale();
+        }
+    });
+    ROOT.addEventListener("focus", refreshLocale);
+    ROOT.addEventListener("pageshow", refreshLocale);
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            refreshLocale();
+        }
+    });
+
+    try {
+        const root = document.documentElement;
+        const observer = new MutationObserver((mutations) => {
+            if (
+                mutations.some(
+                    (mutation) => mutation.attributeName === "lang"
+                )
+            ) {
+                refreshLocale();
+            }
+        });
+        observer.observe(root, {
+            attributes: true,
+            attributeFilter: ["lang"],
+        });
+    } catch {
+        // Ignore lang observer failures.
     }
-    return NODE_ACCENT_PALETTE[index] || NODE_ACCENT_DEFAULT;
+
+    ROOT.setInterval(() => {
+        if (document.hidden) {
+            return;
+        }
+        const nextLocale = resolveComfyLocale();
+        if (nextLocale !== currentUiLocale) {
+            refreshLocale();
+        }
+    }, LOCALE_SYNC_INTERVAL_MS);
 }
 
 function getNodeUiConfig(nodeClass) {
@@ -743,18 +775,24 @@ function applyPanelLocale(panelInfo) {
 }
 
 function refreshAllPanelLocales() {
-    const nodes = app.graph?._nodes || [];
-    for (const node of nodes) {
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return;
+    }
+    forEachNodeInGraphTree(rootGraph, (node) => {
         const panelInfo = node?.__ximageget_panel;
         if (!panelInfo) {
-            continue;
+            return;
         }
         applyPanelLocale(panelInfo);
-    }
+    });
 }
 
 async function applyUiLocale(localeOverride = null) {
-    await loadUiLocaleBundle(localeOverride);
+    const locale = normalizeLocaleCode(localeOverride || resolveComfyLocale())
+        || "en";
+    await loadUiLocaleBundle(locale);
+    currentUiLocale = locale;
     refreshAllPanelLocales();
 }
 
@@ -1788,14 +1826,17 @@ function restoreStoredData(node, stored, storedTitle = "") {
 }
 
 function installExistingNodes() {
-    const nodes = app.graph?._nodes || [];
-    for (const node of nodes) {
+    const rootGraph = app.graph;
+    if (!rootGraph) {
+        return;
+    }
+    forEachNodeInGraphTree(rootGraph, (node) => {
         installNodeUi(node);
         if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
             getStorageWidget(node);
             getTextTitleWidget(node);
         }
-    }
+    });
 }
 
 function buildScopedNodeId(pathIds, nodeId) {
@@ -2006,6 +2047,8 @@ export function initXMediaGetExtension() {
             refreshNodeBadge(node);
         },
         async setup() {
+            await applyUiLocale();
+            installLocaleSync();
             ROOT.addEventListener("message", (event) => {
                 const payload = event?.data;
                 if (!payload || typeof payload !== "object") {
@@ -2136,7 +2179,6 @@ export function initXMediaGetExtension() {
     });
     setTimeout(() => {
         installExistingNodes();
-        applyUiLocale().catch(() => {});
     }, 0);
 }
 

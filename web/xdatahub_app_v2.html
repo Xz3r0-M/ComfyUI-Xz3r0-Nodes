@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>XDataHub V2</title>
+    <link rel="stylesheet" href="xdatahub-color-tokens.css?v=20260403-3">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--xdh-color-background, #121212);
+            color: var(--xdh-color-text-primary, #ffffff);
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Nav bar spans full width above the sidebar+content area */
+        xdh-content-nav {
+            flex-shrink: 0;
+        }
+
+        /* layout-container sits below the nav bar */
+        .layout-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            container-type: inline-size;
+            container-name: layout;
+        }
+
+        .main-scroll {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: var(--xdh-color-background);
+            container-type: inline-size;
+            container-name: main;
+            scrollbar-gutter: stable;
+            /* Firefox 标准属性 */
+            scrollbar-width: auto;
+            scrollbar-color: var(--xdh-scrollbar-thumb, #555)
+                var(--xdh-scrollbar-track, transparent);
+        }
+        /* Chromium 精确控制 */
+        .main-scroll::-webkit-scrollbar {
+            width: 15px;
+        }
+        .main-scroll::-webkit-scrollbar-track {
+            background: var(--xdh-scrollbar-track, transparent);
+        }
+        .main-scroll::-webkit-scrollbar-thumb {
+            background: var(--xdh-scrollbar-thumb, #555);
+            border-radius: 4px;
+        }
+        .main-scroll::-webkit-scrollbar-thumb:hover {
+            background: var(--xdh-scrollbar-thumb-hover, #777);
+        }
+        .main-scroll::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+
+        xdh-pagination {
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <xdh-content-nav></xdh-content-nav>
+    <div class="layout-container">
+        <xdh-sidebar-filter></xdh-sidebar-filter>
+        <div class="main-scroll">
+            <xdh-media-grid></xdh-media-grid>
+            <xdh-history-view></xdh-history-view>
+        </div>
+    </div>
+    <xdh-pagination></xdh-pagination>
+
+    <!-- 浮动层（fixed 定位，不影响页面流） -->
+    <xdh-staging-dock></xdh-staging-dock>
+    <xdh-lightbox></xdh-lightbox>
+    <xdh-lora-detail></xdh-lora-detail>
+    <xdh-banner></xdh-banner>
+    <xdh-settings-dialog></xdh-settings-dialog>
+
+    <!-- ES Module Entry -->
+    <script type="module" src="xdatahub_app_v2.js?v=20260403-26"></script>
+</body>
+</html>

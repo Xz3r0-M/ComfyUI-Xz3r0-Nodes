@@ -304,8 +304,17 @@ class XLoraGet(io.ComfyNode):
         return False
 
     @staticmethod
-    def _data_root() -> Path:
-        return Path(__file__).resolve().parent.parent / "XDataSaved"
+    def _db_root() -> Path:
+        return (
+            Path(__file__).resolve().parent.parent / "XDataSaved" / "database"
+        )
+
+    @staticmethod
+    def _settings_path() -> Path:
+        return (
+            Path("E:/AI/custom_nodes/ComfyUI-Xz3r0-Nodes/XDataSaved/settings")
+            / "xdatahub_settings.json"
+        )
 
     @classmethod
     def _lora_root_dir(cls) -> Path | None:
@@ -336,9 +345,9 @@ class XLoraGet(io.ComfyNode):
 
     @classmethod
     def _resolve_lora_trigger_db_path(cls) -> Path:
-        data_db = cls._data_root() / LORA_TRIGGER_DB_NAME
+        data_db = cls._db_root() / LORA_TRIGGER_DB_NAME
         try:
-            settings_path = cls._data_root() / "xdatahub_settings.json"
+            settings_path = cls._settings_path()
             payload = json.loads(settings_path.read_text(encoding="utf-8"))
         except Exception:
             payload = {}

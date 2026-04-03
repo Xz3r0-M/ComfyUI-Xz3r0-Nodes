@@ -210,7 +210,7 @@ class XDataSave(io.ComfyNode):
             normalized_save_type,
         )
 
-        relative_path = Path("XDataSaved") / data_file.name
+        relative_path = Path("XDataSaved") / "database" / data_file.name
         status = f"Saved {record_count} records"
         return io.NodeOutput(status, relative_path.as_posix())
 
@@ -218,7 +218,7 @@ class XDataSave(io.ComfyNode):
     def _get_data_root(cls) -> Path:
         """返回数据保存根目录。"""
         project_root = Path(__file__).resolve().parent.parent
-        return project_root / "XDataSaved"
+        return project_root / "XDataSaved" / "database"
 
     @classmethod
     def _resolve_filename_base(

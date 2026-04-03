@@ -50,6 +50,7 @@ def media_index_db_path() -> Path:
     return (
         Path(__file__).resolve().parent.parent
         / "XDataSaved"
+        / "database"
         / "media_index.db"
     )
 
@@ -59,8 +60,7 @@ def xdatahub_settings_path() -> Path:
     返回 XDataHub 设置文件路径。
     """
     return (
-        Path(__file__).resolve().parent.parent
-        / "XDataSaved"
+        Path("E:/AI/custom_nodes/ComfyUI-Xz3r0-Nodes/XDataSaved/settings")
         / "xdatahub_settings.json"
     )
 

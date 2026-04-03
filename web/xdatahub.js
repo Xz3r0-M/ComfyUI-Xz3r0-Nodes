@@ -77,9 +77,13 @@ const CLOSE_BEHAVIOR_OPTION_CODES = [
     CLOSE_BEHAVIOR_VALUE_HIDE,
     CLOSE_BEHAVIOR_VALUE_DESTROY,
 ];
+const EDGE_PEEK_SETTING_ID = "Xz3r0.XDataHub.EdgePeek";
+const AUTO_SHOW_SETTING_ID = "Xz3r0.XDataHub.AutoShow";
 const WINDOW_STATE_STORAGE_KEY = "Xz3r0.XDataHub.WindowState.v1";
 const WINDOW_STATE_VERSION = 1;
 const HOST_ACTIVE_TAB_SESSION_KEY = "xdatahub.host.activeTab";
+const COMFY_LOCALE_KEY = "Comfy.Locale";
+const LOCALE_WATCH_INTERVAL_MS = 1000;
 let hotkeySpec = DEFAULT_HOTKEY_SPEC;
 let defaultOpenLayout = "center";
 let closeBehavior = "hide";
@@ -88,8 +92,12 @@ let xdataHubRef = null;
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
 let uiLocaleApplySeq = 0;
+let currentUiLocale = "en";
 let hotkeyListenerInstalled = false;
 let interruptObserverInstalled = false;
+let localeSyncInstalled = false;
+let edgePeekEnabled = false;
+const bridgedNodeRequests = new Map();
 
 const UI_KEYS = {
     windowTitle: "xdatahub.ui.shell.window_title",
@@ -115,7 +123,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260401-352";
+const XDATAHUB_ASSET_VER = "20260403-21";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -153,7 +161,8 @@ async function syncThemeModeFromSettings() {
         const response = await fetch("/xz3r0/xdatahub/settings");
         const payload = await response.json();
         if (response.ok && payload?.status === "success") {
-            applyThemeMode(payload?.settings?.theme_mode);
+            const s = payload.settings || {};
+            applyThemeMode(s.theme_mode);
             return currentThemeMode;
         }
     } catch {
@@ -241,7 +250,13 @@ function applyMenuButtonIcon() {
     if (!menuButton?.element) {
         return;
     }
+    const tooltip = t("menuTooltip", "XDataHub");
     menuButton.element.classList.add("xz3r0-datahub-menu-btn");
+    menuButton.element.title = tooltip;
+    menuButton.element.setAttribute("aria-label", tooltip);
+    if ("tooltip" in menuButton) {
+        menuButton.tooltip = tooltip;
+    }
     menuButton.element.innerHTML = `
         <span class="xz3r0-datahub-menu-content">
             <svg
@@ -261,12 +276,24 @@ function isWindowCloseBlocked() {
     return hostNodeSendBusy === true;
 }
 
+function normalizeLocaleCode(value) {
+    const text = String(value || "")
+        .trim()
+        .replace(/_/g, "-")
+        .toLowerCase();
+    if (!text) {
+        return "";
+    }
+    return text === "zh" || text.startsWith("zh-") ? "zh" : "en";
+}
+
 function getLocale() {
-    const locale = window.app?.extensionManager?.setting?.get('Comfy.Locale')
-        || localStorage.getItem('Comfy.Locale')
+    const locale = window.app?.extensionManager?.setting?.get(COMFY_LOCALE_KEY)
+        || localStorage.getItem(COMFY_LOCALE_KEY)
+        || document.documentElement?.lang
         || navigator.language
-        || 'en';
-    return String(locale).replace("_", "-").split('-')[0].toLowerCase();
+        || "en";
+    return normalizeLocaleCode(locale) || "en";
 }
 
 function readUiText(key, fallback) {
@@ -300,13 +327,99 @@ async function fetchLocaleJson(localeCode) {
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {
-    const locale = String(localeOverride || getLocale() || "en").toLowerCase();
+    const locale = normalizeLocaleCode(localeOverride || getLocale()) || "en";
     uiLocaleFallback = await fetchLocaleJson("en");
     if (locale === "en") {
         uiLocalePrimary = uiLocaleFallback;
         return;
     }
     uiLocalePrimary = await fetchLocaleJson(locale);
+}
+
+async function applyHostUiLocale(localeOverride = null) {
+    const locale = normalizeLocaleCode(localeOverride || getLocale()) || "en";
+    const seq = ++uiLocaleApplySeq;
+    await loadUiLocaleBundle(locale);
+    if (seq !== uiLocaleApplySeq) {
+        return;
+    }
+    currentUiLocale = locale;
+    xdataHubRef?.instance?.applyShellLocaleText?.();
+    applyMenuButtonIcon();
+    xdataHubRef?.instance?.postUiLocaleToDataFrame?.(currentUiLocale);
+}
+
+function installLocaleSync() {
+    if (localeSyncInstalled) {
+        return;
+    }
+    localeSyncInstalled = true;
+
+    const refresh = () => {
+        applyHostUiLocale().catch(() => {
+            // Ignore locale sync errors to avoid affecting host UI.
+        });
+    };
+
+    try {
+        const setting = window.app?.extensionManager?.setting;
+        if (setting && typeof setting.set === "function"
+            && setting.__xdhLocaleHookInstalled !== true) {
+            const originalSet = setting.set.bind(setting);
+            setting.set = (...args) => {
+                const result = originalSet(...args);
+                if (String(args[0] || "") === COMFY_LOCALE_KEY) {
+                    Promise.resolve(result).finally(refresh);
+                }
+                return result;
+            };
+            setting.__xdhLocaleHookInstalled = true;
+        }
+    } catch {
+        // Ignore setting hook failures.
+    }
+
+    window.addEventListener("storage", (event) => {
+        if (!event.key || event.key === COMFY_LOCALE_KEY) {
+            refresh();
+        }
+    });
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            refresh();
+        }
+    });
+
+    try {
+        const root = document.documentElement;
+        const observer = new MutationObserver((mutations) => {
+            if (
+                mutations.some(
+                    (mutation) => mutation.attributeName === "lang"
+                )
+            ) {
+                refresh();
+            }
+        });
+        observer.observe(root, {
+            attributes: true,
+            attributeFilter: ["lang"],
+        });
+    } catch {
+        // Ignore DOM observer failures.
+    }
+
+    window.setInterval(() => {
+        if (document.hidden) {
+            return;
+        }
+        const nextLocale = getLocale();
+        if (nextLocale !== currentUiLocale) {
+            refresh();
+        }
+    }, LOCALE_WATCH_INTERVAL_MS);
 }
 
 function parseHotkeySpec(spec) {
@@ -626,6 +739,30 @@ app.registerExtension({
                 closeBehavior = normalizeCloseBehavior(value);
             }
         },
+        {
+            id: HOTKEY_SETTING_ID,
+            name: "XDataHub Toggle Hotkey",
+            type: "text",
+            defaultValue: DEFAULT_HOTKEY_SPEC,
+            tooltip: "Keyboard shortcut to toggle the XDataHub window. Format: Ctrl+Alt+X, Alt+X, Shift+F2, etc.",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
+            category: ["♾️ Xz3r0", "XDataHub", "Hotkey"],
+            onChange: (value) => {
+                const spec = String(value || "").trim() || DEFAULT_HOTKEY_SPEC;
+                hotkeySpec = spec;
+                persistHotkeySpec(spec);
+                ensureGlobalHotkeyListener();
+            }
+        },
+        {
+            id: AUTO_SHOW_SETTING_ID,
+            name: "Show XDataHub on startup",
+            type: "boolean",
+            defaultValue: false,
+            tooltip: "Automatically open the XDataHub window when ComfyUI loads.",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
+            category: ["♾️ Xz3r0", "XDataHub", "AutoShow"],
+        },
     ],
 
     /**
@@ -633,11 +770,13 @@ app.registerExtension({
      * 创建样式表并添加菜单按钮
      */
     async setup() {
-        await loadUiLocaleBundle();
+        await applyHostUiLocale();
+        installLocaleSync();
         hotkeySpec = readHotkeySpecFromSettings();
         ensureGlobalHotkeyListener();
         defaultOpenLayout = readDefaultOpenLayoutFromSettings();
         closeBehavior = readCloseBehaviorFromSettings();
+        edgePeekEnabled = !!(localStorage.getItem("Xz3r0.XDataHub.EdgePeek") === "true");
         ensureColorTokensStylesheet();
         await syncThemeModeFromSettings();
         try {
@@ -661,9 +800,20 @@ app.registerExtension({
                 box-shadow: var(--xdh-window-shadow);
                 display: flex;
                 flex-direction: column;
-                overflow: hidden;
+                overflow: visible;
                 min-width: 400px;
                 min-height: 300px;
+            }
+            .xz3r0-datahub-window-shell {
+                position: relative;
+                z-index: 1;
+                display: flex;
+                flex-direction: column;
+                flex: 1;
+                min-width: 0;
+                min-height: 0;
+                overflow: hidden;
+                background: var(--theme-bg-main);
             }
             .xz3r0-datahub-window-header {
                 display: flex;
@@ -820,6 +970,12 @@ app.registerExtension({
             .xz3r0-datahub-window-btn:active {
                 background: var(--btn-active-color);
                 box-shadow: var(--btn-press-glow-inset);
+            }
+            .xz3r0-datahub-window-btn.active {
+                color: var(--p-button-primary-background, #6366f1);
+            }
+            .xz3r0-datahub-window-btn.active .xz3r0-icon {
+                filter: none;
             }
             .xz3r0-datahub-window-btn .xz3r0-icon {
                 width: 18px;
@@ -1028,6 +1184,31 @@ app.registerExtension({
             .xz3r0-dragging {
                 user-select: none !important;
             }
+            .xz3r0-dock-snap-preview {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                width: 400px;
+                background: var(--comfy-menu-bg, rgba(30,30,40,0.55));
+                border: 2px solid var(--p-button-primary-background, #6366f1);
+                border-radius: 6px;
+                pointer-events: none;
+                opacity: 0;
+                transition: opacity 0.12s ease;
+                z-index: 2147483640;
+                box-sizing: border-box;
+            }
+            .xz3r0-dock-snap-preview.visible {
+                opacity: 0.45;
+            }
+            .xz3r0-dock-snap-preview.snap-left {
+                left: 0;
+                right: auto;
+            }
+            .xz3r0-dock-snap-preview.snap-right {
+                right: 0;
+                left: auto;
+            }
             .xz3r0-resizing {
                 user-select: none !important;
             }
@@ -1037,26 +1218,26 @@ app.registerExtension({
             }
             .xz3r0-resize-handle-n-left,
             .xz3r0-resize-handle-n-right {
-                top: -8px;
+                top: -16px;
                 height: 16px;
                 cursor: ns-resize;
             }
             .xz3r0-resize-handle-s {
-                bottom: -8px;
+                bottom: -16px;
                 left: 16px;
                 right: 16px;
                 height: 16px;
                 cursor: ns-resize;
             }
             .xz3r0-resize-handle-w {
-                left: -8px;
+                left: -16px;
                 top: 16px;
                 bottom: 16px;
                 width: 16px;
                 cursor: ew-resize;
             }
             .xz3r0-resize-handle-e {
-                right: -8px;
+                right: -16px;
                 top: 16px;
                 bottom: 16px;
                 width: 16px;
@@ -1099,23 +1280,44 @@ app.registerExtension({
                 height: 24px;
                 cursor: nwse-resize;
             }
-            .xz3r0-opacity-control {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                position: absolute;
-                left: 50%;
-                transform: translateX(-50%);
+            .xz3r0-opacity-btn-wrap {
+                position: relative;
             }
-            .xz3r0-opacity-label {
-                font-size: 12px;
-                color: var(--text-standard);
+            .xz3r0-opacity-popup {
+                display: none;
+                position: absolute;
+                top: calc(100% + 8px);
+                right: 0;
+                background: var(--xdh-color-surface-1, var(--theme-bg-main));
+                border: 1px solid var(--xdh-color-border, var(--border-standard));
+                border-radius: 10px;
+                padding: 12px 14px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+                z-index: 10100;
+                min-width: 188px;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .xz3r0-opacity-popup.open {
+                display: flex;
+            }
+            .xz3r0-opacity-popup-label {
+                font-size: 11px;
                 font-weight: 700;
-                display: inline-block;
-                transform: translateY(-1px);
+                color: var(--text-muted, #888);
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .xz3r0-opacity-popup-label span {
+                font-variant-numeric: tabular-nums;
+                color: var(--xdh-color-text-primary, #dddddd);
+                font-size: 12px;
             }
             .xz3r0-opacity-slider {
-                width: 84px;
+                width: 100%;
                 height: 16px;
                 -webkit-appearance: none;
                 appearance: none;
@@ -1123,52 +1325,63 @@ app.registerExtension({
                 border-radius: 999px;
                 outline: none;
                 cursor: pointer;
+                accent-color: var(--xdh-color-primary, var(--btn-active-color));
             }
             .xz3r0-opacity-slider::-webkit-slider-runnable-track {
-                height: 4px;
-                background: var(--border-standard);
+                height: 6px;
+                background: var(--xdh-color-surface-4, var(--border-standard));
                 border-radius: 999px;
             }
             .xz3r0-opacity-slider::-webkit-slider-thumb {
                 -webkit-appearance: none;
                 appearance: none;
-                width: 13px;
-                height: 13px;
+                width: 15px;
+                height: 15px;
                 margin-top: -4.5px;
-                background: var(--xdh-icon-color);
+                background: var(--xdh-color-primary, var(--btn-active-color));
+                border: 2px solid var(--theme-bg-main);
                 border-radius: 50%;
                 cursor: pointer;
-                transition: background 0.2s;
+                box-shadow: 0 0 0 1px var(--border-standard);
+                transition: background 0.2s, box-shadow 0.2s;
             }
             .xz3r0-opacity-slider::-webkit-slider-thumb:hover {
-                background: var(--btn-active-color);
+                box-shadow: var(--btn-hover-glow-soft);
             }
             .xz3r0-opacity-slider::-moz-range-thumb {
-                width: 13px;
-                height: 13px;
-                background: var(--xdh-icon-color);
+                width: 15px;
+                height: 15px;
+                background: var(--xdh-color-primary, var(--btn-active-color));
+                border: 2px solid var(--theme-bg-main);
                 border-radius: 50%;
                 cursor: pointer;
-                border: none;
-                transition: background 0.2s;
+                box-shadow: 0 0 0 1px var(--border-standard);
+                transition: background 0.2s, box-shadow 0.2s;
             }
             .xz3r0-opacity-slider::-moz-range-track {
-                height: 4px;
-                background: var(--border-standard);
+                height: 6px;
+                background: var(--xdh-color-surface-4, var(--border-standard));
                 border-radius: 999px;
             }
             .xz3r0-opacity-slider::-moz-range-thumb:hover {
-                background: var(--btn-active-color);
+                box-shadow: var(--btn-hover-glow-soft);
             }
-            .xz3r0-opacity-value {
-                font-size: 12px;
-                color: var(--text-standard);
-                font-weight: 700;
-                display: inline-block;
-                width: 4ch;
-                text-align: right;
-                font-variant-numeric: tabular-nums;
+            /* ── Edge Peek ── */
+            .xz3r0-datahub-window.xdh-peek-transitioning {
+                transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
             }
+            .xz3r0-peek-trigger {
+                position: fixed;
+                top: 0;
+                height: 100vh;
+                width: 6px;
+                cursor: pointer;
+                display: none;
+                z-index: ${WINDOW_Z_INDEX_DEFAULT + 1};
+                background: transparent;
+            }
+            .xz3r0-peek-trigger.left  { left: 0; right: auto; }
+            .xz3r0-peek-trigger.right { right: 0; left: auto; }
         `;
         document.head.appendChild(style);
 
@@ -1188,6 +1401,12 @@ app.registerExtension({
             } catch (e) {
                 console.warn("[Xz3r0-Nodes] Failed to create menu button:", e);
             }
+        }
+
+        // 启动时自动打开
+        const autoShow = app.extensionManager?.setting?.get(AUTO_SHOW_SETTING_ID) ?? false;
+        if (autoShow && windowEnabled) {
+            requestAnimationFrame(() => XDataHub.show());
         }
     }
 });
@@ -1357,10 +1576,13 @@ const XDataHub = {
             windowEl.style.width = `${layout.width}px`;
             windowEl.style.height = `${layout.height}px`;
         };
-        const applyDockLayout = (side) => {
+        const applyDockLayout = (side, savedWidth) => {
             const viewportWidth = window.innerWidth;
             const viewportHeight = window.innerHeight;
-            const dockWidth = Math.min(RESIZE_MIN_WIDTH, viewportWidth);
+            // 优先使用保存的宽度，兜底用最小宽度
+            const dockWidth = savedWidth
+                ? Math.min(Math.max(RESIZE_MIN_WIDTH, savedWidth), viewportWidth)
+                : Math.min(RESIZE_MIN_WIDTH, viewportWidth);
             const left = side === "right"
                 ? Math.max(0, viewportWidth - dockWidth)
                 : 0;
@@ -1386,7 +1608,7 @@ const XDataHub = {
             if (initialMaximized) {
                 applyMaximizedLayout();
             } else if (initialDockSide) {
-                applyDockLayout(initialDockSide);
+                applyDockLayout(initialDockSide, persistedState.width);
             } else {
                 applyLayout(clampLayoutToViewport(persistedState));
             }
@@ -1424,6 +1646,9 @@ const XDataHub = {
             });
         }
 
+        const shell = document.createElement("div");
+        shell.className = "xz3r0-datahub-window-shell";
+
         const header = document.createElement("div");
         header.className = "xz3r0-datahub-window-header";
 
@@ -1433,29 +1658,6 @@ const XDataHub = {
             ${iconHtml("infinity", t("windowTitle", "XDataHub"), "xz3r0-icon xz3r0-title-icon")}
             <span class="xz3r0-datahub-window-title-text">${t("windowTitle", "XDataHub")}</span>
         `;
-
-        // 透明度控制组件
-        const opacityControl = document.createElement("div");
-        opacityControl.className = "xz3r0-opacity-control";
-
-        const opacityLabel = document.createElement("span");
-        opacityLabel.className = "xz3r0-opacity-label";
-        opacityLabel.textContent = t("opacityLabel", "Opacity");
-
-        const opacitySlider = document.createElement("input");
-        opacitySlider.type = "range";
-        opacitySlider.className = "xz3r0-opacity-slider";
-        opacitySlider.min = "20";
-        opacitySlider.max = "100";
-        opacitySlider.value = "100";
-
-        const opacityValue = document.createElement("span");
-        opacityValue.className = "xz3r0-opacity-value";
-        opacityValue.textContent = "100%";
-
-        opacityControl.appendChild(opacityLabel);
-        opacityControl.appendChild(opacitySlider);
-        opacityControl.appendChild(opacityValue);
 
         const controls = document.createElement("div");
         controls.className = "xz3r0-datahub-window-controls";
@@ -1468,6 +1670,54 @@ const XDataHub = {
         );
         dockLeftBtn.title = t("dockLeftBtn", "Dock Left");
 
+        const dockRightBtn = document.createElement("button");
+        dockRightBtn.className = "xz3r0-datahub-window-btn";
+        dockRightBtn.innerHTML = iconHtml(
+            "panel-right-close",
+            t("dockRightBtn", "Dock Right")
+        );
+        dockRightBtn.title = t("dockRightBtn", "Dock Right");
+
+        // 透明度图标按钮 + 气泡面板
+        const opacityBtnWrap = document.createElement("div");
+        opacityBtnWrap.className = "xz3r0-opacity-btn-wrap";
+
+        const opacityBtn = document.createElement("button");
+        opacityBtn.className = "xz3r0-datahub-window-btn";
+        opacityBtn.title = t("opacityLabel", "Opacity");
+        opacityBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            class="xz3r0-icon" style="filter:none;opacity:1">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 2a10 10 0 0 1 0 20z"/>
+        </svg>`;
+
+        const opacityPopup = document.createElement("div");
+        opacityPopup.className = "xz3r0-opacity-popup";
+
+        const opacityPopupLabel = document.createElement("div");
+        opacityPopupLabel.className = "xz3r0-opacity-popup-label";
+        const opacityLabelText = document.createElement("span");
+        opacityLabelText.style.cssText = "color:var(--text-muted,#888)";
+        opacityLabelText.textContent = t("opacityLabel", "Opacity");
+        const opacityValue = document.createElement("span");
+        opacityValue.textContent = "100%";
+        opacityPopupLabel.appendChild(opacityLabelText);
+        opacityPopupLabel.appendChild(opacityValue);
+
+        const opacitySlider = document.createElement("input");
+        opacitySlider.type = "range";
+        opacitySlider.className = "xz3r0-opacity-slider";
+        opacitySlider.min = "20";
+        opacitySlider.max = "100";
+        opacitySlider.value = "100";
+
+        opacityPopup.appendChild(opacityPopupLabel);
+        opacityPopup.appendChild(opacitySlider);
+        opacityBtnWrap.appendChild(opacityBtn);
+        opacityBtnWrap.appendChild(opacityPopup);
+
         const maxBtn = document.createElement("button");
         maxBtn.className = "xz3r0-datahub-window-btn";
         maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
@@ -1479,75 +1729,32 @@ const XDataHub = {
         closeBtn.title = t("closeBtn", "Close");
 
         controls.appendChild(dockLeftBtn);
+        controls.appendChild(dockRightBtn);
+        controls.appendChild(opacityBtnWrap);
         controls.appendChild(maxBtn);
         controls.appendChild(closeBtn);
         header.appendChild(title);
-        header.appendChild(opacityControl);
         header.appendChild(controls);
 
         const content = document.createElement("div");
         content.className = "xz3r0-datahub-window-content";
-
-        const hostTabs = document.createElement("div");
-        hostTabs.className = "xz3r0-datahub-window-host-tabs";
 
         const frameStack = document.createElement("div");
         frameStack.className = "xz3r0-datahub-window-frame-stack";
 
         const dataFrame = document.createElement("iframe");
         dataFrame.className = "xz3r0-datahub-window-frame";
+        dataFrame.classList.add("active");
+        dataFrame.allowFullscreen = true;
+        dataFrame.setAttribute("allow", "fullscreen");
         dataFrame.src = (
-            "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app.html"
+            "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app_v2.html"
             + `?theme=${encodeURIComponent(currentThemeMode)}`
             + `&v=${XDATAHUB_ASSET_VER}`
         );
 
         frameStack.appendChild(dataFrame);
-        content.appendChild(hostTabs);
         content.appendChild(frameStack);
-
-        const loadPersistedHostTab = () => {
-            try {
-                const raw = String(
-                    sessionStorage.getItem(HOST_ACTIVE_TAB_SESSION_KEY) || ""
-                ).trim();
-                if (HOST_TABS.some((tab) => tab.id === raw)) {
-                    return raw;
-                }
-            } catch {
-                // ignore sessionStorage read errors
-            }
-            return "history";
-        };
-        const savePersistedHostTab = (tabId) => {
-            if (!HOST_TABS.some((tab) => tab.id === tabId)) {
-                return;
-            }
-            try {
-                sessionStorage.setItem(HOST_ACTIVE_TAB_SESSION_KEY, tabId);
-            } catch {
-                // ignore sessionStorage write errors
-            }
-        };
-        let activeHostTab = loadPersistedHostTab();
-        const hostTabButtons = new Map();
-        const hostTabsIndicator = document.createElement("div");
-        hostTabsIndicator.className = "xz3r0-datahub-window-host-tabs-indicator";
-        const updateHostTabIndicator = () => {
-            const activeButton = hostTabButtons.get(activeHostTab);
-            if (!activeButton) {
-                hostTabs.classList.remove("has-active-indicator");
-                return;
-            }
-            const tabsRect = hostTabs.getBoundingClientRect();
-            const buttonRect = activeButton.getBoundingClientRect();
-            const inset = Math.min(12, Math.max(6, buttonRect.width * 0.16));
-            const left = buttonRect.left - tabsRect.left + inset;
-            const width = Math.max(16, buttonRect.width - (inset * 2));
-            hostTabsIndicator.style.left = `${left}px`;
-            hostTabsIndicator.style.width = `${width}px`;
-            hostTabs.classList.add("has-active-indicator");
-        };
         const updateIframePointerEvents = (value) => {
             dataFrame.style.pointerEvents = value;
         };
@@ -1587,23 +1794,22 @@ const XDataHub = {
                 "*"
             );
         };
-        const postSharedStateToDataFrame = () => {
-            postThemeModeToDataFrame();
-            postHotkeySpecToDataFrame();
-        };
-        const postTabToDataFrame = (tabId) => {
+        const postUiLocaleToDataFrame = (locale) => {
             if (!dataFrame.contentWindow) {
                 return;
             }
             dataFrame.contentWindow.postMessage(
-                { type: "xdatahub:set-tab", tab: tabId },
+                {
+                    type: "xdatahub:ui-locale",
+                    locale: String(locale || "en"),
+                },
                 "*"
             );
         };
-        const syncActiveTabToDataFrame = (tabId) => {
-            postTabToDataFrame(tabId);
-            // 双发一次，规避 iframe 刚加载时消息先于内部监听器注册。
-            requestAnimationFrame(() => postTabToDataFrame(tabId));
+        const postSharedStateToDataFrame = () => {
+            postThemeModeToDataFrame();
+            postHotkeySpecToDataFrame();
+            postUiLocaleToDataFrame(currentUiLocale);
         };
         const postCloseFacetToDataFrame = () => {
             if (!dataFrame.contentWindow) {
@@ -1614,69 +1820,18 @@ const XDataHub = {
                 "*"
             );
         };
-        const updateHostTabCompactMode = () => {
-            if (windowEl.style.display === "none") {
-                return;
-            }
-            if (hostTabs.clientWidth <= 0) {
-                return;
-            }
-            let requiredWidth = 20;
-            hostTabButtons.forEach((button) => {
-                requiredWidth += Math.max(button.scrollWidth, 84);
-            });
-            requiredWidth += Math.max(0, HOST_TABS.length - 1) * 6;
-            const shouldCompact = requiredWidth > hostTabs.clientWidth;
-            windowEl.classList.toggle("compact-tabs", shouldCompact);
-            requestAnimationFrame(updateHostTabIndicator);
-        };
         const scheduleVisibleLayoutSync = () => {
             const syncLayout = () => {
-                updateHostTabCompactMode();
                 updateResizeHandleLayout();
             };
             requestAnimationFrame(syncLayout);
             requestAnimationFrame(() => requestAnimationFrame(syncLayout));
         };
+        const updateHostTabCompactMode = () => {};
+        const setHostTab = () => {};
         windowEl.addEventListener("dragstart", (event) => {
             event.preventDefault();
         });
-        const setHostTab = (tabId, options = {}) => {
-            const force = options.force === true;
-            if (!force && tabId === activeHostTab) {
-                return;
-            }
-            activeHostTab = tabId;
-            savePersistedHostTab(tabId);
-            hostTabButtons.forEach((button, id) => {
-                button.classList.toggle("active", id === tabId);
-            });
-            updateHostTabIndicator();
-            dataFrame.classList.add("active");
-            if (dataFrame.contentWindow) {
-                syncActiveTabToDataFrame(tabId);
-                postSharedStateToDataFrame();
-            }
-        };
-
-        HOST_TABS.forEach((tab) => {
-            const button = document.createElement("button");
-            button.className = "xz3r0-datahub-window-host-tab";
-            const tabText = t(tab.textKey, tab.id);
-            button.title = tabText;
-            button.innerHTML = `
-                <span class="xz3r0-datahub-window-host-tab-icon">${iconHtml(tab.icon, tabText)}</span>
-                <span class="xz3r0-datahub-window-host-tab-text">${tabText}</span>
-            `;
-            button.addEventListener("pointerdown", (e) => {
-                if (e.button !== 0) return;
-                setHostTab(tab.id);
-            });
-            button.addEventListener("click", () => setHostTab(tab.id));
-            hostTabs.appendChild(button);
-            hostTabButtons.set(tab.id, button);
-        });
-        hostTabs.appendChild(hostTabsIndicator);
 
         const applyShellLocaleText = () => {
             const windowTitle = t("windowTitle", "XDataHub");
@@ -1684,21 +1839,20 @@ const XDataHub = {
                 ${iconHtml("infinity", windowTitle, "xz3r0-icon xz3r0-title-icon")}
                 <span class="xz3r0-datahub-window-title-text">${windowTitle}</span>
             `;
-            opacityLabel.textContent = t("opacityLabel", "Opacity");
+            opacityLabelText.textContent = t("opacityLabel", "Opacity");
+            opacityBtn.title = t("opacityLabel", "Opacity");
+            dockLeftBtn.innerHTML = iconHtml(
+                "panel-left-close",
+                t("dockLeftBtn", "Dock Left")
+            );
+            dockLeftBtn.title = t("dockLeftBtn", "Dock Left");
+            dockRightBtn.innerHTML = iconHtml(
+                "panel-right-close",
+                t("dockRightBtn", "Dock Right")
+            );
+            dockRightBtn.title = t("dockRightBtn", "Dock Right");
             closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
             closeBtn.title = t("closeBtn", "Close");
-            HOST_TABS.forEach((tab) => {
-                const button = hostTabButtons.get(tab.id);
-                if (!button) {
-                    return;
-                }
-                const tabText = t(tab.textKey, tab.id);
-                button.title = tabText;
-                button.innerHTML = `
-                    <span class="xz3r0-datahub-window-host-tab-icon">${iconHtml(tab.icon, tabText)}</span>
-                    <span class="xz3r0-datahub-window-host-tab-text">${tabText}</span>
-                `;
-            });
             if (isMaximized) {
                 maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
                 maxBtn.title = t("restoreBtn", "Restore");
@@ -1708,23 +1862,20 @@ const XDataHub = {
             }
             updateDockButtonVisual();
             applyMenuButtonIcon();
-            requestAnimationFrame(updateHostTabIndicator);
         };
 
         const syncCloseButtonState = () => {
             closeBtn.disabled = isWindowCloseBlocked();
         };
 
-        windowEl.appendChild(header);
-        windowEl.appendChild(content);
+        shell.appendChild(header);
+        shell.appendChild(content);
+        windowEl.appendChild(shell);
         document.body.appendChild(windowEl);
         windowEl.setAttribute("data-theme", currentThemeMode);
         dataFrame.addEventListener("load", () => {
             postSharedStateToDataFrame();
-            syncActiveTabToDataFrame(activeHostTab);
         });
-        updateHostTabCompactMode();
-        setHostTab(activeHostTab, { force: true });
 
         // 创建拉伸手柄
         const resizeHandles = [
@@ -1744,6 +1895,37 @@ const XDataHub = {
         const CONTROL_GUARD_PAD_Y = 6;
         const TOP_HANDLE_HEIGHT = 16;
         const CORNER_HANDLE_SIZE = 24;
+        const EDGE_INNER_HANDLE_THICKNESS = 6;
+        const EDGE_INNER_CORNER_SIZE = 14;
+        // 拖拽时距屏幕左/右边缘多少像素内显示吸附预览并在松开时触发贴边
+        const DRAG_SNAP_ZONE_PX = 40;
+
+        // 吸附预览元素（全局单例，追加到 body）
+        let _snapPreviewEl = null;
+        const getSnapPreview = () => {
+            if (!_snapPreviewEl) {
+                _snapPreviewEl = document.createElement("div");
+                _snapPreviewEl.className = "xz3r0-dock-snap-preview";
+                document.body.appendChild(_snapPreviewEl);
+            }
+            return _snapPreviewEl;
+        };
+        // 当前拖拽中检测到的吸附方向（null / "left" / "right"）
+        let _dragSnapSide = null;
+
+        const showSnapPreview = (side) => {
+            if (_dragSnapSide === side) return;
+            _dragSnapSide = side;
+            const el = getSnapPreview();
+            if (!side) {
+                el.classList.remove("visible", "snap-left", "snap-right");
+                return;
+            }
+            el.classList.remove("snap-left", "snap-right");
+            el.classList.add(side === "left" ? "snap-left" : "snap-right");
+            el.classList.add("visible");
+        };
+        const hideSnapPreview = () => showSnapPreview(null);
         const TOP_HANDLE_MIN_SEGMENT_WIDTH = 8;
         const resizeHandleElements = new Map();
 
@@ -1756,12 +1938,15 @@ const XDataHub = {
             resizeHandleElements.set(key, handle);
         });
 
+        // 贴边状态（需在 updateResizeHandleLayout 定义前声明，避免 TDZ 错误）
+        let dockSide = initialDockSide;
+
         const computeWindowEdgeState = () => {
             const rect = windowEl.getBoundingClientRect();
             return {
-                left: rect.left <= EDGE_SNAP_THRESHOLD,
-                right: (window.innerWidth - rect.right) <= EDGE_SNAP_THRESHOLD,
                 top: rect.top <= EDGE_SNAP_THRESHOLD,
+                right: (window.innerWidth - rect.right) <= EDGE_SNAP_THRESHOLD,
+                left: rect.left <= EDGE_SNAP_THRESHOLD,
                 bottom: (window.innerHeight - rect.bottom) <= EDGE_SNAP_THRESHOLD,
             };
         };
@@ -1771,6 +1956,15 @@ const XDataHub = {
             resizeHandleElements.forEach((handle) => {
                 const direction = handle.dataset.direction || "";
                 const key = handle.dataset.key || "";
+                // Disable handles on the docked side to prevent accidental
+                // resizing of the edge that is flush against the screen.
+                const blockedByDock =
+                    (dockSide === "left"  && direction.includes("w") &&
+                        !direction.includes("e")) ||
+                    (dockSide === "right" && direction.includes("e") &&
+                        !direction.includes("w"));
+                handle.style.pointerEvents = blockedByDock ? "none" : "";
+                handle.style.cursor = blockedByDock ? "default" : "";
                 handle.style.left = direction.includes("w")
                     ? edge.left
                         ? `${HANDLE_INSET}px`
@@ -1792,7 +1986,39 @@ const XDataHub = {
                         : ""
                     : "";
                 if (key === "n-left" || key === "n-right") {
-                    handle.style.height = `${TOP_HANDLE_HEIGHT}px`;
+                    handle.style.height = edge.top
+                        ? `${EDGE_INNER_HANDLE_THICKNESS}px`
+                        : `${TOP_HANDLE_HEIGHT}px`;
+                }
+                if (key === "s") {
+                    handle.style.height = edge.bottom
+                        ? `${EDGE_INNER_HANDLE_THICKNESS}px`
+                        : "";
+                }
+                if (key === "w") {
+                    handle.style.width = edge.left
+                        ? `${EDGE_INNER_HANDLE_THICKNESS}px`
+                        : "";
+                }
+                if (key === "e") {
+                    handle.style.width = edge.right
+                        ? `${EDGE_INNER_HANDLE_THICKNESS}px`
+                        : "";
+                }
+                if (["nw", "ne", "sw", "se"].includes(key)) {
+                    const touchesTop = key.includes("n") && edge.top;
+                    const touchesBottom = key.includes("s") && edge.bottom;
+                    const touchesLeft = key.includes("w") && edge.left;
+                    const touchesRight = key.includes("e") && edge.right;
+                    const innerCorner = touchesTop
+                        || touchesBottom
+                        || touchesLeft
+                        || touchesRight;
+                    const cornerSize = innerCorner
+                        ? EDGE_INNER_CORNER_SIZE
+                        : CORNER_HANDLE_SIZE;
+                    handle.style.width = `${cornerSize}px`;
+                    handle.style.height = `${cornerSize}px`;
                 }
             });
 
@@ -1851,14 +2077,22 @@ const XDataHub = {
                     ? outwardOffset + CONTROL_GUARD_PAD_Y
                     : outwardOffset;
 
-                neHandle.style.width = `${CORNER_HANDLE_SIZE}px`;
-                neHandle.style.height = `${CORNER_HANDLE_SIZE}px`;
+                const neCornerSize = (edge.top || edge.right)
+                    ? EDGE_INNER_CORNER_SIZE
+                    : CORNER_HANDLE_SIZE;
+                const neOutwardOffset = Math.round(neCornerSize * 0.58);
+                const neSafeOuterOffset = guardTouchesTopHandle
+                    ? neOutwardOffset + CONTROL_GUARD_PAD_Y
+                    : neOutwardOffset;
+
+                neHandle.style.width = `${neCornerSize}px`;
+                neHandle.style.height = `${neCornerSize}px`;
                 neHandle.style.right = edge.right
                     ? `${HANDLE_INSET}px`
-                    : `-${safeOuterOffset}px`;
+                    : `-${neSafeOuterOffset}px`;
                 neHandle.style.top = edge.top
                     ? `${HANDLE_INSET}px`
-                    : `-${safeOuterOffset}px`;
+                    : `-${neSafeOuterOffset}px`;
                 neHandle.style.left = "";
                 neHandle.style.bottom = "";
             }
@@ -1885,7 +2119,7 @@ const XDataHub = {
         let isMaximized = initialMaximized;
         let preMaximizeState = null;
         let isAltPressed = false;
-        let dockSide = initialDockSide;
+        // dockSide 已在 updateResizeHandleLayout 前声明，此处不再重复
 
         /**
          * 保存窗口状态
@@ -1910,6 +2144,7 @@ const XDataHub = {
          */
         const stopDragging = (shouldSave = false) => {
             if (!isDragging) return;
+            const wasDragStarted = hasDragStarted;
 
             if (rafId) {
                 cancelAnimationFrame(rafId);
@@ -1918,16 +2153,19 @@ const XDataHub = {
 
             if (hasDragStarted) {
                 updatePosition(pendingX, pendingY);
-                if (shouldSave) {
-                    persistWindowState();
-                }
             }
 
+            hideSnapPreview();
             header.classList.remove("dragging");
             document.body.classList.remove("xz3r0-dragging");
             document.body.style.userSelect = "";
             isDragging = false;
             hasDragStarted = false;
+            // 拖拽结束后根据实际位置自动同步贴边状态
+            syncDockSideFromPosition();
+            if (wasDragStarted && shouldSave) {
+                persistWindowState();
+            }
         };
 
         /**
@@ -1942,6 +2180,8 @@ const XDataHub = {
             document.body.classList.remove("xz3r0-resizing");
             document.body.style.userSelect = "";
 
+            // 缩放结束后根据实际位置自动同步贴边状态
+            syncDockSideFromPosition();
             if (shouldSave) {
                 persistWindowState();
             }
@@ -2025,19 +2265,11 @@ const XDataHub = {
         };
 
         /**
-         * 根据当前停靠状态更新按钮图标与提示文本
+         * 根据当前停靠状态高亮对应停靠按钮
          */
         const updateDockButtonVisual = () => {
-            const nextSide = dockSide === "left" ? "right" : "left";
-            const iconName = nextSide === "left"
-                ? "panel-left-close"
-                : "panel-right-close";
-            const titleKey = nextSide === "left"
-                ? "dockLeftBtn"
-                : "dockRightBtn";
-            const fallbackTitle = nextSide === "left" ? "Dock Left" : "Dock Right";
-            dockLeftBtn.innerHTML = iconHtml(iconName, t(titleKey, fallbackTitle));
-            dockLeftBtn.title = t(titleKey, fallbackTitle);
+            dockLeftBtn.classList.toggle("active", dockSide === "left");
+            dockRightBtn.classList.toggle("active", dockSide === "right");
         };
 
         /**
@@ -2052,20 +2284,27 @@ const XDataHub = {
             maxBtn.classList.remove("maximized");
 
             const targetSide = side === "right" ? "right" : "left";
+            // 保留当前宽度，只强制贴边位置和全高
+            const currentW = Math.max(RESIZE_MIN_WIDTH, windowEl.offsetWidth);
             const targetLeft = targetSide === "right"
-                ? Math.max(0, window.innerWidth - RESIZE_MIN_WIDTH)
+                ? Math.max(0, window.innerWidth - currentW)
                 : 0;
 
             dockSide = targetSide;
             windowEl.style.left = `${targetLeft}px`;
             windowEl.style.top = "0px";
-            windowEl.style.width = `${RESIZE_MIN_WIDTH}px`;
+            windowEl.style.width = `${currentW}px`;
             windowEl.style.height = `${window.innerHeight}px`;
 
             updateHostTabCompactMode();
             updateResizeHandleLayout();
             updateDockButtonVisual();
             persistWindowState();
+            // Auto-collapse to edge peek after docking (if peek is enabled)
+            if (edgePeekEnabled) {
+                peekExpanded = false;
+                applyEdgePeek();
+            }
         };
         if (isMaximized) {
             maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
@@ -2124,13 +2363,156 @@ const XDataHub = {
         };
 
         /**
-         * 切换左右停靠
+         * 切换左右停靠（保留供键盘快捷键等调用）
          */
         const toggleDockSide = () => {
             const nextSide = dockSide === "left" ? "right" : "left";
             dockWindowTo(nextSide);
         };
         updateDockButtonVisual();
+
+        // ── Edge Peek ────────────────────────────────────────────────────────
+        const PEEK_STRIP_W = 6;           // visible strip width (px)
+        const PEEK_COLLAPSE_DELAY_MS = 100; // ms before auto-collapsing
+        const PEEK_EXPAND_ZONE_PX = 6;      // px from edge that triggers expand
+        let peekExpanded = true;            // false = hidden to the edge
+        let peekCollapseTimer = null;
+
+        // Fixed trigger strip rendered in the ComfyUI page (outside iframe)
+        const peekTrigger = document.createElement("div");
+        peekTrigger.className = "xz3r0-peek-trigger";
+        document.body.appendChild(peekTrigger);
+
+        const applyEdgePeek = () => {
+            if (!edgePeekEnabled || !dockSide || isMaximized) {
+                // Peek disabled or conditions not met — clear any transform
+                windowEl.style.transform = "";
+                peekTrigger.style.display = "none";
+                peekExpanded = true;
+                return;
+            }
+            if (!peekExpanded) {
+                // Collapsed: slide off to edge, leave PEEK_STRIP_W visible
+                const w = windowEl.offsetWidth;
+                const tx = dockSide === "left"
+                    ? -(w - PEEK_STRIP_W)
+                    : (w - PEEK_STRIP_W);
+                windowEl.classList.add("xdh-peek-transitioning");
+                windowEl.style.transform = `translateX(${tx}px)`;
+                peekTrigger.className = `xz3r0-peek-trigger ${dockSide}`;
+                peekTrigger.style.display = "block";
+            } else {
+                // Expanded: show fully
+                windowEl.classList.add("xdh-peek-transitioning");
+                windowEl.style.transform = "";
+                peekTrigger.style.display = "none";
+            }
+        };
+
+        /**
+         * 根据窗口实际位置自动同步 dockSide。
+         * 只要窗口贴着左/右屏幕边缘，就自动设置 dockSide 并触发
+         * edge peek 收起，无需手动按停靠按钮。
+         */
+        const syncDockSideFromPosition = () => {
+            if (isMaximized) return;
+            const edge = computeWindowEdgeState();
+            let newDock = null;
+            if (edge.left && !edge.right) newDock = "left";
+            else if (edge.right && !edge.left) newDock = "right";
+            if (newDock === dockSide) return;
+            dockSide = newDock;
+            updateDockButtonVisual();
+            updateResizeHandleLayout();
+            if (edgePeekEnabled && dockSide) {
+                peekExpanded = false;
+                applyEdgePeek();
+            } else if (!dockSide) {
+                // 离开边缘：清除 peek transform
+                windowEl.style.transform = "";
+                peekTrigger.style.display = "none";
+                peekExpanded = true;
+            }
+        };
+
+        const schedulepeekCollapse = () => {
+            clearTimeout(peekCollapseTimer);
+            peekCollapseTimer = setTimeout(() => {
+                if (!peekExpanded) return;
+                peekExpanded = false;
+                applyEdgePeek();
+            }, PEEK_COLLAPSE_DELAY_MS);
+        };
+
+        const cancelPeekCollapse = () => {
+            clearTimeout(peekCollapseTimer);
+        };
+
+        // Track mouse in ComfyUI doc (parent of iframe) to detect when
+        // user moves away from the window → schedule collapse;
+        // when collapsed, expand if pointer nears the docked edge.
+        const handlePeekPointerMove = (e) => {
+            if (!edgePeekEnabled || !dockSide || isMaximized) return;
+            if (!peekExpanded) {
+                // Collapsed: expand when pointer is near the docked edge
+                const nearEdge = dockSide === "left"
+                    ? e.clientX <= PEEK_EXPAND_ZONE_PX
+                    : e.clientX >= window.innerWidth - PEEK_EXPAND_ZONE_PX;
+                if (nearEdge) {
+                    cancelPeekCollapse();
+                    peekExpanded = true;
+                    applyEdgePeek();
+                }
+                return;
+            }
+            const rect = windowEl.getBoundingClientRect();
+            // Keep expanded while pointer is moving near active resize handles,
+            // so users can reach the opposite edge without triggering auto-hide.
+            const RESIZE_GUARD = 22;
+            const leftGuard = dockSide === "left" ? 0 : RESIZE_GUARD;
+            const rightGuard = dockSide === "right" ? 0 : RESIZE_GUARD;
+            const inResizeGuardZone = (
+                e.clientX >= (rect.left - leftGuard)
+                && e.clientX <= (rect.right + rightGuard)
+                && e.clientY >= (rect.top - RESIZE_GUARD)
+                && e.clientY <= (rect.bottom + RESIZE_GUARD)
+            );
+            const inside = (
+                e.clientX >= rect.left && e.clientX <= rect.right
+                && e.clientY >= rect.top && e.clientY <= rect.bottom
+            );
+            if (inside || inResizeGuardZone) {
+                cancelPeekCollapse();
+            } else {
+                schedulepeekCollapse();
+            }
+        };
+        document.addEventListener("pointermove", handlePeekPointerMove);
+
+        // Hover the trigger strip → expand
+        peekTrigger.addEventListener("pointerenter", () => {
+            if (!edgePeekEnabled || !dockSide) return;
+            cancelPeekCollapse();
+            peekExpanded = true;
+            applyEdgePeek();
+        });
+
+        // When user resizes/drags, cancel peek transform to avoid visual glitch
+        const resetPeekForInteraction = () => {
+            cancelPeekCollapse();
+            if (!peekExpanded) {
+                peekExpanded = true;
+                windowEl.classList.remove("xdh-peek-transitioning");
+                windowEl.style.transform = "";
+                peekTrigger.style.display = "none";
+            }
+        };
+        // Initialize peek if window starts in a docked state with peek enabled
+        if (edgePeekEnabled && initialDockSide && !initialMaximized) {
+            peekExpanded = false;
+            requestAnimationFrame(() => applyEdgePeek());
+        }
+        // ── End Edge Peek ────────────────────────────────────────────────────
 
         /**
          * 窗口尺寸变化时保持最大化窗口贴合视口
@@ -2144,12 +2526,13 @@ const XDataHub = {
                 windowEl.style.height = `${window.innerHeight}px`;
             }
             if (!isMaximized && dockSide) {
+                // 贴边只需保持位置贴边 + 全高，宽度由用户自由调整
+                const w = Math.max(RESIZE_MIN_WIDTH, windowEl.offsetWidth);
                 const targetLeft = dockSide === "right"
-                    ? Math.max(0, window.innerWidth - RESIZE_MIN_WIDTH)
+                    ? Math.max(0, window.innerWidth - w)
                     : 0;
                 windowEl.style.left = `${targetLeft}px`;
                 windowEl.style.top = "0px";
-                windowEl.style.width = `${RESIZE_MIN_WIDTH}px`;
                 windowEl.style.height = `${window.innerHeight}px`;
             }
             if (!isMaximized) {
@@ -2283,6 +2666,16 @@ const XDataHub = {
                 if (hasDragStarted) {
                     pendingX = startLeft + dx;
                     pendingY = startTop + dy;
+
+                    // 检测是否靠近屏幕左/右边缘，更新吸附预览
+                    const cursorX = e.clientX;
+                    if (cursorX <= DRAG_SNAP_ZONE_PX) {
+                        showSnapPreview("left");
+                    } else if (cursorX >= window.innerWidth - DRAG_SNAP_ZONE_PX) {
+                        showSnapPreview("right");
+                    } else {
+                        hideSnapPreview();
+                    }
                 }
             }
 
@@ -2346,6 +2739,15 @@ const XDataHub = {
          * 确保一旦鼠标左键松开就立即重置所有状态
          */
         const handleMouseUp = () => {
+            // 若拖拽时靠近边缘，触发吸附贴边
+            if (isDragging && hasDragStarted && _dragSnapSide) {
+                const snapSide = _dragSnapSide;
+                hideSnapPreview();
+                stopDragging(false);
+                dockWindowTo(snapSide);
+                return;
+            }
+            hideSnapPreview();
             // 鼠标松开时统一结束拖拽/拉伸并保存状态
             resetInteractionState(true);
         };
@@ -2359,10 +2761,11 @@ const XDataHub = {
         header.addEventListener("pointerdown", (e) => {
             postCloseFacetToDataFrame();
             if (e.target.closest(".xz3r0-datahub-window-btn")) return;
-            if (e.target.closest(".xz3r0-opacity-control")) return;
+            if (e.target.closest(".xz3r0-opacity-btn-wrap")) return;
             // 只有左键点击才触发拖拽
             if (e.button !== 0) return;
 
+            resetPeekForInteraction();
             dockSide = null;
             updateDockButtonVisual();
             isDragging = true;
@@ -2383,7 +2786,7 @@ const XDataHub = {
         // 双击标题栏切换最大化/还原（与右上角按钮行为一致）
         header.addEventListener("dblclick", (e) => {
             if (e.target.closest(".xz3r0-datahub-window-btn")) return;
-            if (e.target.closest(".xz3r0-opacity-control")) return;
+            if (e.target.closest(".xz3r0-opacity-btn-wrap")) return;
             toggleMaximize();
             e.preventDefault();
         });
@@ -2475,8 +2878,16 @@ const XDataHub = {
                 // 只有左键点击才触发拉伸
                 if (e.button !== 0) return;
 
+                // 贴边时禁止拉动贴边侧的手柄，避免误操作
+                const dir = handle.dataset.direction || "";
+                if (
+                    (dockSide === "left"  && dir.includes("w") && !dir.includes("e")) ||
+                    (dockSide === "right" && dir.includes("e") && !dir.includes("w"))
+                ) return;
+
                 dockSide = null;
                 updateDockButtonVisual();
+                resetPeekForInteraction();
                 isResizing = true;
                 resizeDirection = handle.dataset.direction;
                 resizeStartX = e.clientX;
@@ -2523,13 +2934,13 @@ const XDataHub = {
             dataFrame,
             setHostTab,
             syncCloseButtonState,
+            applyShellLocaleText,
+            postUiLocaleToDataFrame,
+            applyEdgePeek() {
+                applyEdgePeek();
+            },
             async applyUiLocale(locale) {
-                const seq = ++uiLocaleApplySeq;
-                await loadUiLocaleBundle(locale);
-                if (seq !== uiLocaleApplySeq) {
-                    return;
-                }
-                applyShellLocaleText();
+                await applyHostUiLocale(locale);
             },
             applyThemeMode(mode) {
                 const normalized = normalizeThemeMode(mode);
@@ -2580,9 +2991,12 @@ const XDataHub = {
                 document.removeEventListener("pointerup", handleMouseUp);
                 document.removeEventListener("keydown", handleKeyDown);
                 document.removeEventListener("keyup", handleKeyUp);
+                document.removeEventListener("pointermove", handlePeekPointerMove);
                 window.removeEventListener("blur", handleWindowBlur);
                 window.removeEventListener("resize", handleWindowResize);
                 dataFrame.removeEventListener("load", postSharedStateToDataFrame);
+                clearTimeout(peekCollapseTimer);
+                peekTrigger.remove();
                 windowEl.remove();
                 XDataHub.instance = null;
             }
@@ -2602,11 +3016,25 @@ const XDataHub = {
             }
         });
 
-        // 靠左停靠按钮事件
-        dockLeftBtn.addEventListener("click", () => toggleDockSide());
+        // 停靠按钮事件
+        dockLeftBtn.addEventListener("click", () => dockWindowTo("left"));
+        dockRightBtn.addEventListener("click", () => dockWindowTo("right"));
 
         // 最大化按钮事件
         maxBtn.addEventListener("click", () => toggleMaximize());
+
+        // 透明度图标按钮：点击切换气泡面板
+        opacityBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            opacityPopup.classList.toggle("open");
+        });
+
+        // 点击气泡外部时关闭
+        document.addEventListener("click", (e) => {
+            if (!opacityBtnWrap.contains(e.target)) {
+                opacityPopup.classList.remove("open");
+            }
+        });
 
         // 透明度调整事件
         opacitySlider.addEventListener("input", (e) => {
@@ -2641,6 +3069,67 @@ window.addEventListener("message", (event) => {
     const payload = event.data;
     if (!payload || typeof payload !== "object") {
         return;
+    }
+    const iframeWindow = xdataHubRef?.instance?.dataFrame?.contentWindow || null;
+    const getNodeRequestId = (data) => {
+        if (!data || typeof data !== "object") {
+            return "";
+        }
+        if (data.type === "xdatahub:request_media_get_nodes") {
+            return String(data.request_id || "");
+        }
+        if (data.type === "xdatahub:send_to_node") {
+            return String(data.data?.request_id || "");
+        }
+        if (data.type === "xdatahub:media_get_nodes") {
+            return String(data.request_id || "");
+        }
+        if (data.type === "xdatahub:send_to_node_ack") {
+            return String(data.data?.request_id || "");
+        }
+        return "";
+    };
+    const shouldBridgeNodeMessage = (
+        event.source === iframeWindow
+        && payload.__xdh_shell_forwarded__ !== true
+        && (
+            payload.type === "xdatahub:request_media_get_nodes"
+            || payload.type === "xdatahub:send_to_node"
+        )
+    );
+    if (shouldBridgeNodeMessage) {
+        const requestId = getNodeRequestId(payload);
+        if (!requestId || !event.source?.postMessage) {
+            return;
+        }
+        const cleanupTimer = window.setTimeout(() => {
+            bridgedNodeRequests.delete(requestId);
+        }, 4000);
+        bridgedNodeRequests.set(requestId, {
+            sourceWindow: event.source,
+            timer: cleanupTimer,
+        });
+        window.postMessage(
+            {
+                ...payload,
+                __xdh_shell_forwarded__: true,
+            },
+            "*"
+        );
+        return;
+    }
+    if (
+        payload.type === "xdatahub:media_get_nodes"
+        || payload.type === "xdatahub:send_to_node_ack"
+    ) {
+        const requestId = getNodeRequestId(payload);
+        const pending = bridgedNodeRequests.get(requestId);
+        if (pending?.sourceWindow?.postMessage) {
+            window.clearTimeout(pending.timer);
+            bridgedNodeRequests.delete(requestId);
+            pending.sourceWindow.postMessage(payload, "*");
+            return;
+        }
     }
     if (payload.type === "xdatahub:node_send_busy") {
         hostNodeSendBusy = payload.busy === true;
@@ -2690,6 +3179,13 @@ window.addEventListener("message", (event) => {
         applyThemeMode(payload.theme_mode);
         return;
     }
+    if (payload.type === "xdatahub:ls-setting") {
+        if (payload.key === EDGE_PEEK_SETTING_ID) {
+            edgePeekEnabled = !!payload.value;
+            xdataHubRef?.instance?.applyEdgePeek?.();
+        }
+        return;
+    }
     if (payload.type === "xdatahub:toggle-window-request") {
         if (!windowEnabled) {
             return;
@@ -2701,7 +3197,10 @@ window.addEventListener("message", (event) => {
         return;
     }
     if (payload.type === "xdatahub:ui-locale") {
-        xdataHubRef?.instance?.applyUiLocale?.(payload.locale);
+        applyHostUiLocale(payload.locale).catch(() => {
+            // Ignore locale bridge failures.
+        });
+        return;
     }
 });
 

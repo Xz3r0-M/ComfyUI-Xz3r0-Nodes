@@ -113,6 +113,38 @@ body:not([data-theme]) {
     --db-palette-10: #00A86B;
     --db-palette-11: #FFBF00;
     --db-palette-12: #CC00CC;
+
+    /* ── V2 Source Colors (Dark) ─────────────────────────
+     * 深浅主题都基于这组源色生成。后续只需改这一处。
+     * ─────────────────────────────────────────────────── */
+    --xdh-dark-color-background:     #282828;
+    --xdh-dark-color-surface-1:      #333333;
+    --xdh-dark-color-surface-2:      #3a3a3a;
+    --xdh-dark-color-surface-3:      #444444;
+    --xdh-dark-color-surface-4:      #505050;
+    --xdh-dark-color-surface-hover:  #444444;
+    --xdh-dark-color-border:         #666666;
+    --xdh-dark-color-text-primary:   #dddddd;
+    --xdh-dark-color-text-secondary: #aaaaaa;
+    --xdh-dark-color-hover:          #2a2a2a;
+    --xdh-dark-scrollbar-thumb:      #555555;
+
+    /* ── V2 Component Aliases (Dark) ───────────────────── */
+    --xdh-color-background:    var(--xdh-dark-color-background);
+    --xdh-color-surface-1:     var(--xdh-dark-color-surface-1);
+    --xdh-color-surface-2:     var(--xdh-dark-color-surface-2);
+    --xdh-color-surface-3:     var(--xdh-dark-color-surface-3);
+    --xdh-color-surface-4:     var(--xdh-dark-color-surface-4);
+    --xdh-color-surface-hover: var(--xdh-dark-color-surface-hover);
+    --xdh-color-primary:       var(--xdh-brand-pink);
+    --xdh-color-border:        var(--xdh-dark-color-border);
+    --xdh-color-text-primary:  var(--xdh-dark-color-text-primary);
+    --xdh-color-text-secondary:var(--xdh-dark-color-text-secondary);
+    --xdh-color-hover:         var(--xdh-dark-color-hover);
+    --xdh-color-success:       #4caf50;
+    --xdh-scrollbar-thumb:     var(--xdh-dark-scrollbar-thumb);
+    --xdh-scrollbar-track:     transparent;
+    --xdh-scrollbar-thumb-hover: var(--xdh-brand-pink);
 }
 
 body[data-theme="light"] {
@@ -161,6 +193,99 @@ body[data-theme="light"] {
     --xdh-inner-icon-filter: brightness(0) saturate(100%) invert(13%);
     --xdh-inner-icon-filter-active: brightness(0) saturate(100%)
         invert(13%);
+
+    /* ── V2 Component Aliases (Light, formula-driven) ─────
+     * 不是生硬的 1-l，而是“反演 + 压缩 + 偏置”：
+     * 1) 亮度映射保留层级；2) 色度收敛防止脏灰；3) 深色改动自动联动。
+     * ─────────────────────────────────────────────────── */
+    --xdh-color-background: #ffffff;
+    --xdh-color-surface-1: #ffffff;
+    --xdh-color-surface-2: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-color-surface-2)
+            calc(1 - l)
+            calc(c * 0.32)
+            h
+        ) 48%,
+        white 52%
+    );
+    --xdh-color-surface-3: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-color-surface-3)
+            calc(1 - l)
+            calc(c * 0.34)
+            h
+        ) 54%,
+        white 46%
+    );
+    --xdh-color-surface-4: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-color-surface-4)
+            calc(1 - l)
+            calc(c * 0.36)
+            h
+        ) 62%,
+        white 38%
+    );
+    --xdh-color-surface-hover: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-color-surface-hover)
+            calc(1 - l)
+            calc(c * 0.34)
+            h
+        ) 58%,
+        white 42%
+    );
+    --xdh-color-primary: var(--xdh-brand-pink);
+    --xdh-color-border: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-color-border)
+            calc(1 - l)
+            calc(c * 0.40)
+            h
+        ) 58%,
+        white 42%
+    );
+    --xdh-color-text-primary: oklch(
+        from var(--xdh-dark-color-text-primary)
+        calc((1 - l) * 0.65 + 0.16)
+        calc(c * 0.55)
+        h
+    );
+    --xdh-color-text-secondary: oklch(
+        from var(--xdh-dark-color-text-secondary)
+        calc((1 - l) * 0.70 + 0.22)
+        calc(c * 0.45)
+        h
+    );
+    --xdh-color-hover: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-color-hover)
+            calc(1 - l)
+            calc(c * 0.32)
+            h
+        ) 56%,
+        white 44%
+    );
+    --xdh-color-success: #4caf50;
+    --xdh-scrollbar-thumb: color-mix(
+        in oklch,
+        oklch(
+            from var(--xdh-dark-scrollbar-thumb)
+            calc(1 - l)
+            calc(c * 0.36)
+            h
+        ) 55%,
+        white 45%
+    );
+    --xdh-scrollbar-track: transparent;
+    --xdh-scrollbar-thumb-hover: var(--xdh-brand-pink);
 }
 
 .xz3r0-datahub-window[data-theme="light"] {

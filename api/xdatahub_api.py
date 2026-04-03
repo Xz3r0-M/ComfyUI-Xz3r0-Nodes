@@ -12,6 +12,8 @@ import mimetypes
 import os
 import re
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Generator
@@ -91,6 +93,11 @@ MAX_TRIGGER_WORDS = 256
 MAX_TRIGGER_WORD_LEN = 200
 MAX_TRIGGER_WORD_NOTE_LEN = 300
 MAX_LORA_NOTE_LEN = 1000
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+XDATAHUB_ROOT_NAME = "XDataSaved"
+XDATAHUB_SETTINGS_ROOT = Path(
+    "E:/AI/custom_nodes/ComfyUI-Xz3r0-Nodes/XDataSaved/settings"
+)
 
 MEDIA_TYPE_EXT = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"},
@@ -389,8 +396,20 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def xdatahub_root() -> Path:
+    root = PROJECT_ROOT / XDATAHUB_ROOT_NAME
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def data_root() -> Path:
-    root = Path(__file__).resolve().parent.parent / "XDataSaved"
+    root = xdatahub_root() / "database"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def settings_root() -> Path:
+    root = XDATAHUB_SETTINGS_ROOT
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -1003,6 +1022,11 @@ def build_directory_items(
     else:
         dir_parts = directory.split("/") if directory else []
     _root_names = media_root_names()
+    standard_root_order = [
+        root_name
+        for root_name in ("input", "output")
+        if root_name in _root_names
+    ]
     folder_children: dict[str, str] = {}
     file_rows: list[sqlite3.Row] = []
     for row in rows:
@@ -1028,8 +1052,13 @@ def build_directory_items(
         )
         folder_children[remain[0]] = child_path
 
+    if not dir_parts and not custom_scope:
+        for root_name in standard_root_order:
+            folder_children.setdefault(root_name, root_name)
+
+    custom_titles = custom_media_root_titles()
     folder_items = [
-        map_folder_item(path, title)
+        map_folder_item(path, custom_titles.get(title, title))
         for title, path in sorted(
             folder_children.items(),
             key=lambda item: item[0].lower(),
@@ -1253,7 +1282,7 @@ XDATAHUB_SETTINGS_FILE_LOCK = threading.RLock()
 class MediaStore:
     def __init__(self) -> None:
         self.db_path = data_root() / "media_index.db"
-        self.thumb_root = data_root() / "thumb_cache"
+        self.thumb_root = xdatahub_root() / "thumb_cache"
         self.thumb_root.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -2228,7 +2257,8 @@ class LoraStore:
 
             # 查询该目录级别的 LORA 文件
             query_files = (
-                "SELECT public_ref, rel_path, filename, mtime, size "
+                "SELECT public_ref, rel_path, filename, mtime, size, "
+                "trigger_words_json, lora_note, strength_model, strength_clip "
                 "FROM lora_items WHERE valid=1"
             )
             params_files = []
@@ -2257,6 +2287,10 @@ class LoraStore:
                 filename = str(row[2] or "")
                 mtime = float(row[3] or 0)
                 size = int(row[4] or 0)
+                trigger_words_json = str(row[5] or "[]")
+                lora_note = str(row[6] or "")
+                strength_model = row[7]
+                strength_clip = row[8]
                 file_items.append(
                     _lora_item_payload_from_db(
                         root,
@@ -2265,6 +2299,10 @@ class LoraStore:
                         filename,
                         mtime,
                         size,
+                        trigger_words_json,
+                        lora_note,
+                        strength_model,
+                        strength_clip,
                     )
                 )
 
@@ -2329,6 +2367,10 @@ def _lora_item_payload_from_db(
     filename: str,
     mtime: float,
     size: int,
+    trigger_words_json: str = "[]",
+    lora_note: str = "",
+    strength_model: Any = None,
+    strength_clip: Any = None,
 ) -> dict[str, Any]:
     """从数据库记录构建 LORA 项目的载体"""
     saved_at = ""
@@ -2342,16 +2384,30 @@ def _lora_item_payload_from_db(
         "media_type": "lora",
         "media_ref": normalize_lora_public_ref(public_ref),
         "file_ext": Path(rel_path).suffix.lower(),
+        "has_thumbnail": False,
     }
     if mtime:
         extra["mtime"] = float(mtime)
     if size:
         extra["size"] = int(size)
+    trigger_words = _parse_lora_trigger_words_json(
+        str(trigger_words_json or "[]")
+    )
+    if trigger_words:
+        extra["trigger_words"] = trigger_words
+    safe_lora_note = str(lora_note or "").strip()
+    if safe_lora_note:
+        extra["lora_note"] = safe_lora_note
+    normalized_model_strength = normalize_lora_strength(strength_model, 1.0)
+    normalized_clip_strength = normalize_lora_strength(strength_clip, 1.0)
+    extra["strength_model"] = normalized_model_strength
+    extra["strength_clip"] = normalized_clip_strength
     if root is not None:
         try:
             lora_path = root / rel_path
             thumb_path = find_lora_thumbnail(lora_path)
             if thumb_path is not None:
+                extra["has_thumbnail"] = True
                 extra["thumb_url"] = lora_thumb_url(public_ref)
         except Exception:
             pass
@@ -3076,11 +3132,12 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "store_lora_db_in_loras": False,
         "media_custom_roots": [],
         "theme_mode": "dark",
+        "disable_interaction_while_running": True,
     }
 
 
 def xdatahub_settings_path() -> Path:
-    return data_root() / "xdatahub_settings.json"
+    return settings_root() / "xdatahub_settings.json"
 
 
 def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
@@ -3151,6 +3208,10 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()
         if theme_mode in THEME_MODE_VALUES:
             patch["theme_mode"] = theme_mode
+    if "disable_interaction_while_running" in value:
+        patch["disable_interaction_while_running"] = parse_bool(
+            value.get("disable_interaction_while_running")
+        )
     if "ui_locale" in value:
         raw_locale = str(value.get("ui_locale") or "").strip()
         if raw_locale:
@@ -3228,7 +3289,7 @@ def safe_db_name(value: str) -> str:
 
 
 def user_critical_registry_path() -> Path:
-    return data_root() / "user_critical_db_list.json"
+    return settings_root() / "user_critical_db_list.json"
 
 
 def list_db_name_set() -> set[str]:
@@ -3530,7 +3591,7 @@ def map_favorite_item(row: dict[str, Any]) -> dict[str, Any]:
         "kind": "favorite",
         "title": row["extra_header"] or row["data_type"],
         "saved_at": row["created_at"],
-        "path": f"XDataSaved/{FAVORITES_DB_NAME}",
+        "path": f"XDataSaved/database/{FAVORITES_DB_NAME}",
         "previewable": True,
         "extra": {
             "favorite_id": row["id"],
@@ -3835,7 +3896,7 @@ def map_record_item(row: dict[str, Any]) -> dict[str, Any]:
         "kind": "record",
         "title": row["extra_header"] or row["data_type"],
         "saved_at": row["saved_at"],
-        "path": f"XDataSaved/{row['db_name']}",
+        "path": f"XDataSaved/database/{row['db_name']}",
         "previewable": True,
         "extra": {
             "record_id": row["id"],
@@ -4060,6 +4121,20 @@ async def api_settings_update(request: web.Request) -> web.Response:
         )
         return json_error("internal_error", status=500)
     return web.json_response({"status": "success", "settings": settings})
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/open-db-folder")
+async def api_open_db_folder(request: web.Request) -> web.Response:
+    """用系统文件管理器打开数据库存放目录。仅 Windows 支持。"""
+    if sys.platform != "win32":
+        return web.json_response({"status": "unsupported"})
+    db_dir = str(data_root().resolve())
+    try:
+        subprocess.Popen(["explorer", db_dir])
+    except Exception as exc:
+        LOGGER.warning("[xdatahub] open-db-folder failed: %s", exc)
+        return json_error("internal_error", status=500)
+    return web.json_response({"status": "success"})
 
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/records")
@@ -4883,7 +4958,7 @@ async def api_media_upload(request: web.Request) -> web.Response:
             Path(folder_paths.get_input_directory()) / "xdatahub_uploads"
         )
     else:
-        target_dir = data_root() / "xdatahub_uploads"
+        target_dir = xdatahub_root() / "xdatahub_uploads"
     target_dir.mkdir(parents=True, exist_ok=True)
 
     try:
