@@ -312,7 +312,9 @@ class XLoraGet(io.ComfyNode):
     @staticmethod
     def _settings_path() -> Path:
         return (
-            Path("E:/AI/custom_nodes/ComfyUI-Xz3r0-Nodes/XDataSaved/settings")
+            Path(__file__).resolve().parent.parent
+            / "XDataSaved"
+            / "settings"
             / "xdatahub_settings.json"
         )
 

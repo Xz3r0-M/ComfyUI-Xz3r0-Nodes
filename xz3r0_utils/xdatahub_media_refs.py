@@ -60,7 +60,9 @@ def xdatahub_settings_path() -> Path:
     返回 XDataHub 设置文件路径。
     """
     return (
-        Path("E:/AI/custom_nodes/ComfyUI-Xz3r0-Nodes/XDataSaved/settings")
+        Path(__file__).resolve().parent.parent
+        / "XDataSaved"
+        / "settings"
         / "xdatahub_settings.json"
     )
 

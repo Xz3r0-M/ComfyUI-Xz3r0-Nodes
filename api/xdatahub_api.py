@@ -101,9 +101,7 @@ MAX_TRIGGER_WORD_NOTE_LEN = 300
 MAX_LORA_NOTE_LEN = 1000
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 XDATAHUB_ROOT_NAME = "XDataSaved"
-XDATAHUB_SETTINGS_ROOT = Path(
-    "E:/AI/custom_nodes/ComfyUI-Xz3r0-Nodes/XDataSaved/settings"
-)
+XDATAHUB_SETTINGS_ROOT = PROJECT_ROOT / XDATAHUB_ROOT_NAME / "settings"
 
 MEDIA_TYPE_EXT = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"},
