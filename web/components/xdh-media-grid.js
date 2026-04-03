@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260403-8";
+import { t } from "../core/i18n.js?v=20260403-9";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -73,7 +73,7 @@ function renderLoraMeta(item) {
         badges.push(`
             <span class="lora-badge is-active">
                 ${icon("wand-sparkles", 10)}
-                <span>${t("lora.label.trigger_words")}</span>
+                <span>${t("lora.badge.trigger")}</span>
             </span>`);
     }
 
@@ -805,7 +805,11 @@ export class XdhMediaGrid extends BaseElement {
                     padding: 0 8px 8px;
                     background: linear-gradient(
                         transparent,
-                        rgba(0,0,0,0.78)
+                        color-mix(
+                            in srgb,
+                            var(--xdh-color-surface-1, #1e1e1e) 92%,
+                            transparent
+                        )
                     );
                 }
                 .lora-badge {
@@ -816,7 +820,7 @@ export class XdhMediaGrid extends BaseElement {
                     padding: 0 7px;
                     border-radius: 999px;
                     border: 1px solid var(--xdh-color-border, #333);
-                    background: rgba(0,0,0,0.45);
+                    background: var(--xdh-color-surface-2, #2a2a2a);
                     color: var(--xdh-color-text-secondary, #aaa);
                     font-size: 10px;
                     font-weight: 600;
@@ -825,7 +829,11 @@ export class XdhMediaGrid extends BaseElement {
                 .lora-badge.is-active {
                     border-color: var(--xdh-brand-pink, #EA005E);
                     color: var(--xdh-color-text-primary, #f0f0f0);
-                    background: rgba(0,0,0,0.62);
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-2, #2a2a2a) 78%,
+                        var(--xdh-color-primary, #EA005E) 22%
+                    );
                 }
 
                 .thumb-failed .thumb-img,

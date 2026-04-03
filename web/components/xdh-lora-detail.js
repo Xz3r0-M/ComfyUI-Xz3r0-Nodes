@@ -6,7 +6,7 @@ import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { apiGet, apiPost } from "../core/api.js?v=20260403-412";
 import { appStore } from "../core/store.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260403-8";
+import { t } from "../core/i18n.js?v=20260403-9";
 
 function escapeHtml(value) {
     return String(value || "")
