@@ -1,6 +1,31 @@
 import { appStore } from './store.js';
 import { installTooltips } from './tooltip.js';
 
+const TOKEN_STYLESHEET_SELECTOR =
+    'link[rel="stylesheet"][href*="xdatahub-color-tokens.css"]';
+const FALLBACK_TOKEN_STYLESHEET_URL = 'xdatahub-color-tokens.css';
+
+let cachedTokenStylesheetUrl = '';
+
+function getTokenStylesheetUrl() {
+    if (cachedTokenStylesheetUrl) {
+        return cachedTokenStylesheetUrl;
+    }
+    const linkEl = document.querySelector(TOKEN_STYLESHEET_SELECTOR);
+    const href = linkEl?.getAttribute('href');
+    cachedTokenStylesheetUrl = href || FALLBACK_TOKEN_STYLESHEET_URL;
+    return cachedTokenStylesheetUrl;
+}
+
+export function registerCustomElement(tagName, elementClass) {
+    const existing = customElements.get(tagName);
+    if (!existing) {
+        customElements.define(tagName, elementClass);
+        return elementClass;
+    }
+    return existing;
+}
+
 export class BaseElement extends HTMLElement {
     constructor() {
         super();
@@ -38,7 +63,7 @@ export class BaseElement extends HTMLElement {
         if (!this._coreStyleEl) {
             this._coreStyleEl = document.createElement('style');
             this._coreStyleEl.textContent = `
-                @import url('xdatahub-color-tokens.css');
+                @import url('${getTokenStylesheetUrl()}');
                 :host {
                     box-sizing: border-box;
                     display: block;

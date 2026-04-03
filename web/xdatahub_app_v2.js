@@ -4,24 +4,24 @@ import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl,
-} from "./core/api.js?v=20260402-411";
+} from "./core/api.js?v=20260403-412";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260403-8";
 
 // Components (side-effect imports to register custom elements)
-import "./components/xdh-button.js?v=20260402-381";
-import "./components/xdh-sidebar-filter.js?v=20260403-13";
-import "./components/xdh-media-grid.js?v=20260403-10";
-import "./components/xdh-staging-dock.js?v=20260403-409";
-import "./components/xdh-node-picker.js?v=20260403-407";
-import "./core/node-bridge.js?v=20260402-398";
-import "./components/xdh-content-nav.js?v=20260403-15";
-import "./components/xdh-pagination.js?v=20260403-9";
-import "./components/xdh-lightbox.js?v=20260403-21";
-import "./components/xdh-history-view.js?v=20260403-3";
-import "./components/xdh-banner.js?v=20260403-382";
-import "./components/xdh-lora-detail.js?v=20260403-403";
-import "./components/xdh-settings-dialog.js?v=20260403-8";
+import "./components/xdh-button.js?v=20260403-383";
+import "./components/xdh-sidebar-filter.js?v=20260403-16";
+import "./components/xdh-media-grid.js?v=20260403-13";
+import "./components/xdh-staging-dock.js?v=20260403-412";
+import "./components/xdh-node-picker.js?v=20260403-411";
+import "./core/node-bridge.js?v=20260403-399";
+import "./components/xdh-content-nav.js?v=20260403-17";
+import "./components/xdh-pagination.js?v=20260403-11";
+import "./components/xdh-lightbox.js?v=20260403-23";
+import "./components/xdh-history-view.js?v=20260403-6";
+import "./components/xdh-banner.js?v=20260403-384";
+import "./components/xdh-lora-detail.js?v=20260403-406";
+import "./components/xdh-settings-dialog.js?v=20260403-10";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -63,22 +63,50 @@ const THEME_MODE_VALUES = new Set(["dark", "light"]);
 let lockRefreshTimer = 0;
 let lockRefreshInFlight = null;
 let lockRefreshQueued = false;
+let hasShownLockStatusError = false;
 
 function normalizeThemeMode(mode) {
     const nextMode = String(mode || "").trim().toLowerCase();
     return THEME_MODE_VALUES.has(nextMode) ? nextMode : "dark";
 }
 
+function normalizeMessageOrigin(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+    try {
+        const origin = new URL(value, window.location.href).origin;
+        return origin === "null" ? "" : origin;
+    } catch {
+        return "";
+    }
+}
+
+function getParentTargetOrigin() {
+    const referrerOrigin = normalizeMessageOrigin(document.referrer || "");
+    if (referrerOrigin) {
+        return referrerOrigin;
+    }
+    return normalizeMessageOrigin(window.location.origin || "");
+}
+
+function isTrustedParentMessage(event) {
+    return event?.source === window.parent
+        && normalizeMessageOrigin(String(event.origin || ""))
+            === getParentTargetOrigin();
+}
+
 function postThemeModeToHost(mode) {
     if (!window.parent || window.parent === window) {
         return;
     }
+    const targetOrigin = getParentTargetOrigin();
     window.parent.postMessage(
         {
             type: "xdatahub:theme-mode",
             theme_mode: normalizeThemeMode(mode),
         },
-        "*"
+        targetOrigin
     );
 }
 
@@ -186,6 +214,9 @@ appStore.state.dbTaskBusy = false;
 syncCategoryToUrl(appStore.state.activeCategory, { replace: true });
 
 window.addEventListener("message", (event) => {
+    if (!isTrustedParentMessage(event)) {
+        return;
+    }
     const payload = event?.data;
     if (!payload || typeof payload !== "object") {
         return;
@@ -375,8 +406,13 @@ async function refreshLockState() {
         try {
             const res = await loadLockStatus();
             setLockState(res);
+            hasShownLockStatusError = false;
         } catch (e) {
             console.warn("[xdh-v2] Failed to refresh lock state", e);
+            if (!hasShownLockStatusError) {
+                hasShownLockStatusError = true;
+                banner.warn(t("nav.banner.lock_status_fail"));
+            }
         } finally {
             lockRefreshInFlight = null;
             if (lockRefreshQueued) {
@@ -626,6 +662,7 @@ appStore.subscribe(async (state, key) => {
     const pageSnapshot = state.currentPage || 1;
 
     appStore.state.isLoading = true;
+    appStore.state.loadError = "";
     const shouldResetSelection = key !== "currentPage";
     if (
         shouldResetSelection
@@ -646,6 +683,7 @@ appStore.subscribe(async (state, key) => {
         appStore.state.mediaList = raw.map(
             item => mapItem(item, categorySnapshot)
         );
+        appStore.state.loadError = "";
         appStore.state.currentPage = res.page        || 1;
         appStore.state.totalPages  = res.total_pages || 1;
         if (res.lock_state) {
@@ -660,6 +698,9 @@ appStore.subscribe(async (state, key) => {
         }
         console.error("[xdh-v2] Failed to load list", e);
         appStore.state.mediaList = [];
+        appStore.state.totalPages = 1;
+        appStore.state.loadError = t("error.load_fail");
+        banner.error(t("error.load_fail"));
     } finally {
         if (requestToken !== latestListLoadToken) {
             return;

@@ -5,6 +5,55 @@ const CATEGORY_PARAMS = {
     audio:  { media_type: "audio", dir: "" },
 };
 
+const MOCK_MODE_QUERY_KEYS = ["xdh_mock", "xdh_offline"];
+
+function isTruthyFlag(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return normalized === "1"
+        || normalized === "true"
+        || normalized === "yes"
+        || normalized === "on";
+}
+
+function isMockModeEnabled() {
+    try {
+        const url = new URL(window.location.href);
+        return MOCK_MODE_QUERY_KEYS.some((key) =>
+            isTruthyFlag(url.searchParams.get(key))
+        );
+    } catch {
+        return false;
+    }
+}
+
+function buildApiError(path, url, error, status = 0) {
+    if (error instanceof Error) {
+        error.path = path;
+        error.url = url;
+        if (status > 0) {
+            error.status = status;
+        }
+        return error;
+    }
+
+    const fallbackError = new Error(String(error || "Request failed"));
+    fallbackError.path = path;
+    fallbackError.url = url;
+    if (status > 0) {
+        fallbackError.status = status;
+    }
+    return fallbackError;
+}
+
+function buildMockListResponse(label = "Item", count = 12) {
+    return {
+        items: makeMockItems(count, label),
+        page: 1,
+        total_pages: 1,
+        total: count,
+    };
+}
+
 function makeMockItems(count, label = "Item") {
     return Array.from({ length: count }, (_, i) => ({
         id: `mock:${label.toLowerCase()}_${i}.png`,
@@ -16,7 +65,8 @@ function makeMockItems(count, label = "Item") {
     }));
 }
 
-export async function apiGet(path, query = {}) {
+export async function apiGet(path, query = {}, options = {}) {
+    const fallbackFactory = options.fallbackFactory;
     const url = new URL(path, window.location.origin);
     Object.entries(query).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== "") {
@@ -25,14 +75,29 @@ export async function apiGet(path, query = {}) {
     });
     try {
         const response = await fetch(url.toString(), { method: "GET" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            throw buildApiError(
+                path,
+                url.toString(),
+                new Error(`HTTP ${response.status}`),
+                response.status
+            );
+        }
         return await response.json();
     } catch (e) {
-        console.warn("[xdh-api] GET failed, returning mock data.", e);
-        return {
-            items: makeMockItems(12),
-            page: 1, total_pages: 1, total: 12,
-        };
+        const error = buildApiError(path, url.toString(), e);
+        if (
+            typeof fallbackFactory === "function"
+            && isMockModeEnabled()
+        ) {
+            console.warn(
+                `[xdh-api] GET ${path} failed in mock/offline mode, returning mock data.`,
+                error
+            );
+            return fallbackFactory(error);
+        }
+        console.warn(`[xdh-api] GET ${path} failed.`, error);
+        throw error;
     }
 }
 
@@ -64,6 +129,8 @@ export async function loadMediaList(category, page = 1, pageSize = 50, dir = "")
         page,
         page_size:  pageSize,
         flat:       0,
+    }, {
+        fallbackFactory: () => buildMockListResponse(category || "Item"),
     });
 }
 
@@ -72,18 +139,24 @@ export async function loadLoraList(page = 1, pageSize = 50, dir = "") {
         page,
         page_size: pageSize,
         dir: dir || undefined,
+    }, {
+        fallbackFactory: () => buildMockListResponse("Lora"),
     });
 }
 
 export async function loadRecords(page = 1, pageSize = 50) {
     return await apiGet("/xz3r0/xdatahub/records", {
         page, page_size: pageSize, sort_order: "desc",
+    }, {
+        fallbackFactory: () => buildMockListResponse("Record"),
     });
 }
 
 export async function loadFavorites(page = 1, pageSize = 50) {
     return await apiGet("/xz3r0/xdatahub/favorites", {
         page, page_size: pageSize, sort_order: "desc",
+    }, {
+        fallbackFactory: () => buildMockListResponse("Favorite"),
     });
 }
 
@@ -118,15 +191,8 @@ export async function removeFavorite(favoriteId) {
 }
 
 export async function loadLockStatus() {
-    try {
-        const response = await fetch("/xz3r0/xdatahub/lock/status", {
-            method: "GET"
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-    } catch (e) {
-        console.warn("[xdh-api] lock status failed, returning idle state.", e);
-        return {
+    return await apiGet("/xz3r0/xdatahub/lock/status", {}, {
+        fallbackFactory: () => ({
             status: "success",
             state: "IDLE",
             readonly: false,
@@ -137,8 +203,8 @@ export async function loadLockStatus() {
             queue_pending: 0,
             interrupt_requested: false,
             last_event: "fallback",
-        };
-    }
+        }),
+    });
 }
 
 export function buildMediaUrl(mediaRef) {

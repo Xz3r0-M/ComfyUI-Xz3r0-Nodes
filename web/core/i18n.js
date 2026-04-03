@@ -22,6 +22,7 @@ const Dictionary = {
         'error.network':        '节点通信中断',
         'error.load_fail':      '加载失败，请稍后重试',
         'error.save_fail':      '保存失败，请重试',
+        'nav.banner.lock_status_fail': '状态同步失败，将稍后重试',
 
         // ── nav — sidebar categories ─────────────────────────
         'nav.cat.image':        '图片',
@@ -103,8 +104,8 @@ const Dictionary = {
         'nav.drawer.clean_invalid': '清理无效项',
         'nav.drawer.clean_index':   '完全重建当前索引',
         'nav.drawer.clean_data':    '清理全部数据',
-        'nav.drawer.clean_data_confirm':
-            '⚠️ 此操作将清理全部索引数据，确认继续？',        'nav.drawer.open_db_folder': '打开数据库文件夹',
+            'nav.drawer.clean_data_confirm': '⚠️ 此操作将清理全部索引数据，确认继续？',
+            'nav.drawer.open_db_folder': '打开数据库文件夹',
         'nav.banner.open_db_folder_ok':   '已在文件管理器中打开',
         'nav.banner.open_db_folder_fail': '打开文件夹失败，请重试',
         'nav.banner.open_db_unsupported': '当前平台不支持。',
@@ -224,10 +225,7 @@ const Dictionary = {
         'settings.sect.exec':           '执行行为',
         'settings.disable_interaction_running': '执行中禁止交互',
         'exec.overlay.running':         '工作中，请稍候…',
-        'nav.drawer.open_db_folder':    '打开数据库文件夹',
-        'nav.banner.open_db_folder_ok':   '已在文件管理器中打开',
-        'nav.banner.open_db_folder_fail': '打开文件夹失败，请重试',
-        'nav.banner.open_db_unsupported': '当前平台不支持。',    },
+        },
 
     'en': {
         // ── common ──────────────────────────────────────────
@@ -250,6 +248,7 @@ const Dictionary = {
         'error.network':        'Node communication lost',
         'error.load_fail':      'Load failed, please try again',
         'error.save_fail':      'Save failed, please retry',
+        'nav.banner.lock_status_fail': 'Lock status refresh failed. Retrying shortly.',
 
         // ── nav — sidebar categories ─────────────────────────
         'nav.cat.image':        'Images',

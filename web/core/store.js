@@ -37,6 +37,7 @@ export const appStore = new Store({
     activeFolder: '',
     mediaList: [],         // Currently displayed items
     isLoading: false,
+    loadError: '',
     selectedItems: [],     // Items mapped to Staging Dock
     loraDetailOpen: false,
     isCompact: false,      // Track responsive state

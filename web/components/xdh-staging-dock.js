@@ -1,4 +1,7 @@
-import { BaseElement } from '../core/base-element.js';
+import {
+    BaseElement,
+    registerCustomElement,
+} from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
 import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
 import { t } from '../core/i18n.js?v=20260403-8';
@@ -7,7 +10,7 @@ import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-40
 import {
     sendToNode,
     CATEGORY_NODE_CLASS,
-} from '../core/node-bridge.js?v=20260402-398';
+} from '../core/node-bridge.js?v=20260403-399';
 
 function escapeAttr(value) {
     return String(value || '')
@@ -429,4 +432,4 @@ export class XdhStagingDock extends BaseElement {
     }
 }
 
-customElements.define('xdh-staging-dock', XdhStagingDock);
+registerCustomElement('xdh-staging-dock', XdhStagingDock);

@@ -1,7 +1,18 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { appStore as store } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { t } from "../core/i18n.js?v=20260403-8";
+
+function escapeAttr(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
 
 // Categories definition — single source of truth
 const MEDIA_CATEGORIES = [
@@ -61,7 +72,7 @@ export class XdhSidebarFilter extends BaseElement {
             return `
             <div class="filter-item xdh-tooltip ${c.kind === this.activeKind ? "active" : ""}"
                  data-kind="${c.kind}"
-                 data-tooltip="${label}">
+                 data-tooltip="${escapeAttr(label)}">
                 ${icon(c.iconName, 18)}
             </div>`;
         }).join("");
@@ -148,5 +159,5 @@ export class XdhSidebarFilter extends BaseElement {
     }
 }
 
-customElements.define("xdh-sidebar-filter", XdhSidebarFilter);
+registerCustomElement("xdh-sidebar-filter", XdhSidebarFilter);
 

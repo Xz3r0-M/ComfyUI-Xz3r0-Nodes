@@ -1,4 +1,7 @@
-import { BaseElement } from '../core/base-element.js';
+import {
+    BaseElement,
+    registerCustomElement,
+} from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
 import { t } from '../core/i18n.js?v=20260403-8';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
@@ -6,7 +9,7 @@ import { SCROLLBAR_CSS } from '../core/icon.js';
 import {
     requestNodes,
     CATEGORY_NODE_CLASS,
-} from '../core/node-bridge.js?v=20260402-398';
+} from '../core/node-bridge.js?v=20260403-399';
 
 function compareNodeByIdAsc(left, right) {
     const leftId = String(left?.id ?? '');
@@ -110,7 +113,7 @@ export class XdhNodePicker extends BaseElement {
         const searchInput = this.$('.picker-search input');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
-                this.searchQuery = e.target.value.toLowerCase();
+                this.searchQuery = String(e.target?.value || '');
                 this.renderRoot();
                 // re-focus input since renderRoot recreates DOM
                 const newSearchInput = this.$('.picker-search input');
@@ -196,11 +199,14 @@ export class XdhNodePicker extends BaseElement {
     }
 
     render() {
+        const normalizedSearchQuery = this.searchQuery.toLowerCase();
+
         // Filter nodes based on search query
         const filteredNodes = this.nodes.filter(n => {
-            if (!this.searchQuery) return true;
-            return String(n.title || '').toLowerCase().includes(this.searchQuery)
-                || String(n.id).includes(this.searchQuery);
+            if (!normalizedSearchQuery) return true;
+            return String(n.title || '').toLowerCase().includes(
+                normalizedSearchQuery
+            ) || String(n.id).includes(normalizedSearchQuery);
         });
 
         const getColor = (node) => resolveTokenAccentFromNode(node);
@@ -469,4 +475,4 @@ export class XdhNodePicker extends BaseElement {
     }
 }
 
-customElements.define('xdh-node-picker', XdhNodePicker);
+registerCustomElement('xdh-node-picker', XdhNodePicker);

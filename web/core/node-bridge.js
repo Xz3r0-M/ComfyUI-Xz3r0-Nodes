@@ -13,12 +13,74 @@ let _seq = 0;
 const _pendingNodes = new Map();
 const _pendingSend  = new Map();
 
+function normalizeOrigin(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+    try {
+        const origin = new URL(value, window.location.href).origin;
+        return origin === "null" ? "" : origin;
+    } catch {
+        return "";
+    }
+}
+
+function getConfiguredParentOrigins() {
+    const configured = window.__XDH_ALLOWED_PARENT_ORIGINS__;
+    if (Array.isArray(configured)) {
+        return configured
+            .map((value) => normalizeOrigin(String(value || "")))
+            .filter(Boolean);
+    }
+    if (typeof configured === "string") {
+        return configured
+            .split(",")
+            .map((value) => normalizeOrigin(value.trim()))
+            .filter(Boolean);
+    }
+    return [];
+}
+
+function getAllowedParentOrigins() {
+    const origins = new Set(getConfiguredParentOrigins());
+    const referrerOrigin = normalizeOrigin(document.referrer || "");
+    if (referrerOrigin) {
+        origins.add(referrerOrigin);
+    }
+    const currentOrigin = normalizeOrigin(window.location.origin || "");
+    if (currentOrigin) {
+        origins.add(currentOrigin);
+    }
+    return origins;
+}
+
+function getParentTargetOrigin() {
+    const referrerOrigin = normalizeOrigin(document.referrer || "");
+    if (referrerOrigin) {
+        return referrerOrigin;
+    }
+    const configuredOrigins = getConfiguredParentOrigins();
+    if (configuredOrigins.length > 0) {
+        return configuredOrigins[0];
+    }
+    return normalizeOrigin(window.location.origin || "");
+}
+
+function isAllowedParentMessage(event) {
+    if (!event || event.source !== window.parent) {
+        return false;
+    }
+    return getAllowedParentOrigins().has(String(event.origin || ""));
+}
+
 function nextId() {
     _seq += 1;
     return `v2_nb_${Date.now()}_${_seq}`;
 }
 
 function handleMessage(event) {
+    if (!isAllowedParentMessage(event)) return;
+
     const payload = event?.data;
     if (!payload || typeof payload !== "object") return;
 
@@ -54,6 +116,7 @@ if (!window.__xdh_node_bridge_installed__) {
 export function requestNodes(nodeClass) {
     return new Promise((resolve) => {
         const requestId = nextId();
+        const targetOrigin = getParentTargetOrigin();
         const timer = setTimeout(() => {
             _pendingNodes.delete(requestId);
             resolve([]);
@@ -66,7 +129,7 @@ export function requestNodes(nodeClass) {
                     request_id: requestId,
                     node_class: nodeClass,
                 },
-                "*"
+                targetOrigin
             );
         } catch {
             clearTimeout(timer);
@@ -90,6 +153,7 @@ export function requestNodes(nodeClass) {
 export function sendToNode(data) {
     return new Promise((resolve) => {
         const requestId = nextId();
+        const targetOrigin = getParentTargetOrigin();
         const timer = setTimeout(() => {
             _pendingSend.delete(requestId);
             resolve({ ok: false, error: "timeout" });
@@ -108,7 +172,7 @@ export function sendToNode(data) {
                         title: String(data.title || ""),
                     },
                 },
-                "*"
+                targetOrigin
             );
         } catch {
             clearTimeout(timer);

@@ -135,7 +135,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260403-38";
+const XDATAHUB_ASSET_VER = "20260403-41";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -147,6 +147,37 @@ let lockEventBridgeInstalled = false;
 function normalizeThemeMode(value) {
     const mode = String(value || "").trim().toLowerCase();
     return XDATAHUB_THEME_MODE_VALUES.has(mode) ? mode : "dark";
+}
+
+function normalizeMessageOrigin(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+    try {
+        const origin = new URL(value, window.location.href).origin;
+        return origin === "null" ? "" : origin;
+    } catch {
+        return "";
+    }
+}
+
+const XDATAHUB_HOST_ORIGIN = normalizeMessageOrigin(window.location.origin);
+
+function getDataFrameTargetOrigin(frame) {
+    return normalizeMessageOrigin(frame?.src || "") || XDATAHUB_HOST_ORIGIN;
+}
+
+function isTrustedDataFrameMessage(event) {
+    const iframeWindow = xdataHubRef?.instance?.dataFrame?.contentWindow || null;
+    return event?.source === iframeWindow
+        && normalizeMessageOrigin(String(event.origin || ""))
+            === getDataFrameTargetOrigin(xdataHubRef?.instance?.dataFrame);
+}
+
+function isTrustedHostMessage(event) {
+    return event?.source === window
+        && normalizeMessageOrigin(String(event.origin || ""))
+            === XDATAHUB_HOST_ORIGIN;
 }
 
 function ensureColorTokensStylesheet() {
@@ -1791,65 +1822,54 @@ const XDataHub = {
         const updateIframePointerEvents = (value) => {
             dataFrame.style.pointerEvents = value;
         };
-        const postThemeModeToDataFrame = () => {
+        const postToDataFrame = (payload) => {
             if (!dataFrame.contentWindow) {
                 return;
             }
             dataFrame.contentWindow.postMessage(
+                payload,
+                getDataFrameTargetOrigin(dataFrame)
+            );
+        };
+        const postThemeModeToDataFrame = () => {
+            postToDataFrame(
                 {
                     type: "xdatahub:theme-mode",
                     theme_mode: currentThemeMode,
                 },
-                "*"
             );
         };
         const postHotkeySpecToDataFrame = () => {
-            if (!dataFrame.contentWindow) {
-                return;
-            }
-            dataFrame.contentWindow.postMessage(
+            postToDataFrame(
                 {
                     type: "xdatahub:hotkey-spec",
                     hotkey_spec: hotkeySpec,
                 },
-                "*"
             );
         };
         const postInterruptRequestedToDataFrame = () => {
-            if (!dataFrame.contentWindow) {
-                return;
-            }
-            dataFrame.contentWindow.postMessage(
+            postToDataFrame(
                 {
                     type: "xdatahub:interrupt-requested",
                     requested_at: Date.now(),
                 },
-                "*"
             );
         };
         const postUiLocaleToDataFrame = (locale) => {
-            if (!dataFrame.contentWindow) {
-                return;
-            }
-            dataFrame.contentWindow.postMessage(
+            postToDataFrame(
                 {
                     type: "xdatahub:ui-locale",
                     locale: String(locale || "en"),
                 },
-                "*"
             );
         };
         const postLockEventToDataFrame = (reason = "host_event") => {
-            if (!dataFrame.contentWindow) {
-                return;
-            }
-            dataFrame.contentWindow.postMessage(
+            postToDataFrame(
                 {
                     type: "xdatahub:lock-state-dirty",
                     reason: String(reason || "host_event"),
                     at: Date.now(),
                 },
-                "*"
             );
         };
         const postSharedStateToDataFrame = () => {
@@ -1858,13 +1878,7 @@ const XDataHub = {
             postUiLocaleToDataFrame(currentUiLocale);
         };
         const postCloseFacetToDataFrame = () => {
-            if (!dataFrame.contentWindow) {
-                return;
-            }
-            dataFrame.contentWindow.postMessage(
-                { type: "xdatahub:close-facet" },
-                "*"
-            );
+            postToDataFrame({ type: "xdatahub:close-facet" });
         };
         const scheduleVisibleLayoutSync = () => {
             const syncLayout = () => {
@@ -3117,11 +3131,16 @@ installInterruptObserver();
 installLockEventBridge();
 
 window.addEventListener("message", (event) => {
+    const isFrameMessage = isTrustedDataFrameMessage(event);
+    const isHostMessage = isTrustedHostMessage(event);
+    if (!isFrameMessage && !isHostMessage) {
+        return;
+    }
+
     const payload = event.data;
     if (!payload || typeof payload !== "object") {
         return;
     }
-    const iframeWindow = xdataHubRef?.instance?.dataFrame?.contentWindow || null;
     const getNodeRequestId = (data) => {
         if (!data || typeof data !== "object") {
             return "";
@@ -3141,7 +3160,7 @@ window.addEventListener("message", (event) => {
         return "";
     };
     const shouldBridgeNodeMessage = (
-        event.source === iframeWindow
+        isFrameMessage
         && payload.__xdh_shell_forwarded__ !== true
         && (
             payload.type === "xdatahub:request_media_get_nodes"
@@ -3158,6 +3177,7 @@ window.addEventListener("message", (event) => {
         }, 4000);
         bridgedNodeRequests.set(requestId, {
             sourceWindow: event.source,
+            sourceOrigin: normalizeMessageOrigin(String(event.origin || "")),
             timer: cleanupTimer,
         });
         window.postMessage(
@@ -3165,22 +3185,31 @@ window.addEventListener("message", (event) => {
                 ...payload,
                 __xdh_shell_forwarded__: true,
             },
-            "*"
+            XDATAHUB_HOST_ORIGIN
         );
         return;
     }
     if (
-        payload.type === "xdatahub:media_get_nodes"
-        || payload.type === "xdatahub:send_to_node_ack"
+        isHostMessage
+        && (
+            payload.type === "xdatahub:media_get_nodes"
+            || payload.type === "xdatahub:send_to_node_ack"
+        )
     ) {
         const requestId = getNodeRequestId(payload);
         const pending = bridgedNodeRequests.get(requestId);
         if (pending?.sourceWindow?.postMessage) {
             window.clearTimeout(pending.timer);
             bridgedNodeRequests.delete(requestId);
-            pending.sourceWindow.postMessage(payload, "*");
+            pending.sourceWindow.postMessage(
+                payload,
+                pending.sourceOrigin || getDataFrameTargetOrigin()
+            );
             return;
         }
+    }
+    if (!isFrameMessage) {
+        return;
     }
     if (payload.type === "xdatahub:node_send_busy") {
         hostNodeSendBusy = payload.busy === true;
@@ -3191,6 +3220,7 @@ window.addEventListener("message", (event) => {
         const requestId = String(payload.request_id || "");
         const nextSpec = String(payload.hotkey_spec || "").trim();
         const parsed = parseHotkeySpec(nextSpec);
+        const replyOrigin = normalizeMessageOrigin(String(event.origin || ""));
         if (!parsed) {
             event.source?.postMessage?.(
                 {
@@ -3199,7 +3229,7 @@ window.addEventListener("message", (event) => {
                     ok: false,
                     error: "Invalid hotkey format",
                 },
-                "*"
+                replyOrigin
             );
             return;
         }
@@ -3222,7 +3252,7 @@ window.addEventListener("message", (event) => {
                 ok: true,
                 hotkey_spec: hotkeySpec,
             },
-            "*"
+            replyOrigin
         );
         return;
     }

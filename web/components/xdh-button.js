@@ -1,4 +1,7 @@
-import { BaseElement } from '../core/base-element.js';
+import {
+    BaseElement,
+    registerCustomElement,
+} from '../core/base-element.js?v=20260403-2';
 
 export class XdhButton extends BaseElement {
     static get observedAttributes() {
@@ -81,4 +84,4 @@ export class XdhButton extends BaseElement {
     }
 }
 
-customElements.define('xdh-button', XdhButton);
+registerCustomElement('xdh-button', XdhButton);

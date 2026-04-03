@@ -1,4 +1,7 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { t } from "../core/i18n.js?v=20260403-8";
@@ -265,4 +268,4 @@ export class XdhBanner extends BaseElement {
     }
 }
 
-customElements.define("xdh-banner", XdhBanner);
+registerCustomElement("xdh-banner", XdhBanner);

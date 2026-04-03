@@ -1,8 +1,31 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
 import { t } from "../core/i18n.js?v=20260403-7";
+
+function normalizeMessageOrigin(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+    try {
+        const origin = new URL(value, window.location.href).origin;
+        return origin === "null" ? "" : origin;
+    } catch {
+        return "";
+    }
+}
+
+function getParentTargetOrigin() {
+    const referrerOrigin = normalizeMessageOrigin(document.referrer || "");
+    if (referrerOrigin) {
+        return referrerOrigin;
+    }
+    return normalizeMessageOrigin(window.location.origin || "");
+}
 
 async function loadSettings() {
     const res = await fetch("/xz3r0/xdatahub/settings");
@@ -853,9 +876,10 @@ export class XdhSettingsDialog extends BaseElement {
                 const val = el.checked;
                 try { localStorage.setItem(lsKey, val ? "true" : "false"); }
                 catch { /* ignore */ }
+                const targetOrigin = getParentTargetOrigin();
                 window.parent.postMessage(
                     { type: "xdatahub:ls-setting", key: lsKey, value: val },
-                    "*"
+                    targetOrigin
                 );
             });
         });
@@ -967,4 +991,4 @@ export class XdhSettingsDialog extends BaseElement {
     }
 }
 
-customElements.define("xdh-settings-dialog", XdhSettingsDialog);
+registerCustomElement("xdh-settings-dialog", XdhSettingsDialog);

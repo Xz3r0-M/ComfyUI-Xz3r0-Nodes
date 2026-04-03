@@ -1,4 +1,7 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { t } from "../core/i18n.js?v=20260403-8";
@@ -272,6 +275,7 @@ export class XdhMediaGrid extends BaseElement {
             || key === "activeCategory"
             || key === "locale"
             || key === "searchQuery"
+            || key === "loadError"
         ) {
             // Full re-render needed (order or dataset changed)
             if (key === "mediaList") {
@@ -519,6 +523,15 @@ export class XdhMediaGrid extends BaseElement {
                 String(item.name || "").toLowerCase().includes(searchQ)
             )
             : sortedItems;
+        const loadError = String(appStore.state.loadError || "").trim();
+
+        if (loadError) {
+            return `
+                <div class="empty-state is-error">
+                    <span class="empty-icon">${icon("triangle-alert", 18)}</span>
+                    <span>${loadError}</span>
+                </div>`;
+        }
 
         if (filteredItems.length === 0) {
             return `<div class="empty-state">${t(searchQ ? "grid.empty_search" : "grid.empty")}</div>`;
@@ -812,11 +825,23 @@ export class XdhMediaGrid extends BaseElement {
                 }
 
                 .empty-state {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
                     padding: 48px 24px;
                     text-align: center;
                     color: var(--xdh-color-text-secondary, #666);
                     grid-column: 1 / -1;
                     font-size: 14px;
+                }
+                .empty-state.is-error {
+                    color: var(--xdh-brand-pink, #EA005E);
+                }
+                .empty-icon {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
                 }
 
                 /* Filename tooltip */
@@ -848,6 +873,6 @@ export class XdhMediaGrid extends BaseElement {
     }
 }
 
-customElements.define("xdh-media-grid", XdhMediaGrid);
+registerCustomElement("xdh-media-grid", XdhMediaGrid);
 
 

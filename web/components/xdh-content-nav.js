@@ -1,4 +1,7 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
@@ -944,4 +947,4 @@ export class XdhContentNav extends BaseElement {
     }
 }
 
-customElements.define("xdh-content-nav", XdhContentNav);
+registerCustomElement("xdh-content-nav", XdhContentNav);

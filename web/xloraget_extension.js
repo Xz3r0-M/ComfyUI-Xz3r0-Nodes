@@ -533,6 +533,15 @@ function bindTooltip(
     target.addEventListener("mouseleave", () => {
         hideTooltip(tooltip);
     });
+    target.addEventListener("pointerdown", () => {
+        hideTooltip(tooltip);
+    });
+    target.addEventListener("click", () => {
+        hideTooltip(tooltip);
+    });
+    target.addEventListener("blur", () => {
+        hideTooltip(tooltip);
+    });
 }
 
 function makeRow(partial = {}) {
@@ -1680,6 +1689,7 @@ function renderNodeRows(node) {
     const prevScrollTop = list.scrollTop;
     const prevScrollLeft = list.scrollLeft;
     clearDragTarget(state);
+    hideTooltip(tooltip);
     list.innerHTML = "";
     panel.globalToggleInput.checked = !!state.globalSeparateClip;
     const rows = enforcePinLayout(state.rows);
@@ -2388,7 +2398,11 @@ function initXLoraGetExtension() {
             await applyUiLocale();
             installLocaleSync();
             installExistingNodes();
+            const rootOrigin = window.location.origin;
             ROOT.addEventListener("message", (event) => {
+                if (event?.source !== ROOT || event.origin !== rootOrigin) {
+                    return;
+                }
                 const payload = event?.data;
                 if (!payload || typeof payload !== "object") {
                     return;
@@ -2412,7 +2426,7 @@ function initXLoraGetExtension() {
                             node_class: nodeClass,
                             nodes: collectXLoraNodes(),
                         },
-                        "*"
+                        rootOrigin
                     );
                     return;
                 }
@@ -2440,7 +2454,7 @@ function initXLoraGetExtension() {
                                 error: String(error || ""),
                             },
                         },
-                        "*"
+                        rootOrigin
                     );
                 };
                 if (!nodeId) {

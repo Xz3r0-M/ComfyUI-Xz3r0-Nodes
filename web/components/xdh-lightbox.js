@@ -1,4 +1,7 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 
 function getPreviewSettings() {
@@ -528,11 +531,11 @@ export class XdhLightbox extends BaseElement {
                 }
             </style>
 
-            <div class="fs-stage" aria-hidden="true">
+            <div class="fs-stage">
                 <div class="fs-media"></div>
             </div>
         `;
     }
 }
 
-customElements.define("xdh-lightbox", XdhLightbox);
+registerCustomElement("xdh-lightbox", XdhLightbox);

@@ -1,4 +1,7 @@
-import { BaseElement } from "../core/base-element.js";
+import {
+    BaseElement,
+    registerCustomElement,
+} from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
@@ -158,6 +161,11 @@ export class XdhHistoryView extends BaseElement {
         }
 
         if (["sortOrder", "searchQuery", "locale"].includes(key)) {
+            this.renderRoot();
+            return;
+        }
+
+        if (key === "loadError") {
             this.renderRoot();
             return;
         }
@@ -325,6 +333,9 @@ export class XdhHistoryView extends BaseElement {
         const selectedExtra = selected?.raw?.extra || {};
         const modeLabel = t(`history.mode.${activeCategory}`);
         const modeIcon = activeCategory === "favorites" ? "bookmark" : "history";
+        const loadError = isActive
+            ? String(appStore.state.loadError || "").trim()
+            : "";
 
         return `
             <style>
@@ -508,10 +519,14 @@ export class XdhHistoryView extends BaseElement {
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    gap: 8px;
                     padding: 60px 20px;
                     text-align: center;
                     color: var(--xdh-color-text-secondary, #666666);
                     font-size: 14px;
+                }
+                .empty-state.is-error {
+                    color: var(--xdh-brand-pink, #EA005E);
                 }
             </style>
             <div class="history-shell">
@@ -520,7 +535,9 @@ export class XdhHistoryView extends BaseElement {
                         <div class="history-title">${icon(modeIcon, 20)} <span>${modeLabel}</span></div>
                         <div class="history-count">${items.length}</div>
                     </div>
-                    ${groups.length === 0
+                    ${loadError
+                        ? `<div class="empty-state is-error">${icon('triangle-alert', 18)} <span>${loadError}</span></div>`
+                        : groups.length === 0
                         ? `<div class="empty-state">${t('history.empty', { mode: modeLabel })}</div>`
                         : groups.map((group) => `
                             <section class="history-group">
@@ -568,4 +585,4 @@ export class XdhHistoryView extends BaseElement {
     }
 }
 
-customElements.define("xdh-history-view", XdhHistoryView);
+registerCustomElement("xdh-history-view", XdhHistoryView);

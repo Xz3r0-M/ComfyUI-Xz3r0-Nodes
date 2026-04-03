@@ -2177,7 +2177,11 @@ export function initXMediaGetExtension() {
         async setup() {
             await applyUiLocale();
             installLocaleSync();
+            const rootOrigin = window.location.origin;
             ROOT.addEventListener("message", (event) => {
+                if (event?.source !== ROOT || event.origin !== rootOrigin) {
+                    return;
+                }
                 const payload = event?.data;
                 if (!payload || typeof payload !== "object") {
                     return;
@@ -2196,7 +2200,7 @@ export function initXMediaGetExtension() {
                                 error: String(error || ""),
                             },
                         },
-                        "*"
+                        rootOrigin
                     );
                 };
                 if (payload.type === "xdatahub:ui-locale") {
@@ -2216,7 +2220,7 @@ export function initXMediaGetExtension() {
                             node_class: nodeClass,
                             nodes: collectNodesByClass(nodeClass),
                         },
-                        "*"
+                        rootOrigin
                     );
                     return;
                 }
