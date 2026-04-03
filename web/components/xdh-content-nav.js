@@ -6,7 +6,7 @@ import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260403-9";
+import { t } from "../core/i18n.js?v=20260404-1";
 
 function getSortOptions() {
     return [
@@ -633,10 +633,16 @@ export class XdhContentNav extends BaseElement {
                     color: var(--xdh-color-text-secondary, #888);
                     border-radius: 6px;
                     cursor: pointer;
-                    padding: 3px 7px;
+                    height: 28px;
+                    padding: 0 8px;
                     font-size: 12px;
                     line-height: 1;
                     white-space: nowrap;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 4px;
+                    box-sizing: border-box;
                     transition: background 0.14s, color 0.14s;
                     flex-shrink: 0;
                 }
@@ -648,16 +654,7 @@ export class XdhContentNav extends BaseElement {
                     border-color: var(--xdh-color-primary, #4499ff);
                 }
 
-                .nav-arrow { font-size: 14px; padding: 3px 7px; }
-                .nav-refresh,
-                .nav-home {
-                    min-width: 30px;
-                    min-height: 30px;
-                    padding: 0 8px;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                }
+                .nav-arrow { font-size: 14px; width: 28px; padding: 0; }
 
                 /* ── Row 1: Breadcrumb ── */
                 .breadcrumb {
@@ -774,7 +771,7 @@ export class XdhContentNav extends BaseElement {
                     display: flex;
                     align-items: center;
                 }
-                .search-btn  { font-size: 13px; padding: 3px 6px; }
+                .search-btn  { font-size: 13px; width: 28px; padding: 0; }
                 .search-popover {
                     position: absolute;
                     top: calc(100% + 6px);
@@ -818,26 +815,16 @@ export class XdhContentNav extends BaseElement {
                 }
                 .search-clear-btn {
                     width: 28px;
-                    height: 28px;
                     padding: 0;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
                     border: 1px solid var(--xdh-color-border, #333);
-                    border-radius: 6px;
                 }
                 .search-clear-btn:disabled {
                     opacity: 0.32;
                 }
 
-                .size-cycle-btn {
-                    width: 28px;
-                    height: 28px;
-                    padding: 0;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                }
+                .size-cycle-btn,
+                .global-more-btn,
+                .global-settings-btn { width: 28px; padding: 0; }
 
                 .label { transition: opacity 0.12s; }
 

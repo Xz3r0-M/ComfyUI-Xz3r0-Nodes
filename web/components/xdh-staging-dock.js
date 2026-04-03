@@ -4,7 +4,7 @@ import {
 } from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
 import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
-import { t } from '../core/i18n.js?v=20260403-9';
+import { t } from '../core/i18n.js?v=20260404-1';
 import { banner } from '../core/banner.js';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {
@@ -35,6 +35,7 @@ export class XdhStagingDock extends BaseElement {
         this.batchTargetNodeTitle = '';
         this.batchTargetNodeColor = '';
         this.selectedItemSnapshot = null;
+        this._collapsed = false;
         if (normalizedInitialSelected.length > 0) {
             const selectedId = String(normalizedInitialSelected[0]);
             const liveItem = ((appStore.state && appStore.state.mediaList) || []).find(
@@ -104,6 +105,15 @@ export class XdhStagingDock extends BaseElement {
             clearBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 appStore.state.selectedItems = [];
+            });
+        }
+
+        const collapseBtn = this.$('.dock-toggle');
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._collapsed = !this._collapsed;
+                this.renderRoot();
             });
         }
 
@@ -218,7 +228,7 @@ export class XdhStagingDock extends BaseElement {
                 ${TOOLTIP_CSS}
                 :host {
                     position: fixed;
-                    bottom: 52px;
+                    bottom: 43px;
                     left: 50%;
                     transform: translateX(-50%);
                     z-index: 1000;
@@ -232,7 +242,8 @@ export class XdhStagingDock extends BaseElement {
                     --dock-muted-bg: var(--xdh-color-surface-3, #3a3a3a);
                     --dock-hover-bg: var(--xdh-color-surface-4, #3d3d3d);
                     --dock-border: var(--xdh-color-border, #444444);
-                    --dock-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+                    --dock-shadow: 0 6px 24px rgba(0, 0, 0, 0.55),
+                        0 0 0 1px color-mix(in srgb, var(--xdh-color-primary, #4499ff) 16%, transparent);
                     --dock-active-bg: var(--xdh-color-primary-muted, #1a3050);
                     --dock-active-color: var(--xdh-color-primary, #4499ff);
                     --dock-secondary-text: var(
@@ -286,30 +297,61 @@ export class XdhStagingDock extends BaseElement {
                 .dock-container {
                     background: var(--dock-panel-bg);
                     border: 1px solid var(--dock-border);
-                    border-radius: 12px;
+                    border-radius: 10px;
                     box-shadow: var(--dock-shadow);
                     pointer-events: auto;
                     transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
                         box-shadow 0.15s ease,
                         border-color 0.15s ease,
                         background-color 0.15s ease;
-                    width: 420px;
+                    width: 360px;
                     max-width: 90vw;
                     overflow: visible;
                     display: flex;
                     flex-direction: column;
                 }
 
+                /* ── External toggle tab ── */
+                .dock-toggle {
+                    width: 50px;
+                    height: 24px;
+                    background: var(--dock-panel-bg);
+                    border: 1px solid var(--dock-border);
+                    border-radius: 8px 8px 0 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    pointer-events: auto;
+                    color: var(--dock-secondary-text);
+                    flex-shrink: 0;
+                    transition: background 0.14s ease, color 0.14s ease;
+                    margin-bottom: -1px;
+                }
+                .dock-toggle:hover {
+                    background: var(--dock-hover-bg);
+                    color: var(--xdh-color-text-primary, #eeeeee);
+                }
+                /* standalone (collapsed) state */
+                .dock-toggle.solo {
+                    border-bottom: 1px solid var(--dock-border);
+                    border-radius: 8px 8px 0 0;
+                    height: 24px;
+                    box-shadow: var(--dock-shadow);
+                    margin-bottom: 0px;
+                }
+
                 .dock-header {
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
-                    padding: 8px 12px;
+                    padding: 5px 10px;
                     background: var(--dock-header-bg);
-                    gap: 12px;
-                    border-radius: 12px 12px 0 0;
+                    gap: 8px;
+                    border-radius: 10px 10px 0 0;
                     white-space: nowrap;
                     transition: background-color 0.15s ease, color 0.15s ease;
+                    border-bottom: 1px solid var(--dock-border);
                 }
 
                 .dock-header:hover {
@@ -338,14 +380,14 @@ export class XdhStagingDock extends BaseElement {
                     cursor: pointer;
                     white-space: nowrap;
                     flex-shrink: 0;
-                    border-radius: 6px;
-                    height: 28px;
-                    width: 28px;
+                    border-radius: 5px;
+                    height: 24px;
+                    width: 24px;
                     padding: 0;
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    gap: 6px;
+                    gap: 4px;
                     transition: background-color 0.15s ease,
                         color 0.15s ease,
                         border-color 0.15s ease;
@@ -379,15 +421,15 @@ export class XdhStagingDock extends BaseElement {
 
                 .dock-body {
                     display: block;
-                    padding: 16px;
+                    padding: 10px 10px 4px;
                 }
 
                 .selected-item {
-                    margin-bottom: 12px;
-                    background: var(--dock-inner-bg);
-                    border: 1px solid var(--dock-border);
-                    border-radius: 8px;
-                    padding: 8px 10px;
+                    margin-bottom: 8px;
+                    background: color-mix(in srgb, var(--dock-inner-bg) 88%, var(--dock-active-color, #4499ff) 12%);
+                    border: 1px solid color-mix(in srgb, var(--dock-border) 50%, var(--dock-active-color, #4499ff) 50%);
+                    border-radius: 6px;
+                    padding: 5px 8px;
                     font-size: 12px;
                     color: var(--xdh-color-text-primary, #dddddd);
                     overflow: hidden;
@@ -397,26 +439,32 @@ export class XdhStagingDock extends BaseElement {
                 .batch-target-row {
                     display: flex;
                     flex-direction: column;
-                    gap: 6px;
-                    padding: 10px 0 0;
+                    gap: 4px;
+                    padding: 6px 0 0;
                 }
 
                 .batch-target-label {
-                    font-size: 11px;
+                    font-size: 10px;
                     color: var(--dock-secondary-text);
                     text-transform: uppercase;
                     letter-spacing: 0.04em;
                 }
 
                 .actions {
-                    padding: 0 16px 16px;
+                    padding: 0 10px 8px;
                     display: flex;
                     justify-content: flex-end;
-                    gap: 8px;
-                    border-radius: 0 0 12px 12px;
+                    gap: 6px;
+                    border-radius: 0 0 10px 10px;
                 }
             </style>
 
+            <button class="dock-toggle${this._collapsed ? ' solo' : ''} xdh-tooltip xdh-tooltip-up"
+                    data-tooltip="${this._collapsed ? t('dock.expand') : t('dock.collapse')}">
+                ${icon(this._collapsed ? 'panel-bottom-open' : 'panel-bottom-close', 14)}
+            </button>
+
+            ${this._collapsed ? '' : `
             <div class="dock-container">
                 <div class="dock-header">
                     <div class="dock-title">
@@ -450,6 +498,7 @@ export class XdhStagingDock extends BaseElement {
                     </xdh-button>
                 </div>
             </div>
+            `}
         `;
     }
 }

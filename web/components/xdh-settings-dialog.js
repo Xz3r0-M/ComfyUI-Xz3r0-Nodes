@@ -5,7 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260403-7";
+import { t } from "../core/i18n.js?v=20260404-1";
 
 function normalizeMessageOrigin(value) {
     if (typeof value !== "string" || !value) {

@@ -15,7 +15,7 @@ import "./components/xdh-media-grid.js?v=20260403-17";
 import "./components/xdh-staging-dock.js?v=20260403-414";
 import "./components/xdh-node-picker.js?v=20260403-416";
 import "./core/node-bridge.js?v=20260403-400";
-import "./components/xdh-content-nav.js?v=20260403-19";
+import "./components/xdh-content-nav.js?v=20260404-1";
 import "./components/xdh-pagination.js?v=20260403-12";
 import "./components/xdh-lightbox.js?v=20260403-23";
 import "./components/xdh-history-view.js?v=20260403-7";
@@ -804,9 +804,7 @@ const _execOverlay = (() => {
         position: "fixed",
         inset: "0",
         zIndex: "4500",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        background: "rgba(0,0,0,0.35)",
+        background: "color-mix(in srgb, var(--xdh-color-background, #121212) 86%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -816,14 +814,15 @@ const _execOverlay = (() => {
     const label = document.createElement("div");
     label.id = "xdh-exec-overlay-label";
     Object.assign(label.style, {
-        color: "#ffffff",
+        color: "var(--xdh-color-text-primary, #f0f0f0)",
         fontSize: "15px",
         fontFamily: "system-ui, -apple-system, sans-serif",
         fontWeight: "500",
         letterSpacing: "0.03em",
         textShadow: "0 1px 4px rgba(0,0,0,0.6)",
         padding: "12px 24px",
-        background: "rgba(0,0,0,0.45)",
+        background: "color-mix(in srgb, var(--xdh-color-surface-2, #333) 95%, transparent)",
+        border: "1px solid var(--xdh-color-border, #2e2e2e)",
         borderRadius: "8px",
     });
     el.appendChild(label);
@@ -831,6 +830,10 @@ const _execOverlay = (() => {
 })();
 
 function updateExecOverlay() {
+    // 仅在嵌入 iframe 模式下显示——直接在浏览器打开时不产生遮罩
+    if (window.parent === window) {
+        return;
+    }
     const settings = appStore.state.xdatahubSettings || {};
     const lock = appStore.state.lockState || {};
     const enabled = settings.disable_interaction_while_running !== false;

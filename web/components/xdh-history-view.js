@@ -6,7 +6,7 @@ import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
 import { banner } from "../core/banner.js";
-import { t, getLocale } from "../core/i18n.js?v=20260403-9";
+import { t, getLocale } from "../core/i18n.js?v=20260404-1";
 
 function isHistoryCategory(category) {
     return category === "history" || category === "favorites";
