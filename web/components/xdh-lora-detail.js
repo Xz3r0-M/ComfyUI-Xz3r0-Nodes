@@ -8,6 +8,19 @@ import { appStore } from "../core/store.js";
 import { banner } from "../core/banner.js";
 import { t } from "../core/i18n.js?v=20260403-8";
 
+function escapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function escapeAttr(value) {
+    return escapeHtml(value);
+}
+
 export class XdhLoraDetail extends BaseElement {
     constructor() {
         super();
@@ -218,14 +231,19 @@ export class XdhLoraDetail extends BaseElement {
             const sC = data.strength_clip ?? 1.0;
             const thumbUrl = "/xz3r0/xdatahub/loras/thumb?ref="
                 + encodeURIComponent(data.media_ref);
+            const safeNote = escapeHtml(note);
+            const safeThumbUrl = escapeAttr(thumbUrl);
+            const safeTriggerWords = escapeHtml(twWords);
+            const safeStrengthModel = escapeAttr(String(sM));
+            const safeStrengthClip = escapeAttr(String(sC));
 
             drawerBody = `
                 <div class="preview-area">
                     <span class="preview-empty">${icon("image", 36)}</span>
-                    <img class="preview-blur" src="${thumbUrl}"
+                    <img class="preview-blur" src="${safeThumbUrl}"
                         alt="" aria-hidden="true"
                         onerror="this.style.display='none'"/>
-                    <img class="preview-img" src="${thumbUrl}"
+                    <img class="preview-img" src="${safeThumbUrl}"
                         alt="Preview"
                         onerror="this.style.display='none'"/>
                 </div>
@@ -236,7 +254,7 @@ export class XdhLoraDetail extends BaseElement {
                             <input type="number"
                                 id="lora-strength-model"
                                 step="0.05"
-                                value="${sM}"/>
+                                value="${safeStrengthModel}"/>
                         </div>
                         <button
                             class="link-btn xdh-tooltip xdh-tooltip-down ${this._isLinked ? "linked" : ""}"
@@ -248,7 +266,7 @@ export class XdhLoraDetail extends BaseElement {
                             <input type="number"
                                 id="lora-strength-clip"
                                 step="0.05"
-                                value="${sC}"
+                                value="${safeStrengthClip}"
                                 ${this._isLinked ? "disabled" : ""}/>
                         </div>
                     </div>
@@ -257,7 +275,7 @@ export class XdhLoraDetail extends BaseElement {
                         <label>${t('lora.label.note')}</label>
                         <textarea id="lora-note" class="note-ta"
                             placeholder="${t('lora.placeholder.note')}"
-                        >${note}</textarea>
+                        >${safeNote}</textarea>
                     </div>
 
                     <div class="field-group">
@@ -270,7 +288,7 @@ export class XdhLoraDetail extends BaseElement {
                         </div>
                         <textarea id="lora-trigger-words" class="tw-ta"
                             placeholder="${t('lora.placeholder.tw')}"
-                        >${twWords}</textarea>
+                        >${safeTriggerWords}</textarea>
                     </div>
                 </div>
                 <div class="footer-bar">
@@ -322,12 +340,13 @@ export class XdhLoraDetail extends BaseElement {
                     flex-direction: column;
                     background: var(--xdh-color-surface-1, #333);
                     border-left: 1px solid var(--xdh-color-border, #2e2e2e);
-                    box-shadow: -6px 0 28px rgba(0,0,0,0.55);
+                    box-shadow: none;
                     transform: translateX(100%);
                     transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
                 }
                 .drawer-wrap.open .drawer {
                     transform: translateX(0);
+                    box-shadow: -6px 0 28px rgba(0,0,0,0.55);
                 }
 
                 /* ── Header ─────────────────────────── */
@@ -585,7 +604,7 @@ export class XdhLoraDetail extends BaseElement {
                     <div class="header">
                         <div class="title-wrap">
                             ${icon("wand-sparkles", 14)}
-                            <span class="title-text">${title}</span>
+                            <span class="title-text">${escapeHtml(title)}</span>
                         </div>
                         <button class="lb-close">${icon("x", 16)}</button>
                     </div>

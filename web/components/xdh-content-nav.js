@@ -643,7 +643,7 @@ export class XdhContentNav extends BaseElement {
                 button:hover { background: var(--xdh-color-hover, #2a2a2a); color: var(--xdh-color-text-primary, #eee); }
                 button:disabled { opacity: 0.3; cursor: not-allowed; }
                 button.active {
-                    background: var(--xdh-color-primary-muted, #1a3050);
+                    background-color: var(--xdh-color-primary-muted, #1a3050);
                     color: var(--xdh-color-primary, #4499ff);
                     border-color: var(--xdh-color-primary, #4499ff);
                 }

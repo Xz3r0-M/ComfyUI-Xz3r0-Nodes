@@ -4,23 +4,23 @@ import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl,
-} from "./core/api.js?v=20260403-412";
+} from "./core/api.js?v=20260403-413";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260403-8";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260403-16";
-import "./components/xdh-media-grid.js?v=20260403-13";
+import "./components/xdh-media-grid.js?v=20260403-15";
 import "./components/xdh-staging-dock.js?v=20260403-413";
 import "./components/xdh-node-picker.js?v=20260403-415";
 import "./core/node-bridge.js?v=20260403-400";
-import "./components/xdh-content-nav.js?v=20260403-17";
+import "./components/xdh-content-nav.js?v=20260403-18";
 import "./components/xdh-pagination.js?v=20260403-11";
 import "./components/xdh-lightbox.js?v=20260403-23";
 import "./components/xdh-history-view.js?v=20260403-6";
 import "./components/xdh-banner.js?v=20260403-384";
-import "./components/xdh-lora-detail.js?v=20260403-406";
+import "./components/xdh-lora-detail.js?v=20260403-408";
 import "./components/xdh-settings-dialog.js?v=20260403-10";
 
 // Placeholder thumbnail for mock/offline mode
@@ -285,6 +285,50 @@ function categoryToMediaType(category) {
         : null;
 }
 
+function getSortRequest(sortOrder) {
+    switch (String(sortOrder || DEFAULT_SORT_ORDER)) {
+        case "date-asc":
+            return { sortBy: "mtime", sortOrder: "asc" };
+        case "name-asc":
+            return { sortBy: "name", sortOrder: "asc" };
+        case "name-desc":
+            return { sortBy: "name", sortOrder: "desc" };
+        case "date-desc":
+        default:
+            return { sortBy: "mtime", sortOrder: "desc" };
+    }
+}
+
+function normalizeItemMtime(value) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+    }
+
+    const text = String(value || "").trim();
+    if (!text) {
+        return 0;
+    }
+
+    const numeric = Number(text);
+    if (Number.isFinite(numeric)) {
+        return numeric;
+    }
+
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? parsed / 1000 : 0;
+}
+
+function extractItemMtime(item) {
+    return normalizeItemMtime(
+        item?.extra?.mtime ?? item?.mtime ?? item?.saved_at
+    );
+}
+
+function normalizeItemSize(value) {
+    const size = Number(value);
+    return Number.isFinite(size) ? size : 0;
+}
+
 async function runMenuAction(action) {
     const category = String(appStore.state.activeCategory || "");
     const mediaType = categoryToMediaType(category);
@@ -350,7 +394,9 @@ async function runMenuAction(action) {
         }
         try {
             if (mediaType) {
-                await apiPost("/xz3r0/xdatahub/media/clear", {});
+                await apiPost("/xz3r0/xdatahub/media/clear", {
+                    media_type: mediaType,
+                });
                 appStore.state.activeFolder = "";
                 appStore.state.currentPage = 1;
                 appStore.state.refreshTrigger = Date.now();
@@ -503,6 +549,9 @@ function buildStableFallbackId(item, category, scope) {
  * - record : item.id = "record:..." (history/favorites)
  */
 function mapItem(item, category) {
+    const mtime = extractItemMtime(item);
+    const size = normalizeItemSize(item?.extra?.size ?? item?.size);
+
     // ── Folder shape ─────────────────────────────────────
     if (item.kind === "folder") {
         return {
@@ -510,6 +559,8 @@ function mapItem(item, category) {
             name: item.title || item.path || "Folder",
             type: "folder",
             thumbUrl: "icons/folder.svg",
+            mtime,
+            size,
             previewable: false,
             isFolder: true,
             childPath: item.extra?.child_path || item.path || "",
@@ -527,6 +578,8 @@ function mapItem(item, category) {
             name,
             type: "lora",
             thumbUrl,
+            mtime,
+            size,
             previewable: !!(item.extra?.thumb_url || item.thumb_url),
             raw: item,
         };
@@ -542,6 +595,8 @@ function mapItem(item, category) {
             name,
             type: "record",
             thumbUrl: MOCK_THUMB,
+            mtime,
+            size,
             previewable: false,
             raw: item,
         };
@@ -563,6 +618,8 @@ function mapItem(item, category) {
         name,
         type: mediaType,
         thumbUrl,
+        mtime,
+        size,
         previewable: item.previewable !== false,
         raw: item,
     };
@@ -623,14 +680,17 @@ appStore.subscribe((state, key) => {
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 let latestListLoadToken = 0;
 
-async function fetchCategory(category, page, folder) {
+async function fetchCategory(category, page, folder, sortKey) {
     const safePage = page || 1;
     const safeFolder = folder || "";
+    const { sortBy, sortOrder } = getSortRequest(sortKey);
     if (category === "lora") {
         return loadLoraList(
             safePage,
             50,
-            safeFolder
+            safeFolder,
+            sortBy,
+            sortOrder
         );
     }
     if (category === "history") return loadRecords(safePage, 50);
@@ -640,7 +700,9 @@ async function fetchCategory(category, page, folder) {
             category,
             safePage,
             50,
-            safeFolder
+            safeFolder,
+            sortBy,
+            sortOrder
         );
     }
     return { items: [], page: 1, total_pages: 1 };
@@ -651,6 +713,7 @@ appStore.subscribe(async (state, key) => {
         key !== "activeCategory"
         && key !== "activeFolder"
         && key !== "currentPage"
+        && key !== "sortOrder"
         && key !== "refreshTrigger"
     ) {
         return;
@@ -660,6 +723,7 @@ appStore.subscribe(async (state, key) => {
     const categorySnapshot = state.activeCategory;
     const folderSnapshot = state.activeFolder || "";
     const pageSnapshot = state.currentPage || 1;
+    const sortSnapshot = state.sortOrder || DEFAULT_SORT_ORDER;
 
     appStore.state.isLoading = true;
     appStore.state.loadError = "";
@@ -674,7 +738,8 @@ appStore.subscribe(async (state, key) => {
         const res = await fetchCategory(
             categorySnapshot,
             pageSnapshot,
-            folderSnapshot
+            folderSnapshot,
+            sortSnapshot
         );
         if (requestToken !== latestListLoadToken) {
             return;
@@ -702,13 +767,13 @@ appStore.subscribe(async (state, key) => {
         appStore.state.loadError = t("error.load_fail");
         banner.error(t("error.load_fail"));
     } finally {
+        if (key === "refreshTrigger") {
+            appStore.state.dbTaskBusy = false;
+        }
         if (requestToken !== latestListLoadToken) {
             return;
         }
         appStore.state.isLoading = false;
-        if (key === "refreshTrigger") {
-            appStore.state.dbTaskBusy = false;
-        }
     }
 });
 

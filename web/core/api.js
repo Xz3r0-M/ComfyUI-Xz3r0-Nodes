@@ -121,24 +121,41 @@ export async function apiPost(path, body = {}) {
  * Load media for a given category.
  * category: "image" | "video" | "audio"
  */
-export async function loadMediaList(category, page = 1, pageSize = 50, dir = "") {
+export async function loadMediaList(
+    category,
+    page = 1,
+    pageSize = 50,
+    dir = "",
+    sortBy = "mtime",
+    sortOrder = "desc"
+) {
     const params = CATEGORY_PARAMS[category] || CATEGORY_PARAMS.image;
     return await apiGet("/xz3r0/xdatahub/media", {
         media_type: params.media_type,
         dir:        dir || params.dir || undefined,
         page,
         page_size:  pageSize,
+        sort_by:    sortBy,
+        sort_order: sortOrder,
         flat:       0,
     }, {
         fallbackFactory: () => buildMockListResponse(category || "Item"),
     });
 }
 
-export async function loadLoraList(page = 1, pageSize = 50, dir = "") {
+export async function loadLoraList(
+    page = 1,
+    pageSize = 50,
+    dir = "",
+    sortBy = "mtime",
+    sortOrder = "desc"
+) {
     return await apiGet("/xz3r0/xdatahub/loras", {
         page,
         page_size: pageSize,
         dir: dir || undefined,
+        sort_by: sortBy,
+        sort_order: sortOrder,
     }, {
         fallbackFactory: () => buildMockListResponse("Lora"),
     });

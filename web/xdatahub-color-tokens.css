@@ -137,6 +137,7 @@ body:not([data-theme]) {
     --xdh-color-surface-4:     var(--xdh-dark-color-surface-4);
     --xdh-color-surface-hover: var(--xdh-dark-color-surface-hover);
     --xdh-color-primary:       var(--xdh-brand-pink);
+    --xdh-color-primary-muted: #EA005E33;
     --xdh-color-border:        var(--xdh-dark-color-border);
     --xdh-color-text-primary:  var(--xdh-dark-color-text-primary);
     --xdh-color-text-secondary:var(--xdh-dark-color-text-secondary);
@@ -241,6 +242,7 @@ body[data-theme="light"] {
         white 42%
     );
     --xdh-color-primary: var(--xdh-brand-pink);
+    --xdh-color-primary-muted: #EA005E1A;
     --xdh-color-border: color-mix(
         in oklch,
         oklch(

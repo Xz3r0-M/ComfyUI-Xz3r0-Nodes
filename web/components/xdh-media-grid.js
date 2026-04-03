@@ -15,6 +15,19 @@ function normalizeNumber(value) {
     return Number.isFinite(num) ? num : null;
 }
 
+function escapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function escapeAttr(value) {
+    return escapeHtml(value);
+}
+
 function hasLoraThumbnail(item) {
     const raw = item?.raw || {};
     const extra = raw.extra || {};
@@ -148,7 +161,7 @@ function getLoraMetaState(item) {
  * - folder     : small centered SVG icon
  */
 function thumbFor(item) {
-    const safeUrl = (item.thumbUrl || "").replace(/'/g, "%27");
+    const safeUrl = escapeAttr(String(item.thumbUrl || ""));
     const extra = item.raw?.extra || {};
     const isEmptyThumb = safeUrl.length === 0;
     const fallbackHtml = `
@@ -218,16 +231,37 @@ function formatDateFull(mtime) {
         + `:${String(d.getSeconds()).padStart(2, "0")}`;
 }
 
+function isFolderItem(item) {
+    return !!(item?.isFolder || item?.type === "folder");
+}
+
+function compareSortedItems(left, right, sortOrder) {
+    const leftIsFolder = isFolderItem(left);
+    const rightIsFolder = isFolderItem(right);
+
+    if (leftIsFolder !== rightIsFolder) {
+        return leftIsFolder ? -1 : 1;
+    }
+
+    switch (sortOrder) {
+        case "name-asc":
+            return left.name.localeCompare(right.name);
+        case "name-desc":
+            return right.name.localeCompare(left.name);
+        case "date-asc":
+            return (left.mtime || 0) - (right.mtime || 0);
+        case "date-desc":
+            return (right.mtime || 0) - (left.mtime || 0);
+        default:
+            return 0;
+    }
+}
+
 // Sort helper — pure function, no side-effects
 function applySort(items, sortOrder) {
-    const copy = [...items];
-    switch (sortOrder) {
-        case "name-asc":  return copy.sort((a, b) => a.name.localeCompare(b.name));
-        case "name-desc": return copy.sort((a, b) => b.name.localeCompare(a.name));
-        case "date-asc":  return copy.sort((a, b) => (a.mtime || 0) - (b.mtime || 0));
-        case "date-desc": return copy.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-        default:          return copy;
-    }
+    return [...items].sort((left, right) =>
+        compareSortedItems(left, right, sortOrder)
+    );
 }
 
 export class XdhMediaGrid extends BaseElement {
@@ -538,27 +572,41 @@ export class XdhMediaGrid extends BaseElement {
         }
         return filteredItems.map(item => {
             const isSelected = selectedItems.includes(item.id);
-            const safeName   = item.name.replace(/"/g, "&quot;");
+            const safeId = escapeAttr(String(item.id || ""));
+            const safeName = escapeHtml(String(item.name || ""));
+            const safeNameAttr = escapeAttr(String(item.name || ""));
+            const safeUrl = escapeAttr(String(item.thumbUrl || ""));
+            const safeType = escapeAttr(String(item.type || "image"));
+            const safeLoraRef = escapeAttr(String(
+                item.raw?.extra?.media_ref || item.raw?.media_ref
+                || item.raw?.ref || ""
+            ));
+            const safeSize = escapeAttr(String(
+                item.type === "lora" ? "" : item.raw?.extra?.size || ""
+            ));
+            const safeMtime = escapeAttr(String(
+                item.type === "lora" ? "" : item.raw?.extra?.mtime || ""
+            ));
             const summaryLabels = getCardSummaryLabels(item, this.failedThumbIds);
             const hasThumbFailure = this.failedThumbIds.has(String(item.id));
             const previewBtn = item.previewable
-                ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${item.id}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
+                ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${safeId}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
                 : "";
             const editBtn = item.type === "lora"
-                ? `<button class="edit-lora-btn xdh-tooltip xdh-tooltip-down" data-loraref="${item.raw?.extra?.media_ref || item.raw?.media_ref || item.raw?.ref || ""}" data-tooltip="${t("grid.btn.edit_lora")}">${icon("settings", 14)}</button>`
+                ? `<button class="edit-lora-btn xdh-tooltip xdh-tooltip-down" data-loraref="${safeLoraRef}" data-tooltip="${t("grid.btn.edit_lora")}">${icon("settings", 14)}</button>`
                 : "";
             return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""}"
                  draggable="${item.isFolder || item.type === "record" ? "false" : "true"}"
-                 data-id="${item.id}"
-                 data-name="${safeName}"
-                 data-url="${item.thumbUrl}"
-                 data-type="${item.type || "image"}"
-                 data-size="${item.type === "lora" ? "" : item.raw?.extra?.size || ""}"
-                 data-mtime="${item.type === "lora" ? "" : item.raw?.extra?.mtime || ""}">
+                 data-id="${safeId}"
+                 data-name="${safeNameAttr}"
+                 data-url="${safeUrl}"
+                 data-type="${safeType}"
+                 data-size="${safeSize}"
+                 data-mtime="${safeMtime}">
                 <div class="card-actions">${editBtn}${previewBtn}</div>
                 ${thumbFor(item)}
                 <div class="card-text">
-                    <div class="card-title">${item.name}</div>
+                    <div class="card-title">${safeName}</div>
                     ${summaryLabels.length > 0
                         ? `<div class="card-summary">${summaryLabels.join(" · ")}</div>`
                         : ""}

@@ -1003,7 +1003,17 @@ def split_rel_path(
     return parts
 
 
-def map_folder_item(child_path: str, title: str) -> dict[str, Any]:
+def map_folder_item(
+    child_path: str,
+    title: str,
+    mtime: float | None = None,
+) -> dict[str, Any]:
+    extra = {
+        "entry_type": "folder",
+        "child_path": child_path,
+    }
+    if mtime is not None:
+        extra["mtime"] = float(mtime)
     return {
         "id": f"folder:{child_path}",
         "kind": "folder",
@@ -1011,11 +1021,58 @@ def map_folder_item(child_path: str, title: str) -> dict[str, Any]:
         "saved_at": "",
         "path": child_path,
         "previewable": False,
-        "extra": {
-            "entry_type": "folder",
-            "child_path": child_path,
-        },
+        "extra": extra,
     }
+
+
+def sort_folder_items(
+    items: list[dict[str, Any]],
+    sort_by: str = "mtime",
+    sort_order: str = "desc",
+) -> list[dict[str, Any]]:
+    safe_sort_by = sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
+    safe_sort_order = (
+        sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
+    )
+    ordered = list(items)
+
+    def _name_key(item: dict[str, Any]) -> tuple[str, str]:
+        return (
+            str(item.get("title") or "").lower(),
+            str(item.get("path") or "").lower(),
+        )
+
+    if safe_sort_by == "name":
+        ordered.sort(
+            key=_name_key,
+            reverse=safe_sort_order == "desc",
+        )
+        return ordered
+
+    def _mtime_value(item: dict[str, Any]) -> float:
+        extra = item.get("extra")
+        if isinstance(extra, dict):
+            try:
+                return float(extra.get("mtime") or 0)
+            except Exception:
+                return 0.0
+        return 0.0
+
+    if safe_sort_order == "desc":
+        ordered.sort(
+            key=lambda item: (
+                -_mtime_value(item),
+                *_name_key(item),
+            )
+        )
+    else:
+        ordered.sort(
+            key=lambda item: (
+                _mtime_value(item),
+                *_name_key(item),
+            )
+        )
+    return ordered
 
 
 def build_directory_items(
@@ -1053,6 +1110,7 @@ def build_directory_items(
         if root_name in _root_names
     ]
     folder_children: dict[str, str] = {}
+    folder_mtimes: dict[str, float] = {}
     file_rows: list[sqlite3.Row] = []
     for row in rows:
         rel_parts = split_rel_path(str(row["rel_path"] or ""), _root_names)
@@ -1076,24 +1134,36 @@ def build_directory_items(
             else child_internal_path
         )
         folder_children[remain[0]] = child_path
+        try:
+            row_mtime = float(row["mtime"] or 0)
+        except Exception:
+            row_mtime = 0.0
+        current_folder_mtime = folder_mtimes.get(remain[0])
+        if current_folder_mtime is None or row_mtime > current_folder_mtime:
+            folder_mtimes[remain[0]] = row_mtime
 
     if not dir_parts and not custom_scope:
         for root_name in standard_root_order:
             folder_children.setdefault(root_name, root_name)
 
     custom_titles = custom_media_root_titles()
-    folder_items = [
-        map_folder_item(path, custom_titles.get(title, title))
-        for title, path in sorted(
-            folder_children.items(),
-            key=lambda item: item[0].lower(),
-        )
-    ]
     safe_sort_by = sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
     safe_sort_order = (
         sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
     )
     reverse = safe_sort_order == "desc"
+    folder_items = sort_folder_items(
+        [
+            map_folder_item(
+                path,
+                custom_titles.get(title, title),
+                mtime=folder_mtimes.get(title),
+            )
+            for title, path in folder_children.items()
+        ],
+        sort_by=safe_sort_by,
+        sort_order=safe_sort_order,
+    )
 
     def _file_sort_name(row: sqlite3.Row) -> tuple[str, str]:
         filename = str(row["filename"] or "").lower()
@@ -1969,11 +2039,19 @@ class MediaStore:
         refreshed = {"inserted": inserted, "updated": updated}
         return {"deleted": deleted, **refreshed}
 
-    def clear(self) -> int:
+    def clear(self, media_type: str | None = None) -> int:
         if not self.db_path.exists():
             return 0
         with self._conn() as conn:
-            deleted = int(conn.execute("DELETE FROM media_index").rowcount)
+            if media_type:
+                deleted = int(
+                    conn.execute(
+                        "DELETE FROM media_index WHERE media_type = ?",
+                        (media_type,),
+                    ).rowcount
+                )
+            else:
+                deleted = int(conn.execute("DELETE FROM media_index").rowcount)
             conn.commit()
         return deleted
 
@@ -2251,12 +2329,19 @@ class LoraStore:
             # 获取项目列表
             folder_items: list[dict[str, Any]] = []
             file_items: list[dict[str, Any]] = []
+            safe_sort_by = (
+                sort_by if sort_by in MEDIA_SORT_BY_VALUES else "mtime"
+            )
+            safe_sort_order = (
+                sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
+            )
 
             # 查询该目录级别的子目录
             query_dirs = (
                 "SELECT DISTINCT "
                 "SUBSTR(SUBSTR(rel_path, LENGTH(?)+1), 1, "
-                "INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')-1) as dir "
+                "INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')-1) as dir, "
+                "MAX(mtime) as latest_mtime "
                 "FROM lora_items WHERE valid=1"
             )
             params_dirs = [subdir_prefix, subdir_prefix]
@@ -2264,11 +2349,11 @@ class LoraStore:
                 query_dirs += " AND rel_path LIKE ?"
                 params_dirs.append(subdir_prefix + "%")
             query_dirs += " AND INSTR(SUBSTR(rel_path, LENGTH(?)+1), "
-            query_dirs += "'/')>0 ORDER BY dir"
+            query_dirs += "'/')>0 GROUP BY dir ORDER BY dir"
             params_dirs.append(subdir_prefix)
 
             for row in conn.execute(query_dirs, params_dirs):
-                dir_name = row[0]
+                dir_name = str(row[0] or "")
                 if keyword_normalized and (
                     keyword_normalized not in dir_name.casefold()
                 ):
@@ -2277,8 +2362,17 @@ class LoraStore:
                     subdir_prefix + dir_name if subdir_prefix else dir_name
                 )
                 folder_items.append(
-                    map_folder_item(f"{LORA_ROOT_NAME}/{rel_path}", dir_name)
+                    map_folder_item(
+                        f"{LORA_ROOT_NAME}/{rel_path}",
+                        dir_name,
+                        mtime=float(row[1] or 0),
+                    )
                 )
+            folder_items = sort_folder_items(
+                folder_items,
+                sort_by=safe_sort_by,
+                sort_order=safe_sort_order,
+            )
 
             # 查询该目录级别的 LORA 文件
             query_files = (
@@ -2300,10 +2394,10 @@ class LoraStore:
                 params_files.extend([kw, kw])
 
             # 排序
-            sort_col = "mtime" if sort_by == "mtime" else "filename"
-            if sort_by == "size":
+            sort_col = "mtime" if safe_sort_by == "mtime" else "filename"
+            if safe_sort_by == "size":
                 sort_col = "size"
-            order = "DESC" if sort_order == "desc" else "ASC"
+            order = "DESC" if safe_sort_order == "desc" else "ASC"
             query_files += f" ORDER BY {sort_col} {order}, filename"
 
             for row in conn.execute(query_files, params_files):
@@ -3857,14 +3951,15 @@ def list_records(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     header_kw = extra_header.strip().lower()
-    source_kw = source.strip().lower()
-    db_name_kw = db_name.strip().lower()
+    data_type_names = {item.lower() for item in parse_name_list(data_type)}
+    source_names = {item.lower() for item in parse_name_list(source)}
+    db_name_names = {item.lower() for item in parse_name_list(db_name)}
     facet_db_names: set[str] = set()
     facet_data_types: set[str] = set()
     facet_sources: set[str] = set()
     for db_path in list_record_db_files():
         facet_db_names.add(db_path.name)
-        if db_name_kw and db_name_kw not in db_path.name.lower():
+        if db_name_names and db_path.name.lower() not in db_name_names:
             continue
         try:
             conn = sqlite3.connect(db_path)
@@ -3889,9 +3984,12 @@ def list_records(
                     facet_sources.add(record_source)
                 if header_kw and header_kw not in record_header.lower():
                     continue
-                if data_type and data_type != record_type:
+                if (
+                    data_type_names
+                    and record_type.lower() not in data_type_names
+                ):
                     continue
-                if source_kw and source_kw not in record_source.lower():
+                if source_names and record_source.lower() not in source_names:
                     continue
                 ts = parse_saved_at(saved_at)
                 if start_ts is not None and ts < start_ts:
@@ -4738,8 +4836,17 @@ async def api_media_clear(request: web.Request) -> web.Response:
     denied = write_guard()
     if denied:
         return denied
+    media_type = None
     try:
-        deleted = STORE.clear()
+        payload = await request.json()
+        value = str(payload.get("media_type") or "").strip().lower()
+        media_type = value if value else None
+    except Exception:
+        media_type = None
+    if media_type and media_type not in MEDIA_TYPE_EXT:
+        return json_error("quota_exceeded", status=400)
+    try:
+        deleted = STORE.clear(media_type)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] media clear failed: %s",
@@ -4855,6 +4962,9 @@ async def api_lora_thumb(request: web.Request) -> web.Response:
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/rebuild")
 async def api_lora_rebuild(request: web.Request) -> web.Response:
     """重建 LORA 数据库索引"""
+    denied = write_guard()
+    if denied:
+        return denied
     try:
         result = LORA_STORE.rebuild()
         LOGGER.info(
