@@ -9,7 +9,9 @@ import { SCROLLBAR_CSS } from '../core/icon.js';
 import {
     requestNodes,
     CATEGORY_NODE_CLASS,
-} from '../core/node-bridge.js?v=20260403-399';
+    resolveNodeClassFromTargetType,
+    resolveNodeClassFromCategory,
+} from '../core/node-bridge.js?v=20260403-400';
 
 function compareNodeByIdAsc(left, right) {
     const leftId = String(left?.id ?? '');
@@ -36,6 +38,7 @@ export class XdhNodePicker extends BaseElement {
         super();
         this.expanded = false;
         this.searchQuery = '';
+        this.targetType = '';
         this.selectedNode = null;
         this.selectedNodeId = '';
         this.selectedNodeTitle = '';
@@ -43,6 +46,7 @@ export class XdhNodePicker extends BaseElement {
         this.nodes = [];
         this.loading = false;
         this.docsListenerAdded = false;
+        this._fetchRequestSeq = 0;
         this._onDocumentClick = this._handleDocumentClick.bind(this);
     }
 
@@ -56,6 +60,21 @@ export class XdhNodePicker extends BaseElement {
     }
 
     attributeChangedCallback(name, _oldValue, newValue) {
+        if (name === 'target-type') {
+            const nextTargetType = String(newValue || '').trim();
+            if (this.targetType === nextTargetType) {
+                return;
+            }
+            this.targetType = nextTargetType;
+            this.selectedNode = null;
+            this.nodes = [];
+            if (this.expanded) {
+                this._fetchNodes();
+                return;
+            }
+            this.renderRoot();
+            return;
+        }
         if (name === 'selected-node-id') {
             this.selectedNodeId = String(newValue || '').trim();
             this._syncSelectedNodeFromId();
@@ -88,6 +107,16 @@ export class XdhNodePicker extends BaseElement {
         this.selectedNode = matched;
         this.selectedNodeTitle = String(matched.title || '').trim();
         this.selectedNodeColor = String(resolveTokenAccentFromNode(matched));
+    }
+
+    _getNodeClass() {
+        const targetNodeClass = resolveNodeClassFromTargetType(this.targetType);
+        if (targetNodeClass) {
+            return targetNodeClass;
+        }
+
+        const category = appStore.state.activeCategory || 'image';
+        return resolveNodeClassFromCategory(category);
     }
 
     _handleDocumentClick(e) {
@@ -169,11 +198,14 @@ export class XdhNodePicker extends BaseElement {
     }
 
     _fetchNodes() {
-        const category = appStore.state.activeCategory || 'image';
-        const nodeClass = CATEGORY_NODE_CLASS[category] || 'XImageGet';
+        const nodeClass = this._getNodeClass();
+        const requestSeq = ++this._fetchRequestSeq;
         this.loading = true;
         this.renderRoot();
         requestNodes(nodeClass).then((nodes) => {
+            if (requestSeq !== this._fetchRequestSeq) {
+                return;
+            }
             this.nodes = Array.isArray(nodes)
                 ? [...nodes].sort(compareNodeByIdAsc)
                 : [];

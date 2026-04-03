@@ -19,15 +19,49 @@
 
 let _el = null;
 let _hideTimer = null;
+let _displayTimer = null;
+let _showId = 0;
+let _showRafId = null;
 const MARGIN = 8;   // min distance from viewport edges (px)
 const SHOW_DELAY = 0;  // ms before tooltip appears (0 = instant)
 const HIDE_DELAY = 80; // ms before tooltip hides after mouse leaves
+const FADE_DURATION = 120;
 const SIDE_VERTICAL_OFFSET = 12;
+
+function clearDisplayTimer() {
+    clearTimeout(_displayTimer);
+    _displayTimer = null;
+}
+
+function finalizeHiddenState() {
+    if (!_el) return;
+    _el.style.display = "none";
+}
+
+function setHiddenState(immediate = false) {
+    if (!_el) return;
+    _el.setAttribute("aria-hidden", "true");
+    _el.style.opacity = "0";
+    _el.style.visibility = "hidden";
+    clearDisplayTimer();
+    if (immediate) {
+        finalizeHiddenState();
+        return;
+    }
+    _displayTimer = setTimeout(() => {
+        if (_el?.getAttribute("aria-hidden") === "true") {
+            finalizeHiddenState();
+        }
+        _displayTimer = null;
+    }, FADE_DURATION);
+}
 
 function getEl() {
     if (_el) return _el;
     _el = document.createElement("div");
     _el.id = "xdh-global-tooltip";
+    _el.setAttribute("role", "tooltip");
+    _el.setAttribute("aria-hidden", "true");
     Object.assign(_el.style, {
         position: "fixed",
         zIndex: "999999",
@@ -41,10 +75,13 @@ function getEl() {
         fontWeight: "500",
         lineHeight: "1.4",
         whiteSpace: "normal",
-        wordBreak: "break-all",
+        wordBreak: "normal",
+        overflowWrap: "anywhere",
         pointerEvents: "none",
         opacity: "0",
         transition: "opacity 0.12s ease",
+        visibility: "hidden",
+        display: "none",
         maxWidth: "300px",
         fontFamily: "system-ui, -apple-system, sans-serif",
         userSelect: "none",
@@ -62,6 +99,12 @@ function getDirection(el) {
 
 export function showTooltip(text, targetRect, direction) {
     clearTimeout(_hideTimer);
+    clearDisplayTimer();
+    if (_showRafId !== null) {
+        cancelAnimationFrame(_showRafId);
+        _showRafId = null;
+    }
+    const showId = ++_showId;
     const el = getEl();
     el.textContent = text;
     // Move to a neutral off-screen position BEFORE measuring so that the
@@ -73,11 +116,17 @@ export function showTooltip(text, targetRect, direction) {
     el.style.top = "-9999px";
     el.style.width = "";
     // Make invisible but measurable before calculating position
+    el.setAttribute("aria-hidden", "true");
     el.style.visibility = "hidden";
     el.style.opacity = "0";
     el.style.display = "block";
 
-    requestAnimationFrame(() => {
+    _showRafId = requestAnimationFrame(() => {
+        _showRafId = null;
+        if (showId !== _showId) {
+            return;
+        }
+
         const tw = el.offsetWidth;
         const th = el.offsetHeight;
         const vw = window.innerWidth;
@@ -112,6 +161,7 @@ export function showTooltip(text, targetRect, direction) {
 
         el.style.left = `${Math.round(left)}px`;
         el.style.top  = `${Math.round(top)}px`;
+        el.setAttribute("aria-hidden", "false");
         el.style.visibility = "";
         el.style.opacity = "1";
     });
@@ -119,12 +169,17 @@ export function showTooltip(text, targetRect, direction) {
 
 export function hideTooltip(immediate = false) {
     clearTimeout(_hideTimer);
+    _showId += 1;
+    if (_showRafId !== null) {
+        cancelAnimationFrame(_showRafId);
+        _showRafId = null;
+    }
     if (immediate) {
-        if (_el) _el.style.opacity = "0";
+        setHiddenState(true);
         return;
     }
     _hideTimer = setTimeout(() => {
-        if (_el) _el.style.opacity = "0";
+        setHiddenState();
     }, HIDE_DELAY);
 }
 

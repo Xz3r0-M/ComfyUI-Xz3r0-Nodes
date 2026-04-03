@@ -9,8 +9,9 @@ import { banner } from '../core/banner.js';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {
     sendToNode,
-    CATEGORY_NODE_CLASS,
-} from '../core/node-bridge.js?v=20260403-399';
+    resolveNodeClassFromTargetType,
+    resolveNodeClassFromCategory,
+} from '../core/node-bridge.js?v=20260403-400';
 
 function escapeAttr(value) {
     return String(value || '')
@@ -121,8 +122,12 @@ export class XdhStagingDock extends BaseElement {
         }
         const mediaList   = state.mediaList   || [];
         const category    = state.activeCategory || 'image';
-        const nodeClass   = CATEGORY_NODE_CLASS[category] || 'XImageGet';
         const batchPicker = this.$('xdh-node-picker[data-batch]');
+        const pickerTargetType = String(
+            batchPicker?.getAttribute('target-type') || category
+        ).trim();
+        const nodeClass   = resolveNodeClassFromTargetType(pickerTargetType)
+            || resolveNodeClassFromCategory(category);
         const batchNodeId = String(
             batchPicker?.selectedNode?.id
             || this.batchTargetNodeId
@@ -186,6 +191,7 @@ export class XdhStagingDock extends BaseElement {
             selectedItem?.title || selectedItem?.name || selectedIds[0] || ''
         );
         const selectedLabelEscaped = escapeAttr(selectedLabel);
+        const pickerTargetType = String(state.activeCategory || 'image');
 
         if (this.selectedCount === 0 || state.loraDetailOpen) {
             return `<style>:host { display: none; }</style>`;
@@ -416,6 +422,7 @@ export class XdhStagingDock extends BaseElement {
                         <span class="batch-target-label">${t('dock.batch_target')}</span>
                         <xdh-node-picker
                             data-batch="true"
+                            target-type="${escapeAttr(pickerTargetType)}"
                             selected-node-id="${escapeAttr(this.batchTargetNodeId)}"
                             selected-node-title="${escapeAttr(this.batchTargetNodeTitle)}"
                             selected-node-color="${escapeAttr(this.batchTargetNodeColor)}">

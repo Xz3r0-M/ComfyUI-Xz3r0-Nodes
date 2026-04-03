@@ -191,3 +191,28 @@ export const CATEGORY_NODE_CLASS = {
     history:   "XStringGet",
     favorites: "XStringGet",
 };
+
+export function resolveNodeClassFromTargetType(targetType) {
+    const rawTargetType = String(targetType || "").trim();
+    if (!rawTargetType) {
+        return "";
+    }
+
+    const normalizedTargetType = rawTargetType.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(
+        CATEGORY_NODE_CLASS,
+        normalizedTargetType
+    )) {
+        return CATEGORY_NODE_CLASS[normalizedTargetType];
+    }
+
+    const matchedNodeClass = Object.values(CATEGORY_NODE_CLASS).find(
+        (nodeClass) => nodeClass.toLowerCase() === normalizedTargetType
+    );
+    return matchedNodeClass || rawTargetType;
+}
+
+export function resolveNodeClassFromCategory(category) {
+    const normalizedCategory = String(category || "image").trim().toLowerCase();
+    return CATEGORY_NODE_CLASS[normalizedCategory] || "XImageGet";
+}
