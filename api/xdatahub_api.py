@@ -4275,12 +4275,17 @@ async def api_settings_update(request: web.Request) -> web.Response:
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/open-db-folder")
 async def api_open_db_folder(request: web.Request) -> web.Response:
-    """用系统文件管理器打开数据库存放目录。仅 Windows 支持。"""
-    if sys.platform != "win32":
+    """用系统文件管理器打开数据库存放目录。"""
+    if sys.platform == "win32":
+        cmd = ["explorer", str(data_root().resolve())]
+    elif sys.platform == "darwin":
+        cmd = ["open", str(data_root().resolve())]
+    elif sys.platform.startswith("linux"):
+        cmd = ["xdg-open", str(data_root().resolve())]
+    else:
         return web.json_response({"status": "unsupported"})
-    db_dir = str(data_root().resolve())
     try:
-        subprocess.Popen(["explorer", db_dir])
+        subprocess.Popen(cmd)
     except Exception as exc:
         LOGGER.warning("[xdatahub] open-db-folder failed: %s", exc)
         return json_error("internal_error", status=500)

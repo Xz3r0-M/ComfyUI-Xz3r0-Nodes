@@ -351,7 +351,7 @@ export class XdhHistoryView extends BaseElement {
                     display: flex;
                     flex-direction: column;
                     background: var(--xdh-color-background, #121212);
-                    padding: 20px 24px;
+                    padding: 16px;
                     gap: 16px;
                 }
                 .history-list {
@@ -395,7 +395,7 @@ export class XdhHistoryView extends BaseElement {
                     grid-template-columns: repeat(
                         auto-fill, minmax(min(320px, 100%), 1fr)
                     );
-                    gap: 12px;
+                    gap: 16px;
                 }
                 .history-row {
                     display: flex;
@@ -429,10 +429,7 @@ export class XdhHistoryView extends BaseElement {
                         );
                 }
                 @container hv (max-width: 440px) {
-                    .history-rows { gap: 8px; }
-                    .history-row { padding: 10px 12px; gap: 8px; }
                     .row-payload { max-height: 72px; font-size: 12px; }
-                    .history-shell { padding: 14px 16px; }
                 }
                 .row-header {
                     display: flex;

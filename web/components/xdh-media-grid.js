@@ -629,9 +629,9 @@ export class XdhMediaGrid extends BaseElement {
                     gap: 16px;
                     padding: 16px;
                 }
-                .grid[data-size="small"]  { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
-                .grid[data-size="medium"] { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
-                .grid[data-size="large"]  { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+                .grid[data-size="small"]  { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; padding: 16px; }
+                .grid[data-size="medium"] { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 16px; }
+                .grid[data-size="large"]  { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; padding: 16px; }
 
                 .media-card {
                     background: var(--xdh-color-surface-1, #1e1e1e);

@@ -11,14 +11,14 @@ import { setLocale, t } from "./core/i18n.js?v=20260403-9";
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260403-17";
-import "./components/xdh-media-grid.js?v=20260403-17";
+import "./components/xdh-media-grid.js?v=20260404-3";
 import "./components/xdh-staging-dock.js?v=20260403-414";
 import "./components/xdh-node-picker.js?v=20260403-416";
 import "./core/node-bridge.js?v=20260403-400";
 import "./components/xdh-content-nav.js?v=20260404-1";
 import "./components/xdh-pagination.js?v=20260403-12";
 import "./components/xdh-lightbox.js?v=20260403-23";
-import "./components/xdh-history-view.js?v=20260403-7";
+import "./components/xdh-history-view.js?v=20260404-7";
 import "./components/xdh-banner.js?v=20260403-385";
 import "./components/xdh-lora-detail.js?v=20260403-409";
 import "./components/xdh-settings-dialog.js?v=20260403-10";
