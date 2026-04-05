@@ -28,6 +28,8 @@ function escapeAttr(value) {
     return escapeHtml(value);
 }
 
+const CARD_CLICK_SUPPRESS_MS = 250;
+
 function hasLoraThumbnail(item) {
     const raw = item?.raw || {};
     const extra = raw.extra || {};
@@ -270,6 +272,7 @@ export class XdhMediaGrid extends BaseElement {
         this.items = [];
         this.failedThumbIds = new Set();
         this._gridInitialized = false;
+        this._suppressCardClickUntil = 0;
     }
 
     /**
@@ -398,6 +401,10 @@ export class XdhMediaGrid extends BaseElement {
                 // Card click (selection / folder nav)
                 const card = e.target.closest(".media-card");
                 if (!card) return;
+                if (Date.now() < this._suppressCardClickUntil) {
+                    e.preventDefault();
+                    return;
+                }
                 e.preventDefault();
                 const id = card.dataset.id;
                 const item = this._itemMap?.get(id);
@@ -428,15 +435,12 @@ export class XdhMediaGrid extends BaseElement {
             grid.addEventListener("dragstart", (e) => {
                 const card = e.target.closest(".media-card");
                 if (!card) return;
+                this._suppressCardClickUntil = Date.now()
+                    + CARD_CLICK_SUPPRESS_MS;
                 const id   = card.dataset.id;
                 const item = this._itemMap?.get(id);
                 if (!item || item.isFolder || item.type === "record") {
                     e.preventDefault(); return;
-                }
-                let currentSelected = [...appStore.state.selectedItems];
-                if (!currentSelected.includes(id)) {
-                    currentSelected = [id];
-                    appStore.state.selectedItems = currentSelected;
                 }
                 const extra    = item.raw?.extra || {};
                 const mediaRef = String(extra.media_ref || item.raw?.media_ref || item.raw?.ref || "");
@@ -456,6 +460,8 @@ export class XdhMediaGrid extends BaseElement {
             });
 
             grid.addEventListener("dragend", (e) => {
+                this._suppressCardClickUntil = Date.now()
+                    + CARD_CLICK_SUPPRESS_MS;
                 const card = e.target.closest(".media-card");
                 if (card) card.style.opacity = "1";
             });
