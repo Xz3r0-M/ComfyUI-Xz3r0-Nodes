@@ -384,9 +384,6 @@ export class XdhContentNav extends BaseElement {
                     await apiPost("/xz3r0/xdatahub/media/refresh", {
                         media_type: category,
                     });
-                    await apiPost("/xz3r0/xdatahub/media/cleanup-invalid", {
-                        media_type: category,
-                    });
                     banner.success(t("nav.banner.refresh_ok"));
                 } else if (category === "lora") {
                     await apiPost("/xz3r0/xdatahub/loras/refresh", {});

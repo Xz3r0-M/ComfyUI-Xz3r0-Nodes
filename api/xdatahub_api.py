@@ -1927,15 +1927,47 @@ class MediaStore:
     def refresh(self, media_type: str | None) -> dict[str, int]:
         inserted = 0
         updated = 0
+        deleted = 0
         if not self.db_path.exists():
             self._init_schema()
         with self._conn() as conn:
-            existing_map = self._row_public_ref_map(conn, media_type)
+            where = ""
+            params: list[Any] = []
+            if media_type:
+                where = " WHERE media_type = ?"
+                params.append(media_type)
+            existing_rows = conn.execute(
+                "SELECT id, rel_path, public_ref, real_path, filename, "
+                "media_type, mtime, size FROM media_index" + where,
+                params,
+            ).fetchall()
+            existing_map = {
+                str(row["rel_path"] or ""): {
+                    "id": int(row["id"]),
+                    "public_ref": str(row["public_ref"] or ""),
+                }
+                for row in existing_rows
+                if str(row["rel_path"] or "").strip()
+            }
+            invalidated_at = utc_now_iso()
+            if media_type:
+                conn.execute(
+                    "UPDATE media_index SET valid = 0, updated_at = ? "
+                    "WHERE media_type = ?",
+                    (invalidated_at, media_type),
+                )
+            else:
+                conn.execute(
+                    "UPDATE media_index SET valid = 0, updated_at = ?",
+                    (invalidated_at,),
+                )
             reserved_refs = self._all_public_refs(conn)
             for entry in scan_media(media_type):
                 now = utc_now_iso()
                 rel_path = str(entry["rel_path"])
-                existing_ref = existing_map.get(rel_path, "")
+                existing_ref = str(
+                    (existing_map.get(rel_path) or {}).get("public_ref") or ""
+                )
                 normalized_existing = normalize_media_ref(existing_ref)
                 if normalized_existing in reserved_refs:
                     reserved_refs.remove(normalized_existing)
@@ -1948,8 +1980,33 @@ class MediaStore:
                     updated += 1
                 else:
                     inserted += 1
+            stale_where = ""
+            stale_params: list[Any] = []
+            if media_type:
+                stale_where = " AND media_type = ?"
+                stale_params.append(media_type)
+            stale_rows = conn.execute(
+                "SELECT id, real_path, rel_path, filename, media_type, "
+                "mtime, size FROM media_index WHERE valid = 0" + stale_where,
+                stale_params,
+            ).fetchall()
+            if stale_rows:
+                roots = comfy_dirs()
+                for row in stale_rows:
+                    if self.resolve_runtime_path(conn, row, roots) is not None:
+                        continue
+                    deleted += int(
+                        conn.execute(
+                            "DELETE FROM media_index WHERE id = ?",
+                            (int(row["id"]),),
+                        ).rowcount
+                    )
             conn.commit()
-        return {"inserted": inserted, "updated": updated}
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "deleted": deleted,
+        }
 
     def cleanup_invalid(self, media_type: str | None) -> dict[str, int]:
         if not self.db_path.exists():
