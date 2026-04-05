@@ -722,15 +722,23 @@
   },
   "XImageGet": {
     "display_name": "XImageGet",
-    "description": "Load the latest image sent from XDataHub.",
+    "description": "Load images from XDataHub with X Mask Editor support.",
     "inputs": {
       "output_placeholder": {
         "name": "Placeholder Black Image",
         "tooltip": "Output a 1x1 black placeholder image when no image is available"
       },
-      "mask_image_ref": {
+      "x_mask_ref": {
         "name": "Mask Ref",
-        "tooltip": "Mask image reference saved by the official mask editor"
+        "tooltip": "Separate mask file reference saved by X Mask Editor"
+      },
+      "x_paint_ref": {
+        "name": "Paint Ref",
+        "tooltip": "Separate paint layer reference saved by X Mask Editor"
+      },
+      "x_transform_state": {
+        "name": "Transform State",
+        "tooltip": "Rotation and flip state saved by X Mask Editor"
       }
     },
     "outputs": {
@@ -740,7 +748,7 @@
       },
       "1": {
         "name": "Mask",
-        "tooltip": "Mask extracted from the mask editor output image"
+        "tooltip": "Mask loaded from the separate X Mask Editor mask file"
       }
     }
   },

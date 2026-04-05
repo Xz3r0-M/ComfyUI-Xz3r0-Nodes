@@ -11,7 +11,6 @@ const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
 const ROOT = globalThis;
 const STRING_NODE_CLASS = "XStringGet";
 const SUPPORTED_NODE_CLASSES = new Set([
-    "XImageGet",
     "XVideoGet",
     "XAudioGet",
     "XStringGet",
