@@ -90,6 +90,7 @@ export class XdhLightbox extends BaseElement {
         super();
         this._current = null;
         this._activeMedia = null;
+        this._mainScrollSnapshot = null;
         this._imageScale = IMAGE_ZOOM_MIN;
         this._imagePanX = 0;
         this._imagePanY = 0;
@@ -106,7 +107,57 @@ export class XdhLightbox extends BaseElement {
                 return;
             }
             this._teardown();
+            this._restoreMainScrollPosition();
         };
+    }
+
+    _captureMainScrollPosition() {
+        const mainScroll = document.querySelector(".main-scroll");
+        if (mainScroll instanceof HTMLElement) {
+            this._mainScrollSnapshot = {
+                kind: "element",
+                top: mainScroll.scrollTop,
+            };
+            return;
+        }
+
+        const scrollingElement = document.scrollingElement;
+        if (scrollingElement instanceof HTMLElement) {
+            this._mainScrollSnapshot = {
+                kind: "document",
+                top: scrollingElement.scrollTop,
+            };
+            return;
+        }
+
+        this._mainScrollSnapshot = null;
+    }
+
+    _restoreMainScrollPosition() {
+        const snapshot = this._mainScrollSnapshot;
+        this._mainScrollSnapshot = null;
+        if (!snapshot) {
+            return;
+        }
+
+        const apply = () => {
+            if (snapshot.kind === "element") {
+                const mainScroll = document.querySelector(".main-scroll");
+                if (mainScroll instanceof HTMLElement) {
+                    mainScroll.scrollTop = snapshot.top;
+                }
+                return;
+            }
+
+            const scrollingElement = document.scrollingElement;
+            if (scrollingElement instanceof HTMLElement) {
+                scrollingElement.scrollTop = snapshot.top;
+            }
+        };
+
+        apply();
+        requestAnimationFrame(apply);
+        requestAnimationFrame(() => requestAnimationFrame(apply));
     }
 
     _syncPanStateDataset() {
@@ -395,6 +446,7 @@ export class XdhLightbox extends BaseElement {
             return;
         }
 
+        this._captureMainScrollPosition();
         const mediaNode = this._buildMedia(detail, previewSettings);
         this._teardown({ preserveCurrent: true });
         mediaHost.replaceChildren(mediaNode);
@@ -412,6 +464,7 @@ export class XdhLightbox extends BaseElement {
             this._startPlayback();
         } catch {
             this._teardown({ preserveCurrent: true });
+            this._restoreMainScrollPosition();
             this._openInNewTab(detail);
         }
     }
@@ -441,10 +494,12 @@ export class XdhLightbox extends BaseElement {
         if (stage && isStageFullscreen(stage)) {
             exitElementFullscreen().catch(() => {
                 this._teardown();
+                this._restoreMainScrollPosition();
             });
             return;
         }
         this._teardown();
+        this._restoreMainScrollPosition();
     }
 
     render() {

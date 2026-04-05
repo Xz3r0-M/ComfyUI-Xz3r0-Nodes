@@ -77,6 +77,8 @@ const MASK_EDITOR_UNAVAILABLE_KEY = "xdatahub.ui.node.xmediaget.mask_editor_unav
 const MASK_EDITOR_UNAVAILABLE_FALLBACK = "Mask editor unavailable";
 const TEXT_TITLE_PLACEHOLDER_KEY = "xdatahub.ui.node.xmediaget.title_placeholder";
 const TEXT_TITLE_PLACEHOLDER_FALLBACK = "Header";
+const MASK_EDITOR_CLOSE_POLL_MS = 120;
+const MASK_EDITOR_CLOSE_TIMEOUT_MS = 30000;
 
 const STYLE_ID = "xmediaget-extension-style";
 const CLEAR_BTN_LABEL_KEY = "xdatahub.ui.node.xmediaget.clear_loaded_media";
@@ -1312,23 +1314,23 @@ function clearTemporaryMaskEditorState(node) {
     if (!node) {
         return;
     }
-    if (node.__ximageget_mask_editor_prev_images === undefined) {
-        delete node.images;
-    } else {
-        node.images = node.__ximageget_mask_editor_prev_images;
-    }
     if (node.__ximageget_mask_editor_prev_imgs === undefined) {
         delete node.imgs;
     } else {
         node.imgs = node.__ximageget_mask_editor_prev_imgs;
+    }
+    if (node.__ximageget_mask_editor_prev_images === undefined) {
+        delete node.images;
+    } else {
+        node.images = node.__ximageget_mask_editor_prev_images;
     }
     if (node.__ximageget_mask_editor_prev_preview_type === undefined) {
         delete node.previewMediaType;
     } else {
         node.previewMediaType = node.__ximageget_mask_editor_prev_preview_type;
     }
-    delete node.__ximageget_mask_editor_prev_images;
     delete node.__ximageget_mask_editor_prev_imgs;
+    delete node.__ximageget_mask_editor_prev_images;
     delete node.__ximageget_mask_editor_prev_preview_type;
 }
 
@@ -1342,6 +1344,7 @@ function clearLegacyCanvasPreview(node) {
     if (!node) {
         return;
     }
+    delete node.images;
     delete node.imgs;
     node.imageIndex = null;
     if (Array.isArray(node.widgets)) {
@@ -1366,13 +1369,90 @@ function scheduleLegacyCanvasPreviewClear(node) {
     });
 }
 
+function isMaskEditorDialog(dialog) {
+    if (!(dialog instanceof HTMLElement)) {
+        return false;
+    }
+    if (dialog.getAttribute("role") !== "dialog") {
+        return false;
+    }
+    const buttonTexts = Array.from(dialog.querySelectorAll("button"))
+        .map((button) => String(button.textContent || "").trim())
+        .filter(Boolean);
+    const hasSave = buttonTexts.some(
+        (text) => text === "Save"
+            || text === "保存"
+            || text.endsWith("Save")
+            || text.endsWith("保存")
+    );
+    const hasCancel = buttonTexts.some(
+        (text) => text === "Cancel"
+            || text === "取消"
+            || text.endsWith("Cancel")
+            || text.endsWith("取消")
+    );
+    return hasSave && hasCancel;
+}
+
+function findOpenMaskEditorDialogs() {
+    return Array.from(document.querySelectorAll('[role="dialog"]'))
+        .filter((dialog) => isMaskEditorDialog(dialog));
+}
+
+function finalizeMaskEditorSession(node, sessionToken) {
+    if (!node || node.__ximageget_mask_editor_session !== sessionToken) {
+        return;
+    }
+    clearTemporaryMaskEditorState(node);
+    scheduleLegacyCanvasPreviewClear(node);
+    delete node.__ximageget_mask_editor_session;
+    node?.graph?.setDirtyCanvas?.(true, true);
+}
+
+function watchMaskEditorClose(node, sessionToken) {
+    if (!node || !sessionToken) {
+        return;
+    }
+    const startedAt = Date.now();
+    let hasSeenDialog = false;
+
+    const poll = () => {
+        if (node.__ximageget_mask_editor_session !== sessionToken) {
+            return;
+        }
+        const dialogs = findOpenMaskEditorDialogs();
+        if (dialogs.length > 0) {
+            hasSeenDialog = true;
+            window.setTimeout(poll, MASK_EDITOR_CLOSE_POLL_MS);
+            return;
+        }
+        if (hasSeenDialog) {
+            finalizeMaskEditorSession(node, sessionToken);
+            return;
+        }
+        if ((Date.now() - startedAt) >= MASK_EDITOR_CLOSE_TIMEOUT_MS) {
+            finalizeMaskEditorSession(node, sessionToken);
+            return;
+        }
+        window.setTimeout(poll, MASK_EDITOR_CLOSE_POLL_MS);
+    };
+
+    window.setTimeout(poll, MASK_EDITOR_CLOSE_POLL_MS);
+}
+
 async function uploadCurrentNodeImageForMaskEditor(node) {
     const panelInfo = node?.__ximageget_panel;
     const imgEl = panelInfo?.mediaEl;
     if (!(imgEl instanceof HTMLImageElement)) {
         throw new Error("Mask source image element missing");
     }
-    const sourceUrl = String(imgEl.currentSrc || imgEl.src || "").trim();
+    // Always use the original XDataHub media URL as the source, regardless of
+    // whether imgEl.src has been changed to a mask-overlay clipspace file by
+    // getPreferredImagePreviewUrl. If no media_ref exists, fall back to imgEl.
+    const mediaRef = getStoredNodeValue(node);
+    const sourceUrl = mediaRef
+        ? buildMediaFileUrl(mediaRef)
+        : String(imgEl.currentSrc || imgEl.src || "").trim();
     if (!sourceUrl) {
         throw new Error("Mask source image URL missing");
     }
@@ -1381,11 +1461,16 @@ async function uploadCurrentNodeImageForMaskEditor(node) {
         throw new Error("Failed to fetch mask source image");
     }
     const blob = await response.blob();
-    const sourceTitle = String(panelInfo?.title?.textContent || "").trim();
-    const fallbackName = sourceTitle || "ximageget-mask-source.png";
-    const uploadName = fallbackName.includes(".")
-        ? fallbackName
-        : `${fallbackName}.png`;
+    const sourceTitle = String(
+        panelInfo?.title instanceof HTMLInputElement
+            ? panelInfo.title.value
+            : (panelInfo?.title?.textContent || "")
+    ).trim();
+    const ts = Date.now();
+    const nameBase = sourceTitle
+        ? sourceTitle.replace(/\.[^.]+$/, "")
+        : "ximageget-mask-source";
+    const uploadName = `${nameBase}_${ts}.png`;
     const file = new File([blob], uploadName, {
         type: blob.type || "image/png",
     });
@@ -1420,9 +1505,21 @@ async function openMaskEditorForNode(node) {
         if (!uploadedRef.filename) {
             return;
         }
-        getMaskEditorBridgeWidget(node);
-        node.__ximageget_mask_editor_prev_images = node.images;
+        const bridgeWidget = getMaskEditorBridgeWidget(node);
+        // Clear the bridge widget value so loadFromNode falls back to
+        // node.images[0] (our fresh upload) instead of the stale saved ref.
+        if (bridgeWidget) {
+            bridgeWidget.value = "";
+            if (node.properties) {
+                delete node.properties.image;
+            }
+        }
+        const sessionToken = `${Date.now()}_${Math.random()
+            .toString(36)
+            .slice(2, 10)}`;
+        node.__ximageget_mask_editor_session = sessionToken;
         node.__ximageget_mask_editor_prev_imgs = node.imgs;
+        node.__ximageget_mask_editor_prev_images = node.images;
         node.__ximageget_mask_editor_prev_preview_type = node.previewMediaType;
         node.images = [uploadedRef];
         node.imgs = [tempPreviewImage];
@@ -1431,7 +1528,11 @@ async function openMaskEditorForNode(node) {
         await app.extensionManager.command.execute(
             "Comfy.MaskEditor.OpenMaskEditor"
         );
+        watchMaskEditorClose(node, sessionToken);
     } catch (error) {
+        scheduleTemporaryMaskEditorStateClear(node);
+        scheduleLegacyCanvasPreviewClear(node);
+        delete node.__ximageget_mask_editor_session;
         console.warn(
             t(
                 MASK_EDITOR_UNAVAILABLE_KEY,
@@ -1439,8 +1540,6 @@ async function openMaskEditorForNode(node) {
             ),
             error
         );
-    } finally {
-        scheduleTemporaryMaskEditorStateClear(node);
     }
 }
 
@@ -1465,7 +1564,11 @@ function handleMaskEditorImageSaved(node, value) {
     );
     setPreview(panelInfo, {
         file_url: previewUrl,
-        title: panelInfo.title?.textContent || "",
+        title: (
+            panelInfo.title instanceof HTMLInputElement
+                ? panelInfo.title.value
+                : (panelInfo.title?.textContent || "")
+        ),
     });
     scheduleLegacyCanvasPreviewClear(node);
     syncMaskButtonState(node);
@@ -1935,7 +2038,11 @@ function restoreStoredData(node, stored, storedTitle = "") {
     if (panelInfo) {
         setPreview(panelInfo, {
             file_url: fallbackUrl,
-            title: panelInfo?.title?.textContent || "",
+            title: (
+                panelInfo?.title instanceof HTMLInputElement
+                    ? panelInfo.title.value
+                    : (panelInfo?.title?.textContent || "")
+            ),
         });
     }
     fetchMediaMeta(mediaRef).then((payload) => {
