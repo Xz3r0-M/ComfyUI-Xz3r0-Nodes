@@ -57,6 +57,7 @@ export const appStore = new Store({
     cardSize: 'medium',    // 'small' | 'medium' | 'large'
     sortOrder: 'date-desc',// 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc'
     searchQuery: '',
+    folderTreeVisible: true,
 
     // Navigation history  (managed by xdatahub_app_v2.js)
     navHistory: [{ category: 'image', folder: '', page: 1, folderLabel: '' }],

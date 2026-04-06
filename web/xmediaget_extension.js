@@ -996,6 +996,40 @@ function readPanelHorizontalPadding(panelEl) {
     return Number.isFinite(total) ? total : 0;
 }
 
+function readFlexColumnGap(containerEl) {
+    if (!(containerEl instanceof HTMLElement)) {
+        return 0;
+    }
+    const styles = window.getComputedStyle(containerEl);
+    const rawGap = styles.columnGap || styles.gap || "0";
+    const gap = Number.parseFloat(rawGap || "0");
+    return Number.isFinite(gap) ? gap : 0;
+}
+
+function measureMetaContentWidth(metaEl) {
+    if (!(metaEl instanceof HTMLElement)) {
+        return 0;
+    }
+    const children = Array.from(metaEl.children).filter(
+        (child) => child instanceof HTMLElement
+            && window.getComputedStyle(child).display !== "none"
+    );
+    if (!children.length) {
+        return 0;
+    }
+    const gap = readFlexColumnGap(metaEl);
+    const contentWidth = children.reduce((total, child) => {
+        const measured = Math.max(
+            child.getBoundingClientRect().width || 0,
+            child.offsetWidth || 0,
+            child.scrollWidth || 0
+        );
+        return total + (Number.isFinite(measured) ? measured : 0);
+    }, 0);
+    const totalGap = gap * Math.max(children.length - 1, 0);
+    return Math.ceil(contentWidth + totalGap);
+}
+
 function resolveAdaptiveMinWidth(node, baseMinWidth) {
     const fallbackMin = Number.isFinite(baseMinWidth)
         ? baseMinWidth
@@ -1010,8 +1044,7 @@ function resolveAdaptiveMinWidth(node, baseMinWidth) {
         : 0;
     let domRequired = 0;
     if (meta instanceof HTMLElement) {
-        const measured = Math.ceil(meta.scrollWidth || 0);
-        domRequired = Number.isFinite(measured) ? measured : 0;
+        domRequired = measureMetaContentWidth(meta);
     }
     const panelPadding = readPanelHorizontalPadding(panelInfo?.panel);
     const layoutSlack = 12;
@@ -1984,12 +2017,7 @@ function ensureNodeMinSize(node) {
     }
     const [baseMinWidth, minHeight] = getNodeMinSize(node);
     const minWidth = resolveAdaptiveMinWidth(node, baseMinWidth);
-    if (!node.min_size || node.min_size.length < 2) {
-        node.min_size = [minWidth, minHeight];
-    } else {
-        node.min_size[0] = Math.max(node.min_size[0], minWidth);
-        node.min_size[1] = Math.max(node.min_size[1], minHeight);
-    }
+    node.min_size = [minWidth, minHeight];
     if (typeof node.setSize === "function") {
         const width = Math.max(node.size?.[0] ?? 0, minWidth);
         const height = Math.max(node.size?.[1] ?? 0, minHeight);
@@ -2008,6 +2036,7 @@ function ensureNodeMinSize(node) {
     node.onResize = function (size) {
         const [resizeBaseMinWidth, resizeMinHeight] = getNodeMinSize(this);
         const resizeMinWidth = resolveAdaptiveMinWidth(this, resizeBaseMinWidth);
+        this.min_size = [resizeMinWidth, resizeMinHeight];
         const sourceSize = Array.isArray(size) ? size : this.size;
         const nextWidth = Math.max(sourceSize?.[0] ?? 0, resizeMinWidth);
         const nextHeight = Math.max(sourceSize?.[1] ?? 0, resizeMinHeight);

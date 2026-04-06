@@ -6,7 +6,7 @@ import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-9";
+import { t } from "../core/i18n.js?v=20260406-15";
 
 function getSortOptions() {
     return [
@@ -209,7 +209,7 @@ export class XdhContentNav extends BaseElement {
 
     onStoreUpdate(state, key) {
         // Full re-render only for navigation/view-state changes
-        if (["activeCategory", "activeFolder", "activeFolderLabel", "cardSize", "sortOrder", "navHistory", "navIndex", "currentPage", "locale"].includes(key)) {
+        if (["activeCategory", "activeFolder", "activeFolderLabel", "cardSize", "sortOrder", "navHistory", "navIndex", "currentPage", "locale", "folderTreeVisible"].includes(key)) {
             this.renderRoot();
         } else if (key === "lockState") {
             this._syncLockState();
@@ -447,6 +447,10 @@ export class XdhContentNav extends BaseElement {
             store.state.cardSize = SIZES[(SIZES.indexOf(cur) + 1) % SIZES.length];
         });
 
+        this.$(".tree-toggle-btn")?.addEventListener("click", () => {
+            store.state.folderTreeVisible = !store.state.folderTreeVisible;
+        });
+
         // Search popover
         const btnSearch   = this.$(".search-btn");
         const inputSearch = this.$(".search-input");
@@ -498,6 +502,9 @@ export class XdhContentNav extends BaseElement {
         const breadcrumbPathEscaped = escapeHtml(breadcrumbPath);
         const lock       = lockMeta(state.lockState || {});
         const isRecordView = ["history", "favorites"].includes(state.activeCategory);
+        const treeTooltip = state.folderTreeVisible
+            ? t("nav.btn.hide_tree")
+            : t("nav.btn.show_tree");
 
         return `
             <style>
@@ -820,6 +827,7 @@ export class XdhContentNav extends BaseElement {
                 }
 
                 .size-cycle-btn,
+                .tree-toggle-btn,
                 .global-more-btn,
                 .global-settings-btn { width: 28px; padding: 0; }
 
@@ -893,6 +901,10 @@ export class XdhContentNav extends BaseElement {
 
             <!-- Row 2: Tools -->
             <div class="nav-row nav-row-tools">
+                <button class="tree-toggle-btn xdh-tooltip xdh-tooltip-down ${state.folderTreeVisible ? "active" : ""}" data-tooltip="${treeTooltip}" style="display:${isRecordView ? 'none' : ''}">${icon('folder-tree', 14)}</button>
+                <div class="divider" style="display:${isRecordView ? 'none' : 'block'};"></div>
+                <button class="size-cycle-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t('nav.btn.size_' + cardSize)}" style="display:${isRecordView ? 'none' : ''}">${icon('layout-grid', 14)}</button>
+                <div class="divider"></div>
                 <div class="search-wrap ${this._searchExpanded ? "open" : ""} ${(state.searchQuery || "").trim() ? "has-query" : ""}">
                     <button class="search-btn xdh-tooltip xdh-tooltip-down ${this._searchExpanded || (state.searchQuery || "").trim() ? "active" : ""}"
                             data-tooltip="${t("nav.btn.search")}">${icon('search', 14)}</button>
@@ -910,8 +922,6 @@ export class XdhContentNav extends BaseElement {
                 <button class="sort-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.sort_title", { label: sortOpt.label })}">
                     ${icon('list-filter', 13)} <span class="label">${sortOpt.label}</span>
                 </button>
-                <div class="divider" style="display:${isRecordView ? 'none' : 'block'};"></div>
-                <button class="size-cycle-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t('nav.btn.size_' + cardSize)}" style="display:${isRecordView ? 'none' : ''}">${icon('layout-grid', 14)}</button>
 
                 <div class="global-group">
                     <div class="global-more-wrap">

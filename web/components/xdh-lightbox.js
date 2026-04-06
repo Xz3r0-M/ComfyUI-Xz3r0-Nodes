@@ -3,8 +3,13 @@ import {
     registerCustomElement,
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
-import { SCROLLBAR_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-9";
+import {
+    icon,
+    ICON_CSS,
+    SCROLLBAR_CSS,
+    TOOLTIP_CSS,
+} from "../core/icon.js";
+import { t } from "../core/i18n.js?v=20260406-16";
 
 function getPreviewSettings() {
     const settings = appStore.state.xdatahubSettings || {};
@@ -87,10 +92,90 @@ const IMAGE_ZOOM_MIN = 1;
 const IMAGE_ZOOM_MAX = 8;
 const IMAGE_ZOOM_STEP = 0.2;
 
+function hasPreviewPayload(detail) {
+    const mediaType = String(detail?.type || "image").toLowerCase();
+    return mediaType === "text"
+        ? typeof detail?.text === "string"
+        : !!detail?.url;
+}
+
+function normalizeNavigationContext(value, currentDetail) {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    const items = (Array.isArray(value.items) ? value.items : [])
+        .map((item) => {
+            const id = String(item?.id || "").trim();
+            if (!id) {
+                return null;
+            }
+            return {
+                ...item,
+                id,
+                name: String(item?.name || ""),
+            };
+        })
+        .filter(Boolean);
+
+    if (!items.length) {
+        return null;
+    }
+
+    const resolveById = typeof value.resolveById === "function"
+        ? value.resolveById
+        : (targetId) => {
+            const normalizedId = String(targetId || "").trim();
+            const entry = items.find((item) => item.id === normalizedId);
+            return hasPreviewPayload(entry) ? entry : null;
+        };
+
+    const requestedId = String(
+        value.activeId ?? currentDetail?.id ?? items[0]?.id ?? ""
+    ).trim();
+    const activeId = items.some((item) => item.id === requestedId)
+        ? requestedId
+        : items[0].id;
+
+    return {
+        items,
+        resolveById,
+        activeId,
+    };
+}
+
+function findNavigationIndex(navigation, activeId) {
+    if (!navigation || !Array.isArray(navigation.items)) {
+        return -1;
+    }
+    return navigation.items.findIndex((item) => item.id === String(activeId));
+}
+
+function formatNavigationPosition(currentIndex, total) {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safeIndex = Math.min(
+        safeTotal,
+        Math.max(1, Number(currentIndex) || 1)
+    );
+    return `${safeIndex} / ${safeTotal}`;
+}
+
+function readDetailTitle(detail) {
+    const title = String(detail?.name || "").trim();
+    return title || t("common.unknown");
+}
+
+function readElementInset(styles, property) {
+    const value = Number.parseFloat(styles?.[property] || "0");
+    return Number.isFinite(value) ? value : 0;
+}
+
 export class XdhLightbox extends BaseElement {
     constructor() {
         super();
         this._current = null;
+        this._navigation = null;
+        this._navigationIndex = -1;
         this._activeMedia = null;
         this._mainScrollSnapshot = null;
         this._imageScale = IMAGE_ZOOM_MIN;
@@ -103,6 +188,32 @@ export class XdhLightbox extends BaseElement {
         this._panStartOffsetX = 0;
         this._panStartOffsetY = 0;
         this._onPreview = (e) => this._open(e.detail);
+        this._onKeyDown = (event) => {
+            const stage = this.$(".fs-stage");
+            if (!stage || stage.dataset.active !== "true" || !this._navigation) {
+                return;
+            }
+            if (event.defaultPrevented || event.altKey
+                || event.ctrlKey || event.metaKey) {
+                return;
+            }
+            const activeElement = document.activeElement;
+            if (activeElement instanceof HTMLVideoElement
+                || activeElement instanceof HTMLAudioElement) {
+                return;
+            }
+            if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                event.stopPropagation();
+                void this._openNavigationByStep(-1);
+                return;
+            }
+            if (event.key === "ArrowRight") {
+                event.preventDefault();
+                event.stopPropagation();
+                void this._openNavigationByStep(1);
+            }
+        };
         this._onFullscreenChange = () => {
             const stage = this.$(".fs-stage");
             if (!stage || isStageFullscreen(stage)) {
@@ -111,6 +222,166 @@ export class XdhLightbox extends BaseElement {
             this._teardown();
             this._restoreMainScrollPosition();
         };
+    }
+
+    _setNavigationContext(navigation, activeId = "") {
+        if (!navigation) {
+            this._navigation = null;
+            this._navigationIndex = -1;
+            return;
+        }
+        this._navigation = navigation;
+        const nextIndex = findNavigationIndex(
+            navigation,
+            activeId || navigation.activeId
+        );
+        this._navigationIndex = nextIndex >= 0 ? nextIndex : 0;
+    }
+
+    _syncChrome() {
+        const stage = this.$(".fs-stage");
+        const titleEl = this.$(".fs-title");
+        const counterEl = this.$(".fs-position");
+        const prevBtn = this.$(".fs-prev-edge-btn");
+        const nextBtn = this.$(".fs-next-edge-btn");
+        const openBtn = this.$(".fs-open-btn");
+        const closeBtn = this.$(".fs-close-btn");
+        const hasCurrent = !!this._current;
+        const total = this._navigation?.items?.length || (hasCurrent ? 1 : 0);
+        const currentIndex = this._navigationIndex >= 0
+            ? this._navigationIndex + 1
+            : (hasCurrent ? 1 : 0);
+        const title = hasCurrent ? readDetailTitle(this._current) : "";
+        const position = hasCurrent
+            ? formatNavigationPosition(currentIndex, total)
+            : "";
+
+        if (stage) {
+            stage.dataset.active = hasCurrent ? "true" : "false";
+        }
+        if (titleEl) {
+            titleEl.textContent = title;
+            titleEl.dataset.tooltip = title;
+        }
+        if (counterEl) {
+            counterEl.textContent = position;
+            counterEl.dataset.tooltip = hasCurrent
+                ? t("lightbox.position", {
+                    current: currentIndex,
+                    total,
+                })
+                : "";
+        }
+        if (prevBtn) {
+            prevBtn.disabled = !this._navigation || this._navigationIndex <= 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = !this._navigation
+                || this._navigationIndex >= total - 1;
+        }
+        if (openBtn) {
+            openBtn.disabled = !hasCurrent;
+        }
+        if (closeBtn) {
+            closeBtn.disabled = !hasCurrent;
+        }
+        this._syncThumbnailStrip();
+    }
+
+    _syncThumbnailStrip() {
+        const stage = this.$(".fs-stage");
+        const strip = this.$(".fs-thumb-strip");
+        if (!stage || !(strip instanceof HTMLElement)) {
+            return;
+        }
+        const navigation = this._navigation;
+        const hasThumbnails = !!navigation
+            && navigation.items.some((item) =>
+                String(item?.thumbnailUrl || item?.url || "").trim()
+            );
+        stage.dataset.hasThumbnails = hasThumbnails ? "true" : "false";
+        strip.replaceChildren();
+        if (!hasThumbnails) {
+            return;
+        }
+
+        navigation.items.forEach((item, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "fs-thumb-btn xdh-tooltip xdh-tooltip-up";
+            button.dataset.lightboxThumbIndex = String(index);
+            if (index === this._navigationIndex) {
+                button.classList.add("is-active");
+            }
+
+            const label = String(item?.name || "").trim() || t("common.unknown");
+            button.dataset.tooltip = label;
+            button.setAttribute("aria-label", label);
+
+            const thumbUrl = String(
+                item?.thumbnailUrl || item?.url || ""
+            ).trim();
+            if (thumbUrl) {
+                const image = document.createElement("img");
+                image.className = "fs-thumb-img";
+                image.src = thumbUrl;
+                image.alt = "";
+                image.loading = "lazy";
+                image.draggable = false;
+                image.setAttribute("draggable", "false");
+                button.appendChild(image);
+            } else {
+                const fallback = document.createElement("span");
+                fallback.className = "fs-thumb-fallback";
+                const iconName = item?.type === "video"
+                    ? "video"
+                    : item?.type === "audio"
+                        ? "audio-lines"
+                        : "file";
+                fallback.innerHTML = icon(iconName, 18);
+                button.appendChild(fallback);
+            }
+
+            strip.appendChild(button);
+        });
+
+        const activeThumb = strip.querySelector(".fs-thumb-btn.is-active");
+        activeThumb?.scrollIntoView({
+            block: "nearest",
+            inline: "center",
+        });
+    }
+
+    async _openNavigationByIndex(index) {
+        const navigation = this._navigation;
+        if (!navigation || !Array.isArray(navigation.items)) {
+            return;
+        }
+        if (index < 0 || index >= navigation.items.length) {
+            return;
+        }
+        const entry = navigation.items[index];
+        const resolved = navigation.resolveById?.(entry.id);
+        const detail = resolved && typeof resolved === "object"
+            ? { ...resolved }
+            : null;
+        if (!detail) {
+            return;
+        }
+        if (!detail.id) {
+            detail.id = entry.id;
+        }
+        if (!detail.name) {
+            detail.name = entry.name || "";
+        }
+        await this._showDetail(detail, navigation);
+    }
+
+    async _openNavigationByStep(step) {
+        if (!Number.isFinite(step) || !step) {
+            return;
+        }
+        await this._openNavigationByIndex(this._navigationIndex + step);
     }
 
     _captureMainScrollPosition() {
@@ -173,6 +444,84 @@ export class XdhLightbox extends BaseElement {
         stage.dataset.panning = this._isImagePanning ? "true" : "false";
     }
 
+    _getImageViewportRect() {
+        const mediaHost = this.$(".fs-media");
+        if (!(mediaHost instanceof HTMLElement)) {
+            return null;
+        }
+        const rect = mediaHost.getBoundingClientRect();
+        const styles = window.getComputedStyle(mediaHost);
+        const insetLeft = readElementInset(styles, "paddingLeft");
+        const insetRight = readElementInset(styles, "paddingRight");
+        const insetTop = readElementInset(styles, "paddingTop");
+        const insetBottom = readElementInset(styles, "paddingBottom");
+        const width = Math.max(0, rect.width - insetLeft - insetRight);
+        const height = Math.max(0, rect.height - insetTop - insetBottom);
+        const left = rect.left + insetLeft;
+        const top = rect.top + insetTop;
+        return {
+            left,
+            top,
+            width,
+            height,
+            centerX: left + (width / 2),
+            centerY: top + (height / 2),
+        };
+    }
+
+    _getImageBaseDisplaySize() {
+        if (!(this._activeMedia instanceof HTMLImageElement)) {
+            return null;
+        }
+        const viewport = this._getImageViewportRect();
+        if (!viewport?.width || !viewport?.height) {
+            return null;
+        }
+        const naturalWidth = Math.max(
+            1,
+            this._activeMedia.naturalWidth || this._activeMedia.width || 1
+        );
+        const naturalHeight = Math.max(
+            1,
+            this._activeMedia.naturalHeight || this._activeMedia.height || 1
+        );
+        const fitScale = Math.min(
+            viewport.width / naturalWidth,
+            viewport.height / naturalHeight,
+            1
+        );
+        return {
+            viewport,
+            width: naturalWidth * fitScale,
+            height: naturalHeight * fitScale,
+        };
+    }
+
+    _getImageDisplayRect(scaleOverride = this._imageScale) {
+        const base = this._getImageBaseDisplaySize();
+        if (!base) {
+            return null;
+        }
+        const scale = Math.min(
+            IMAGE_ZOOM_MAX,
+            Math.max(IMAGE_ZOOM_MIN, Number(scaleOverride) || IMAGE_ZOOM_MIN)
+        );
+        const width = base.width * scale;
+        const height = base.height * scale;
+        const centerX = base.viewport.centerX + this._imagePanX;
+        const centerY = base.viewport.centerY + this._imagePanY;
+        return {
+            viewport: base.viewport,
+            scale,
+            width,
+            height,
+            centerX,
+            centerY,
+            left: centerX - (width / 2),
+            top: centerY - (height / 2),
+        };
+    }
+
     _clampImagePan() {
         if (!(this._activeMedia instanceof HTMLImageElement)) {
             this._imagePanX = 0;
@@ -186,20 +535,14 @@ export class XdhLightbox extends BaseElement {
             return;
         }
 
-        const mediaHost = this.$(".fs-media");
-        const viewportWidth = mediaHost?.clientWidth || 0;
-        const viewportHeight = mediaHost?.clientHeight || 0;
-        if (!viewportWidth || !viewportHeight) {
+        const imageRect = this._getImageDisplayRect();
+        const viewport = imageRect?.viewport;
+        if (!imageRect || !viewport?.width || !viewport?.height) {
             return;
         }
 
-        const rect = this._activeMedia.getBoundingClientRect();
-        if (!rect.width || !rect.height) {
-            return;
-        }
-
-        const maxPanX = Math.max(0, (rect.width - viewportWidth) / 2);
-        const maxPanY = Math.max(0, (rect.height - viewportHeight) / 2);
+        const maxPanX = Math.max(0, (imageRect.width - viewport.width) / 2);
+        const maxPanY = Math.max(0, (imageRect.height - viewport.height) / 2);
 
         this._imagePanX = Math.min(
             maxPanX,
@@ -221,8 +564,7 @@ export class XdhLightbox extends BaseElement {
         if (!(this._activeMedia instanceof HTMLImageElement)) {
             return;
         }
-        this._activeMedia.style.transform = "translate(0px, 0px) scale(1)";
-        this._activeMedia.style.transformOrigin = "50% 50%";
+        this._applyImageZoom();
     }
 
     _applyImageZoom() {
@@ -241,32 +583,30 @@ export class XdhLightbox extends BaseElement {
             return;
         }
 
+        const imageRect = this._getImageDisplayRect();
+        const viewport = imageRect?.viewport;
+        if (!imageRect || !viewport) {
+            return;
+        }
+
+        const focusLocalPoint = {
+            x: (clientX - imageRect.centerX) / imageRect.scale,
+            y: (clientY - imageRect.centerY) / imageRect.scale,
+        };
+
         const safeNextScale = Math.min(
             IMAGE_ZOOM_MAX,
             Math.max(IMAGE_ZOOM_MIN, nextScale)
         );
-        const prevScale = this._imageScale;
-        if (Math.abs(safeNextScale - prevScale) < 1e-6) {
+        if (Math.abs(safeNextScale - this._imageScale) < 1e-6) {
             return;
         }
 
-        const mediaHost = this.$(".fs-media");
-        const viewportRect = mediaHost?.getBoundingClientRect();
-        if (!viewportRect?.width || !viewportRect?.height) {
-            return;
-        }
-
-        const viewportCenterX = viewportRect.left + viewportRect.width / 2;
-        const viewportCenterY = viewportRect.top + viewportRect.height / 2;
-        const cursorX = clientX - viewportCenterX;
-        const cursorY = clientY - viewportCenterY;
-
-        // Keep the image point under cursor stable while zooming.
-        // Pan/scale model: screen = center + pan + scale * local.
-        const ratio = safeNextScale / prevScale;
-        this._imagePanX = cursorX - (cursorX - this._imagePanX) * ratio;
-        this._imagePanY = cursorY - (cursorY - this._imagePanY) * ratio;
         this._imageScale = safeNextScale;
+        this._imagePanX = clientX - viewport.centerX
+            - (focusLocalPoint.x * safeNextScale);
+        this._imagePanY = clientY - viewport.centerY
+            - (focusLocalPoint.y * safeNextScale);
         this._applyImageZoom();
     }
 
@@ -280,9 +620,10 @@ export class XdhLightbox extends BaseElement {
         }
 
         event.preventDefault();
-        const nextScale = event.deltaY < 0
-            ? this._imageScale + IMAGE_ZOOM_STEP
-            : this._imageScale - IMAGE_ZOOM_STEP;
+        const factor = event.deltaY < 0
+            ? 1.12
+            : 0.88;
+        const nextScale = this._imageScale * factor;
         this._zoomImageAt(event.clientX, event.clientY, nextScale);
     }
 
@@ -327,6 +668,7 @@ export class XdhLightbox extends BaseElement {
     connectedCallback() {
         super.connectedCallback();
         document.addEventListener("xdh:preview", this._onPreview);
+        document.addEventListener("keydown", this._onKeyDown, true);
         document.addEventListener(
             "fullscreenchange",
             this._onFullscreenChange
@@ -340,6 +682,7 @@ export class XdhLightbox extends BaseElement {
     disconnectedCallback() {
         super.disconnectedCallback();
         document.removeEventListener("xdh:preview", this._onPreview);
+        document.removeEventListener("keydown", this._onKeyDown, true);
         document.removeEventListener(
             "fullscreenchange",
             this._onFullscreenChange
@@ -381,6 +724,50 @@ export class XdhLightbox extends BaseElement {
             "pointercancel",
             (event) => this._endImagePan(event)
         );
+
+        const root = this.shadowRoot;
+        if (!root || root._xdhLightboxBound) {
+            return;
+        }
+        root._xdhLightboxBound = true;
+        root.addEventListener("click", (event) => {
+            if (!(event.target instanceof Element)) {
+                return;
+            }
+            const thumbBtn = event.target.closest("[data-lightbox-thumb-index]");
+            if (thumbBtn) {
+                const index = Number.parseInt(
+                    thumbBtn.dataset.lightboxThumbIndex || "-1",
+                    10
+                );
+                if (Number.isInteger(index) && index >= 0) {
+                    void this._openNavigationByIndex(index);
+                }
+                return;
+            }
+            const actionBtn = event.target.closest("[data-lightbox-action]");
+            if (!actionBtn) {
+                return;
+            }
+            const action = String(actionBtn.dataset.lightboxAction || "");
+            if (action === "prev") {
+                void this._openNavigationByStep(-1);
+                return;
+            }
+            if (action === "next") {
+                void this._openNavigationByStep(1);
+                return;
+            }
+            if (action === "open") {
+                if (this._current) {
+                    this._openInNewTab(this._current);
+                }
+                return;
+            }
+            if (action === "close") {
+                this._close();
+            }
+        });
     }
 
     _buildMedia(detail, previewSettings) {
@@ -483,16 +870,13 @@ export class XdhLightbox extends BaseElement {
         window.open(detail.url, "_blank", "noopener,noreferrer");
     }
 
-    async _open(detail) {
+    async _showDetail(detail, navigation = null) {
         const mediaType = String(detail?.type || "image").toLowerCase();
-        const hasPreviewPayload = mediaType === "text"
-            ? typeof detail?.text === "string"
-            : !!detail?.url;
-        if (!hasPreviewPayload) {
+        const isPreviewReady = hasPreviewPayload(detail);
+        if (!isPreviewReady) {
             return;
         }
 
-        this._current = detail;
         const stage = this.$(".fs-stage");
         const mediaHost = this.$(".fs-media");
         const previewSettings = getPreviewSettings();
@@ -502,11 +886,14 @@ export class XdhLightbox extends BaseElement {
 
         this._captureMainScrollPosition();
         const mediaNode = this._buildMedia(detail, previewSettings);
-        this._teardown({ preserveCurrent: true });
+        this._teardown({ preserveCurrent: true, preserveNavigation: true });
+        this._current = detail;
+        this._setNavigationContext(navigation, detail?.id);
         mediaHost.replaceChildren(mediaNode);
         stage.dataset.mediaType = mediaType;
         this._activeMedia = mediaNode;
         this._resetImageZoom();
+        this._syncChrome();
 
         if (isStageFullscreen(stage)) {
             this._startPlayback();
@@ -517,10 +904,15 @@ export class XdhLightbox extends BaseElement {
             await requestElementFullscreen(stage);
             this._startPlayback();
         } catch {
-            this._teardown({ preserveCurrent: true });
+            this._teardown({ preserveCurrent: true, preserveNavigation: true });
             this._restoreMainScrollPosition();
             this._openInNewTab(detail);
         }
+    }
+
+    async _open(detail) {
+        const navigation = normalizeNavigationContext(detail?.navigation, detail);
+        await this._showDetail(detail, navigation);
     }
 
     _teardown(options = {}) {
@@ -541,6 +933,11 @@ export class XdhLightbox extends BaseElement {
         if (!options.preserveCurrent) {
             this._current = null;
         }
+        if (!options.preserveNavigation) {
+            this._navigation = null;
+            this._navigationIndex = -1;
+        }
+        this._syncChrome();
     }
 
     _close() {
@@ -559,7 +956,9 @@ export class XdhLightbox extends BaseElement {
     render() {
         return `
             <style>
+                ${ICON_CSS}
                 ${SCROLLBAR_CSS}
+                ${TOOLTIP_CSS}
                 :host { display: contents; }
 
                 .fs-stage {
@@ -588,7 +987,279 @@ export class XdhLightbox extends BaseElement {
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    padding: 76px 12px 24px;
+                    box-sizing: border-box;
                     overflow: hidden;
+                }
+
+                .fs-stage[data-has-thumbnails="true"] .fs-media {
+                    padding-bottom: 112px;
+                }
+
+                .fs-top-bar {
+                    position: absolute;
+                    left: 16px;
+                    right: 16px;
+                    top: 16px;
+                    display: grid;
+                    grid-template-columns: 1fr minmax(0, auto) 1fr;
+                    gap: 12px;
+                    align-items: start;
+                    opacity: 0;
+                    transform: translateY(-14px);
+                    transition:
+                        transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.18s ease;
+                    pointer-events: none;
+                }
+
+                .fs-stage[data-active="true"] .fs-top-bar {
+                    opacity: 1;
+                    transform: translateY(0);
+                    pointer-events: none;
+                }
+
+                .fs-top-spacer {
+                    min-width: 0;
+                }
+
+                .fs-title-box {
+                    min-width: 0;
+                    max-width: min(72vw, 920px);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
+                    justify-self: center;
+                    padding: 10px 14px;
+                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    border-radius: 14px;
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-1, #1a1a1a) 94%,
+                        transparent
+                    );
+                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                    backdrop-filter: blur(10px);
+                    -webkit-backdrop-filter: blur(10px);
+                    pointer-events: auto;
+                }
+
+                .fs-title,
+                .fs-position {
+                    min-width: 0;
+                    max-width: 100%;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .fs-title {
+                    font-size: 13px;
+                    line-height: 1.35;
+                    font-weight: 600;
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                }
+
+                .fs-position {
+                    font-size: 12px;
+                    line-height: 1.3;
+                    color: var(--xdh-color-text-secondary, #999);
+                    font-variant-numeric: tabular-nums;
+                    font-family: ui-monospace, "Cascadia Mono", "Consolas",
+                        monospace;
+                }
+
+                .fs-top-actions {
+                    justify-self: end;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    pointer-events: auto;
+                }
+
+                .fs-side-btn {
+                    position: absolute;
+                    top: 50%;
+                    width: 48px;
+                    height: 84px;
+                    padding: 0;
+                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-1, #1a1a1a) 94%,
+                        transparent
+                    );
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                    backdrop-filter: blur(10px);
+                    -webkit-backdrop-filter: blur(10px);
+                    opacity: 0;
+                    transition:
+                        transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.18s ease,
+                        background 0.15s ease,
+                        border-color 0.15s ease;
+                    pointer-events: none;
+                }
+
+                .fs-prev-edge-btn {
+                    left: 0;
+                    transform: translate(-12px, -50%);
+                    border-left: 0;
+                    border-radius: 0 14px 14px 0;
+                }
+
+                .fs-next-edge-btn {
+                    right: 0;
+                    transform: translate(12px, -50%);
+                    border-right: 0;
+                    border-radius: 14px 0 0 14px;
+                }
+
+                .fs-stage[data-active="true"] .fs-side-btn {
+                    opacity: 1;
+                    pointer-events: auto;
+                }
+
+                .fs-stage[data-active="true"] .fs-prev-edge-btn {
+                    transform: translate(0, -50%);
+                }
+
+                .fs-stage[data-active="true"] .fs-next-edge-btn {
+                    transform: translate(0, -50%);
+                }
+
+                .fs-bottom-bar {
+                    position: absolute;
+                    left: 16px;
+                    right: 16px;
+                    bottom: 16px;
+                    display: flex;
+                    align-items: center;
+                    padding: 10px 12px;
+                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    border-radius: 16px;
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-1, #1a1a1a) 94%,
+                        transparent
+                    );
+                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                    backdrop-filter: blur(10px);
+                    -webkit-backdrop-filter: blur(10px);
+                    opacity: 0;
+                    transform: translateY(16px);
+                    transition:
+                        transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.18s ease;
+                    pointer-events: none;
+                }
+
+                .fs-stage[data-active="true"] .fs-bottom-bar {
+                    opacity: 1;
+                    transform: translateY(0);
+                    pointer-events: auto;
+                }
+
+                .fs-stage[data-has-thumbnails="false"] .fs-bottom-bar {
+                    opacity: 0;
+                    transform: translateY(16px);
+                    pointer-events: none;
+                }
+
+                .fs-thumb-strip {
+                    width: 100%;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    overflow-x: auto;
+                    overflow-y: hidden;
+                    padding: 2px 0;
+                }
+
+                .fs-thumb-btn {
+                    width: 64px;
+                    height: 64px;
+                    padding: 0;
+                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    border-radius: 10px;
+                    background: var(--xdh-color-surface-2, #2a2a2a);
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    overflow: hidden;
+                    flex: 0 0 auto;
+                    transition:
+                        transform 0.15s ease,
+                        border-color 0.15s ease,
+                        box-shadow 0.15s ease,
+                        opacity 0.15s ease;
+                }
+
+                .fs-thumb-btn:hover {
+                    transform: translateY(-1px);
+                }
+
+                .fs-thumb-btn.is-active {
+                    border-color: var(--xdh-brand-pink, #ea005e);
+                    box-shadow: 0 0 0 1px var(--xdh-brand-pink, #ea005e);
+                }
+
+                .fs-action-btn {
+                    width: 36px;
+                    height: 36px;
+                    padding: 0;
+                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    border-radius: 10px;
+                    background: var(--xdh-color-surface-2, #2a2a2a);
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition:
+                        background 0.15s ease,
+                        border-color 0.15s ease,
+                        color 0.15s ease,
+                        transform 0.15s ease;
+                }
+
+                .fs-side-btn:hover,
+                .fs-action-btn:hover {
+                    background: var(--xdh-color-hover, #2a2a2a);
+                    border-color: color-mix(
+                        in srgb,
+                        var(--xdh-brand-pink, #ea005e) 60%,
+                        var(--xdh-color-border, #2e2e2e)
+                    );
+                    transform: translateY(-1px);
+                }
+
+                .fs-side-btn:disabled,
+                .fs-thumb-btn:disabled,
+                .fs-action-btn:disabled {
+                    opacity: 0.42;
+                    cursor: not-allowed;
+                    transform: none;
+                }
+
+                .fs-thumb-img,
+                .fs-thumb-fallback {
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .fs-thumb-img {
+                    object-fit: cover;
+                }
+
+                .fs-thumb-fallback {
+                    background: var(--xdh-color-surface-2, #2a2a2a);
+                    color: var(--xdh-color-text-secondary, #999);
                 }
 
                 .fs-img,
@@ -643,7 +1314,8 @@ export class XdhLightbox extends BaseElement {
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
-                    overflow: auto;
+                    overflow-x: auto;
+                    overflow-y: scroll;
                 }
 
                 .fs-text-section {
@@ -713,6 +1385,47 @@ export class XdhLightbox extends BaseElement {
                         padding: 16px;
                     }
 
+                    .fs-media {
+                        padding: 72px 0 24px;
+                    }
+
+                    .fs-stage[data-has-thumbnails="true"] .fs-media {
+                        padding-bottom: 100px;
+                    }
+
+                    .fs-top-bar {
+                        left: 12px;
+                        right: 12px;
+                        top: 12px;
+                        gap: 8px;
+                    }
+
+                    .fs-bottom-bar {
+                        left: 12px;
+                        right: 12px;
+                        bottom: 12px;
+                        padding: 8px 10px;
+                    }
+
+                    .fs-title-box {
+                        max-width: min(70vw, 720px);
+                        padding: 8px 10px;
+                    }
+
+                    .fs-title {
+                        font-size: 12px;
+                    }
+
+                    .fs-thumb-btn {
+                        width: 56px;
+                        height: 56px;
+                    }
+
+                    .fs-side-btn {
+                        width: 42px;
+                        height: 72px;
+                    }
+
                     .fs-audio {
                         width: 100%;
                     }
@@ -720,7 +1433,49 @@ export class XdhLightbox extends BaseElement {
             </style>
 
             <div class="fs-stage">
+                <div class="fs-top-bar">
+                    <div class="fs-top-spacer"></div>
+                    <div class="fs-title-box">
+                        <div class="fs-title xdh-tooltip xdh-tooltip-down"
+                             data-tooltip=""></div>
+                        <div class="fs-position xdh-tooltip xdh-tooltip-down"
+                             data-tooltip=""></div>
+                    </div>
+                    <div class="fs-top-actions">
+                        <button class="fs-action-btn fs-open-btn xdh-tooltip xdh-tooltip-down"
+                                type="button"
+                                data-lightbox-action="open"
+                                data-tooltip="${t("lightbox.open_external")}"
+                                aria-label="${t("lightbox.open_external")}">
+                            ${icon("link-2", 16)}
+                        </button>
+                        <button class="fs-action-btn fs-close-btn xdh-tooltip xdh-tooltip-down"
+                                type="button"
+                                data-lightbox-action="close"
+                                data-tooltip="${t("lightbox.close") }"
+                                aria-label="${t("lightbox.close")}">
+                            ${icon("x", 16)}
+                        </button>
+                    </div>
+                </div>
+                <button class="fs-side-btn fs-prev-edge-btn xdh-tooltip"
+                        type="button"
+                        data-lightbox-action="prev"
+                        data-tooltip="${t("lightbox.prev")}"
+                        aria-label="${t("lightbox.prev")}">
+                    ${icon("arrow-left", 18)}
+                </button>
+                <button class="fs-side-btn fs-next-edge-btn xdh-tooltip xdh-tooltip-left"
+                        type="button"
+                        data-lightbox-action="next"
+                        data-tooltip="${t("lightbox.next")}"
+                        aria-label="${t("lightbox.next")}">
+                    ${icon("arrow-right", 18)}
+                </button>
                 <div class="fs-media"></div>
+                <div class="fs-bottom-bar">
+                    <div class="fs-thumb-strip xdh-scroll"></div>
+                </div>
             </div>
         `;
     }

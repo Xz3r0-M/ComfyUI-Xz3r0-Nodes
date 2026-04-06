@@ -710,7 +710,8 @@ function ensureStyles() {
             border-radius: 8px;
             padding: 8px;
             box-sizing: border-box;
-            overflow: auto;
+            overflow-x: auto;
+            overflow-y: scroll;
             overflow-anchor: none;
         }
         .xlora-toolbar {

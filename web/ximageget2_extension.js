@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260406h";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -880,7 +880,6 @@ function setPreview(panelInfo, data = {}) {
         }
         panelInfo.__ximageget2_preview_state = PREVIEW_STATE_LOADED;
         panelInfo.preview.classList.add("has-media");
-        panelInfo.preview.classList.toggle("has-paint", Boolean(cacheBustedPaint));
         panelInfo.preview.classList.toggle("has-mask", Boolean(cacheBustedMask));
         panelInfo.placeholder.textContent = "";
         syncMaskButtonState(panelInfo.__ximageget2_node);
@@ -1433,19 +1432,117 @@ function ensureNodeMinSize(node) {
     if (!node) {
         return;
     }
-    const minWidth = DEFAULT_MIN_NODE_WIDTH;
     const minHeight = DEFAULT_MIN_NODE_HEIGHT;
-    if (!node.min_size || node.min_size.length < 2) {
-        node.min_size = [minWidth, minHeight];
-    } else {
-        node.min_size[0] = Math.max(node.min_size[0], minWidth);
-        node.min_size[1] = Math.max(node.min_size[1], minHeight);
-    }
+    const minWidth = resolveAdaptiveMinWidth(node, DEFAULT_MIN_NODE_WIDTH);
+    node.min_size = [minWidth, minHeight];
     if (typeof node.setSize === "function") {
         const width = Math.max(node.size?.[0] ?? 0, minWidth);
         const height = Math.max(node.size?.[1] ?? 0, minHeight);
         node.setSize([width, height]);
+    } else if (!node.size || node.size.length < 2) {
+        node.size = [minWidth, minHeight];
+    } else {
+        node.size[0] = Math.max(node.size[0], minWidth);
+        node.size[1] = Math.max(node.size[1], minHeight);
     }
+    if (node.__ximageget2_resize_guard) {
+        return;
+    }
+    node.__ximageget2_resize_guard = true;
+    const origOnResize = node.onResize;
+    node.onResize = function (size) {
+        const resizeMinHeight = DEFAULT_MIN_NODE_HEIGHT;
+        const resizeMinWidth = resolveAdaptiveMinWidth(
+            this,
+            DEFAULT_MIN_NODE_WIDTH
+        );
+        this.min_size = [resizeMinWidth, resizeMinHeight];
+        const sourceSize = Array.isArray(size) ? size : this.size;
+        const nextWidth = Math.max(sourceSize?.[0] ?? 0, resizeMinWidth);
+        const nextHeight = Math.max(
+            sourceSize?.[1] ?? 0,
+            resizeMinHeight
+        );
+        if (!Array.isArray(this.size) || this.size.length < 2) {
+            this.size = [nextWidth, nextHeight];
+        } else {
+            this.size[0] = nextWidth;
+            this.size[1] = nextHeight;
+        }
+        this.setDirtyCanvas?.(true, true);
+        if (typeof origOnResize === "function") {
+            origOnResize.apply(this, arguments);
+        }
+    }
+}
+
+function readPanelHorizontalPadding(panelEl) {
+    if (!(panelEl instanceof HTMLElement)) {
+        return 0;
+    }
+    const styles = window.getComputedStyle(panelEl);
+    const left = Number.parseFloat(styles.paddingLeft || "0");
+    const right = Number.parseFloat(styles.paddingRight || "0");
+    const total = left + right;
+    return Number.isFinite(total) ? total : 0;
+}
+
+function readFlexColumnGap(containerEl) {
+    if (!(containerEl instanceof HTMLElement)) {
+        return 0;
+    }
+    const styles = window.getComputedStyle(containerEl);
+    const rawGap = styles.columnGap || styles.gap || "0";
+    const gap = Number.parseFloat(rawGap || "0");
+    return Number.isFinite(gap) ? gap : 0;
+}
+
+function measureMetaContentWidth(metaEl) {
+    if (!(metaEl instanceof HTMLElement)) {
+        return 0;
+    }
+    const children = Array.from(metaEl.children).filter(
+        (child) => child instanceof HTMLElement
+            && window.getComputedStyle(child).display !== "none"
+    );
+    if (!children.length) {
+        return 0;
+    }
+    const gap = readFlexColumnGap(metaEl);
+    const contentWidth = children.reduce((total, child) => {
+        const measured = Math.max(
+            child.getBoundingClientRect().width || 0,
+            child.offsetWidth || 0,
+            child.scrollWidth || 0
+        );
+        return total + (Number.isFinite(measured) ? measured : 0);
+    }, 0);
+    const totalGap = gap * Math.max(children.length - 1, 0);
+    return Math.ceil(contentWidth + totalGap);
+}
+
+function resolveAdaptiveMinWidth(node, baseMinWidth) {
+    const fallbackMin = Number.isFinite(baseMinWidth)
+        ? baseMinWidth
+        : DEFAULT_MIN_NODE_WIDTH;
+    const panelInfo = node?.__ximageget2_panel;
+    const meta = panelInfo?.meta;
+    const scopedId = getScopedNodeId(node);
+    const idText = scopedId
+        || String(panelInfo?.badgeChip?.textContent || "").trim();
+    const extraByIdLength = idText.length > 5
+        ? (idText.length - 5) * 8
+        : 0;
+    let domRequired = 0;
+    if (meta instanceof HTMLElement) {
+        domRequired = measureMetaContentWidth(meta);
+    }
+    const panelPadding = readPanelHorizontalPadding(panelInfo?.panel);
+    const layoutSlack = 12;
+    const requiredByDom = Math.ceil(domRequired + panelPadding + layoutSlack);
+    const requiredById = Math.ceil(fallbackMin + extraByIdLength);
+    const required = Math.max(requiredByDom, requiredById);
+    return Math.max(fallbackMin, required);
 }
 
 function restoreStoredData(node) {

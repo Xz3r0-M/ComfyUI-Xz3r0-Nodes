@@ -54,7 +54,7 @@
   "xdatahub.ui.node.ximageget.mask_editor.transform_reset": "重置",
   "xdatahub.ui.node.ximageget.mask_editor.transform_reset_tip": "重置旋转和翻转",
   "xdatahub.ui.node.ximageget.mask_editor.brush_size": "画笔和橡皮大小",
-  "xdatahub.ui.node.ximageget.mask_editor.brush_size_tip": "Ctrl/Cmd + 滚轮自适应，Ctrl/Cmd + Shift + 滚轮微调",
+  "xdatahub.ui.node.ximageget.mask_editor.brush_size_tip": "Shift + 滚轮自适应，Ctrl/Cmd + Shift + 滚轮微调",
   "xdatahub.ui.node.ximageget.mask_editor.tool_brush_tip": "画颜色",
   "xdatahub.ui.node.ximageget.mask_editor.color": "颜色",
   "xdatahub.ui.node.ximageget.mask_editor.mask_color": "遮罩色",

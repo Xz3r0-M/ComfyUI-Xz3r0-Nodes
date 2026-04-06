@@ -54,7 +54,7 @@
   "xdatahub.ui.node.ximageget.mask_editor.transform_reset": "Reset",
   "xdatahub.ui.node.ximageget.mask_editor.transform_reset_tip": "Reset rotation and flip",
   "xdatahub.ui.node.ximageget.mask_editor.brush_size": "Brush and Eraser Size",
-  "xdatahub.ui.node.ximageget.mask_editor.brush_size_tip": "Ctrl/Cmd + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine",
+  "xdatahub.ui.node.ximageget.mask_editor.brush_size_tip": "Shift + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine",
   "xdatahub.ui.node.ximageget.mask_editor.tool_brush_tip": "Paint color",
   "xdatahub.ui.node.ximageget.mask_editor.color": "Color",
   "xdatahub.ui.node.ximageget.mask_editor.mask_color": "Mask",

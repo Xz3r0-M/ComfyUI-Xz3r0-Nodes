@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-9";
+import { t } from "../core/i18n.js?v=20260406-16";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -597,6 +597,65 @@ export class XdhMediaGrid extends BaseElement {
         }
     }
 
+    _filteredItems() {
+        const sortOrder = appStore.state.sortOrder || "date-desc";
+        const searchQ = String(appStore.state.searchQuery || "")
+            .toLowerCase()
+            .trim();
+        const sortedItems = applySort(this.items, sortOrder);
+        return searchQ
+            ? sortedItems.filter((item) =>
+                String(item.name || "").toLowerCase().includes(searchQ)
+            )
+            : sortedItems;
+    }
+
+    _previewItems() {
+        return this._filteredItems().filter((item) => {
+            if (item?.isFolder || !item?.previewable) {
+                return false;
+            }
+            const previewState = getCardPreviewState(item, this.failedThumbIds);
+            return !previewState.blocked;
+        });
+    }
+
+    _buildPreviewDetail(item) {
+        if (!item) {
+            return null;
+        }
+        return {
+            id: String(item.id || ""),
+            name: item.name,
+            url: item.thumbUrl,
+            type: item.type || "image",
+            iconHtml: icon("audio-lines", 56),
+        };
+    }
+
+    _buildPreviewNavigation(activeId) {
+        const previewItems = this._previewItems();
+        if (!previewItems.length) {
+            return null;
+        }
+        return {
+            items: previewItems.map((item) => ({
+                id: String(item.id || ""),
+                name: String(item.name || ""),
+                type: item.type || "image",
+                thumbnailUrl: String(item.thumbUrl || ""),
+            })),
+            activeId: String(activeId || ""),
+            resolveById: (targetId) => {
+                const normalizedId = String(targetId || "");
+                const target = previewItems.find(
+                    (item) => String(item.id || "") === normalizedId
+                );
+                return this._buildPreviewDetail(target);
+            },
+        };
+    }
+
     bindEvents() {
         const grid = this.$(".grid");
         if (!grid) return;
@@ -615,13 +674,13 @@ export class XdhMediaGrid extends BaseElement {
                     const card = prevBtn.closest(".media-card");
                     const id = card?.dataset?.id;
                     const item = id ? this._itemMap?.get(id) : null;
-                    if (item) {
+                    const detail = this._buildPreviewDetail(item);
+                    if (detail) {
                         document.dispatchEvent(new CustomEvent("xdh:preview", {
                             detail: {
-                                id: item.id, name: item.name,
-                                url: item.thumbUrl, type: item.type || "image",
-                                iconHtml: icon("audio-lines", 56),
-                            }
+                                ...detail,
+                                navigation: this._buildPreviewNavigation(item.id),
+                            },
                         }));
                     }
                     return;
@@ -812,15 +871,11 @@ export class XdhMediaGrid extends BaseElement {
 
     /** 只渲染卡片列表 HTML（.grid 内部），不含 <style> */
     _renderCards() {
-        const sortOrder    = appStore.state.sortOrder    || "date-desc";
-        const searchQ      = (appStore.state.searchQuery || "").toLowerCase().trim();
         const selectedItems = appStore.state.selectedItems || [];
-        const sortedItems  = applySort(this.items, sortOrder);
-        const filteredItems = searchQ
-            ? sortedItems.filter(item =>
-                String(item.name || "").toLowerCase().includes(searchQ)
-            )
-            : sortedItems;
+        const filteredItems = this._filteredItems();
+        const searchQ = String(appStore.state.searchQuery || "")
+            .toLowerCase()
+            .trim();
         const loadError = String(appStore.state.loadError || "").trim();
 
         if (loadError) {
@@ -892,11 +947,11 @@ export class XdhMediaGrid extends BaseElement {
                     display: grid;
                     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
                     gap: 16px;
-                    padding: 16px;
+                    padding: 16px 17px 16px 16px;
                 }
-                .grid[data-size="small"]  { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; padding: 16px; }
-                .grid[data-size="medium"] { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 16px; }
-                .grid[data-size="large"]  { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; padding: 16px; }
+                .grid[data-size="small"]  { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px; padding: 16px 17px 16px 16px; }
+                .grid[data-size="medium"] { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 16px 17px 16px 16px; }
+                .grid[data-size="large"]  { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; padding: 16px 17px 16px 16px; }
 
                 .media-card {
                     background: var(--xdh-color-surface-1, #1e1e1e);

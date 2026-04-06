@@ -95,9 +95,18 @@ const Dictionary = {
         'nav.btn.size_small':       '小卡片',
         'nav.btn.size_medium':      '中卡片',
         'nav.btn.size_large':       '大卡片',
+        'nav.btn.show_tree':        '显示目录树',
+        'nav.btn.hide_tree':        '隐藏目录树',
         'nav.btn.lang':             '切换语言',
         'nav.btn.settings':         '设置',
         'nav.btn.more':             '更多操作',
+        'nav.tree.title':           '目录树',
+        'nav.tree.empty':           '当前层级没有子文件夹',
+        'nav.tree.loading':         '加载文件夹中…',
+        'nav.tree.error':           '目录树加载失败',
+        'nav.tree.expand':          '展开子目录',
+        'nav.tree.collapse':        '收起子目录',
+        'nav.tree.collapse_all':    '收起全部目录',
 
         // ── nav — more drawer ────────────────────────────────
         'nav.drawer.clean_invalid': '清理无效项',
@@ -192,6 +201,10 @@ const Dictionary = {
 
         // ── lightbox ─────────────────────────────────────────
         'lightbox.close':       '关闭 (Esc)',
+        'lightbox.prev':        '上一项',
+        'lightbox.next':        '下一项',
+        'lightbox.open_external': '在新标签页打开',
+        'lightbox.position':    '第 {current} 项 / 共 {total} 项',
 
         // ── settings dialog ──────────────────────────────────
         'settings.sect.video':          '视频播放',
@@ -342,9 +355,18 @@ const Dictionary = {
         'nav.btn.size_small':       'Small cards',
         'nav.btn.size_medium':      'Medium cards',
         'nav.btn.size_large':       'Large cards',
+        'nav.btn.show_tree':        'Show folder tree',
+        'nav.btn.hide_tree':        'Hide folder tree',
         'nav.btn.lang':             'Switch language',
         'nav.btn.settings':         'Settings',
         'nav.btn.more':             'More actions',
+        'nav.tree.title':           'Folder Tree',
+        'nav.tree.empty':           'No subfolders at this level',
+        'nav.tree.loading':         'Loading folders…',
+        'nav.tree.error':           'Failed to load folder tree',
+        'nav.tree.expand':          'Expand branch',
+        'nav.tree.collapse':        'Collapse branch',
+        'nav.tree.collapse_all':    'Collapse all branches',
 
         // ── nav — more drawer ────────────────────────────────
         'nav.drawer.clean_invalid': 'Clean invalid entries',
@@ -437,6 +459,10 @@ const Dictionary = {
 
         // ── lightbox ─────────────────────────────────────────
         'lightbox.close':       'Close (Esc)',
+        'lightbox.prev':        'Previous item',
+        'lightbox.next':        'Next item',
+        'lightbox.open_external': 'Open in new tab',
+        'lightbox.position':    'Item {current} of {total}',
 
         // ── settings dialog ──────────────────────────────────
         'settings.sect.video':          'Video Playback',

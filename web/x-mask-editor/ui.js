@@ -110,6 +110,19 @@ export function ensureMaskEditorStyles() {
             border: 1px solid var(--ximageget-mask-editor-border);
             box-shadow: var(--ximageget-mask-editor-shadow);
         }
+        .ximageget-mask-editor-hotkey-sink {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            opacity: 0;
+            pointer-events: none;
+            inset: auto;
+            left: -9999px;
+            top: 0;
+        }
         .ximageget-mask-editor-header {
             display: flex;
             align-items: center;
@@ -502,6 +515,16 @@ export function createMaskEditorUi(texts = {}) {
     dialog.className = "ximageget-mask-editor-dialog";
     overlay.appendChild(dialog);
 
+    const hotkeySink = document.createElement("input");
+    hotkeySink.className = "ximageget-mask-editor-hotkey-sink";
+    hotkeySink.type = "text";
+    hotkeySink.readOnly = true;
+    hotkeySink.tabIndex = -1;
+    hotkeySink.autocomplete = "off";
+    hotkeySink.spellcheck = false;
+    hotkeySink.setAttribute("aria-hidden", "true");
+    dialog.appendChild(hotkeySink);
+
     const header = document.createElement("div");
     header.className = "ximageget-mask-editor-header";
     dialog.appendChild(header);
@@ -786,7 +809,7 @@ export function createMaskEditorUi(texts = {}) {
     setButtonTooltip(
         brushLabel,
         texts.brushSizeTip
-            || "Ctrl/Cmd + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine"
+            || "Shift + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine"
     );
     const brushRange = document.createElement("input");
     brushRange.className = (
@@ -801,7 +824,7 @@ export function createMaskEditorUi(texts = {}) {
     setButtonTooltip(
         brushRange,
         texts.brushSizeTip
-            || "Ctrl/Cmd + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine"
+            || "Shift + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine"
     );
     const brushInput = document.createElement("input");
     brushInput.className = "ximageget-mask-editor-value-input";
@@ -811,7 +834,7 @@ export function createMaskEditorUi(texts = {}) {
     setButtonTooltip(
         brushInput,
         texts.brushSizeTip
-            || "Ctrl/Cmd + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine"
+            || "Shift + Wheel adaptive, Ctrl/Cmd + Shift + Wheel fine"
     );
     brushGroup.appendChild(brushLabel);
     brushGroup.appendChild(brushRange);
@@ -967,6 +990,7 @@ export function createMaskEditorUi(texts = {}) {
     return {
         overlay,
         dialog,
+        hotkeySink,
         title,
         brushBtn,
         maskBrushBtn,

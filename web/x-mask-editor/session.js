@@ -1,7 +1,7 @@
 import {
     createMaskEditorUi,
     ensureMaskEditorStyles,
-} from "./ui.js";
+} from "./ui.js?v=20260406h";
 
 let activeSession = null;
 

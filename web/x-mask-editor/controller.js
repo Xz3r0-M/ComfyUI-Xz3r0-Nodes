@@ -760,8 +760,10 @@ export class XMaskEditorController {
             return;
         }
         event.preventDefault();
-        if (event.ctrlKey || event.metaKey) {
-            const step = this.getBrushWheelStep(event.shiftKey);
+        if (event.shiftKey) {
+            const step = this.getBrushWheelStep(
+                event.ctrlKey || event.metaKey
+            );
             const delta = event.deltaY < 0 ? step : -step;
             this.setBrushSize(this.brushSize + delta);
             return;
@@ -822,6 +824,7 @@ export class XMaskEditorController {
 
     handlePointerMove(event) {
         if (this.isPanning && this.panStart) {
+            this.cursorPoint = this.getDisplayPoint(event);
             const deltaX = event.clientX - this.panStart.x;
             const deltaY = event.clientY - this.panStart.y;
             const rect = this.canvas.getBoundingClientRect();

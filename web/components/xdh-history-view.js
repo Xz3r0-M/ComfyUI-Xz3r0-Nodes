@@ -6,7 +6,7 @@ import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
 import { banner } from "../core/banner.js";
-import { t, getLocale } from "../core/i18n.js?v=20260406-9";
+import { t, getLocale } from "../core/i18n.js?v=20260406-16";
 
 function isHistoryCategory(category) {
     return category === "history" || category === "favorites";
@@ -208,6 +208,44 @@ export class XdhHistoryView extends BaseElement {
         return items[0];
     }
 
+    _buildPreviewDetail(item) {
+        const fullText = payloadText(item);
+        if (!item || !fullText) {
+            return null;
+        }
+        return {
+            id: String(item.id || ""),
+            type: "text",
+            name: historyItemTitle(item),
+            text: fullText,
+        };
+    }
+
+    _previewableItems() {
+        return this._visibleItems().filter((item) => !!payloadText(item));
+    }
+
+    _buildPreviewNavigation(activeId) {
+        const previewItems = this._previewableItems();
+        if (!previewItems.length) {
+            return null;
+        }
+        return {
+            items: previewItems.map((item) => ({
+                id: String(item.id || ""),
+                name: historyItemTitle(item),
+            })),
+            activeId: String(activeId || ""),
+            resolveById: (targetId) => {
+                const normalizedId = String(targetId || "");
+                const target = previewItems.find(
+                    (item) => String(item.id || "") === normalizedId
+                );
+                return this._buildPreviewDetail(target);
+            },
+        };
+    }
+
     bindEvents() {
         // 委托到 shadowRoot（持久存在，rerenderRoot 不会销毁它）
         const root = this.shadowRoot;
@@ -224,14 +262,13 @@ export class XdhHistoryView extends BaseElement {
                 const item = row
                     ? this._itemMap.get(String(row.dataset.id || ""))
                     : null;
-                const fullText = payloadText(item);
-                if (item && fullText) {
+                const detail = this._buildPreviewDetail(item);
+                if (detail) {
                     document.dispatchEvent(new CustomEvent("xdh:preview", {
                         detail: {
-                            type: "text",
-                            name: historyItemTitle(item),
-                            text: fullText,
-                        }
+                            ...detail,
+                            navigation: this._buildPreviewNavigation(item.id),
+                        },
                     }));
                 }
                 return;

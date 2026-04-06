@@ -66,22 +66,9 @@
     - 位于 `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
 - 在 XDataHub 控制面板 中提供一些功能设置
     - 支持 浅色 和 深色 主题配色
-    - 贴边隐藏（滑出）
-    - 工作中时禁止操作界面
+    - 启动时显示 XDataHub
     - 窗口显示切换快捷键
         - 默认：`Alt + X`
-    - 视频和音频的播放相关设置
-    - Lora 数据库文件保存到 `models/loras`
-        - 启用后，Lora 的数据库文件 `loras_data.db` 将不再保存于 `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
-        - 启用时，现有的 Lora 数据库文件会自动移动到 `models/loras`
-            - 如果已存在相同文件会询问
-    - 设置 自定义媒体文件夹（路径）
-- 在 ComfyUI 设置面板 中提供一些功能设置
-    - XDataHub 关闭按钮行为
-        - 隐藏（推荐）
-            - 仅隐藏窗口显示，窗口状态会保持，但会持续占用系统资源，重新打开速度快
-        - 销毁
-            - 完全关闭 XDataHub，窗口状态不会保持，关闭后不再占用系统资源，重新打开稍慢
     - XDataHub 默认打开布局
         - 默认
             - 视图居中位置，窗口大小为视图界面的 75%（不会小于 XDataHub 窗口最小尺寸）
@@ -90,7 +77,22 @@
         - 右靠边
             - 最小窗口宽度在视图界面右侧贴边
         - 最大化
+    - XDataHub 关闭按钮行为
+        - 隐藏（推荐）
+            - 仅隐藏窗口显示，窗口状态会保持，但会持续占用系统资源，重新打开速度快
+        - 销毁
+            - 完全关闭 XDataHub，窗口状态不会保持，关闭后不再占用系统资源，重新打开稍慢
+    - 贴边隐藏（滑出）
+    - 工作中时禁止操作界面
+    - 视频和音频的播放相关设置
+    - Lora 数据库文件保存到 `models/loras`
+        - 启用后，Lora 的数据库文件 `loras_data.db` 将不再保存于 `custom_nodes\ComfyUI-Xz3r0-Nodes\XDataSaved`
+        - 启用时，现有的 Lora 数据库文件会自动移动到 `models/loras`
+            - 如果已存在相同文件会询问
+    - 设置 自定义媒体文件夹（路径）
+- 在 ComfyUI 设置面板 中提供一些功能设置
     - 将 ♾️ XDataHub 置于 ComfyUI 界面组件之下
+        - 会被 ComfyUI 网页界面组件遮盖，请谨慎开启
     - 启用 ♾️ XDataHub（按钮）
 - 界面本地化
     - 基于 ComfyUI 界面选择的语言

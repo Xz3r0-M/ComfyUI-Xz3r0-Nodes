@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore as store } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-9";
+import { t } from "../core/i18n.js?v=20260406-15";
 
 function escapeAttr(value) {
     return String(value || "")

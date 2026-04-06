@@ -6,22 +6,23 @@ import {
     buildMediaUrl,
 } from "./core/api.js?v=20260403-413";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260406-9";
+import { setLocale, t } from "./core/i18n.js?v=20260406-16";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
-import "./components/xdh-sidebar-filter.js?v=20260406-4";
-import "./components/xdh-media-grid.js?v=20260406-4";
-import "./components/xdh-staging-dock.js?v=20260406-4";
-import "./components/xdh-node-picker.js?v=20260406-4";
+import "./components/xdh-sidebar-filter.js?v=20260406-15";
+import "./components/xdh-folder-tree.js?v=20260406-50";
+import "./components/xdh-media-grid.js?v=20260406-39";
+import "./components/xdh-staging-dock.js?v=20260406-15";
+import "./components/xdh-node-picker.js?v=20260406-15";
 import "./core/node-bridge.js?v=20260403-400";
-import "./components/xdh-content-nav.js?v=20260406-4";
-import "./components/xdh-pagination.js?v=20260406-4";
-import "./components/xdh-lightbox.js?v=20260406-12";
-import "./components/xdh-history-view.js?v=20260406-10";
-import "./components/xdh-banner.js?v=20260406-4";
-import "./components/xdh-lora-detail.js?v=20260406-4";
-import "./components/xdh-settings-dialog.js?v=20260406-13";
+import "./components/xdh-content-nav.js?v=20260406-24";
+import "./components/xdh-pagination.js?v=20260406-15";
+import "./components/xdh-lightbox.js?v=20260406-55";
+import "./components/xdh-history-view.js?v=20260406-16";
+import "./components/xdh-banner.js?v=20260406-15";
+import "./components/xdh-lora-detail.js?v=20260406-15";
+import "./components/xdh-settings-dialog.js?v=20260406-15";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -319,12 +320,14 @@ function loadPersistedUiState() {
             cardSize: PERSISTED_CARD_SIZES.has(parsed.cardSize)
                 ? parsed.cardSize
                 : DEFAULT_CARD_SIZE,
+            folderTreeVisible: parsed.folderTreeVisible !== false,
         };
     } catch {
         return {
             activeCategory: DEFAULT_ACTIVE_CATEGORY,
             sortOrder: DEFAULT_SORT_ORDER,
             cardSize: DEFAULT_CARD_SIZE,
+            folderTreeVisible: true,
         };
     }
 }
@@ -337,6 +340,7 @@ function persistUiState(state = appStore.state) {
             ),
             sortOrder: String(state.sortOrder || DEFAULT_SORT_ORDER),
             cardSize: String(state.cardSize || DEFAULT_CARD_SIZE),
+            folderTreeVisible: state.folderTreeVisible === true,
         }));
     } catch {
         // ignore localStorage write errors
@@ -351,6 +355,7 @@ if (initialCategoryFromUrl) {
 appStore.state.activeCategory = initialUiState.activeCategory;
 appStore.state.sortOrder = initialUiState.sortOrder;
 appStore.state.cardSize = initialUiState.cardSize;
+appStore.state.folderTreeVisible = initialUiState.folderTreeVisible;
 appStore.state.activeFolder = "";
 appStore.state.currentPage = 1;
 appStore.state.navHistory = [{
@@ -830,6 +835,7 @@ appStore.subscribe((state, key) => {
         key !== "activeCategory"
         && key !== "sortOrder"
         && key !== "cardSize"
+        && key !== "folderTreeVisible"
     ) {
         return;
     }
