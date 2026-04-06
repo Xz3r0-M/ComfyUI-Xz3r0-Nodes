@@ -4,7 +4,7 @@ import {
 } from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
 import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
-import { t } from '../core/i18n.js?v=20260404-1';
+import { t } from '../core/i18n.js?v=20260406-9';
 import { banner } from '../core/banner.js';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {

@@ -3,10 +3,10 @@ import {
     registerCustomElement,
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
-import { icon, ICON_CSS, SCROLLBAR_CSS } from "../core/icon.js";
+import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
 import { banner } from "../core/banner.js";
-import { t, getLocale } from "../core/i18n.js?v=20260404-1";
+import { t, getLocale } from "../core/i18n.js?v=20260406-9";
 
 function isHistoryCategory(category) {
     return category === "history" || category === "favorites";
@@ -126,6 +126,15 @@ function historyItemDbName(item) {
         || t("history.unknown_db");
 }
 
+function buildHistoryPayloadExcerpt(text) {
+    const value = String(text || "");
+    if (!value) {
+        return "";
+    }
+
+    return value.replace(/\s*\r?\n\s*/g, " ").trim();
+}
+
 export class XdhHistoryView extends BaseElement {
     constructor() {
         super();
@@ -208,6 +217,25 @@ export class XdhHistoryView extends BaseElement {
         // ── 点击委托（行选中 + 收藏按钮）───────────────────────────
         root.addEventListener("click", async (e) => {
             if (!(e.target instanceof Element)) return;
+            const previewBtn = e.target.closest(".payload-preview-btn");
+            if (previewBtn) {
+                e.stopPropagation();
+                const row = previewBtn.closest(".history-row");
+                const item = row
+                    ? this._itemMap.get(String(row.dataset.id || ""))
+                    : null;
+                const fullText = payloadText(item);
+                if (item && fullText) {
+                    document.dispatchEvent(new CustomEvent("xdh:preview", {
+                        detail: {
+                            type: "text",
+                            name: historyItemTitle(item),
+                            text: fullText,
+                        }
+                    }));
+                }
+                return;
+            }
             const favBtn = e.target.closest(".favorite-btn");
             if (favBtn) {
                 e.stopPropagation();
@@ -340,6 +368,7 @@ export class XdhHistoryView extends BaseElement {
         return `
             <style>
                 ${ICON_CSS}
+                ${TOOLTIP_CSS}
                 :host {
                     display: ${isActive ? "block" : "none"};
                     min-height: 100%;
@@ -429,7 +458,7 @@ export class XdhHistoryView extends BaseElement {
                         );
                 }
                 @container hv (max-width: 440px) {
-                    .row-payload { max-height: 72px; font-size: 12px; }
+                    .row-payload { font-size: 12px; }
                 }
                 .row-header {
                     display: flex;
@@ -499,17 +528,55 @@ export class XdhHistoryView extends BaseElement {
                 }
                 .row-payload {
                     margin-top: 2px;
-                    padding: 10px;
+                    padding: 8px 10px;
                     border-radius: 8px;
                     background: var(--xdh-color-background, #121212);
                     border: 1px solid var(--xdh-color-border, #2a2a2a);
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
                     font-size: 13px;
-                    line-height: 1.5;
+                    line-height: 1.4;
                     color: var(--xdh-color-text-primary, #dddddd);
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                    max-height: 120px;
-                    overflow-y: auto;
+                    overflow: hidden;
+                }
+                .row-payload-text {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .payload-preview-btn {
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 8px;
+                    border: 1px solid color-mix(
+                        in srgb,
+                        var(--xdh-color-text-primary, #ffffff) 14%,
+                        transparent
+                    );
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-2, #333333) 88%,
+                        transparent
+                    );
+                    color: var(--xdh-color-text-primary, #ffffff);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex: 0 0 auto;
+                    cursor: pointer;
+                    padding: 0;
+                    transition: background 0.15s ease, transform 0.15s ease;
+                }
+                .payload-preview-btn:hover {
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-2, #333333) 96%,
+                        var(--xdh-color-surface-1, #1e1e1e)
+                    );
+                    transform: scale(1.08);
                 }
                 ${SCROLLBAR_CSS}
                 .empty-state {
@@ -529,8 +596,8 @@ export class XdhHistoryView extends BaseElement {
             <div class="history-shell">
                 <section class="history-list">
                     <div class="history-head">
-                        <div class="history-title">${icon(modeIcon, 20)} <span>${modeLabel}</span></div>
-                        <div class="history-count">${items.length}</div>
+                        <div class="history-title">${icon(modeIcon, 20)} <span class="xdh-tooltip xdh-tooltip-down" data-tooltip="${escapeHtml(modeLabel)}">${modeLabel}</span></div>
+                        <div class="history-count xdh-tooltip xdh-tooltip-down" data-tooltip="${escapeHtml(String(items.length))}">${items.length}</div>
                     </div>
                     ${loadError
                         ? `<div class="empty-state is-error">${icon('triangle-alert', 18)} <span>${loadError}</span></div>`
@@ -538,12 +605,13 @@ export class XdhHistoryView extends BaseElement {
                         ? `<div class="empty-state">${t('history.empty', { mode: modeLabel })}</div>`
                         : groups.map((group) => `
                             <section class="history-group">
-                                <div class="group-label">${icon('calendar', 14)} <span>${group.label}</span></div>
+                                <div class="group-label">${icon('calendar', 14)} <span class="xdh-tooltip xdh-tooltip-down" data-tooltip="${escapeHtml(group.label)}">${group.label}</span></div>
                                 <div class="history-rows">
                                     ${group.items.map((item) => {
                                         const text = payloadText(item);
                                         const title = historyItemTitle(item);
                                         const dbName = historyItemDbName(item);
+                                        const displayText = buildHistoryPayloadExcerpt(text);
                                         const isFav = activeCategory === "favorites";
                                         const favId = item.raw?.extra?.favorite_id || 0;
                                         const recordId = item.raw?.extra?.record_id || 0;
@@ -569,7 +637,16 @@ export class XdhHistoryView extends BaseElement {
                                                     </div>
                                                     <div class="row-time">${formatTimeLabel(item.raw?.saved_at)}</div>
                                                 </div>
-                                                ${text ? `<div class="row-payload xdh-scroll">${escapeHtml(text)}</div>` : ''}
+                                                ${text ? `
+                                                    <div class="row-payload">
+                                                        <div class="row-payload-text">${escapeHtml(displayText)}</div>
+                                                        <button class="payload-preview-btn xdh-tooltip xdh-tooltip-left"
+                                                                type="button"
+                                                                data-tooltip="${t("grid.btn.preview")}">
+                                                            ${icon("eye", 14)}
+                                                        </button>
+                                                    </div>`
+                                                    : ''}
                                             </article>
                                         `;
                                     }).join('')}

@@ -68,32 +68,33 @@ const OPEN_LAYOUT_VALUE_RIGHT = "right";
 const OPEN_LAYOUT_VALUE_MAXIMIZED = "maximized";
 const CLOSE_BEHAVIOR_VALUE_HIDE = "hide";
 const CLOSE_BEHAVIOR_VALUE_DESTROY = "destroy";
-const OPEN_LAYOUT_OPTION_CODES = [
-    OPEN_LAYOUT_VALUE_CENTER,
-    OPEN_LAYOUT_VALUE_LEFT,
-    OPEN_LAYOUT_VALUE_RIGHT,
-    OPEN_LAYOUT_VALUE_MAXIMIZED,
-];
-const CLOSE_BEHAVIOR_OPTION_CODES = [
-    CLOSE_BEHAVIOR_VALUE_HIDE,
-    CLOSE_BEHAVIOR_VALUE_DESTROY,
-];
 const EDGE_PEEK_SETTING_ID = "Xz3r0.XDataHub.EdgePeek";
 const AUTO_SHOW_SETTING_ID = "Xz3r0.XDataHub.AutoShow";
+const HOST_SETTINGS_MIGRATION_FLAG =
+    "Xz3r0.XDataHub.HostSettingsMigrated.v1";
 const WINDOW_STATE_STORAGE_KEY = "Xz3r0.XDataHub.WindowState.v1";
 const WINDOW_STATE_VERSION = 1;
 const HOST_ACTIVE_TAB_SESSION_KEY = "xdatahub.host.activeTab";
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const LOCALE_WATCH_INTERVAL_MS = 1000;
-let hotkeySpec = DEFAULT_HOTKEY_SPEC;
-let defaultOpenLayout = "center";
-let closeBehavior = "hide";
+const DEFAULT_HOST_BEHAVIOR_SETTINGS = Object.freeze({
+    hotkey_spec: DEFAULT_HOTKEY_SPEC,
+    default_open_layout: OPEN_LAYOUT_VALUE_CENTER,
+    close_behavior: CLOSE_BEHAVIOR_VALUE_HIDE,
+    auto_show_on_startup: false,
+});
+let hotkeySpec = DEFAULT_HOST_BEHAVIOR_SETTINGS.hotkey_spec;
+let defaultOpenLayout = DEFAULT_HOST_BEHAVIOR_SETTINGS.default_open_layout;
+let closeBehavior = DEFAULT_HOST_BEHAVIOR_SETTINGS.close_behavior;
+let autoShowOnStartup =
+    DEFAULT_HOST_BEHAVIOR_SETTINGS.auto_show_on_startup;
 let hostNodeSendBusy = false;
 let xdataHubRef = null;
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
 let uiLocaleApplySeq = 0;
 let currentUiLocale = "en";
+const uiLocaleCache = new Map();
 let hotkeyListenerInstalled = false;
 let interruptObserverInstalled = false;
 let localeSyncInstalled = false;
@@ -135,7 +136,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260405-2";
+const XDATAHUB_ASSET_VER = "20260406-14";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -374,20 +375,30 @@ function t(token, fallback = "") {
 }
 
 async function fetchLocaleJson(localeCode) {
+    const normalizedCode = normalizeLocaleCode(localeCode) || "en";
+    if (uiLocaleCache.has(normalizedCode)) {
+        return uiLocaleCache.get(normalizedCode);
+    }
+
+    let dict = {};
     try {
         const response = await fetch(
-            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(localeCode)}`,
+            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(normalizedCode)}`,
             { cache: "no-cache" }
         );
         if (!response.ok) {
-            return {};
+            uiLocaleCache.set(normalizedCode, dict);
+            return dict;
         }
         const payload = await response.json();
         const data = payload?.dict;
-        return data && typeof data === "object" ? data : {};
+        dict = data && typeof data === "object" ? data : {};
     } catch {
-        return {};
+        dict = {};
     }
+
+    uiLocaleCache.set(normalizedCode, dict);
+    return dict;
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {
@@ -410,7 +421,23 @@ async function applyHostUiLocale(localeOverride = null) {
     currentUiLocale = locale;
     xdataHubRef?.instance?.applyShellLocaleText?.();
     applyMenuButtonIcon();
+    broadcastUiLocaleToFrontendExtensions(currentUiLocale);
     xdataHubRef?.instance?.postUiLocaleToDataFrame?.(currentUiLocale);
+}
+
+function broadcastUiLocaleToFrontendExtensions(locale) {
+    const normalized = normalizeLocaleCode(locale) || "en";
+    try {
+        window.postMessage(
+            {
+                type: "xdatahub:ui-locale",
+                locale: normalized,
+            },
+            window.location.origin
+        );
+    } catch {
+        // Ignore same-page locale broadcast failures.
+    }
 }
 
 function installLocaleSync() {
@@ -575,7 +602,7 @@ function matchesHotkeyEvent(event, combo) {
     );
 }
 
-function readHotkeySpecFromSettings() {
+function readLegacyHotkeySpecFromSettings() {
     try {
         const stored = String(
             localStorage.getItem(HOTKEY_SETTING_ID) || ""
@@ -630,7 +657,7 @@ function normalizeDefaultOpenLayout(value) {
     return OPEN_LAYOUT_VALUE_CENTER;
 }
 
-function readDefaultOpenLayoutFromSettings() {
+function readLegacyDefaultOpenLayoutFromSettings() {
     const currentValue = app.extensionManager?.setting?.get(
         OPEN_LAYOUT_SETTING_ID
     ) || OPEN_LAYOUT_VALUE_CENTER;
@@ -650,11 +677,184 @@ function normalizeCloseBehavior(value) {
     return CLOSE_BEHAVIOR_VALUE_HIDE;
 }
 
-function readCloseBehaviorFromSettings() {
+function readLegacyCloseBehaviorFromSettings() {
     const currentValue = app.extensionManager?.setting?.get(
         CLOSE_BEHAVIOR_SETTING_ID
     ) || CLOSE_BEHAVIOR_VALUE_HIDE;
     return normalizeCloseBehavior(currentValue);
+}
+
+function readLegacyAutoShowFromSettings() {
+    return app.extensionManager?.setting?.get(AUTO_SHOW_SETTING_ID) === true;
+}
+
+async function fetchXDataHubSettings() {
+    const response = await fetch("/xz3r0/xdatahub/settings");
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    return payload?.settings || {};
+}
+
+async function persistXDataHubSettings(patch) {
+    const response = await fetch("/xz3r0/xdatahub/settings", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patch),
+    });
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    return payload?.settings || {};
+}
+
+function currentHostBehaviorSettings() {
+    return {
+        hotkey_spec: hotkeySpec,
+        default_open_layout: defaultOpenLayout,
+        close_behavior: closeBehavior,
+        auto_show_on_startup: autoShowOnStartup,
+    };
+}
+
+function normalizeHostSettingsPayload(value, fallback = null) {
+    const source = value && typeof value === "object" ? value : {};
+    const base = fallback && typeof fallback === "object"
+        ? fallback
+        : DEFAULT_HOST_BEHAVIOR_SETTINGS;
+    const rawHotkey = String(source.hotkey_spec || "").trim();
+    return {
+        hotkey_spec: parseHotkeySpec(rawHotkey)
+            ? rawHotkey
+            : base.hotkey_spec,
+        default_open_layout: source.default_open_layout === undefined
+            ? base.default_open_layout
+            : normalizeDefaultOpenLayout(source.default_open_layout),
+        close_behavior: source.close_behavior === undefined
+            ? base.close_behavior
+            : normalizeCloseBehavior(source.close_behavior),
+        auto_show_on_startup: source.auto_show_on_startup === undefined
+            ? base.auto_show_on_startup === true
+            : source.auto_show_on_startup === true,
+    };
+}
+
+function getLegacyHostBehaviorSettings() {
+    return normalizeHostSettingsPayload(
+        {
+            hotkey_spec: readLegacyHotkeySpecFromSettings(),
+            default_open_layout: readLegacyDefaultOpenLayoutFromSettings(),
+            close_behavior: readLegacyCloseBehaviorFromSettings(),
+            auto_show_on_startup: readLegacyAutoShowFromSettings(),
+        },
+        DEFAULT_HOST_BEHAVIOR_SETTINGS
+    );
+}
+
+function hasMigratedHostBehaviorSettings() {
+    try {
+        return localStorage.getItem(HOST_SETTINGS_MIGRATION_FLAG) === "true";
+    } catch {
+        return false;
+    }
+}
+
+function markHostBehaviorSettingsMigrated() {
+    try {
+        localStorage.setItem(HOST_SETTINGS_MIGRATION_FLAG, "true");
+    } catch {
+        // ignore localStorage write errors
+    }
+}
+
+function applyHostBehaviorSettings(settings, options = {}) {
+    const previous = currentHostBehaviorSettings();
+    const normalized = normalizeHostSettingsPayload(settings, previous);
+    hotkeySpec = normalized.hotkey_spec;
+    defaultOpenLayout = normalized.default_open_layout;
+    closeBehavior = normalized.close_behavior;
+    autoShowOnStartup = normalized.auto_show_on_startup;
+    persistHotkeySpec(hotkeySpec);
+    ensureGlobalHotkeyListener();
+    if (
+        options.postHotkey !== false
+        && hotkeySpec !== previous.hotkey_spec
+    ) {
+        xdataHubRef?.instance?.postHotkeySpecToDataFrame?.();
+    }
+    if (
+        options.applyLayout === true
+        && defaultOpenLayout !== previous.default_open_layout
+    ) {
+        applyDefaultOpenLayoutToOpenWindow();
+    }
+    return normalized;
+}
+
+async function loadHostBehaviorSettings() {
+    const legacy = getLegacyHostBehaviorSettings();
+    try {
+        const fetched = await fetchXDataHubSettings();
+        let resolved = applyHostBehaviorSettings(fetched, {
+            postHotkey: false,
+        });
+        if (!hasMigratedHostBehaviorSettings()) {
+            const patch = {};
+            if (
+                resolved.hotkey_spec
+                    === DEFAULT_HOST_BEHAVIOR_SETTINGS.hotkey_spec
+                && legacy.hotkey_spec
+                    !== DEFAULT_HOST_BEHAVIOR_SETTINGS.hotkey_spec
+            ) {
+                patch.hotkey_spec = legacy.hotkey_spec;
+            }
+            if (
+                resolved.default_open_layout
+                    === DEFAULT_HOST_BEHAVIOR_SETTINGS.default_open_layout
+                && legacy.default_open_layout
+                    !== DEFAULT_HOST_BEHAVIOR_SETTINGS.default_open_layout
+            ) {
+                patch.default_open_layout = legacy.default_open_layout;
+            }
+            if (
+                resolved.close_behavior
+                    === DEFAULT_HOST_BEHAVIOR_SETTINGS.close_behavior
+                && legacy.close_behavior
+                    !== DEFAULT_HOST_BEHAVIOR_SETTINGS.close_behavior
+            ) {
+                patch.close_behavior = legacy.close_behavior;
+            }
+            if (
+                resolved.auto_show_on_startup
+                    === DEFAULT_HOST_BEHAVIOR_SETTINGS.auto_show_on_startup
+                && legacy.auto_show_on_startup === true
+            ) {
+                patch.auto_show_on_startup = true;
+            }
+            if (Object.keys(patch).length > 0) {
+                try {
+                    const updated = await persistXDataHubSettings(patch);
+                    resolved = applyHostBehaviorSettings(updated, {
+                        postHotkey: false,
+                    });
+                } catch {
+                    resolved = applyHostBehaviorSettings(patch, {
+                        postHotkey: false,
+                    });
+                }
+            }
+            markHostBehaviorSettingsMigrated();
+        }
+        return resolved;
+    } catch {
+        return applyHostBehaviorSettings(legacy, {
+            postHotkey: false,
+        });
+    }
 }
 
 function applyDefaultOpenLayoutToOpenWindow() {
@@ -776,57 +976,6 @@ app.registerExtension({
                 applyWindowZIndexToOpenWindow();
             }
         },
-        {
-            id: OPEN_LAYOUT_SETTING_ID,
-            name: "XDataHub Default Open Layout",
-            type: "combo",
-            options: OPEN_LAYOUT_OPTION_CODES,
-            defaultValue: OPEN_LAYOUT_VALUE_CENTER,
-            tooltip: "Default window layout when opening XDataHub.",
-            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "OpenLayout"],
-            onChange: (value) => {
-                defaultOpenLayout = normalizeDefaultOpenLayout(value);
-                applyDefaultOpenLayoutToOpenWindow();
-            }
-        },
-        {
-            id: CLOSE_BEHAVIOR_SETTING_ID,
-            name: "XDataHub Close Button Behavior",
-            type: "combo",
-            options: CLOSE_BEHAVIOR_OPTION_CODES,
-            defaultValue: CLOSE_BEHAVIOR_VALUE_HIDE,
-            tooltip: "Hide: faster reopen, higher memory. Destroy: lower memory, slower reopen.",
-            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "CloseBehavior"],
-            onChange: (value) => {
-                closeBehavior = normalizeCloseBehavior(value);
-            }
-        },
-        {
-            id: HOTKEY_SETTING_ID,
-            name: "XDataHub Toggle Hotkey",
-            type: "text",
-            defaultValue: DEFAULT_HOTKEY_SPEC,
-            tooltip: "Keyboard shortcut to toggle the XDataHub window. Format: Ctrl+Alt+X, Alt+X, Shift+F2, etc.",
-            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "Hotkey"],
-            onChange: (value) => {
-                const spec = String(value || "").trim() || DEFAULT_HOTKEY_SPEC;
-                hotkeySpec = spec;
-                persistHotkeySpec(spec);
-                ensureGlobalHotkeyListener();
-            }
-        },
-        {
-            id: AUTO_SHOW_SETTING_ID,
-            name: "Show XDataHub on startup",
-            type: "boolean",
-            defaultValue: false,
-            tooltip: "Automatically open the XDataHub window when ComfyUI loads.",
-            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
-            category: ["♾️ Xz3r0", "XDataHub", "AutoShow"],
-        },
     ],
 
     /**
@@ -836,10 +985,7 @@ app.registerExtension({
     async setup() {
         await applyHostUiLocale();
         installLocaleSync();
-        hotkeySpec = readHotkeySpecFromSettings();
-        ensureGlobalHotkeyListener();
-        defaultOpenLayout = readDefaultOpenLayoutFromSettings();
-        closeBehavior = readCloseBehaviorFromSettings();
+        await loadHostBehaviorSettings();
         edgePeekEnabled = !!(localStorage.getItem("Xz3r0.XDataHub.EdgePeek") === "true");
         ensureColorTokensStylesheet();
         await syncThemeModeFromSettings();
@@ -1039,7 +1185,7 @@ app.registerExtension({
                 color: var(--p-button-primary-background, #6366f1);
             }
             .xz3r0-datahub-window-btn.active .xz3r0-icon {
-                filter: none;
+                filter: var(--icon-color-filter-active);
             }
             .xz3r0-datahub-window-btn .xz3r0-icon {
                 width: 18px;
@@ -1468,8 +1614,7 @@ app.registerExtension({
         }
 
         // 启动时自动打开
-        const autoShow = app.extensionManager?.setting?.get(AUTO_SHOW_SETTING_ID) ?? false;
-        if (autoShow && windowEnabled) {
+        if (autoShowOnStartup && windowEnabled) {
             requestAnimationFrame(() => XDataHub.show());
         }
     }
@@ -3218,7 +3363,8 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:update-hotkey-spec") {
         const requestId = String(payload.request_id || "");
-        const nextSpec = String(payload.hotkey_spec || "").trim();
+        const nextSpec = String(payload.hotkey_spec || "").trim()
+            || DEFAULT_HOTKEY_SPEC;
         const parsed = parseHotkeySpec(nextSpec);
         const replyOrigin = normalizeMessageOrigin(String(event.origin || ""));
         if (!parsed) {
@@ -3254,6 +3400,20 @@ window.addEventListener("message", (event) => {
             },
             replyOrigin
         );
+        return;
+    }
+    if (payload.type === "xdatahub:host-settings-updated") {
+        const settings = payload.settings;
+        applyHostBehaviorSettings(settings, {
+            applyLayout: Object.prototype.hasOwnProperty.call(
+                settings || {},
+                "default_open_layout"
+            ),
+            postHotkey: Object.prototype.hasOwnProperty.call(
+                settings || {},
+                "hotkey_spec"
+            ),
+        });
         return;
     }
     if (payload.type === "xdatahub:theme-mode") {

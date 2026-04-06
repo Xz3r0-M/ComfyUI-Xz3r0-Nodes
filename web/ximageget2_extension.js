@@ -60,7 +60,9 @@ const NODE_UI_CONFIG = {
 
 let uiLocalePrimary = {};
 let uiLocaleFallback = {};
+let currentUiLocale = "en";
 let localeSyncInstalled = false;
+const uiLocaleCache = new Map();
 
 function normalizeLocaleCode(value) {
     const text = String(value || "")
@@ -95,20 +97,32 @@ function t(key, fallback = "") {
 }
 
 async function fetchLocaleJson(localeCode) {
+    const normalizedCode = normalizeLocaleCode(localeCode) || "en";
+    if (uiLocaleCache.has(normalizedCode)) {
+        return uiLocaleCache.get(normalizedCode);
+    }
+
+    let dict = {};
     try {
         const response = await fetch(
-            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(localeCode)}`,
+            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(normalizedCode)}`,
             { cache: "no-cache" }
         );
         if (!response.ok) {
-            return {};
+            uiLocaleCache.set(normalizedCode, dict);
+            return dict;
         }
         const payload = await response.json();
-        const dict = payload?.dict;
-        return dict && typeof dict === "object" ? dict : {};
+        const payloadDict = payload?.dict;
+        dict = payloadDict && typeof payloadDict === "object"
+            ? payloadDict
+            : {};
     } catch {
-        return {};
+        dict = {};
     }
+
+    uiLocaleCache.set(normalizedCode, dict);
+    return dict;
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {
@@ -118,6 +132,7 @@ async function loadUiLocaleBundle(localeOverride = null) {
     uiLocalePrimary = locale === "en"
         ? uiLocaleFallback
         : await fetchLocaleJson(locale);
+    return locale;
 }
 
 function refreshAllPanelLocales() {
@@ -134,7 +149,7 @@ function refreshAllPanelLocales() {
 }
 
 async function applyUiLocale(localeOverride = null) {
-    await loadUiLocaleBundle(localeOverride);
+    currentUiLocale = await loadUiLocaleBundle(localeOverride);
     refreshAllPanelLocales();
 }
 
@@ -164,7 +179,13 @@ function installLocaleSync() {
         // ignore locale hook failures
     }
     window.setInterval(() => {
-        refreshLocale();
+        if (document.hidden) {
+            return;
+        }
+        const nextLocale = resolveComfyLocale();
+        if (nextLocale !== currentUiLocale) {
+            refreshLocale();
+        }
     }, LOCALE_SYNC_INTERVAL_MS);
 }
 
@@ -1303,14 +1324,17 @@ function getMaskEditorTexts() {
         maskColor: t(key("mask_color"), "Mask"),
         toolMaskBrushTip: t(key("tool_mask_brush_tip"), "Paint mask"),
         toolEraseTip: t(key("tool_erase_tip"), "Erase current layer"),
-        toolPanTip: t(key("tool_pan_tip"), "Move the canvas"),
+        toolPanTip: t(
+            key("tool_pan_tip"),
+            "Move the canvas (middle mouse drag / Ctrl+left drag)"
+        ),
         invertColor: t(key("invert_color"), "Invert"),
         invertColorTip: t(
             key("invert_color_tip"),
             "Swap black and white"
         ),
-        paintOpacity: t(key("paint_opacity"), "Color Opacity"),
-        maskOpacity: t(key("mask_opacity"), "Mask Opacity"),
+        paintOpacity: t(key("paint_opacity"), "Color Preview Opacity"),
+        maskOpacity: t(key("mask_opacity"), "Mask Preview Opacity"),
         hardness: t(key("hardness"), "Edge Hardness"),
         showPaint: t(key("show_paint"), "Visible"),
         showPaintTip: t(key("show_paint_tip"), "Show color layer"),

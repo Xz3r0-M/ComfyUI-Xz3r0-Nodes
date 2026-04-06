@@ -61,7 +61,7 @@ export class XMaskEditorController {
         this.paintColor = "#000000";
         this.paintOpacity = 1;
         this.maskBrushColor = "black";
-        this.maskOpacity = 1;
+        this.maskOpacity = 0.5;
         this.rotationQuarterTurns = 0;
         this.flipX = false;
         this.flipY = false;
@@ -678,8 +678,8 @@ export class XMaskEditorController {
             break;
         }
         return {
-            x: clamp(sourceX + (this.imageWidth / 2), 0, this.imageWidth),
-            y: clamp(sourceY + (this.imageHeight / 2), 0, this.imageHeight),
+            x: sourceX + (this.imageWidth / 2),
+            y: sourceY + (this.imageHeight / 2),
         };
     }
 
@@ -794,7 +794,8 @@ export class XMaskEditorController {
         }
         this.cursorPoint = this.getDisplayPoint(event);
         const wantsPan = this.tool === "pan"
-            || event.button === 1;
+            || event.button === 1
+            || (event.button === 0 && event.ctrlKey);
         if (wantsPan) {
             this.isPanning = true;
             this.pointerId = event.pointerId;

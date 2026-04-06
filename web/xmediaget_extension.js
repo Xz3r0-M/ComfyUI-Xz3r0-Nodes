@@ -96,6 +96,7 @@ let uiLocalePrimary = {};
 let uiLocaleFallback = {};
 let currentUiLocale = "en";
 let localeSyncInstalled = false;
+const uiLocaleCache = new Map();
 
 function normalizeLocaleCode(value) {
     const text = String(value || "")
@@ -369,20 +370,32 @@ function looksLikeMediaRef(value) {
 }
 
 async function fetchLocaleJson(localeCode) {
+    const normalizedCode = normalizeLocaleCode(localeCode) || "en";
+    if (uiLocaleCache.has(normalizedCode)) {
+        return uiLocaleCache.get(normalizedCode);
+    }
+
+    let dict = {};
     try {
         const response = await fetch(
-            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(localeCode)}`,
+            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(normalizedCode)}`,
             { cache: "no-cache" }
         );
         if (!response.ok) {
-            return {};
+            uiLocaleCache.set(normalizedCode, dict);
+            return dict;
         }
         const payload = await response.json();
-        const dict = payload?.dict;
-        return dict && typeof dict === "object" ? dict : {};
+        const payloadDict = payload?.dict;
+        dict = payloadDict && typeof payloadDict === "object"
+            ? payloadDict
+            : {};
     } catch {
-        return {};
+        dict = {};
     }
+
+    uiLocaleCache.set(normalizedCode, dict);
+    return dict;
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {

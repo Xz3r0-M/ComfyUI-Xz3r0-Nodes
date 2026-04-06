@@ -1300,10 +1300,6 @@ class LockManager:
             return 0, 0
         return len(running), len(queued)
 
-    def mark_prompt_submitted(self) -> None:
-        with self._lock:
-            self._last_event = "prompt_submitted"
-
     def mark_interrupt_requested(self) -> None:
         with self._lock:
             self._interrupt_requested = True
@@ -3318,12 +3314,58 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "store_lora_db_in_loras": False,
         "media_custom_roots": [],
         "theme_mode": "dark",
+        "auto_show_on_startup": False,
+        "hotkey_spec": "Alt + X",
+        "default_open_layout": "center",
+        "close_behavior": "hide",
         "disable_interaction_while_running": True,
     }
 
 
 def xdatahub_settings_path() -> Path:
     return settings_root() / "xdatahub_settings.json"
+
+
+XDATAHUB_OPEN_LAYOUT_VALUES = {
+    "center",
+    "left",
+    "right",
+    "maximized",
+}
+
+XDATAHUB_CLOSE_BEHAVIOR_VALUES = {
+    "hide",
+    "destroy",
+}
+
+
+def _normalize_hotkey_spec(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return "Alt + X"
+    tokens = [part.strip().lower() for part in raw.split("+") if part.strip()]
+    if not tokens:
+        return None
+    key_alias = {
+        "esc": "escape",
+        "return": "enter",
+        "spacebar": "space",
+        "cmd": "meta",
+        "command": "meta",
+        "win": "meta",
+        "windows": "meta",
+    }
+    key_name = ""
+    for token_raw in tokens:
+        token = key_alias.get(token_raw, token_raw)
+        if token in {"ctrl", "control", "alt", "option", "shift"}:
+            continue
+        if token == "meta":
+            continue
+        key_name = token
+    if not key_name:
+        return None
+    return raw
 
 
 def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
@@ -3394,6 +3436,24 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()
         if theme_mode in THEME_MODE_VALUES:
             patch["theme_mode"] = theme_mode
+    if "auto_show_on_startup" in value:
+        patch["auto_show_on_startup"] = parse_bool(
+            value.get("auto_show_on_startup")
+        )
+    if "hotkey_spec" in value:
+        hotkey_spec = _normalize_hotkey_spec(value.get("hotkey_spec"))
+        if hotkey_spec is not None:
+            patch["hotkey_spec"] = hotkey_spec
+    if "default_open_layout" in value:
+        layout = str(value.get("default_open_layout") or "")
+        normalized_layout = layout.strip().lower()
+        if normalized_layout in XDATAHUB_OPEN_LAYOUT_VALUES:
+            patch["default_open_layout"] = normalized_layout
+    if "close_behavior" in value:
+        behavior = str(value.get("close_behavior") or "")
+        normalized_behavior = behavior.strip().lower()
+        if normalized_behavior in XDATAHUB_CLOSE_BEHAVIOR_VALUES:
+            patch["close_behavior"] = normalized_behavior
     if "disable_interaction_while_running" in value:
         patch["disable_interaction_while_running"] = parse_bool(
             value.get("disable_interaction_while_running")
@@ -4260,14 +4320,6 @@ def register_lock_listener() -> None:
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/lock/status")
 async def api_lock_status(request: web.Request) -> web.Response:
-    return web.json_response({"status": "success", **lock_payload()})
-
-
-@server.PromptServer.instance.routes.post(
-    "/xz3r0/xdatahub/lock/prompt-submitted"
-)
-async def api_lock_candidate(request: web.Request) -> web.Response:
-    LOCK.mark_prompt_submitted()
     return web.json_response({"status": "success", **lock_payload()})
 
 

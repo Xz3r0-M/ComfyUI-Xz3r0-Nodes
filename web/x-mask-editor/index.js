@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20260405c";
-import { openMaskEditorSession } from "./session.js?v=20260405c";
-import { saveMaskArtifacts } from "./upload.js?v=20260405c";
+import { XMaskEditorController } from "./controller.js?v=20260406d";
+import { openMaskEditorSession } from "./session.js?v=20260406d";
+import { saveMaskArtifacts } from "./upload.js?v=20260406d";
 
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
 

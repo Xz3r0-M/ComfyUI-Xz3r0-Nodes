@@ -47,31 +47,5 @@
   "Xz3r0_XDataHub_UnderSidebar": {
     "name": "将 ♾️ XDataHub 置于 ComfyUI 界面组件之下",
     "tooltip": "开启后，XDataHub 会低于 ComfyUI 的界面组件层级（不只是侧边栏）。四周面板与工具组件都可能遮挡窗口内容或右上角按钮（最大化/关闭），请确认后再开启。"
-  },
-  "Xz3r0_XDataHub_DefaultOpenLayout": {
-    "name": "XDataHub 默认打开布局",
-    "tooltip": "设置打开 XDataHub 时的默认窗口布局。",
-    "options": {
-      "center": "默认（居中 75%）",
-      "left": "左靠边",
-      "right": "右靠边",
-      "maximized": "最大化"
-    }
-  },
-  "Xz3r0_XDataHub_WindowCloseBehavior": {
-    "name": "XDataHub 关闭按钮行为",
-    "tooltip": "隐藏：重开更快但占用更高。销毁：更省内存但重开更慢。",
-    "options": {
-      "hide": "隐藏（重开更快）",
-      "destroy": "销毁（更省内存）"
-    }
-  },
-  "Xz3r0_XDataHub_Hotkey": {
-    "name": "XDataHub 快捷键",
-    "tooltip": "切换 XDataHub 窗口的键盘快捷键。格式：Ctrl+Alt+X、Alt+X、Shift+F2 等。"
-  },
-  "Xz3r0_XDataHub_AutoShow": {
-    "name": "启动时显示 XDataHub",
-    "tooltip": "ComfyUI 加载完成后自动打开 XDataHub 窗口。"
   }
 }

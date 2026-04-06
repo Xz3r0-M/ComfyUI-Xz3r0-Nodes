@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260404-1";
+import { t } from "../core/i18n.js?v=20260406-9";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -30,11 +30,243 @@ function escapeAttr(value) {
 
 const CARD_CLICK_SUPPRESS_MS = 250;
 
+const IMAGE_PREVIEWABLE_EXT = new Set([
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".gif",
+]);
+
+const VIDEO_PREVIEW_MIME_BY_EXT = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+};
+
+const AUDIO_PREVIEW_MIME_BY_EXT = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+};
+
+let cachedVideoPreviewProbe = null;
+let cachedAudioPreviewProbe = null;
+
 function hasLoraThumbnail(item) {
     const raw = item?.raw || {};
     const extra = raw.extra || {};
     return normalizeText(extra.thumb_url || raw.thumb_url).length > 0
         || extra.has_thumbnail === true;
+}
+
+function getMediaExtension(item) {
+    const raw = item?.raw || {};
+    const extra = raw.extra || {};
+    const source = normalizeText(
+        extra.media_ref
+        || raw.media_ref
+        || raw.ref
+        || item?.name
+        || raw.title
+    );
+
+    if (!source) {
+        return "";
+    }
+
+    const normalized = source
+        .split("?", 1)[0]
+        .split("#", 1)[0]
+        .replace(/\\/g, "/");
+    const lastSegment = normalized.split("/").pop() || normalized;
+    const dotIndex = lastSegment.lastIndexOf(".");
+    return dotIndex >= 0 ? lastSegment.slice(dotIndex).toLowerCase() : "";
+}
+
+function getPreviewProbe(kind) {
+    if (typeof document === "undefined"
+        || typeof document.createElement !== "function") {
+        return null;
+    }
+
+    if (kind === "video") {
+        cachedVideoPreviewProbe ||= document.createElement("video");
+        return cachedVideoPreviewProbe;
+    }
+
+    if (kind === "audio") {
+        cachedAudioPreviewProbe ||= document.createElement("audio");
+        return cachedAudioPreviewProbe;
+    }
+
+    return null;
+}
+
+function canBrowserPlayMime(kind, mime) {
+    const probe = getPreviewProbe(kind);
+    if (!probe || typeof probe.canPlayType !== "function") {
+        return true;
+    }
+    return String(probe.canPlayType(mime || "")).trim().length > 0;
+}
+
+function isBrowserPreviewSupported(item) {
+    if (!item || item.isFolder || item.type === "record" || item.type === "lora") {
+        return true;
+    }
+
+    const ext = getMediaExtension(item);
+    if (!ext) {
+        return true;
+    }
+
+    if (item.type === "image") {
+        return IMAGE_PREVIEWABLE_EXT.has(ext);
+    }
+
+    if (item.type === "video") {
+        const mime = VIDEO_PREVIEW_MIME_BY_EXT[ext];
+        return mime ? canBrowserPlayMime("video", mime) : false;
+    }
+
+    if (item.type === "audio") {
+        const mime = AUDIO_PREVIEW_MIME_BY_EXT[ext];
+        return mime ? canBrowserPlayMime("audio", mime) : false;
+    }
+
+    return false;
+}
+
+function getCardPreviewState(item, failedThumbIds) {
+    if (!item || item.isFolder || item.type === "record" || item.type === "lora") {
+        return {
+            blocked: false,
+            showBadge: false,
+            showSummary: false,
+            label: "",
+            iconName: "eye-off",
+            tone: "muted",
+            reason: "none",
+        };
+    }
+
+    const key = String(item.id || "");
+    if (failedThumbIds.has(key)) {
+        return {
+            blocked: true,
+            showBadge: true,
+            showSummary: false,
+            label: t("grid.badge.unsupported_format"),
+            iconName: "triangle-alert",
+            tone: "warning",
+            reason: "load_failed",
+        };
+    }
+
+    if (item.previewable === false) {
+        return {
+            blocked: true,
+            showBadge: true,
+            showSummary: false,
+            label: t("grid.badge.no_preview"),
+            iconName: "eye-off",
+            tone: "muted",
+            reason: "preview_disabled",
+        };
+    }
+
+    if (!isBrowserPreviewSupported(item)) {
+        return {
+            blocked: true,
+            showBadge: true,
+            showSummary: false,
+            label: t("grid.badge.unsupported_format"),
+            iconName: "eye-off",
+            tone: "warning",
+            reason: "unsupported_preview",
+        };
+    }
+
+    return {
+        blocked: false,
+        showBadge: false,
+        showSummary: false,
+        label: "",
+        iconName: "eye-off",
+        tone: "muted",
+        reason: "ok",
+    };
+}
+
+function renderCardStatusBadge(previewState) {
+    if (!previewState?.showBadge) {
+        return "";
+    }
+
+    const toneClass = previewState.tone === "warning"
+        ? "is-warning"
+        : "is-muted";
+
+    return `
+        <div class="card-status-badge ${toneClass}">
+            ${icon(previewState.iconName, 12)}
+            <span>${escapeHtml(previewState.label)}</span>
+        </div>`;
+}
+
+function syncCardPreviewUi(card, previewState) {
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+
+    card.classList.toggle("preview-unavailable", previewState.blocked);
+
+    const previewBtn = card.querySelector(".preview-btn");
+    if (previewState.blocked) {
+        previewBtn?.remove();
+    }
+
+    const thumb = card.querySelector(".thumb-container");
+    if (thumb instanceof HTMLElement) {
+        thumb.classList.toggle("preview-blocked", previewState.blocked);
+        let badge = thumb.querySelector(".card-status-badge");
+        if (previewState.showBadge) {
+            if (!(badge instanceof HTMLElement)) {
+                badge = document.createElement("div");
+                thumb.appendChild(badge);
+            }
+            badge.className = [
+                "card-status-badge",
+                previewState.tone === "warning" ? "is-warning" : "is-muted",
+            ].join(" ");
+            badge.innerHTML = `${icon(previewState.iconName, 12)}<span>${escapeHtml(previewState.label)}</span>`;
+        } else {
+            badge?.remove();
+        }
+    }
+
+    const textHost = card.querySelector(".card-text");
+    if (!(textHost instanceof HTMLElement)) {
+        return;
+    }
+
+    let summary = textHost.querySelector(".card-summary");
+    if (previewState.showSummary) {
+        if (!(summary instanceof HTMLElement)) {
+            summary = document.createElement("div");
+            summary.className = "card-summary";
+            textHost.appendChild(summary);
+        }
+        summary.textContent = previewState.label;
+    } else {
+        summary?.remove();
+    }
 }
 
 function getCardSummaryLabels(item, failedThumbIds) {
@@ -43,9 +275,9 @@ function getCardSummaryLabels(item, failedThumbIds) {
     }
 
     const labels = [];
-    const failed = failedThumbIds.has(String(item.id));
-    if (failed || (item.previewable === false && item.type !== "lora")) {
-        labels.push(t("grid.badge.no_preview"));
+    const previewState = getCardPreviewState(item, failedThumbIds);
+    if (previewState.showSummary) {
+        labels.push(previewState.label);
     }
 
     return labels;
@@ -162,10 +394,12 @@ function getLoraMetaState(item) {
  * - audio      : gradient art card with waveform icon
  * - folder     : small centered SVG icon
  */
-function thumbFor(item) {
+function thumbFor(item, previewState = null) {
     const safeUrl = escapeAttr(String(item.thumbUrl || ""));
     const extra = item.raw?.extra || {};
     const isEmptyThumb = safeUrl.length === 0;
+    const showLivePreview = !previewState?.blocked;
+    const statusBadgeHtml = renderCardStatusBadge(previewState);
     const fallbackHtml = `
         <div class="thumb-fallback">${icon(isEmptyThumb ? "image-off" : "triangle-alert", 22)}</div>`;
     const metaHtml = item.type === "lora"
@@ -180,16 +414,18 @@ function thumbFor(item) {
         case "audio":
             return `
                 <div class="thumb-container audio-thumb">
+                    ${statusBadgeHtml}
                     <span class="audio-icon">${icon("audio-lines", 40)}</span>
                 </div>`;
         case "video":
             return `
-                <div class="thumb-container ${isEmptyThumb ? "thumb-empty" : ""}">
-                    ${safeUrl ? `<video class="thumb-video" src="${safeUrl}"
+                <div class="thumb-container ${isEmptyThumb ? "thumb-empty" : ""} ${showLivePreview ? "" : "preview-blocked"}">
+                    ${showLivePreview && safeUrl ? `<video class="thumb-video" src="${safeUrl}"
                            muted playsinline preload="metadata"></video>` : ""}
                     ${fallbackHtml}
+                    ${statusBadgeHtml}
                     ${metaHtml}
-                    <div class="play-overlay">${icon("video", 18)}</div>
+                    ${showLivePreview ? `<div class="play-overlay">${icon("video", 18)}</div>` : ""}
                 </div>`;
         case "folder":
             return `
@@ -199,10 +435,11 @@ function thumbFor(item) {
                 </div>`;
         default:
             return `
-                 <div class="thumb-container ${isEmptyThumb ? "thumb-empty" : ""}">
-                    ${safeUrl ? `<img class="thumb-img" src="${safeUrl}" alt=""
+                 <div class="thumb-container ${isEmptyThumb ? "thumb-empty" : ""} ${showLivePreview ? "" : "preview-blocked"}">
+                    ${showLivePreview && safeUrl ? `<img class="thumb-img" src="${safeUrl}" alt=""
                         loading="lazy" onerror="this.style.display='none'"/>` : ""}
                     ${fallbackHtml}
+                    ${statusBadgeHtml}
                     ${metaHtml}
                 </div>`;
     }
@@ -348,10 +585,12 @@ export class XdhMediaGrid extends BaseElement {
         const key = String(itemId || "");
         if (!key || this.failedThumbIds.has(key)) return;
         this.failedThumbIds.add(key);
-        // 只更新对应卡片的 class，不触发全量 renderRoot
+        const item = this._itemMap?.get(key);
+        const previewState = getCardPreviewState(item, this.failedThumbIds);
         const card = this.$(`.media-card[data-id="${CSS.escape(key)}"]`);
         if (card) {
             card.classList.add("thumb-failed");
+            syncCardPreviewUi(card, previewState);
         } else {
             // 卡片还未在 DOM 中（初次渲染前），才触发重渲
             this.renderRoot();
@@ -481,11 +720,19 @@ export class XdhMediaGrid extends BaseElement {
                         formatDateFull(parseFloat(mtime)),
                         formatSize(parseInt(size, 10)),
                     ].filter(Boolean);
-                    tt.innerHTML =
-                        `<span style="display:block;word-break:break-all">${titleEl.textContent}</span>`
-                        + (metaParts.length
-                            ? `<span style="display:block;margin-top:4px;color:rgba(255,255,255,0.5);font-size:10px">${metaParts.join(" &middot; ")}</span>`
-                            : "");
+                    const titleLine = document.createElement("span");
+                    titleLine.className = "filename-tooltip-title";
+                    titleLine.textContent = String(titleEl.textContent || "");
+
+                    const nodes = [titleLine];
+                    if (metaParts.length) {
+                        const metaLine = document.createElement("span");
+                        metaLine.className = "filename-tooltip-meta";
+                        metaLine.textContent = metaParts.join(" · ");
+                        nodes.push(metaLine);
+                    }
+
+                    tt.replaceChildren(...nodes);
                     tt.classList.add("visible");
                 });
                 grid.addEventListener("mouseout", (e) => {
@@ -541,11 +788,22 @@ export class XdhMediaGrid extends BaseElement {
                     );
                 }
             } else if (vid) {
-                if (vid.videoWidth) {
-                    set(vid.videoWidth, vid.videoHeight);
+                const setVideoState = () => {
+                    if (vid.videoWidth && vid.videoHeight) {
+                        set(vid.videoWidth, vid.videoHeight);
+                        return;
+                    }
+                    this._markThumbFailed(card.dataset.id);
+                };
+                if (vid.videoWidth && vid.videoHeight) {
+                    setVideoState();
+                } else if (vid.readyState >= 1) {
+                    setVideoState();
                 } else {
-                    vid.addEventListener("loadedmetadata", () =>
-                        set(vid.videoWidth, vid.videoHeight), { once: true }
+                    vid.addEventListener(
+                        "loadedmetadata",
+                        setVideoState,
+                        { once: true }
                     );
                 }
             }
@@ -577,6 +835,7 @@ export class XdhMediaGrid extends BaseElement {
             return `<div class="empty-state">${t(searchQ ? "grid.empty_search" : "grid.empty")}</div>`;
         }
         return filteredItems.map(item => {
+            const previewState = getCardPreviewState(item, this.failedThumbIds);
             const isSelected = selectedItems.includes(item.id);
             const safeId = escapeAttr(String(item.id || ""));
             const safeName = escapeHtml(String(item.name || ""));
@@ -595,13 +854,13 @@ export class XdhMediaGrid extends BaseElement {
             ));
             const summaryLabels = getCardSummaryLabels(item, this.failedThumbIds);
             const hasThumbFailure = this.failedThumbIds.has(String(item.id));
-            const previewBtn = item.previewable
+            const previewBtn = item.previewable && !previewState.blocked
                 ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${safeId}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
                 : "";
             const editBtn = item.type === "lora"
                 ? `<button class="edit-lora-btn xdh-tooltip xdh-tooltip-down" data-loraref="${safeLoraRef}" data-tooltip="${t("grid.btn.edit_lora")}">${icon("settings", 14)}</button>`
                 : "";
-            return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""}"
+            return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""} ${previewState.blocked ? "preview-unavailable" : ""}"
                  draggable="${item.isFolder || item.type === "record" ? "false" : "true"}"
                  data-id="${safeId}"
                  data-name="${safeNameAttr}"
@@ -610,7 +869,7 @@ export class XdhMediaGrid extends BaseElement {
                  data-size="${safeSize}"
                  data-mtime="${safeMtime}">
                 <div class="card-actions">${editBtn}${previewBtn}</div>
-                ${thumbFor(item)}
+                ${thumbFor(item, previewState)}
                 <div class="card-text">
                     <div class="card-title">${safeName}</div>
                     ${summaryLabels.length > 0
@@ -842,8 +1101,51 @@ export class XdhMediaGrid extends BaseElement {
                     );
                 }
 
+                .card-status-badge {
+                    position: absolute;
+                    top: 8px;
+                    left: 8px;
+                    z-index: 4;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    max-width: calc(100% - 16px);
+                    min-height: 22px;
+                    padding: 0 7px;
+                    border-radius: 6px;
+                    border: 1px solid var(--xdh-color-border, #333);
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-2, #2a2a2a) 84%,
+                        transparent
+                    );
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    font-size: 10px;
+                    font-weight: 600;
+                    letter-spacing: 0.02em;
+                    pointer-events: none;
+                }
+                .card-status-badge span {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .card-status-badge.is-muted {
+                    color: var(--xdh-color-text-secondary, #aaa);
+                }
+                .card-status-badge.is-warning {
+                    border-color: var(--xdh-brand-pink, #EA005E);
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-2, #2a2a2a) 78%,
+                        var(--xdh-brand-pink, #EA005E) 22%
+                    );
+                }
+
                 .thumb-failed .thumb-img,
                 .thumb-failed .thumb-video,
+                .preview-blocked .thumb-img,
+                .preview-blocked .thumb-video,
                 .thumb-failed .play-overlay {
                     display: none;
                 }
@@ -857,6 +1159,7 @@ export class XdhMediaGrid extends BaseElement {
                     z-index: 1;
                 }
                 .thumb-empty .thumb-fallback,
+                .preview-blocked .thumb-fallback,
                 .thumb-failed .thumb-fallback {
                     display: flex;
                 }
@@ -923,6 +1226,17 @@ export class XdhMediaGrid extends BaseElement {
                     word-break: break-all;
                     opacity: 0;
                     transition: opacity 0.12s;
+                }
+                .filename-tooltip-title {
+                    display: block;
+                    color: var(--xdh-color-text-primary, #e8e8e8);
+                    word-break: break-all;
+                }
+                .filename-tooltip-meta {
+                    display: block;
+                    margin-top: 4px;
+                    color: var(--xdh-color-text-secondary, #888);
+                    font-size: 10px;
                 }
                 .filename-tooltip.visible { opacity: 1; }
             </style>

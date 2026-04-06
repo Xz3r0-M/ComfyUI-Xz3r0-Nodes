@@ -6,22 +6,22 @@ import {
     buildMediaUrl,
 } from "./core/api.js?v=20260403-413";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260403-9";
+import { setLocale, t } from "./core/i18n.js?v=20260406-9";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
-import "./components/xdh-sidebar-filter.js?v=20260403-17";
-import "./components/xdh-media-grid.js?v=20260405-2";
-import "./components/xdh-staging-dock.js?v=20260403-414";
-import "./components/xdh-node-picker.js?v=20260403-416";
+import "./components/xdh-sidebar-filter.js?v=20260406-4";
+import "./components/xdh-media-grid.js?v=20260406-4";
+import "./components/xdh-staging-dock.js?v=20260406-4";
+import "./components/xdh-node-picker.js?v=20260406-4";
 import "./core/node-bridge.js?v=20260403-400";
-import "./components/xdh-content-nav.js?v=20260404-1";
-import "./components/xdh-pagination.js?v=20260403-12";
-import "./components/xdh-lightbox.js?v=20260405-1";
-import "./components/xdh-history-view.js?v=20260404-7";
-import "./components/xdh-banner.js?v=20260403-385";
-import "./components/xdh-lora-detail.js?v=20260403-409";
-import "./components/xdh-settings-dialog.js?v=20260403-10";
+import "./components/xdh-content-nav.js?v=20260406-4";
+import "./components/xdh-pagination.js?v=20260406-4";
+import "./components/xdh-lightbox.js?v=20260406-12";
+import "./components/xdh-history-view.js?v=20260406-10";
+import "./components/xdh-banner.js?v=20260406-4";
+import "./components/xdh-lora-detail.js?v=20260406-4";
+import "./components/xdh-settings-dialog.js?v=20260406-13";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -59,11 +59,13 @@ const URL_CATEGORY_PARAM = "tab";
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
 const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
+const DEFAULT_HOTKEY_SPEC = "Alt + X";
 
 let lockRefreshTimer = 0;
 let lockRefreshInFlight = null;
 let lockRefreshQueued = false;
 let hasShownLockStatusError = false;
+let hotkeySpec = DEFAULT_HOTKEY_SPEC;
 
 function normalizeThemeMode(mode) {
     const nextMode = String(mode || "").trim().toLowerCase();
@@ -109,6 +111,153 @@ function postThemeModeToHost(mode) {
         targetOrigin
     );
 }
+
+function postToggleWindowRequest() {
+    if (!window.parent || window.parent === window) {
+        return;
+    }
+    window.parent.postMessage(
+        {
+            type: "xdatahub:toggle-window-request",
+        },
+        getParentTargetOrigin()
+    );
+}
+
+function parseHotkeySpec(spec) {
+    const raw = String(spec || "").trim();
+    if (!raw) {
+        return null;
+    }
+    const tokens = raw
+        .split("+")
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean);
+    if (tokens.length === 0) {
+        return null;
+    }
+
+    const combo = {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+        key: "",
+    };
+    const keyAlias = {
+        esc: "escape",
+        return: "enter",
+        spacebar: "space",
+        cmd: "meta",
+        command: "meta",
+        win: "meta",
+        windows: "meta",
+    };
+
+    for (const tokenRaw of tokens) {
+        const token = keyAlias[tokenRaw] || tokenRaw;
+        if (token === "ctrl" || token === "control") {
+            combo.ctrl = true;
+            continue;
+        }
+        if (token === "alt" || token === "option") {
+            combo.alt = true;
+            continue;
+        }
+        if (token === "shift") {
+            combo.shift = true;
+            continue;
+        }
+        if (token === "meta") {
+            combo.meta = true;
+            continue;
+        }
+        combo.key = token;
+    }
+
+    if (!combo.key) {
+        return null;
+    }
+    return combo;
+}
+
+function normalizeHotkeyEventKey(key) {
+    const raw = String(key || "").trim();
+    if (!raw) {
+        return "";
+    }
+    const lower = raw.toLowerCase();
+    if (lower === " ") {
+        return "space";
+    }
+    if (lower === "spacebar") {
+        return "space";
+    }
+    return lower;
+}
+
+function matchesHotkeyEvent(event, combo) {
+    if (!event || !combo) {
+        return false;
+    }
+    const key = normalizeHotkeyEventKey(event.key);
+    if (!key || key !== combo.key) {
+        return false;
+    }
+    return (
+        !!event.ctrlKey === !!combo.ctrl
+        && !!event.altKey === !!combo.alt
+        && !!event.shiftKey === !!combo.shift
+        && !!event.metaKey === !!combo.meta
+    );
+}
+
+function isEditableHotkeyTarget(target) {
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    const editable = target.closest(
+        "input, textarea, select, [contenteditable=''], [contenteditable='true']"
+    );
+    if (!editable) {
+        return false;
+    }
+    if (!(editable instanceof HTMLInputElement)) {
+        return true;
+    }
+    const type = String(editable.type || "").trim().toLowerCase();
+    return ![
+        "button",
+        "checkbox",
+        "radio",
+        "reset",
+        "submit",
+    ].includes(type);
+}
+
+function handleFrameHotkeyCapture(event) {
+    if (
+        event.defaultPrevented
+        || event.isComposing
+        || event.repeat
+        || isEditableHotkeyTarget(event.target)
+    ) {
+        return;
+    }
+    const combo = (
+        parseHotkeySpec(hotkeySpec)
+        || parseHotkeySpec(DEFAULT_HOTKEY_SPEC)
+    );
+    if (!matchesHotkeyEvent(event, combo)) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    postToggleWindowRequest();
+}
+
+window.addEventListener("keydown", handleFrameHotkeyCapture, true);
 
 function readCategoryFromUrl() {
     try {
@@ -223,6 +372,17 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:theme-mode") {
         applyThemeV2(payload.theme_mode, { notifyHost: false });
+        return;
+    }
+    if (payload.type === "xdatahub:hotkey-spec") {
+        const nextSpec = String(payload.hotkey_spec || "").trim();
+        hotkeySpec = parseHotkeySpec(nextSpec)
+            ? nextSpec
+            : DEFAULT_HOTKEY_SPEC;
+        appStore.state.xdatahubSettings = {
+            ...appStore.state.xdatahubSettings,
+            hotkey_spec: hotkeySpec,
+        };
         return;
     }
     if (payload.type === "xdatahub:ui-locale") {

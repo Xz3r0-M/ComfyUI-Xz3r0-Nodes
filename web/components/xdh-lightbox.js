@@ -3,6 +3,8 @@ import {
     registerCustomElement,
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
+import { SCROLLBAR_CSS } from "../core/icon.js";
+import { t } from "../core/i18n.js?v=20260406-9";
 
 function getPreviewSettings() {
     const settings = appStore.state.xdatahubSettings || {};
@@ -384,6 +386,44 @@ export class XdhLightbox extends BaseElement {
     _buildMedia(detail, previewSettings) {
         const mediaType = String(detail?.type || "image").toLowerCase();
 
+        if (mediaType === "text") {
+            const shell = document.createElement("div");
+            shell.className = "fs-text-shell xdh-scroll";
+
+            const title = String(detail?.name || "").trim();
+            if (title) {
+                const titleSection = document.createElement("section");
+                titleSection.className = "fs-text-section";
+
+                const titleLabel = document.createElement("div");
+                titleLabel.className = "fs-text-section-heading";
+                titleLabel.textContent = t("history.section.extra_header");
+                titleSection.appendChild(titleLabel);
+
+                const titleNode = document.createElement("div");
+                titleNode.className = "fs-text-title";
+                titleNode.textContent = title;
+                titleSection.appendChild(titleNode);
+                shell.appendChild(titleSection);
+            }
+
+            const bodySection = document.createElement("section");
+            bodySection.className = "fs-text-section";
+
+            const bodyLabel = document.createElement("div");
+            bodyLabel.className = "fs-text-section-heading";
+            bodyLabel.textContent = t("history.section.content");
+            bodySection.appendChild(bodyLabel);
+
+            const body = document.createElement("pre");
+            body.className = "fs-text-body";
+            body.textContent = String(detail?.text || "");
+            bodySection.appendChild(body);
+            shell.appendChild(bodySection);
+
+            return shell;
+        }
+
         if (mediaType === "video") {
             const video = document.createElement("video");
             video.src = detail.url;
@@ -430,11 +470,25 @@ export class XdhLightbox extends BaseElement {
     }
 
     _openInNewTab(detail) {
+        if (String(detail?.type || "").toLowerCase() === "text") {
+            const blob = new Blob(
+                [String(detail?.text || "")],
+                { type: "text/plain;charset=utf-8" }
+            );
+            const blobUrl = URL.createObjectURL(blob);
+            window.open(blobUrl, "_blank", "noopener,noreferrer");
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+            return;
+        }
         window.open(detail.url, "_blank", "noopener,noreferrer");
     }
 
     async _open(detail) {
-        if (!detail?.url) {
+        const mediaType = String(detail?.type || "image").toLowerCase();
+        const hasPreviewPayload = mediaType === "text"
+            ? typeof detail?.text === "string"
+            : !!detail?.url;
+        if (!hasPreviewPayload) {
             return;
         }
 
@@ -450,7 +504,7 @@ export class XdhLightbox extends BaseElement {
         const mediaNode = this._buildMedia(detail, previewSettings);
         this._teardown({ preserveCurrent: true });
         mediaHost.replaceChildren(mediaNode);
-        stage.dataset.mediaType = String(detail.type || "image").toLowerCase();
+        stage.dataset.mediaType = mediaType;
         this._activeMedia = mediaNode;
         this._resetImageZoom();
 
@@ -505,6 +559,7 @@ export class XdhLightbox extends BaseElement {
     render() {
         return `
             <style>
+                ${SCROLLBAR_CSS}
                 :host { display: contents; }
 
                 .fs-stage {
@@ -568,6 +623,84 @@ export class XdhLightbox extends BaseElement {
 
                 .fs-stage[data-media-type="audio"] .fs-media {
                     align-items: center;
+                }
+
+                .fs-stage[data-media-type="text"] .fs-media {
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .fs-text-shell {
+                    width: min(92vw, 1120px);
+                    max-width: 100%;
+                    height: min(88vh, 820px);
+                    max-height: 100%;
+                    padding: 18px 20px;
+                    border-radius: 16px;
+                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    background: var(--xdh-color-surface-1, #1a1a1a);
+                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    overflow: auto;
+                }
+
+                .fs-text-section {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+
+                .fs-text-section-heading {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
+                    min-width: 0;
+                    font-size: 15px;
+                    line-height: 1.3;
+                    font-weight: 700;
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    letter-spacing: 0.03em;
+                    text-align: center;
+                }
+
+                .fs-text-section-heading::before,
+                .fs-text-section-heading::after {
+                    content: "";
+                    flex: 1 1 auto;
+                    min-width: 24px;
+                    height: 1px;
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-border, #2e2e2e) 92%,
+                        transparent
+                    );
+                }
+
+                .fs-text-title {
+                    margin: 0;
+                    font-size: 16px;
+                    line-height: 1.4;
+                    font-weight: 400;
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    text-align: left;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    flex: 0 0 auto;
+                }
+
+                .fs-text-body {
+                    margin: 0;
+                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    font-size: 14px;
+                    line-height: 1.65;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+                        Consolas, "Liberation Mono", monospace;
                 }
 
                 .fs-audio {

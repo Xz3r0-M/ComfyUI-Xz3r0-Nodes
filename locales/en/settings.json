@@ -47,31 +47,5 @@
   "Xz3r0_XDataHub_UnderSidebar": {
     "name": "Place ♾️ XDataHub below ComfyUI UI layers",
     "tooltip": "When enabled, XDataHub is rendered below ComfyUI UI components (not only sidebars). Panels and tools around the viewport may cover window content or controls (Maximize/Close)."
-  },
-  "Xz3r0_XDataHub_DefaultOpenLayout": {
-    "name": "XDataHub Default Open Layout",
-    "tooltip": "Default window layout when opening XDataHub.",
-    "options": {
-      "center": "Default (Centered 75%)",
-      "left": "Dock Left",
-      "right": "Dock Right",
-      "maximized": "Maximize"
-    }
-  },
-  "Xz3r0_XDataHub_WindowCloseBehavior": {
-    "name": "XDataHub Close Button Behavior",
-    "tooltip": "Hide: faster reopen, higher memory. Destroy: lower memory, slower reopen.",
-    "options": {
-      "hide": "Hide (faster reopen)",
-      "destroy": "Destroy (lower memory)"
-    }
-  },
-  "Xz3r0_XDataHub_Hotkey": {
-    "name": "XDataHub Toggle Hotkey",
-    "tooltip": "Keyboard shortcut to toggle the XDataHub window. Format: Ctrl+Alt+X, Alt+X, Shift+F2, etc."
-  },
-  "Xz3r0_XDataHub_AutoShow": {
-    "name": "Show XDataHub on startup",
-    "tooltip": "Automatically open the XDataHub window when ComfyUI loads."
   }
 }

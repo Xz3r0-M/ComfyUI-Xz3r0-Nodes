@@ -6,7 +6,7 @@ import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260404-1";
+import { t } from "../core/i18n.js?v=20260406-9";
 
 function getSortOptions() {
     return [

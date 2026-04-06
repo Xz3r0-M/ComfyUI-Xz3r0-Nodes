@@ -5,7 +5,24 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260404-1";
+import { t } from "../core/i18n.js?v=20260406-9";
+
+const DEFAULT_HOTKEY_SPEC = "Alt + X";
+const HOST_CONTROLLED_SETTING_KEYS = new Set([
+    "auto_show_on_startup",
+    "default_open_layout",
+    "close_behavior",
+]);
+const OPEN_LAYOUT_OPTIONS = [
+    ["center", "settings.default_open_layout.center"],
+    ["left", "settings.default_open_layout.left"],
+    ["right", "settings.default_open_layout.right"],
+    ["maximized", "settings.default_open_layout.maximized"],
+];
+const CLOSE_BEHAVIOR_OPTIONS = [
+    ["hide", "settings.close_behavior.hide"],
+    ["destroy", "settings.close_behavior.destroy"],
+];
 
 function normalizeMessageOrigin(value) {
     if (typeof value !== "string" || !value) {
@@ -25,6 +42,134 @@ function getParentTargetOrigin() {
         return referrerOrigin;
     }
     return normalizeMessageOrigin(window.location.origin || "");
+}
+
+function isTrustedParentMessage(event) {
+    return event?.source === window.parent
+        && normalizeMessageOrigin(String(event.origin || ""))
+            === getParentTargetOrigin();
+}
+
+function parseHotkeySpec(spec) {
+    const raw = String(spec || "").trim();
+    if (!raw) {
+        return null;
+    }
+    const tokens = raw
+        .split("+")
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean);
+    if (tokens.length === 0) {
+        return null;
+    }
+
+    const combo = {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+        key: "",
+    };
+    const keyAlias = {
+        esc: "escape",
+        return: "enter",
+        spacebar: "space",
+        cmd: "meta",
+        command: "meta",
+        win: "meta",
+        windows: "meta",
+    };
+
+    for (const tokenRaw of tokens) {
+        const token = keyAlias[tokenRaw] || tokenRaw;
+        if (token === "ctrl" || token === "control") {
+            combo.ctrl = true;
+            continue;
+        }
+        if (token === "alt" || token === "option") {
+            combo.alt = true;
+            continue;
+        }
+        if (token === "shift") {
+            combo.shift = true;
+            continue;
+        }
+        if (token === "meta") {
+            combo.meta = true;
+            continue;
+        }
+        combo.key = token;
+    }
+
+    if (!combo.key) {
+        return null;
+    }
+    return combo;
+}
+
+function postHostSettingsUpdate(settings) {
+    if (!window.parent || window.parent === window) {
+        return;
+    }
+    window.parent.postMessage(
+        {
+            type: "xdatahub:host-settings-updated",
+            settings,
+        },
+        getParentTargetOrigin()
+    );
+}
+
+async function requestHostHotkeyUpdate(spec) {
+    if (!window.parent || window.parent === window) {
+        return {
+            ok: true,
+            hotkey_spec: spec,
+        };
+    }
+    const targetOrigin = getParentTargetOrigin();
+    const requestId = [
+        "xdh-hotkey",
+        Date.now(),
+        Math.random().toString(16).slice(2),
+    ].join("-");
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            window.removeEventListener("message", onMessage);
+            window.clearTimeout(timeoutId);
+        };
+        const onMessage = (event) => {
+            if (!isTrustedParentMessage(event)) {
+                return;
+            }
+            const payload = event.data;
+            if (
+                !payload
+                || payload.type !== "xdatahub:hotkey-spec-updated"
+                || String(payload.request_id || "") !== requestId
+            ) {
+                return;
+            }
+            cleanup();
+            resolve(payload);
+        };
+        const timeoutId = window.setTimeout(() => {
+            cleanup();
+            resolve({
+                ok: false,
+                error: "timeout",
+            });
+        }, 3000);
+        window.addEventListener("message", onMessage);
+        window.parent.postMessage(
+            {
+                type: "xdatahub:update-hotkey-spec",
+                request_id: requestId,
+                hotkey_spec: spec,
+            },
+            targetOrigin
+        );
+    });
 }
 
 async function loadSettings() {
@@ -185,6 +330,25 @@ export class XdhSettingsDialog extends BaseElement {
         </label>`;
     }
 
+    _renderSelect(key, options, fallback = "") {
+        const current = this._getStr(key, fallback);
+        const optionHtml = options.map(([value, labelKey]) => `
+            <option value="${value}" ${current === value
+                ? "selected"
+                : ""}>${t(labelKey)}</option>
+        `).join("");
+        return `<select class="select-input" data-key="${key}">
+            ${optionHtml}
+        </select>`;
+    }
+
+    _renderTextInput(key, fallback = "") {
+        const id = `xdhs-${key}`;
+        const value = escapeHtml(this._getStr(key, fallback));
+        return `<input id="${id}" class="text-input" type="text"
+            data-key="${key}" value="${value}">`;
+    }
+
     _renderSection(titleKey, content) {
         return `<div class="section">
             <div class="sect-title">${t(titleKey)}</div>
@@ -333,17 +497,59 @@ export class XdhSettingsDialog extends BaseElement {
             ? `<div class="loading-msg">${t("common.loading")}</div>`
             : `
                 ${this._renderSection("settings.sect.theme", [
-                    this._renderRow("settings.theme_mode", `
-                        <select class="select-input" data-key="theme_mode">
-                            <option value="dark"  ${themeMode === "dark"  ? "selected" : ""}>${t("settings.theme_dark")}</option>
-                            <option value="light" ${themeMode === "light" ? "selected" : ""}>${t("settings.theme_light")}</option>
-                        </select>`),
+                    this._renderRow(
+                        "settings.theme_mode",
+                        this._renderSelect(
+                            "theme_mode",
+                            [
+                                ["dark", "settings.theme_dark"],
+                                ["light", "settings.theme_light"],
+                            ],
+                            themeMode
+                        )
+                    ),
+                ])}
+                ${this._renderSection("settings.sect.launch", [
+                    this._renderRow(
+                        "settings.auto_show_on_startup",
+                        this._renderToggle("auto_show_on_startup", false),
+                        "settings.auto_show_on_startup_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.hotkey",
+                        this._renderTextInput(
+                            "hotkey_spec",
+                            DEFAULT_HOTKEY_SPEC
+                        ),
+                        "settings.hotkey_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.default_open_layout",
+                        this._renderSelect(
+                            "default_open_layout",
+                            OPEN_LAYOUT_OPTIONS,
+                            "center"
+                        ),
+                        "settings.default_open_layout_tooltip"
+                    ),
                 ])}
                 ${this._renderSection("settings.sect.window", [
-                    this._renderRow("settings.edge_peek",
+                    this._renderRow(
+                        "settings.close_behavior",
+                        this._renderSelect(
+                            "close_behavior",
+                            CLOSE_BEHAVIOR_OPTIONS,
+                            "hide"
+                        ),
+                        "settings.close_behavior_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.edge_peek",
                         this._renderLocalToggle(
-                            "Xz3r0.XDataHub.EdgePeek", false),
-                        "settings.edge_peek_tooltip"),
+                            "Xz3r0.XDataHub.EdgePeek", false
+                        ),
+                        "settings.edge_peek_tooltip"
+                    ),
                 ])}
                 ${this._renderSection("settings.sect.exec", [
                     this._renderRow("settings.disable_interaction_running",
@@ -542,6 +748,23 @@ export class XdhSettingsDialog extends BaseElement {
                     transition: border-color 0.13s;
                 }
                 .select-input:focus {
+                    border-color: var(--xdh-brand-pink, #EA005E);
+                }
+
+                .text-input {
+                    width: 152px;
+                    max-width: min(36vw, 240px);
+                    background: var(--xdh-color-surface-2, #252525);
+                    border: 1px solid var(--xdh-color-border, #3a3a3a);
+                    color: var(--xdh-color-text-primary, #eee);
+                    border-radius: 6px;
+                    padding: 5px 9px;
+                    font-size: 12px;
+                    outline: none;
+                    transition: border-color 0.13s;
+                }
+
+                .text-input:focus {
                     border-color: var(--xdh-brand-pink, #EA005E);
                 }
 
@@ -859,6 +1082,11 @@ export class XdhSettingsDialog extends BaseElement {
                 try {
                     const updated = await saveSettings({ [key]: val });
                     this._applyUpdatedSettings(updated);
+                    if (HOST_CONTROLLED_SETTING_KEYS.has(key)) {
+                        postHostSettingsUpdate({
+                            [key]: updated[key],
+                        });
+                    }
                 } catch {
                     el.checked = !val;
                     this._settings[key] = prev;
@@ -893,12 +1121,66 @@ export class XdhSettingsDialog extends BaseElement {
                     const val = el.value;
                     const prev = this._settings[key];
                     this._settings[key] = val;
+                    if (key === "theme_mode") {
+                        syncStoreSettings({ [key]: val });
+                    }
                     try {
                         const updated = await saveSettings({ [key]: val });
                         this._applyUpdatedSettings(updated);
+                        if (HOST_CONTROLLED_SETTING_KEYS.has(key)) {
+                            postHostSettingsUpdate({
+                                [key]: updated[key],
+                            });
+                        }
                     } catch {
                         this._settings[key] = prev;
                         el.value = prev;
+                        if (key === "theme_mode") {
+                            syncStoreSettings({ [key]: prev });
+                        }
+                    }
+                });
+            });
+
+        this.shadowRoot?.querySelectorAll("input[type=text][data-key]")
+            .forEach(el => {
+                el.onchange = null;
+                el.addEventListener("keydown", (event) => {
+                    if (event.key !== "Enter") {
+                        return;
+                    }
+                    event.preventDefault();
+                    el.blur();
+                });
+                el.addEventListener("change", async () => {
+                    const key = el.dataset.key;
+                    const prev = this._getStr(key, DEFAULT_HOTKEY_SPEC);
+                    const val = String(el.value || "").trim()
+                        || DEFAULT_HOTKEY_SPEC;
+                    if (key !== "hotkey_spec") {
+                        return;
+                    }
+                    if (!parseHotkeySpec(val)) {
+                        el.value = prev;
+                        banner.error(t("settings.hotkey_invalid"));
+                        return;
+                    }
+                    const hostResult = await requestHostHotkeyUpdate(val);
+                    if (!hostResult?.ok) {
+                        el.value = prev;
+                        banner.error(t("settings.hotkey_invalid"));
+                        return;
+                    }
+                    this._settings[key] = val;
+                    try {
+                        const updated = await saveSettings({ [key]: val });
+                        this._applyUpdatedSettings(updated);
+                        el.value = String(updated[key] || val);
+                    } catch {
+                        this._settings[key] = prev;
+                        el.value = prev;
+                        await requestHostHotkeyUpdate(prev);
+                        banner.error(t("error.save_fail"));
                     }
                 });
             });

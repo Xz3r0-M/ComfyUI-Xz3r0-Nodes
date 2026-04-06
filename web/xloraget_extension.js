@@ -32,6 +32,7 @@ let uiLocalePrimary = {};
 let uiLocaleFallback = {};
 let currentUiLocale = "en";
 let localeSyncInstalled = false;
+const uiLocaleCache = new Map();
 
 function normalizeLocaleCode(value) {
     const text = String(value || "")
@@ -66,20 +67,32 @@ function t(key, fallback = "") {
 }
 
 async function fetchLocaleJson(localeCode) {
+    const normalizedCode = normalizeLocaleCode(localeCode) || "en";
+    if (uiLocaleCache.has(normalizedCode)) {
+        return uiLocaleCache.get(normalizedCode);
+    }
+
+    let dict = {};
     try {
         const response = await fetch(
-            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(localeCode)}`,
+            `/xz3r0/xdatahub/i18n/ui?locale=${encodeURIComponent(normalizedCode)}`,
             { cache: "no-cache" }
         );
         if (!response.ok) {
-            return {};
+            uiLocaleCache.set(normalizedCode, dict);
+            return dict;
         }
         const payload = await response.json();
-        const dict = payload?.dict;
-        return dict && typeof dict === "object" ? dict : {};
+        const payloadDict = payload?.dict;
+        dict = payloadDict && typeof payloadDict === "object"
+            ? payloadDict
+            : {};
     } catch {
-        return {};
+        dict = {};
     }
+
+    uiLocaleCache.set(normalizedCode, dict);
+    return dict;
 }
 
 async function loadUiLocaleBundle(localeOverride = null) {
@@ -727,12 +740,56 @@ function ensureStyles() {
         .xlora-global-toggle {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 7px;
             font-size: 11px;
             color: #ddd;
             user-select: none;
             white-space: nowrap;
             flex: 0 0 auto;
+            cursor: pointer;
+        }
+        .xlora-switch-input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+        .xlora-switch-track {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            width: 24px;
+            min-width: 24px;
+            height: 14px;
+            border-radius: 999px;
+            border: 1px solid var(--borderColor, #555);
+            background: #3a3a3a;
+            box-sizing: border-box;
+            transition: background 0.15s ease, border-color 0.15s ease,
+                box-shadow 0.15s ease;
+        }
+        .xlora-switch-track::after {
+            content: "";
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f3f3f3;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        .xlora-switch-input:checked + .xlora-switch-track {
+            border-color: #EA005E;
+            background: rgba(234, 0, 94, 0.24);
+        }
+        .xlora-switch-input:checked + .xlora-switch-track::after {
+            transform: translateX(10px);
+            background: #EA005E;
+        }
+        .xlora-switch-input:focus-visible + .xlora-switch-track {
+            box-shadow: 0 0 0 1px #EA005E;
         }
         .xlora-node-badge {
             display: inline-flex;
@@ -835,8 +892,10 @@ function ensureStyles() {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 18px;
-            min-width: 18px;
+            width: 24px;
+            min-width: 24px;
+            position: relative;
+            cursor: pointer;
         }
         .xlora-row.inactive {
             opacity: 0.62;
@@ -1016,8 +1075,19 @@ function ensureStyles() {
         }
         .xlora-label {
             font-size: 11px;
-            opacity: 0.9;
+            opacity: 0.96;
             color: #ddd;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-shadow:
+                0 1px 2px rgba(0, 0, 0, 0.9),
+                0 0 1px rgba(255, 255, 255, 0.35);
+        }
+        .xlora-label-model {
+            color: #b56cff;
+        }
+        .xlora-label-clip {
+            color: #f4c14b;
         }
         .xlora-input {
             width: 68px;
@@ -1261,9 +1331,14 @@ function buildPanel() {
     globalToggle.className = "xlora-global-toggle";
     const globalToggleInput = document.createElement("input");
     globalToggleInput.type = "checkbox";
+    globalToggleInput.className = "xlora-switch-input";
+    const globalToggleTrack = document.createElement("span");
+    globalToggleTrack.className = "xlora-switch-track";
+    globalToggleTrack.setAttribute("aria-hidden", "true");
     const globalToggleText = document.createElement("span");
     globalToggleText.textContent = t("xdatahub.ui.node.xloraget.clip_toggle", "Separate Clip Strength");
     globalToggle.appendChild(globalToggleInput);
+    globalToggle.appendChild(globalToggleTrack);
     globalToggle.appendChild(globalToggleText);
 
     const badge = document.createElement("div");
@@ -1787,9 +1862,17 @@ function renderNodeRows(node) {
         active.className = "xlora-active";
         const activeInput = document.createElement("input");
         activeInput.type = "checkbox";
+        activeInput.className = "xlora-switch-input";
         activeInput.checked = item.active !== false;
+        activeInput.setAttribute(
+            "aria-label",
+            t("xdatahub.ui.node.xloraget.activate", "Activate this Lora")
+        );
+        const activeTrack = document.createElement("span");
+        activeTrack.className = "xlora-switch-track";
+        activeTrack.setAttribute("aria-hidden", "true");
         bindTooltip(
-            activeInput,
+            active,
             tooltip,
             t("xdatahub.ui.node.xloraget.activate", "Activate this Lora")
         );
@@ -1799,6 +1882,7 @@ function renderNodeRows(node) {
             renderNodeRows(node);
         });
         active.appendChild(activeInput);
+        active.appendChild(activeTrack);
         rowMain.appendChild(active);
 
         if (item.active === false) {
@@ -1820,7 +1904,7 @@ function renderNodeRows(node) {
         const controls = document.createElement("div");
         controls.className = "xlora-controls";
         const modelLabel = document.createElement("span");
-        modelLabel.className = "xlora-label";
+        modelLabel.className = "xlora-label xlora-label-model";
         modelLabel.textContent = "M";
         controls.appendChild(modelLabel);
 
@@ -1842,7 +1926,7 @@ function renderNodeRows(node) {
 
         if (state.globalSeparateClip) {
             const clipLabel = document.createElement("span");
-            clipLabel.className = "xlora-label";
+            clipLabel.className = "xlora-label xlora-label-clip";
             clipLabel.textContent = "C";
             controls.appendChild(clipLabel);
 

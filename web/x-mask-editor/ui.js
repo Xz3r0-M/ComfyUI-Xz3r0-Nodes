@@ -640,7 +640,7 @@ export function createMaskEditorUi(texts = {}) {
     const paintOpacityLabel = document.createElement("span");
     paintOpacityLabel.className = "ximageget-mask-editor-label";
     paintOpacityLabel.textContent = String(
-        texts.paintOpacity || "Color Opacity"
+        texts.paintOpacity || "Color Preview Opacity"
     );
     const paintOpacityRange = document.createElement("input");
     paintOpacityRange.className = (
@@ -722,7 +722,7 @@ export function createMaskEditorUi(texts = {}) {
     const maskOpacityLabel = document.createElement("span");
     maskOpacityLabel.className = "ximageget-mask-editor-label";
     maskOpacityLabel.textContent = String(
-        texts.maskOpacity || "Mask Opacity"
+        texts.maskOpacity || "Mask Preview Opacity"
     );
     const maskOpacityRange = document.createElement("input");
     maskOpacityRange.className = (
@@ -733,12 +733,12 @@ export function createMaskEditorUi(texts = {}) {
     maskOpacityRange.min = "0";
     maskOpacityRange.max = "100";
     maskOpacityRange.step = "1";
-    maskOpacityRange.value = "100";
+    maskOpacityRange.value = "50";
     const maskOpacityInput = document.createElement("input");
     maskOpacityInput.className = "ximageget-mask-editor-value-input";
     maskOpacityInput.type = "text";
     maskOpacityInput.inputMode = "numeric";
-    maskOpacityInput.value = "100%";
+    maskOpacityInput.value = "50%";
     const maskVisibilityBtn = createButton(
         "ximageget-mask-editor-action ximageget-mask-editor-visibility-btn",
         texts.showMask || "Visible",
@@ -767,7 +767,11 @@ export function createMaskEditorUi(texts = {}) {
         texts.toolPan || "Pan",
         "hand-grab.svg"
     );
-    setButtonTooltip(panBtn, texts.toolPanTip || "Move the canvas");
+    setButtonTooltip(
+        panBtn,
+        texts.toolPanTip
+            || "Move the canvas (middle mouse drag / Ctrl+left drag)"
+    );
     optionsTools.appendChild(eraseBtn);
     optionsTools.appendChild(panBtn);
     thirdRow.appendChild(optionsTools);

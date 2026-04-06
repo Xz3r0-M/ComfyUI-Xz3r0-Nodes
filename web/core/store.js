@@ -77,6 +77,10 @@ export const appStore = new Store({
         audio_preview_muted: false,
         audio_preview_loop: false,
         theme_mode: 'dark',
+        auto_show_on_startup: false,
+        hotkey_spec: 'Alt + X',
+        default_open_layout: 'center',
+        close_behavior: 'hide',
         disable_interaction_while_running: true,
     },
 
