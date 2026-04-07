@@ -76,7 +76,7 @@ class XDataSave(io.ComfyNode):
                 "XDataSaved folder with append-and-rotate behavior "
                 "(500 records max, header <=120 chars, 64KB per record)"
             ),
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/XDataHub",
             is_output_node=True,
             inputs=[
                 io.MultiType.Input(

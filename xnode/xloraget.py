@@ -43,7 +43,7 @@ class XLoraGet(io.ComfyNode):
             node_id="XLoraGet",
             display_name="XLoraGet",
             description="Load ordered LoRA list from XDataHub",
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/XDataHub",
             inputs=[
                 io.Model.Input(
                     "model",

@@ -21,16 +21,13 @@ class XStringGet(io.ComfyNode):
             node_id="XStringGet",
             display_name="XStringGet",
             description="Load latest text sent from XDataHub",
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/XDataHub",
             inputs=[
                 io.String.Input(
                     "text_value",
                     default="",
                     multiline=True,
-                    tooltip=(
-                        "XDataHub text content "
-                        "(empty means no output)"
-                    ),
+                    tooltip=("XDataHub text content (empty means no output)"),
                     socketless=True,
                     extra_dict={"hidden": True},
                 ),

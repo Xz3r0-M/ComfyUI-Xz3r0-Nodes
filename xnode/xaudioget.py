@@ -34,7 +34,7 @@ class XAudioGet(io.ComfyNode):
             node_id="XAudioGet",
             display_name="XAudioGet",
             description="Load latest audio sent from XDataHub",
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/XDataHub",
             inputs=[
                 io.String.Input(
                     "media_ref",

@@ -49,7 +49,7 @@ class XImageGet(io.ComfyNode):
             description=(
                 "Load image from XDataHub with X Mask Editor support"
             ),
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/XDataHub",
             inputs=[
                 io.String.Input(
                     "media_ref",

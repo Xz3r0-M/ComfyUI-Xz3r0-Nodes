@@ -103,7 +103,7 @@
     - 使用 ComfyUI 官方 API
 
 ### 2. ⭐ 新增 `XDataSave` 文本数据（历史记录）保存节点
-`♾️ Xz3r0/File-Processing`
+`♾️ Xz3r0/XDataHub`
 - 接收独特 `xdata_*` 字符串类型数据
     - `xdata_seed`
     - `xdata_string`
@@ -138,7 +138,7 @@
     - 可链接 XDataSave 节点的 xdata_input 输入端口将转换后的字符串内容进行传递
 
 ### 5. ⭐ 新增 `XStringGet` 与 XDataHub 配套的 文本数据接收节点
-`♾️ Xz3r0/File-Processing`
+`♾️ Xz3r0/XDataHub`
 - 主要内容 和 头部信息 字符串输出端口
 - 支持 XDataHub 的 2 种数据发送方式接收文本数据
 - 可显示 主要内容文本 和 额外头部信息
@@ -150,7 +150,7 @@
         - 其他语言显示为英文本地化
 
 ### 6. ⭐ 新增 `XImageGet` 与 XDataHub 配套的 图片数据接收节点
-`♾️ Xz3r0/File-Processing`
+`♾️ Xz3r0/XDataHub`
 - 图像 和 遮罩 输出端口
 - 支持 XDataHub 的 2 种数据发送方式接收图片数据
 - 可显示 图片内容 和 文件名
@@ -167,7 +167,7 @@
         - 其他语言显示为英文本地化
 
 ### 7. ⭐ 新增 `XVideoGet` 与 XDataHub 配套的 视频数据接收节点
-`♾️ Xz3r0/File-Processing`
+`♾️ Xz3r0/XDataHub`
 - 视频 输出端口
 - 支持 XDataHub 的 2 种数据发送方式接收视频数据
 - 可显示 视频内容 和 文件名
@@ -179,7 +179,7 @@
         - 其他语言显示为英文本地化
 
 ### 8. ⭐ 新增 `XAudioGet` 与 XDataHub 配套的 音频数据接收节点
-`♾️ Xz3r0/File-Processing`
+`♾️ Xz3r0/XDataHub`
 - 音频 输出端口
 - 支持 XDataHub 的 2 种数据发送方式接收音频数据
 - 可显示 音频内容 和 文件名
@@ -191,7 +191,7 @@
         - 其他语言显示为英文本地化
 
 ### 9. ⭐ 新增 `XLoraGet` 与 XDataHub 配套的 Lora 数据接收和加载节点
-`♾️ Xz3r0/File-Processing`
+`♾️ Xz3r0/XDataHub`
 - 模型 输入输出端口
 - Clip 输入输出端口（可选）
     - 未链接 Clip 时设置的强度值无效

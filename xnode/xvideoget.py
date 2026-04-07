@@ -32,7 +32,7 @@ class XVideoGet(io.ComfyNode):
             node_id="XVideoGet",
             display_name="XVideoGet",
             description="Load latest video sent from XDataHub",
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/XDataHub",
             inputs=[
                 io.String.Input(
                     "media_ref",
