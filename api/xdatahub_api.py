@@ -147,10 +147,18 @@ ERROR_TEXT = {
 
 
 class LoraDbConflictError(RuntimeError):
-    def __init__(self, current_db_path: Path, target_db_path: Path):
+    def __init__(
+        self,
+        current_db_path: Path,
+        target_db_path: Path,
+        current_location: str,
+        target_location: str,
+    ):
         super().__init__("lora db conflict")
         self.current_db_path = current_db_path
         self.target_db_path = target_db_path
+        self.current_location = current_location
+        self.target_location = target_location
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -159,8 +167,8 @@ class LoraDbConflictError(RuntimeError):
             "message_key": "xdatahub.api.error.lora_db_conflict",
             "message": ERROR_TEXT["lora_db_conflict"],
             "file_name": LORA_TRIGGER_DB_NAME,
-            "current_location": "xdatahub_database",
-            "target_location": "models_loras",
+            "current_location": self.current_location,
+            "target_location": self.target_location,
         }
 
 
@@ -2769,32 +2777,36 @@ def migrate_lora_trigger_db_location(
             if current_root is not None
             else data_root() / LORA_TRIGGER_DB_NAME
         )
+        current_location = "models_loras"
     else:
         current_db_path = data_root() / LORA_TRIGGER_DB_NAME
+        current_location = "xdatahub_database"
 
     if merged_use_lora_root:
         target_root = lora_root_dir()
         if target_root is None:
             raise RuntimeError("lora root dir not found")
         target_db_path = target_root / LORA_TRIGGER_DB_NAME
+        target_location = "models_loras"
     else:
         target_db_path = data_root() / LORA_TRIGGER_DB_NAME
+        target_location = "xdatahub_database"
 
     if str(normalize_path(current_db_path)) == str(
         normalize_path(target_db_path)
     ):
         return
 
-    if (
-        not current_use_lora_root
-        and merged_use_lora_root
-        and current_db_path.exists()
-        and target_db_path.exists()
-    ):
+    if current_db_path.exists() and target_db_path.exists():
         if conflict_action == LORA_DB_CONFLICT_ACTION_USE_EXISTING:
             return
         if conflict_action != LORA_DB_CONFLICT_ACTION_REPLACE:
-            raise LoraDbConflictError(current_db_path, target_db_path)
+            raise LoraDbConflictError(
+                current_db_path,
+                target_db_path,
+                current_location,
+                target_location,
+            )
 
     entries: list[tuple[Path, Path]] = [
         (current_db_path, target_db_path),

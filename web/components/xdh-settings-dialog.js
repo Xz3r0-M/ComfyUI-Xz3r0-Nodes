@@ -50,63 +50,6 @@ function isTrustedParentMessage(event) {
             === getParentTargetOrigin();
 }
 
-function parseHotkeySpec(spec) {
-    const raw = String(spec || "").trim();
-    if (!raw) {
-        return null;
-    }
-    const tokens = raw
-        .split("+")
-        .map((part) => part.trim().toLowerCase())
-        .filter(Boolean);
-    if (tokens.length === 0) {
-        return null;
-    }
-
-    const combo = {
-        ctrl: false,
-        alt: false,
-        shift: false,
-        meta: false,
-        key: "",
-    };
-    const keyAlias = {
-        esc: "escape",
-        return: "enter",
-        spacebar: "space",
-        cmd: "meta",
-        command: "meta",
-        win: "meta",
-        windows: "meta",
-    };
-
-    for (const tokenRaw of tokens) {
-        const token = keyAlias[tokenRaw] || tokenRaw;
-        if (token === "ctrl" || token === "control") {
-            combo.ctrl = true;
-            continue;
-        }
-        if (token === "alt" || token === "option") {
-            combo.alt = true;
-            continue;
-        }
-        if (token === "shift") {
-            combo.shift = true;
-            continue;
-        }
-        if (token === "meta") {
-            combo.meta = true;
-            continue;
-        }
-        combo.key = token;
-    }
-
-    if (!combo.key) {
-        return null;
-    }
-    return combo;
-}
-
 function postHostSettingsUpdate(settings) {
     if (!window.parent || window.parent === window) {
         return;
@@ -118,58 +61,6 @@ function postHostSettingsUpdate(settings) {
         },
         getParentTargetOrigin()
     );
-}
-
-async function requestHostHotkeyUpdate(spec) {
-    if (!window.parent || window.parent === window) {
-        return {
-            ok: true,
-            hotkey_spec: spec,
-        };
-    }
-    const targetOrigin = getParentTargetOrigin();
-    const requestId = [
-        "xdh-hotkey",
-        Date.now(),
-        Math.random().toString(16).slice(2),
-    ].join("-");
-    return new Promise((resolve) => {
-        const cleanup = () => {
-            window.removeEventListener("message", onMessage);
-            window.clearTimeout(timeoutId);
-        };
-        const onMessage = (event) => {
-            if (!isTrustedParentMessage(event)) {
-                return;
-            }
-            const payload = event.data;
-            if (
-                !payload
-                || payload.type !== "xdatahub:hotkey-spec-updated"
-                || String(payload.request_id || "") !== requestId
-            ) {
-                return;
-            }
-            cleanup();
-            resolve(payload);
-        };
-        const timeoutId = window.setTimeout(() => {
-            cleanup();
-            resolve({
-                ok: false,
-                error: "timeout",
-            });
-        }, 3000);
-        window.addEventListener("message", onMessage);
-        window.parent.postMessage(
-            {
-                type: "xdatahub:update-hotkey-spec",
-                request_id: requestId,
-                hotkey_spec: spec,
-            },
-            targetOrigin
-        );
-    });
 }
 
 async function loadSettings() {
@@ -272,7 +163,6 @@ export class XdhSettingsDialog extends BaseElement {
             };
         }
         this.renderRoot();
-        this._bindFormEvents();
     }
 
     _close() {
@@ -379,11 +269,12 @@ export class XdhSettingsDialog extends BaseElement {
         }
     }
 
-    _openLoraDbConflictDialog(payload) {
+    _openLoraDbConflictDialog(payload, targetEnabled) {
         this._loraDbConflict = {
             currentLocation: String(payload?.current_location || ""),
             targetLocation: String(payload?.target_location || ""),
             fileName: String(payload?.file_name || "loras_data.db"),
+            targetEnabled: !!targetEnabled,
             busy: false,
         };
         this.renderRoot();
@@ -407,8 +298,9 @@ export class XdhSettingsDialog extends BaseElement {
         };
         this.renderRoot();
         try {
+            const targetEnabled = !!this._loraDbConflict.targetEnabled;
             const updated = await saveSettings({
-                store_lora_db_in_loras: true,
+                store_lora_db_in_loras: targetEnabled,
                 lora_db_conflict_action: action,
             });
             this._loraDbConflict = null;
@@ -1065,7 +957,7 @@ export class XdhSettingsDialog extends BaseElement {
                 const key = el.dataset.key;
                 const val = el.checked;
                 const prev = this._settings[key];
-                if (key === "store_lora_db_in_loras" && val) {
+                if (key === "store_lora_db_in_loras") {
                     try {
                         const updated = await saveSettings({ [key]: val });
                         this._applyUpdatedSettings(updated);
@@ -1073,7 +965,9 @@ export class XdhSettingsDialog extends BaseElement {
                         el.checked = !!prev;
                         this._settings[key] = prev;
                         if (isLoraDbConflictError(error)) {
-                            this._openLoraDbConflictDialog(error.payload);
+                            this._openLoraDbConflictDialog(error.payload, val);
+                        } else {
+                            banner.error(t("error.save_fail"));
                         }
                     }
                     return;
@@ -1090,6 +984,7 @@ export class XdhSettingsDialog extends BaseElement {
                 } catch {
                     el.checked = !val;
                     this._settings[key] = prev;
+                    banner.error(t("error.save_fail"));
                 }
             });
         });
@@ -1160,17 +1055,6 @@ export class XdhSettingsDialog extends BaseElement {
                     if (key !== "hotkey_spec") {
                         return;
                     }
-                    if (!parseHotkeySpec(val)) {
-                        el.value = prev;
-                        banner.error(t("settings.hotkey_invalid"));
-                        return;
-                    }
-                    const hostResult = await requestHostHotkeyUpdate(val);
-                    if (!hostResult?.ok) {
-                        el.value = prev;
-                        banner.error(t("settings.hotkey_invalid"));
-                        return;
-                    }
                     this._settings[key] = val;
                     try {
                         const updated = await saveSettings({ [key]: val });
@@ -1179,7 +1063,6 @@ export class XdhSettingsDialog extends BaseElement {
                     } catch {
                         this._settings[key] = prev;
                         el.value = prev;
-                        await requestHostHotkeyUpdate(prev);
                         banner.error(t("error.save_fail"));
                     }
                 });

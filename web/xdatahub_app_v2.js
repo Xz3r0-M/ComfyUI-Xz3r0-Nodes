@@ -22,7 +22,7 @@ import "./components/xdh-lightbox.js?v=20260407-8";
 import "./components/xdh-history-view.js?v=20260406-16";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
-import "./components/xdh-settings-dialog.js?v=20260406-15";
+import "./components/xdh-settings-dialog.js?v=20260407-21";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -75,20 +75,15 @@ const URL_CATEGORY_PARAM = "tab";
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
 const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
-const DEFAULT_HOTKEY_SPEC = "Alt + X";
 
 let lockRefreshTimer = 0;
 let lockRefreshInFlight = null;
 let lockRefreshQueued = false;
 let hasShownLockStatusError = false;
-let hotkeySpec = DEFAULT_HOTKEY_SPEC;
 let persistedCategoryViews = {};
 let categoryNavigationStates = {};
 let isApplyingCategoryView = false;
 let categoryViewRestoreToken = 0;
-const frameHotkeyCaptureState = {
-    pendingKeyId: "",
-};
 
 function normalizeThemeMode(mode) {
     const nextMode = String(mode || "").trim().toLowerCase();
@@ -146,186 +141,6 @@ function postToggleWindowRequest() {
         getParentTargetOrigin()
     );
 }
-
-function parseHotkeySpec(spec) {
-    const raw = String(spec || "").trim();
-    if (!raw) {
-        return null;
-    }
-    const tokens = raw
-        .split("+")
-        .map((part) => part.trim().toLowerCase())
-        .filter(Boolean);
-    if (tokens.length === 0) {
-        return null;
-    }
-
-    const combo = {
-        ctrl: false,
-        alt: false,
-        shift: false,
-        meta: false,
-        key: "",
-    };
-    const keyAlias = {
-        esc: "escape",
-        return: "enter",
-        spacebar: "space",
-        cmd: "meta",
-        command: "meta",
-        win: "meta",
-        windows: "meta",
-    };
-
-    for (const tokenRaw of tokens) {
-        const token = keyAlias[tokenRaw] || tokenRaw;
-        if (token === "ctrl" || token === "control") {
-            combo.ctrl = true;
-            continue;
-        }
-        if (token === "alt" || token === "option") {
-            combo.alt = true;
-            continue;
-        }
-        if (token === "shift") {
-            combo.shift = true;
-            continue;
-        }
-        if (token === "meta") {
-            combo.meta = true;
-            continue;
-        }
-        combo.key = token;
-    }
-
-    if (!combo.key) {
-        return null;
-    }
-    return combo;
-}
-
-function normalizeHotkeyEventKey(key) {
-    const raw = String(key || "").trim();
-    if (!raw) {
-        return "";
-    }
-    const lower = raw.toLowerCase();
-    if (lower === " ") {
-        return "space";
-    }
-    if (lower === "spacebar") {
-        return "space";
-    }
-    return lower;
-}
-
-function matchesHotkeyEvent(event, combo) {
-    if (!event || !combo) {
-        return false;
-    }
-    const key = normalizeHotkeyEventKey(event.key);
-    if (!key || key !== combo.key) {
-        return false;
-    }
-    return (
-        !!event.ctrlKey === !!combo.ctrl
-        && !!event.altKey === !!combo.alt
-        && !!event.shiftKey === !!combo.shift
-        && !!event.metaKey === !!combo.meta
-    );
-}
-
-function getHotkeyEventId(event, combo) {
-    const code = String(event?.code || "").trim();
-    if (code) {
-        return code;
-    }
-    const key = combo?.key || normalizeHotkeyEventKey(event?.key);
-    return key ? `key:${key}` : "";
-}
-
-function resetHotkeyCaptureState(state) {
-    state.pendingKeyId = "";
-}
-
-function getHotkeyCaptureAction(event, combo, state) {
-    const keyId = getHotkeyEventId(event, combo);
-    if (!keyId) {
-        return "ignore";
-    }
-    if (event.type === "keydown") {
-        if (event.repeat) {
-            return "ignore";
-        }
-        state.pendingKeyId = keyId;
-        return "trigger";
-    }
-    if (state.pendingKeyId && state.pendingKeyId === keyId) {
-        state.pendingKeyId = "";
-        return "consume";
-    }
-    return "trigger";
-}
-
-function isEditableHotkeyTarget(target) {
-    if (!(target instanceof Element)) {
-        return false;
-    }
-    const editable = target.closest(
-        "input, textarea, select, [contenteditable=''], [contenteditable='true']"
-    );
-    if (!editable) {
-        return false;
-    }
-    if (!(editable instanceof HTMLInputElement)) {
-        return true;
-    }
-    const type = String(editable.type || "").trim().toLowerCase();
-    return ![
-        "button",
-        "checkbox",
-        "radio",
-        "reset",
-        "submit",
-    ].includes(type);
-}
-
-function handleFrameHotkeyCapture(event) {
-    if (
-        event.isComposing
-        || isEditableHotkeyTarget(event.target)
-    ) {
-        return;
-    }
-    const combo = (
-        parseHotkeySpec(hotkeySpec)
-        || parseHotkeySpec(DEFAULT_HOTKEY_SPEC)
-    );
-    if (!matchesHotkeyEvent(event, combo)) {
-        return;
-    }
-    const captureAction = getHotkeyCaptureAction(
-        event,
-        combo,
-        frameHotkeyCaptureState
-    );
-    if (captureAction === "ignore") {
-        return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation?.();
-    if (captureAction !== "trigger") {
-        return;
-    }
-    postToggleWindowRequest();
-}
-
-window.addEventListener("keydown", handleFrameHotkeyCapture, true);
-window.addEventListener("keyup", handleFrameHotkeyCapture, true);
-window.addEventListener("blur", () => {
-    resetHotkeyCaptureState(frameHotkeyCaptureState);
-});
 
 function readCategoryFromUrl() {
     try {
@@ -632,17 +447,6 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:theme-mode") {
         applyThemeV2(payload.theme_mode, { notifyHost: false });
-        return;
-    }
-    if (payload.type === "xdatahub:hotkey-spec") {
-        const nextSpec = String(payload.hotkey_spec || "").trim();
-        hotkeySpec = parseHotkeySpec(nextSpec)
-            ? nextSpec
-            : DEFAULT_HOTKEY_SPEC;
-        appStore.state.xdatahubSettings = {
-            ...appStore.state.xdatahubSettings,
-            hotkey_spec: hotkeySpec,
-        };
         return;
     }
     if (payload.type === "xdatahub:ui-locale") {
