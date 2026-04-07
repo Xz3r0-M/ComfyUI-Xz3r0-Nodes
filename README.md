@@ -2,9 +2,10 @@
 
 # ♾️ ComfyUI-Xz3r0-Nodes ♾️
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
+![Windows 11 Tested](https://img.shields.io/badge/Windows%2011-Tested-blue?logo=windows)
 
 **如果这个项目对您有帮助，可以给个星标⭐或者分享给其他人！**
 
