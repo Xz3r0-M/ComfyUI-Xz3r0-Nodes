@@ -80,7 +80,7 @@ pip install -r requirements.txt
 |   中文    | <img src="preview/File-Processing/CN/XAudioSave.png"> | <img src="preview/File-Processing/CN/XImageResize.png"> | <img src="preview/File-Processing/CN/XImageSave.png"> | <img src="preview/File-Processing/CN/XLatentLoad.png"> | <img src="preview/File-Processing/CN/XLatentSave.png"> | <img src="preview/File-Processing/CN/XMarkdownSave.png"> | <img src="preview/File-Processing/CN/XVideoSave.png"> | <img src="preview/File-Processing/CN/XWorkflowSave.png"> |
 | English | <img src="preview/File-Processing/EN/XAudioSave.png"> | <img src="preview/File-Processing/EN/XImageResize.png"> | <img src="preview/File-Processing/EN/XImageSave.png"> | <img src="preview/File-Processing/EN/XLatentLoad.png"> | <img src="preview/File-Processing/EN/XLatentSave.png"> | <img src="preview/File-Processing/EN/XMarkdownSave.png"> | <img src="preview/File-Processing/EN/XVideoSave.png"> | <img src="preview/File-Processing/EN/XWorkflowSave.png"> |
 
-`♾️ Xz3r0/XDataHub `
+`♾️ Xz3r0/Workflow-Processing`
 
 |         |                        XAnyGate10                         |                        XAnyToString                         |                        XDateTimeString                         |                        XKleinRefConditioning                         |                        XMath                         |                        XMemoryCleanup                         |                        XResolution                         |                        XSeed                         |                        XStringGroup                         |                        XStringWrap                         |
 | :-----: | :-------------------------------------------------------: | :---------------------------------------------------------: | :------------------------------------------------------------: | :------------------------------------------------------------------: | :--------------------------------------------------: | :-----------------------------------------------------------: | :--------------------------------------------------------: | :--------------------------------------------------: | :---------------------------------------------------------: | :--------------------------------------------------------: |
@@ -95,6 +95,10 @@ pip install -r requirements.txt
 |   中文    | <img src="preview/XDataHub/CN/XAudioGet.png"> | <img src="preview/XDataHub/CN/XDataSave.png"> | <img src="preview/XDataHub/CN/XImageGet.png"> | <img src="preview/XDataHub/CN/XLoraGet.png"> | <img src="preview/XDataHub/CN/XStringGet.png"> | <img src="preview/XDataHub/CN/XVideoGet.png"> |
 | English | <img src="preview/XDataHub/EN/XAudioGet.png"> | <img src="preview/XDataHub/EN/XDataSave.png"> | <img src="preview/XDataHub/EN/XImageGet.png"> | <img src="preview/XDataHub/EN/XLoraGet.png"> | <img src="preview/XDataHub/EN/XStringGet.png"> | <img src="preview/XDataHub/EN/XVideoGet.png"> |
 
+---
+
+## XDataHub 预览
+<img src="preview/XDataHub_preview_EN.png" alt="XMetadataWorkflow preview" width="800">
 
 ---
 
@@ -102,6 +106,7 @@ pip install -r requirements.txt
 
 🌐 在线使用：https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes
 <img src="preview/XMetadataWorkflow_preview.png" alt="XMetadataWorkflow preview" width="800">
+
 </div>
 
 ---
