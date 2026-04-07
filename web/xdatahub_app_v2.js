@@ -10,8 +10,8 @@ import { setLocale, t } from "./core/i18n.js?v=20260407-3";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
-import "./components/xdh-sidebar-filter.js?v=20260406-15";
-import "./components/xdh-folder-tree.js?v=20260406-50";
+import "./components/xdh-sidebar-filter.js?v=20260407-16";
+import "./components/xdh-folder-tree.js?v=20260407-52";
 import "./components/xdh-media-grid.js?v=20260406-39";
 import "./components/xdh-staging-dock.js?v=20260406-15";
 import "./components/xdh-node-picker.js?v=20260406-15";
@@ -40,6 +40,15 @@ const UI_STATE_STORAGE_KEY = "XDataHub.V2.UIState";
 const DEFAULT_ACTIVE_CATEGORY = "image";
 const DEFAULT_SORT_ORDER = "date-desc";
 const DEFAULT_CARD_SIZE = "small";
+const DEFAULT_CATEGORY_VIEW = Object.freeze({
+    folder: "",
+    folderLabel: "",
+    page: 1,
+});
+const DEFAULT_CATEGORY_NAV_STATE = Object.freeze({
+    history: [],
+    index: 0,
+});
 const PERSISTED_CATEGORIES = new Set([
     "image",
     "video",
@@ -55,6 +64,12 @@ const PERSISTED_SORT_ORDERS = new Set([
     "name-desc",
 ]);
 const PERSISTED_CARD_SIZES = new Set(["small", "medium", "large"]);
+const DIRECTORY_VIEW_CATEGORIES = new Set([
+    "image",
+    "video",
+    "audio",
+    "lora",
+]);
 
 const URL_CATEGORY_PARAM = "tab";
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
@@ -67,6 +82,13 @@ let lockRefreshInFlight = null;
 let lockRefreshQueued = false;
 let hasShownLockStatusError = false;
 let hotkeySpec = DEFAULT_HOTKEY_SPEC;
+let persistedCategoryViews = {};
+let categoryNavigationStates = {};
+let isApplyingCategoryView = false;
+let categoryViewRestoreToken = 0;
+const frameHotkeyCaptureState = {
+    pendingKeyId: "",
+};
 
 function normalizeThemeMode(mode) {
     const nextMode = String(mode || "").trim().toLowerCase();
@@ -213,6 +235,38 @@ function matchesHotkeyEvent(event, combo) {
     );
 }
 
+function getHotkeyEventId(event, combo) {
+    const code = String(event?.code || "").trim();
+    if (code) {
+        return code;
+    }
+    const key = combo?.key || normalizeHotkeyEventKey(event?.key);
+    return key ? `key:${key}` : "";
+}
+
+function resetHotkeyCaptureState(state) {
+    state.pendingKeyId = "";
+}
+
+function getHotkeyCaptureAction(event, combo, state) {
+    const keyId = getHotkeyEventId(event, combo);
+    if (!keyId) {
+        return "ignore";
+    }
+    if (event.type === "keydown") {
+        if (event.repeat) {
+            return "ignore";
+        }
+        state.pendingKeyId = keyId;
+        return "trigger";
+    }
+    if (state.pendingKeyId && state.pendingKeyId === keyId) {
+        state.pendingKeyId = "";
+        return "consume";
+    }
+    return "trigger";
+}
+
 function isEditableHotkeyTarget(target) {
     if (!(target instanceof Element)) {
         return false;
@@ -238,9 +292,7 @@ function isEditableHotkeyTarget(target) {
 
 function handleFrameHotkeyCapture(event) {
     if (
-        event.defaultPrevented
-        || event.isComposing
-        || event.repeat
+        event.isComposing
         || isEditableHotkeyTarget(event.target)
     ) {
         return;
@@ -252,13 +304,28 @@ function handleFrameHotkeyCapture(event) {
     if (!matchesHotkeyEvent(event, combo)) {
         return;
     }
+    const captureAction = getHotkeyCaptureAction(
+        event,
+        combo,
+        frameHotkeyCaptureState
+    );
+    if (captureAction === "ignore") {
+        return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
+    if (captureAction !== "trigger") {
+        return;
+    }
     postToggleWindowRequest();
 }
 
 window.addEventListener("keydown", handleFrameHotkeyCapture, true);
+window.addEventListener("keyup", handleFrameHotkeyCapture, true);
+window.addEventListener("blur", () => {
+    resetHotkeyCaptureState(frameHotkeyCaptureState);
+});
 
 function readCategoryFromUrl() {
     try {
@@ -306,6 +373,171 @@ function syncCategoryToUrl(category, options = {}) {
     }
 }
 
+function normalizePersistedPage(value) {
+    const page = Number.parseInt(String(value || ""), 10);
+    return Number.isFinite(page) && page > 0 ? page : 1;
+}
+
+function normalizeCategoryView(category, value = {}) {
+    const page = normalizePersistedPage(value.page);
+    if (!DIRECTORY_VIEW_CATEGORIES.has(category)) {
+        return {
+            ...DEFAULT_CATEGORY_VIEW,
+            page,
+        };
+    }
+    return {
+        folder: String(value.folder || "").trim(),
+        folderLabel: String(value.folderLabel || "").trim(),
+        page,
+    };
+}
+
+function buildPersistedCategoryViews(rawViews = {}) {
+    const views = {};
+    for (const category of PERSISTED_CATEGORIES) {
+        views[category] = normalizeCategoryView(category, rawViews?.[category]);
+    }
+    return views;
+}
+
+function getPersistedCategoryView(category) {
+    return normalizeCategoryView(category, persistedCategoryViews?.[category]);
+}
+
+function rememberCategoryView(category, view) {
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return { ...DEFAULT_CATEGORY_VIEW };
+    }
+    const normalized = normalizeCategoryView(category, view);
+    persistedCategoryViews = {
+        ...persistedCategoryViews,
+        [category]: normalized,
+    };
+    return normalized;
+}
+
+function rememberCurrentCategoryView(state = appStore.state) {
+    const category = String(state.activeCategory || "").trim();
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return { ...DEFAULT_CATEGORY_VIEW };
+    }
+    return rememberCategoryView(category, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+}
+
+function createCategoryHistoryEntry(category, view) {
+    const normalized = normalizeCategoryView(category, view);
+    return {
+        category,
+        folder: normalized.folder,
+        folderLabel: normalized.folderLabel,
+        page: normalized.page,
+    };
+}
+
+function isSameCategoryView(left, right) {
+    return left.folder === right.folder
+        && left.folderLabel === right.folderLabel
+        && left.page === right.page;
+}
+
+function normalizeCategoryNavigationState(category, value = {}, fallbackView) {
+    const safeCategory = PERSISTED_CATEGORIES.has(category)
+        ? category
+        : DEFAULT_ACTIVE_CATEGORY;
+    const fallbackEntry = createCategoryHistoryEntry(
+        safeCategory,
+        fallbackView || getPersistedCategoryView(safeCategory)
+    );
+    const rawHistory = Array.isArray(value.history)
+        ? value.history
+        : DEFAULT_CATEGORY_NAV_STATE.history;
+    const history = rawHistory.map((entry) => {
+        return createCategoryHistoryEntry(safeCategory, entry);
+    });
+    const nextHistory = history.length > 0 ? history : [fallbackEntry];
+    const rawIndex = Number.parseInt(String(value.index ?? ""), 10);
+    const index = Number.isFinite(rawIndex)
+        ? Math.max(0, Math.min(rawIndex, nextHistory.length - 1))
+        : nextHistory.length - 1;
+    return {
+        history: nextHistory,
+        index,
+    };
+}
+
+function createCategoryNavigationState(category, view) {
+    return normalizeCategoryNavigationState(category, {
+        history: [createCategoryHistoryEntry(category, view)],
+        index: 0,
+    }, view);
+}
+
+function getCategoryNavigationState(category, fallbackView) {
+    return normalizeCategoryNavigationState(
+        category,
+        categoryNavigationStates?.[category],
+        fallbackView
+    );
+}
+
+function rememberCategoryNavigationState(category, value, fallbackView) {
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return createCategoryNavigationState(DEFAULT_ACTIVE_CATEGORY);
+    }
+    const normalized = normalizeCategoryNavigationState(
+        category,
+        value,
+        fallbackView
+    );
+    categoryNavigationStates = {
+        ...categoryNavigationStates,
+        [category]: normalized,
+    };
+    return normalized;
+}
+
+function rememberCurrentCategoryNavigationState(state = appStore.state) {
+    const category = String(state.activeCategory || "").trim();
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return createCategoryNavigationState(DEFAULT_ACTIVE_CATEGORY);
+    }
+    return rememberCategoryNavigationState(category, {
+        history: state.navHistory,
+        index: state.navIndex,
+    }, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+}
+
+function syncCurrentCategoryNavigationEntry(state = appStore.state) {
+    const category = String(state.activeCategory || "").trim();
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return createCategoryNavigationState(DEFAULT_ACTIVE_CATEGORY);
+    }
+    const navState = getCategoryNavigationState(category, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+    const history = navState.history.slice();
+    history[navState.index] = createCategoryHistoryEntry(category, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+    return rememberCategoryNavigationState(category, {
+        history,
+        index: navState.index,
+    });
+}
+
 function loadPersistedUiState() {
     try {
         const raw = localStorage.getItem(UI_STATE_STORAGE_KEY) || "";
@@ -321,6 +553,7 @@ function loadPersistedUiState() {
                 ? parsed.cardSize
                 : DEFAULT_CARD_SIZE,
             folderTreeVisible: parsed.folderTreeVisible !== false,
+            categoryViews: buildPersistedCategoryViews(parsed.categoryViews),
         };
     } catch {
         return {
@@ -328,19 +561,33 @@ function loadPersistedUiState() {
             sortOrder: DEFAULT_SORT_ORDER,
             cardSize: DEFAULT_CARD_SIZE,
             folderTreeVisible: true,
+            categoryViews: buildPersistedCategoryViews(),
         };
     }
 }
 
 function persistUiState(state = appStore.state) {
     try {
+        const category = String(
+            state.activeCategory || DEFAULT_ACTIVE_CATEGORY
+        ).trim();
+        const nextCategoryViews = PERSISTED_CATEGORIES.has(category)
+            ? {
+                ...persistedCategoryViews,
+                [category]: normalizeCategoryView(category, {
+                    folder: state.activeFolder || "",
+                    folderLabel: state.activeFolderLabel || "",
+                    page: state.currentPage || 1,
+                }),
+            }
+            : persistedCategoryViews;
+        persistedCategoryViews = buildPersistedCategoryViews(nextCategoryViews);
         localStorage.setItem(UI_STATE_STORAGE_KEY, JSON.stringify({
-            activeCategory: String(
-                state.activeCategory || DEFAULT_ACTIVE_CATEGORY
-            ),
+            activeCategory: category || DEFAULT_ACTIVE_CATEGORY,
             sortOrder: String(state.sortOrder || DEFAULT_SORT_ORDER),
             cardSize: String(state.cardSize || DEFAULT_CARD_SIZE),
             folderTreeVisible: state.folderTreeVisible === true,
+            categoryViews: persistedCategoryViews,
         }));
     } catch {
         // ignore localStorage write errors
@@ -352,18 +599,26 @@ const initialCategoryFromUrl = readCategoryFromUrl();
 if (initialCategoryFromUrl) {
     initialUiState.activeCategory = initialCategoryFromUrl;
 }
+persistedCategoryViews = initialUiState.categoryViews;
+const initialCategoryView = getPersistedCategoryView(
+    initialUiState.activeCategory
+);
+const initialCategoryNavState = createCategoryNavigationState(
+    initialUiState.activeCategory,
+    initialCategoryView
+);
+categoryNavigationStates = {
+    [initialUiState.activeCategory]: initialCategoryNavState,
+};
 appStore.state.activeCategory = initialUiState.activeCategory;
 appStore.state.sortOrder = initialUiState.sortOrder;
 appStore.state.cardSize = initialUiState.cardSize;
 appStore.state.folderTreeVisible = initialUiState.folderTreeVisible;
-appStore.state.activeFolder = "";
-appStore.state.currentPage = 1;
-appStore.state.navHistory = [{
-    category: initialUiState.activeCategory,
-    folder: "",
-    page: 1,
-}];
-appStore.state.navIndex = 0;
+appStore.state.activeFolder = initialCategoryView.folder;
+appStore.state.activeFolderLabel = initialCategoryView.folderLabel;
+appStore.state.currentPage = initialCategoryView.page;
+appStore.state.navHistory = initialCategoryNavState.history;
+appStore.state.navIndex = initialCategoryNavState.index;
 appStore.state.dbTaskBusy = false;
 syncCategoryToUrl(appStore.state.activeCategory, { replace: true });
 
@@ -417,6 +672,18 @@ function scheduleMainScrollReset() {
 
 document.addEventListener("xdh:reset-main-scroll", () => {
     scheduleMainScrollReset();
+});
+
+document.addEventListener("xdh:switch-category", (event) => {
+    const category = String(event?.detail?.category || "").trim();
+    if (!category) {
+        return;
+    }
+    void applyPersistedCategoryView(category, {
+        pushNav: true,
+        syncUrl: true,
+        resetSearch: true,
+    });
 });
 
 async function loadAppSettings() {
@@ -790,32 +1057,45 @@ function mapItem(item, category) {
     };
 }
 
-// ── Navigation history manager ───────────────────────────────────────────────
-// Pushes a new entry to navHistory when activeCategory changes via sidebar click.
-// Does NOT push when back/fwd buttons are used (_navSkipPush flag).
 appStore.subscribe((state, key) => {
-    if (key !== "activeCategory") return;
-    if (state._navSkipPush) {
-        // Flag consumed — clear it; history was already updated by content-nav
-        appStore.state._navSkipPush = false;
+    if (
+        isApplyingCategoryView
+        || (key !== "navHistory" && key !== "navIndex")
+    ) {
         return;
     }
-    // Truncate any forward history, then push new entry
-    const newEntry  = {
-        category: state.activeCategory,
-        folder: state.activeFolder || "",
-        folderLabel: state.activeFolderLabel || "",
-        page: state.currentPage || 1,
-    };
-    const truncated = state.navHistory.slice(0, state.navIndex + 1);
-    truncated.push(newEntry);
-    // Assign as new array to trigger subscribers
-    appStore.state.navHistory = truncated;
-    appStore.state.navIndex   = truncated.length - 1;
+    rememberCurrentCategoryNavigationState(state);
+});
+
+appStore.subscribe((state, key) => {
+    if (
+        isApplyingCategoryView
+        || (
+            key !== "activeFolder"
+            && key !== "activeFolderLabel"
+            && key !== "currentPage"
+        )
+    ) {
+        return;
+    }
+    syncCurrentCategoryNavigationEntry(state);
 });
 
 appStore.subscribe((state, key) => {
     if (key !== "activeCategory") return;
+    if (isApplyingCategoryView) {
+        return;
+    }
+    if (state._navSkipPush) {
+        appStore.state._navSkipPush = false;
+    }
+});
+
+appStore.subscribe((state, key) => {
+    if (key !== "activeCategory") return;
+    if (isApplyingCategoryView) {
+        return;
+    }
     syncCategoryToUrl(state.activeCategory);
 });
 
@@ -824,18 +1104,39 @@ window.addEventListener("hashchange", () => {
     if (!category || category === appStore.state.activeCategory) {
         return;
     }
-    appStore.state.activeFolder = "";
-    appStore.state.activeFolderLabel = "";
-    appStore.state.currentPage = 1;
-    appStore.state.activeCategory = category;
+    void applyPersistedCategoryView(category, {
+        pushNav: true,
+        syncUrl: false,
+        resetSearch: false,
+    });
 });
 
 appStore.subscribe((state, key) => {
     if (
-        key !== "activeCategory"
-        && key !== "sortOrder"
-        && key !== "cardSize"
-        && key !== "folderTreeVisible"
+        isApplyingCategoryView
+        || state._navSkipPush
+        || (
+            key !== "activeFolder"
+            && key !== "activeFolderLabel"
+            && key !== "currentPage"
+        )
+    ) {
+        return;
+    }
+    rememberCurrentCategoryView(state);
+    syncCurrentCategoryNavigationEntry(state);
+    persistUiState(state);
+});
+
+appStore.subscribe((state, key) => {
+    if (
+        isApplyingCategoryView
+        || (
+            key !== "activeCategory"
+            && key !== "sortOrder"
+            && key !== "cardSize"
+            && key !== "folderTreeVisible"
+        )
     ) {
         return;
     }
@@ -874,13 +1175,146 @@ async function fetchCategory(category, page, folder, sortKey) {
     return { items: [], page: 1, total_pages: 1 };
 }
 
+async function doesCategoryFolderExist(category, folder, sortKey) {
+    const normalizedFolder = String(folder || "").trim();
+    if (!normalizedFolder || !DIRECTORY_VIEW_CATEGORIES.has(category)) {
+        return true;
+    }
+    let segments = normalizedFolder.split("/").filter(Boolean);
+    let parentFolder = "";
+    if (category === "lora" && segments[0] === "loras") {
+        segments = segments.slice(1);
+        parentFolder = "loras";
+    }
+    if (segments.length === 0) {
+        return true;
+    }
+    for (const segment of segments) {
+        const childFolder = parentFolder
+            ? `${parentFolder}/${segment}`
+            : segment;
+        try {
+            const res = await fetchCategory(
+                category,
+                1,
+                parentFolder,
+                sortKey
+            );
+            const rawItems = Array.isArray(res?.items)
+                ? res.items
+                : Array.isArray(res?.data)
+                    ? res.data
+                    : [];
+            const exists = rawItems.some((item) => {
+                if (item?.kind !== "folder") {
+                    return false;
+                }
+                const childPath = String(
+                    item?.extra?.child_path || item?.path || ""
+                ).trim();
+                return childPath === childFolder;
+            });
+            if (!exists) {
+                return false;
+            }
+        } catch {
+            return true;
+        }
+        parentFolder = childFolder;
+    }
+    return true;
+}
+
+async function resolvePersistedCategoryView(category, sortKey, view) {
+    const normalized = normalizeCategoryView(category, view);
+    if (!normalized.folder || !DIRECTORY_VIEW_CATEGORIES.has(category)) {
+        return normalized;
+    }
+    const exists = await doesCategoryFolderExist(
+        category,
+        normalized.folder,
+        sortKey
+    );
+    if (exists) {
+        return normalized;
+    }
+    return normalizeCategoryView(category, DEFAULT_CATEGORY_VIEW);
+}
+
+async function applyPersistedCategoryView(category, options = {}) {
+    const nextCategory = String(category || "").trim();
+    if (!PERSISTED_CATEGORIES.has(nextCategory)) {
+        return;
+    }
+    const token = ++categoryViewRestoreToken;
+    const currentCategory = String(
+        appStore.state.activeCategory || DEFAULT_ACTIVE_CATEGORY
+    ).trim();
+    if (options.rememberCurrent !== false) {
+        rememberCurrentCategoryView();
+        rememberCurrentCategoryNavigationState();
+    }
+    const requestedView = normalizeCategoryView(
+        nextCategory,
+        options.view || getPersistedCategoryView(nextCategory)
+    );
+    let nextView = requestedView;
+    let resetCategoryNavigation = false;
+    if (options.validate !== false) {
+        nextView = await resolvePersistedCategoryView(
+            nextCategory,
+            appStore.state.sortOrder || DEFAULT_SORT_ORDER,
+            nextView
+        );
+        if (token !== categoryViewRestoreToken) {
+            return;
+        }
+        resetCategoryNavigation = !isSameCategoryView(requestedView, nextView);
+    }
+    rememberCategoryView(nextCategory, nextView);
+    const nextNavState = resetCategoryNavigation
+        ? createCategoryNavigationState(nextCategory, nextView)
+        : getCategoryNavigationState(nextCategory, nextView);
+    rememberCategoryNavigationState(nextCategory, nextNavState, nextView);
+    if (options.resetSearch !== false) {
+        appStore.state.searchQuery = "";
+    }
+    document.dispatchEvent(
+        new CustomEvent("xdh:reset-main-scroll")
+    );
+    isApplyingCategoryView = true;
+    appStore.state._categoryViewSyncing = true;
+    appStore.state.navHistory = nextNavState.history;
+    appStore.state.navIndex = nextNavState.index;
+    appStore.state.activeCategory = nextCategory;
+    appStore.state.activeFolder = nextView.folder;
+    appStore.state.activeFolderLabel = nextView.folderLabel;
+    appStore.state.currentPage = nextView.page;
+    appStore.state._categoryViewSyncing = false;
+    isApplyingCategoryView = false;
+    if (currentCategory !== nextCategory) {
+        rememberCategoryNavigationState(nextCategory, nextNavState, nextView);
+    }
+    if (options.syncUrl !== false) {
+        syncCategoryToUrl(nextCategory, {
+            replace: options.replaceUrl === true,
+        });
+    }
+    persistUiState();
+    appStore.state.categoryViewToken = Date.now();
+}
+
 appStore.subscribe(async (state, key) => {
     if (
-        key !== "activeCategory"
-        && key !== "activeFolder"
-        && key !== "currentPage"
-        && key !== "sortOrder"
-        && key !== "refreshTrigger"
+        (isApplyingCategoryView && key !== "categoryViewToken")
+        || (
+            key !== "activeCategory"
+            && key !== "activeFolder"
+            && key !== "currentPage"
+            && key !== "sortOrder"
+            && key !== "categoryViewToken"
+            && key !== "refreshTrigger"
+        )
     ) {
         return;
     }
@@ -1018,7 +1452,13 @@ function updateExecOverlay() {
 // Boot: trigger initial data load after sidebar is ready
 customElements.whenDefined("xdh-sidebar-filter").then(async () => {
     await loadAppSettings();
-    appStore.state.refreshTrigger = Date.now();
+    await applyPersistedCategoryView(appStore.state.activeCategory, {
+        pushNav: false,
+        syncUrl: false,
+        resetSearch: false,
+        rememberCurrent: false,
+        replaceUrl: true,
+    });
 });
 
 refreshLockState();

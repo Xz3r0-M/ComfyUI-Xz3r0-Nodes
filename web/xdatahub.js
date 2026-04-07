@@ -74,6 +74,7 @@ const HOST_SETTINGS_MIGRATION_FLAG =
     "Xz3r0.XDataHub.HostSettingsMigrated.v1";
 const WINDOW_STATE_STORAGE_KEY = "Xz3r0.XDataHub.WindowState.v1";
 const WINDOW_STATE_VERSION = 1;
+const HOST_HOTKEY_SINK_CLASS = "xz3r0-datahub-hotkey-sink";
 const HOST_ACTIVE_TAB_SESSION_KEY = "xdatahub.host.activeTab";
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const LOCALE_WATCH_INTERVAL_MS = 1000;
@@ -96,6 +97,11 @@ let uiLocaleApplySeq = 0;
 let currentUiLocale = "en";
 const uiLocaleCache = new Map();
 let hotkeyListenerInstalled = false;
+const hostHotkeyCaptureState = {
+    pendingKeyId: "",
+};
+let hostHotkeySinkInstalled = false;
+let hostHotkeySink = null;
 let interruptObserverInstalled = false;
 let localeSyncInstalled = false;
 let edgePeekEnabled = false;
@@ -136,7 +142,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260407-8";
+const XDATAHUB_ASSET_VER = "20260407-14";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -419,6 +425,7 @@ async function applyHostUiLocale(localeOverride = null) {
         return;
     }
     currentUiLocale = locale;
+    hostHotkeySink?.setAttribute("aria-label", t("menuTooltip", "XDataHub"));
     xdataHubRef?.instance?.applyShellLocaleText?.();
     applyMenuButtonIcon();
     broadcastUiLocaleToFrontendExtensions(currentUiLocale);
@@ -600,6 +607,151 @@ function matchesHotkeyEvent(event, combo) {
         && !!event.shiftKey === !!combo.shift
         && !!event.metaKey === !!combo.meta
     );
+}
+
+function getHotkeyEventId(event, combo) {
+    const code = String(event?.code || "").trim();
+    if (code) {
+        return code;
+    }
+    const key = combo?.key || normalizeHotkeyEventKey(event?.key);
+    return key ? `key:${key}` : "";
+}
+
+function resetHotkeyCaptureState(state) {
+    state.pendingKeyId = "";
+}
+
+function getHotkeyCaptureAction(event, combo, state) {
+    const keyId = getHotkeyEventId(event, combo);
+    if (!keyId) {
+        return "ignore";
+    }
+    if (event.type === "keydown") {
+        if (event.repeat) {
+            return "ignore";
+        }
+        state.pendingKeyId = keyId;
+        return "trigger";
+    }
+    if (state.pendingKeyId && state.pendingKeyId === keyId) {
+        state.pendingKeyId = "";
+        return "consume";
+    }
+    return "trigger";
+}
+
+function isHostHotkeyTextEditableTarget(target) {
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    const editable = target.closest(
+        "input, textarea, select, [contenteditable=''], [contenteditable='true']"
+    );
+    if (!editable) {
+        return false;
+    }
+    if (!(editable instanceof HTMLInputElement)) {
+        return true;
+    }
+    const type = String(editable.type || "").trim().toLowerCase();
+    return ![
+        "button",
+        "checkbox",
+        "radio",
+        "reset",
+        "submit",
+    ].includes(type);
+}
+
+function shouldKeepHostHotkeySinkFocus(target) {
+    if (!(target instanceof Element)) {
+        return true;
+    }
+    if (target.closest("iframe")) {
+        return false;
+    }
+    return !isHostHotkeyTextEditableTarget(target);
+}
+
+function ensureHostHotkeySink() {
+    if (hostHotkeySink instanceof HTMLInputElement && hostHotkeySink.isConnected) {
+        return hostHotkeySink;
+    }
+    const sink = document.createElement("input");
+    sink.className = HOST_HOTKEY_SINK_CLASS;
+    sink.type = "text";
+    sink.readOnly = true;
+    sink.tabIndex = -1;
+    sink.autocomplete = "off";
+    sink.spellcheck = false;
+    sink.setAttribute("aria-label", t("menuTooltip", "XDataHub"));
+    Object.assign(sink.style, {
+        position: "fixed",
+        width: "1px",
+        height: "1px",
+        padding: "0",
+        margin: "0",
+        border: "0",
+        opacity: "0",
+        pointerEvents: "none",
+        inset: "auto",
+        transform: "translate(-200vw, -200vh)",
+    });
+    document.body.appendChild(sink);
+    hostHotkeySink = sink;
+    return sink;
+}
+
+function focusHostHotkeySink(options = {}) {
+    const sink = ensureHostHotkeySink();
+    const active = document.activeElement;
+    if (
+        options.force !== true
+        && active instanceof Element
+        && active !== document.body
+        && active !== sink
+        && !shouldKeepHostHotkeySinkFocus(active)
+    ) {
+        return;
+    }
+    sink.focus({ preventScroll: true });
+}
+
+function ensureHostHotkeySinkFocus() {
+    if (hostHotkeySinkInstalled) {
+        return;
+    }
+    hostHotkeySinkInstalled = true;
+    document.addEventListener("pointerdown", (event) => {
+        if (!windowEnabled || !shouldKeepHostHotkeySinkFocus(event.target)) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            focusHostHotkeySink();
+        });
+    }, true);
+    window.addEventListener("focus", () => {
+        if (!windowEnabled) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            focusHostHotkeySink();
+        });
+    });
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden || !windowEnabled) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            focusHostHotkeySink();
+        });
+    });
+    requestAnimationFrame(() => {
+        if (windowEnabled) {
+            focusHostHotkeySink();
+        }
+    });
 }
 
 function readLegacyHotkeySpecFromSettings() {
@@ -903,9 +1055,7 @@ function updateMenuButtonVisibility() {
 
 function handleGlobalHotkeyCapture(event) {
     if (
-        event.defaultPrevented
-        || event.isComposing
-        || event.repeat
+        event.isComposing
         || !windowEnabled
     ) {
         return;
@@ -917,16 +1067,28 @@ function handleGlobalHotkeyCapture(event) {
     if (!matchesHotkeyEvent(event, combo)) {
         return;
     }
-    if (isWindowCloseBlocked() && XDataHub.instance?.isVisible) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation?.();
+    const captureAction = getHotkeyCaptureAction(
+        event,
+        combo,
+        hostHotkeyCaptureState
+    );
+    if (captureAction === "ignore") {
         return;
     }
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
+    if (captureAction !== "trigger") {
+        return;
+    }
+    if (isWindowCloseBlocked() && XDataHub.instance?.isVisible) {
+        return;
+    }
     XDataHub.toggle();
+}
+
+function handleGlobalHotkeyWindowBlur() {
+    resetHotkeyCaptureState(hostHotkeyCaptureState);
 }
 
 function ensureGlobalHotkeyListener() {
@@ -934,6 +1096,11 @@ function ensureGlobalHotkeyListener() {
         return;
     }
     window.addEventListener("keydown", handleGlobalHotkeyCapture, true);
+    window.addEventListener("keyup", handleGlobalHotkeyCapture, true);
+    document.addEventListener("keydown", handleGlobalHotkeyCapture, true);
+    document.addEventListener("keyup", handleGlobalHotkeyCapture, true);
+    window.addEventListener("blur", handleGlobalHotkeyWindowBlur);
+    ensureHostHotkeySinkFocus();
     hotkeyListenerInstalled = true;
 }
 

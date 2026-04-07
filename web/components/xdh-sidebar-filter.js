@@ -50,18 +50,17 @@ export class XdhSidebarFilter extends BaseElement {
             item.addEventListener("click", () => {
                 const kind = item.dataset.kind;
                 if (!kind) return;
-                document.dispatchEvent(
-                    new CustomEvent("xdh:reset-main-scroll")
-                );
+                if (kind === store.state.activeCategory) return;
                 this.activeKind = kind;
                 this.$$(".filter-item").forEach(
                     el => el.classList.toggle("active", el.dataset.kind === kind)
                 );
-                store.state.activeFolder = "";
-                store.state.activeFolderLabel = "";
-                store.state.currentPage = 1;
-                store.state.searchQuery = "";
-                store.state.activeCategory = kind;
+                document.dispatchEvent(new CustomEvent(
+                    "xdh:switch-category",
+                    {
+                        detail: { category: kind },
+                    }
+                ));
             });
         });
     }

@@ -17,6 +17,8 @@ import { t } from "../core/i18n.js?v=20260406-15";
 
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 const TREE_PAGE_SIZE = 200;
+const TREE_EXPANDED_STATE_STORAGE_KEY = "XDataHub.V2.TreeExpandedState.v2";
+const TREE_STATE_CATEGORIES = ["image", "video", "audio", "lora"];
 
 function createCacheEntry() {
     return {
@@ -85,11 +87,53 @@ function compareFolderNodes(left, right) {
     );
 }
 
+function loadExpandedStateByCategory() {
+    const expandedByCategory = new Map();
+    try {
+        const raw = localStorage.getItem(TREE_EXPANDED_STATE_STORAGE_KEY) || "";
+        const parsed = raw ? JSON.parse(raw) : {};
+        TREE_STATE_CATEGORIES.forEach((category) => {
+            const expanded = new Set([""]);
+            const stored = Array.isArray(parsed?.[category])
+                ? parsed[category]
+                : [];
+            stored
+                .map((path) => normalizePath(path))
+                .filter(Boolean)
+                .forEach((path) => expanded.add(path));
+            expandedByCategory.set(category, expanded);
+        });
+    } catch {
+        // ignore localStorage read errors
+    }
+    return expandedByCategory;
+}
+
+function persistExpandedStateByCategory(expandedByCategory) {
+    try {
+        const payload = {};
+        TREE_STATE_CATEGORIES.forEach((category) => {
+            const expanded = expandedByCategory.get(category);
+            payload[category] = expanded
+                ? Array.from(expanded)
+                    .map((path) => normalizePath(path))
+                    .filter(Boolean)
+                : [];
+        });
+        localStorage.setItem(
+            TREE_EXPANDED_STATE_STORAGE_KEY,
+            JSON.stringify(payload)
+        );
+    } catch {
+        // ignore localStorage write errors
+    }
+}
+
 export class XdhFolderTree extends BaseElement {
     constructor() {
         super();
         this._cacheByCategory = new Map();
-        this._expandedByCategory = new Map();
+        this._expandedByCategory = loadExpandedStateByCategory();
         this._syncToken = 0;
         this._treeScrollTop = 0;
         this._treeScrollLeft = 0;
@@ -124,9 +168,14 @@ export class XdhFolderTree extends BaseElement {
                 "activeFolder",
                 "folderTreeVisible",
                 "locale",
+                "categoryViewToken",
                 "refreshTrigger",
             ].includes(key)
         ) {
+            return;
+        }
+
+        if (state._categoryViewSyncing === true && key !== "categoryViewToken") {
             return;
         }
 
@@ -176,6 +225,10 @@ export class XdhFolderTree extends BaseElement {
         return expanded;
     }
 
+    _persistExpandedState() {
+        persistExpandedStateByCategory(this._expandedByCategory);
+    }
+
     _invalidateCategory(category) {
         this._cacheByCategory.delete(String(category || ""));
     }
@@ -209,6 +262,9 @@ export class XdhFolderTree extends BaseElement {
         for (const path of chain) {
             expanded.add(path);
             await this._ensureChildrenLoaded(category, path);
+        }
+        if (chain.length > 0) {
+            this._persistExpandedState();
         }
     }
 
@@ -307,11 +363,13 @@ export class XdhFolderTree extends BaseElement {
 
         if (expanded.has(path)) {
             expanded.delete(path);
+            this._persistExpandedState();
             this.renderRoot();
             return;
         }
 
         expanded.add(path);
+        this._persistExpandedState();
         this.renderRoot();
         void this._ensureChildrenLoaded(category, path);
     }
@@ -334,11 +392,13 @@ export class XdhFolderTree extends BaseElement {
         const expanded = this._getExpandedSet(category);
         if (expanded.has(path)) {
             expanded.delete(path);
+            this._persistExpandedState();
             this.renderRoot();
             return;
         }
 
         expanded.add(path);
+        this._persistExpandedState();
         this.renderRoot();
         void this._ensureChildrenLoaded(category, path);
     }
@@ -346,6 +406,7 @@ export class XdhFolderTree extends BaseElement {
     _collapseAll() {
         const category = String(store.state.activeCategory || "");
         this._expandedByCategory.set(category, new Set([""]));
+        this._persistExpandedState();
         this.renderRoot();
     }
 
