@@ -38,6 +38,29 @@ function finalizeHiddenState() {
     _el.style.display = "none";
 }
 
+function getDocumentFullscreenElement() {
+    return document.fullscreenElement
+        || document.webkitFullscreenElement
+        || null;
+}
+
+function getTooltipParent(target) {
+    const rootNode = target?.getRootNode?.();
+    const shadowFullscreenEl = rootNode instanceof ShadowRoot
+        ? (rootNode.fullscreenElement || rootNode.webkitFullscreenElement)
+        : null;
+    if (shadowFullscreenEl instanceof Element) {
+        return shadowFullscreenEl;
+    }
+
+    const documentFullscreenEl = getDocumentFullscreenElement();
+    if (documentFullscreenEl instanceof Element) {
+        return documentFullscreenEl;
+    }
+
+    return document.body;
+}
+
 function setHiddenState(immediate = false) {
     if (!_el) return;
     _el.setAttribute("aria-hidden", "true");
@@ -56,37 +79,41 @@ function setHiddenState(immediate = false) {
     }, FADE_DURATION);
 }
 
-function getEl() {
-    if (_el) return _el;
-    _el = document.createElement("div");
-    _el.id = "xdh-global-tooltip";
-    _el.setAttribute("role", "tooltip");
-    _el.setAttribute("aria-hidden", "true");
-    Object.assign(_el.style, {
-        position: "fixed",
-        zIndex: "999999",
-        background: "var(--xdh-color-surface-2, #252525)",
-        color: "var(--xdh-color-text-primary, #eee)",
-        border: "1px solid var(--xdh-color-border, #3a3a3a)",
-        boxShadow: "2px 6px 18px rgba(0, 0, 0, 0.55)",
-        padding: "5px 11px",
-        borderRadius: "7px",
-        fontSize: "12px",
-        fontWeight: "500",
-        lineHeight: "1.4",
-        whiteSpace: "normal",
-        wordBreak: "normal",
-        overflowWrap: "anywhere",
-        pointerEvents: "none",
-        opacity: "0",
-        transition: "opacity 0.12s ease",
-        visibility: "hidden",
-        display: "none",
-        maxWidth: "300px",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        userSelect: "none",
-    });
-    document.body.appendChild(_el);
+function getEl(parent = document.body) {
+    if (!_el) {
+        _el = document.createElement("div");
+        _el.id = "xdh-global-tooltip";
+        _el.setAttribute("role", "tooltip");
+        _el.setAttribute("aria-hidden", "true");
+        Object.assign(_el.style, {
+            position: "fixed",
+            zIndex: "999999",
+            background: "var(--xdh-color-surface-2, #252525)",
+            color: "var(--xdh-color-text-primary, #eee)",
+            border: "1px solid var(--xdh-color-border, #3a3a3a)",
+            boxShadow: "2px 6px 18px rgba(0, 0, 0, 0.55)",
+            padding: "5px 11px",
+            borderRadius: "7px",
+            fontSize: "12px",
+            fontWeight: "500",
+            lineHeight: "1.4",
+            whiteSpace: "normal",
+            wordBreak: "normal",
+            overflowWrap: "anywhere",
+            pointerEvents: "none",
+            opacity: "0",
+            transition: "opacity 0.12s ease",
+            visibility: "hidden",
+            display: "none",
+            maxWidth: "300px",
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            userSelect: "none",
+        });
+    }
+    const resolvedParent = parent || document.body;
+    if (_el.parentNode !== resolvedParent) {
+        resolvedParent.appendChild(_el);
+    }
     return _el;
 }
 
@@ -104,7 +131,7 @@ function getTooltipTargetFromEvent(event) {
     );
 }
 
-export function showTooltip(text, targetRect, direction) {
+export function showTooltip(text, targetRect, direction, target = null) {
     clearTimeout(_hideTimer);
     clearDisplayTimer();
     if (_showRafId !== null) {
@@ -112,7 +139,7 @@ export function showTooltip(text, targetRect, direction) {
         _showRafId = null;
     }
     const showId = ++_showId;
-    const el = getEl();
+    const el = getEl(getTooltipParent(target));
     el.textContent = text;
     // Move to a neutral off-screen position BEFORE measuring so that the
     // element's previous left/top never affects the layout width.  When a
@@ -203,7 +230,8 @@ export function installTooltips(shadowRoot) {
         showTooltip(
             text,
             target.getBoundingClientRect(),
-            getDirection(target)
+            getDirection(target),
+            target
         );
     }, true);
 
@@ -224,7 +252,8 @@ export function installTooltips(shadowRoot) {
         showTooltip(
             text,
             target.getBoundingClientRect(),
-            getDirection(target)
+            getDirection(target),
+            target
         );
     }, true);
 

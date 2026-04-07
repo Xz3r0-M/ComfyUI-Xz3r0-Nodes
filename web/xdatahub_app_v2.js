@@ -6,7 +6,7 @@ import {
     buildMediaUrl,
 } from "./core/api.js?v=20260403-413";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260406-16";
+import { setLocale, t } from "./core/i18n.js?v=20260407-3";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
@@ -17,8 +17,8 @@ import "./components/xdh-staging-dock.js?v=20260406-15";
 import "./components/xdh-node-picker.js?v=20260406-15";
 import "./core/node-bridge.js?v=20260403-400";
 import "./components/xdh-content-nav.js?v=20260406-24";
-import "./components/xdh-pagination.js?v=20260406-15";
-import "./components/xdh-lightbox.js?v=20260406-55";
+import "./components/xdh-pagination.js?v=20260407-2";
+import "./components/xdh-lightbox.js?v=20260407-8";
 import "./components/xdh-history-view.js?v=20260406-16";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";

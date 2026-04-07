@@ -1,5 +1,5 @@
 import { appStore } from './store.js';
-import { installTooltips } from './tooltip.js';
+import { installTooltips } from './tooltip.js?v=20260407-1';
 
 const TOKEN_STYLESHEET_SELECTOR =
     'link[rel="stylesheet"][href*="xdatahub-color-tokens.css"]';

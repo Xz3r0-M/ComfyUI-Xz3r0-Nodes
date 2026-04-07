@@ -130,6 +130,7 @@ export class XdhPagination extends BaseElement {
                     padding: 0 12px;
                     background: var(--xdh-color-surface-1, #1a1a1a);
                     border-top: 1px solid var(--xdh-color-border, #2e2e2e);
+                    border-bottom: 1px solid var(--xdh-color-border, #2e2e2e);
                 }
 
                 .page-btn {
@@ -144,12 +145,18 @@ export class XdhPagination extends BaseElement {
                     border: 1px solid var(--xdh-color-border, #2e2e2e);
                     border-radius: 6px;
                     color: var(--xdh-color-text-secondary, #888);
+                    line-height: 0;
                     cursor: pointer;
                     transition:
                         background 0.14s ease,
                         border-color 0.14s ease,
                         color 0.14s ease,
                         transform 0.16s ease;
+                }
+
+                .page-btn .xdh-icon {
+                    display: block;
+                    transform: translateY(-0.5px);
                 }
                 .page-btn:hover:not(:disabled) {
                     background: var(--xdh-color-surface-hover, #444444);

@@ -5,18 +5,20 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
-![Windows 11 Tested](https://img.shields.io/badge/Windows%2011-Tested-blue?logo=windows)
+![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
+
 
 **如果这个项目对您有帮助，可以给个星标⭐或者分享给其他人！**
 
-[📜 点击查看更新日志 | Click to view the changelog 📜](Changelog.md)
+[📜 点击查看更新日志 | Click to view the changelog](Changelog.md)
+
 </div>
 
 ---
 
 ## 📖 项目简介
 
-- ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标为创建增强的基础功能节点
+- ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标为创建增强的基础功能节点和扩展工具
 
 ### 🎯 设计特点
 
@@ -71,24 +73,28 @@ pip install -r requirements.txt
 
 ## 节点预览
 
+`♾️ Xz3r0/File-Processing`
 
-### File-Processing
+|         |                      XAudioSave                       |                      XImageResize                       |                      XImageSave                       |                      XLatentLoad                       |                      XLatentSave                       |                      XMarkdownSave                       |                      XVideoSave                       |                      XWorkflowSave                       |
+| :-----: | :---------------------------------------------------: | :-----------------------------------------------------: | :---------------------------------------------------: | :----------------------------------------------------: | :----------------------------------------------------: | :------------------------------------------------------: | :---------------------------------------------------: | :------------------------------------------------------: |
+|   中文    | <img src="preview/File-Processing/CN/XAudioSave.png"> | <img src="preview/File-Processing/CN/XImageResize.png"> | <img src="preview/File-Processing/CN/XImageSave.png"> | <img src="preview/File-Processing/CN/XLatentLoad.png"> | <img src="preview/File-Processing/CN/XLatentSave.png"> | <img src="preview/File-Processing/CN/XMarkdownSave.png"> | <img src="preview/File-Processing/CN/XVideoSave.png"> | <img src="preview/File-Processing/CN/XWorkflowSave.png"> |
+| English | <img src="preview/File-Processing/EN/XAudioSave.png"> | <img src="preview/File-Processing/EN/XImageResize.png"> | <img src="preview/File-Processing/EN/XImageSave.png"> | <img src="preview/File-Processing/EN/XLatentLoad.png"> | <img src="preview/File-Processing/EN/XLatentSave.png"> | <img src="preview/File-Processing/EN/XMarkdownSave.png"> | <img src="preview/File-Processing/EN/XVideoSave.png"> | <img src="preview/File-Processing/EN/XWorkflowSave.png"> |
 
-|        XAudioSave         |        XImageResize         |        XImageSave         |        XLatentLoad         |        XLatentSave         |        XMarkdownSave         |        XVideoSave         |        XWorkflowSave         |
-| :-----------------------: | :-------------------------: | :-----------------------: | :------------------------: | :------------------------: | :--------------------------: | :-----------------------: | :--------------------------: |
-| <img src="preview/File-Processing/EN/XAudioSave.png"> | <img src="preview/File-Processing/EN/XImageResize.png"> | <img src="preview/File-Processing/EN/XImageSave.png"> | <img src="preview/File-Processing/EN/XLatentLoad.png"> | <img src="preview/File-Processing/EN/XLatentSave.png"> | <img src="preview/File-Processing/EN/XMarkdownSave.png"> | <img src="preview/File-Processing/EN/XVideoSave.png"> | <img src="preview/File-Processing/EN/XWorkflowSave.png"> |
+`♾️ Xz3r0/XDataHub `
 
-### Workflow-Processing
+|         |                        XAnyGate10                         |                        XAnyToString                         |                        XDateTimeString                         |                        XKleinRefConditioning                         |                        XMath                         |                        XMemoryCleanup                         |                        XResolution                         |                        XSeed                         |                        XStringGroup                         |                        XStringWrap                         |
+| :-----: | :-------------------------------------------------------: | :---------------------------------------------------------: | :------------------------------------------------------------: | :------------------------------------------------------------------: | :--------------------------------------------------: | :-----------------------------------------------------------: | :--------------------------------------------------------: | :--------------------------------------------------: | :---------------------------------------------------------: | :--------------------------------------------------------: |
+|   中文    | <img src="preview/Workflow-Processing/CN/XAnyGate10.png"> | <img src="preview/Workflow-Processing/CN/XAnyToString.png"> | <img src="preview/Workflow-Processing/CN/XDateTimeString.png"> | <img src="preview/Workflow-Processing/CN/XKleinRefConditioning.png"> | <img src="preview/Workflow-Processing/CN/XMath.png"> | <img src="preview/Workflow-Processing/CN/XMemoryCleanup.png"> | <img src="preview/Workflow-Processing/CN/XResolution.png"> | <img src="preview/Workflow-Processing/CN/XSeed.png"> | <img src="preview/Workflow-Processing/CN/XStringGroup.png"> | <img src="preview/Workflow-Processing/CN/XStringWrap.png"> |
+| English | <img src="preview/Workflow-Processing/EN/XAnyGate10.png"> | <img src="preview/Workflow-Processing/EN/XAnyToString.png"> | <img src="preview/Workflow-Processing/EN/XDateTimeString.png"> | <img src="preview/Workflow-Processing/EN/XKleinRefConditioning.png"> | <img src="preview/Workflow-Processing/EN/XMath.png"> | <img src="preview/Workflow-Processing/EN/XMemoryCleanup.png"> | <img src="preview/Workflow-Processing/EN/XResolution.png"> | <img src="preview/Workflow-Processing/EN/XSeed.png"> | <img src="preview/Workflow-Processing/EN/XStringGroup.png"> | <img src="preview/Workflow-Processing/EN/XStringWrap.png"> |
 
-|        XAnyGate10         |        XAnyToString         |        XDateTimeString         |        XKleinRefConditioning         |        XMath         |        XMemoryCleanup         |        XResolution         |        XSeed         |        XStringGroup         |        XStringWrap         |
-| :-----------------------: | :-------------------------: | :----------------------------: | :----------------------------------: | :------------------: | :---------------------------: | :------------------------: | :------------------: | :-------------------------: | :------------------------: |
-| <img src="preview/Workflow-Processing/EN/XAnyGate10.png"> | <img src="preview/Workflow-Processing/EN/XAnyToString.png"> | <img src="preview/Workflow-Processing/EN/XDateTimeString.png"> | <img src="preview/Workflow-Processing/EN/XKleinRefConditioning.png"> | <img src="preview/Workflow-Processing/EN/XMath.png"> | <img src="preview/Workflow-Processing/EN/XMemoryCleanup.png"> | <img src="preview/Workflow-Processing/EN/XResolution.png"> | <img src="preview/Workflow-Processing/EN/XSeed.png"> | <img src="preview/Workflow-Processing/EN/XStringGroup.png"> | <img src="preview/Workflow-Processing/EN/XStringWrap.png"> |
 
-### XDataHub
+`♾️ Xz3r0/XDataHub`
 
-|        XAudioGet         |        XDataSave         |        XImageGet         |        XLoraGet         |        XStringGet         |        XVideoGet         |
-| :----------------------: | :----------------------: | :----------------------: | :---------------------: | :-----------------------: | :----------------------: |
-| <img src="preview/XDataHub/EN/XAudioGet.png"> | <img src="preview/XDataHub/EN/XDataSave.png"> | <img src="preview/XDataHub/EN/XImageGet.png"> | <img src="preview/XDataHub/EN/XLoraGet.png"> | <img src="preview/XDataHub/EN/XStringGet.png"> | <img src="preview/XDataHub/EN/XVideoGet.png"> |
+|         |                  XAudioGet                    |                  XDataSave                    |                  XImageGet                    |                  XLoraGet                    |                  XStringGet                    |                  XVideoGet                    |
+| :-----: | :-------------------------------------------: | :-------------------------------------------: | :-------------------------------------------: | :------------------------------------------: | :--------------------------------------------: | :-------------------------------------------: |
+|   中文    | <img src="preview/XDataHub/CN/XAudioGet.png"> | <img src="preview/XDataHub/CN/XDataSave.png"> | <img src="preview/XDataHub/CN/XImageGet.png"> | <img src="preview/XDataHub/CN/XLoraGet.png"> | <img src="preview/XDataHub/CN/XStringGet.png"> | <img src="preview/XDataHub/CN/XVideoGet.png"> |
+| English | <img src="preview/XDataHub/EN/XAudioGet.png"> | <img src="preview/XDataHub/EN/XDataSave.png"> | <img src="preview/XDataHub/EN/XImageGet.png"> | <img src="preview/XDataHub/EN/XLoraGet.png"> | <img src="preview/XDataHub/EN/XStringGet.png"> | <img src="preview/XDataHub/EN/XVideoGet.png"> |
+
 
 ---
 
@@ -126,4 +132,4 @@ pip install -r requirements.txt
 
 ## 📄 许可证
 
-- 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+- 本项目采用 GPL-3.0 许可证 - 详见 [LICENSE](LICENSE) 文件
