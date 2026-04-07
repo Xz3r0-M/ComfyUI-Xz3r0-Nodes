@@ -26,9 +26,23 @@ import shutil  # noqa: I001
 
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
+# ============================================
+# File-Processing
+
+from .xnode.xaudiosave import XAudioSave
+from .xnode.ximageresize import XImageResize
+from .xnode.ximagesave import XImageSave
+from .xnode.xlatentload import XLatentLoad
+from .xnode.xlatentsave import XLatentSave
+from .xnode.xmarkdownsave import XMarkdownSave
+from .xnode.xvideosave import XVideoSave
+from .xnode.xworkflowsave import XWorkflowSave
+
+# =============================================
+# Workflow-Processing
+
 from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
-from .xnode.xaudioget import XAudioGet
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xmath import XMath
@@ -36,20 +50,20 @@ from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xresolution import XResolution
 from .xnode.xseed import XSeed
 from .xnode.xstringgroup import XStringGroup
-from .xnode.xstringget import XStringGet
 from .xnode.xstringwrap import XStringWrap
-from .xnode.xaudiosave import XAudioSave
+
+# =============================================
+# XDataHub
+
+from .xnode.xaudioget import XAudioGet
 from .xnode.xdatasave import XDataSave
 from .xnode.ximageget import XImageGet
-from .xnode.ximageresize import XImageResize
-from .xnode.ximagesave import XImageSave
-from .xnode.xlatentload import XLatentLoad
-from .xnode.xlatentsave import XLatentSave
 from .xnode.xloraget import XLoraGet
-from .xnode.xmarkdownsave import XMarkdownSave
+from .xnode.xstringget import XStringGet
 from .xnode.xvideoget import XVideoGet
-from .xnode.xvideosave import XVideoSave
-from .xnode.xworkflowsave import XWorkflowSave
+
+# =============================================
+
 from .xz3r0_utils import configure_logging, get_logger
 
 LOGGER = get_logger(__name__)
@@ -75,6 +89,18 @@ _register_api_modules()
 
 WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
+    # ============================================
+    # File-Processing
+    XAudioSave,
+    XImageResize,
+    XImageSave,
+    XLatentLoad,
+    XLatentSave,
+    XMarkdownSave,
+    XVideoSave,
+    XWorkflowSave,
+    # =============================================
+    # Workflow-Processing
     XAnyGate10,
     XAnyToString,
     XDateTimeString,
@@ -85,20 +111,15 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XSeed,
     XStringGroup,
     XStringWrap,
-    XAudioGet,
-    XAudioSave,
+    # =============================================
+    # XDataHub
     XDataSave,
     XImageGet,
-    XImageResize,
-    XImageSave,
-    XLatentLoad,
-    XLatentSave,
+    XAudioGet,
     XLoraGet,
-    XMarkdownSave,
     XStringGet,
     XVideoGet,
-    XVideoSave,
-    XWorkflowSave,
+    # =============================================
 )
 
 

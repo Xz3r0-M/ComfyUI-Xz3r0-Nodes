@@ -295,7 +295,7 @@ class XImageSave(io.ComfyNode):
 
         约定：
         - 4D 仅视为 IMAGE: (B, H, W, C)
-        - 3D 始终视为 MASK 批次: (B, H, W)
+        - 3D 始终视为 MASK 批次：(B, H, W)
         - 2D 视为单张 MASK: (H, W)
         """
         if image_or_mask is None:
