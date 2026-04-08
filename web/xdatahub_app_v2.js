@@ -461,6 +461,36 @@ window.addEventListener("message", (event) => {
     }
 });
 
+// ------------------------------------------------------------------
+// 将带修饰键的 keydown 事件转发给父页面，
+// 供父页面全局快捷键监听器匿配。
+// ------------------------------------------------------------------
+document.addEventListener("keydown", (event) => {
+    if (event.repeat) {
+        return;
+    }
+    if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        return;
+    }
+    if (
+        !window.parent
+        || window.parent === window
+    ) {
+        return;
+    }
+    window.parent.postMessage(
+        {
+            type: "xdatahub:iframe-keydown",
+            key: event.key,
+            ctrlKey: event.ctrlKey,
+            altKey: event.altKey,
+            shiftKey: event.shiftKey,
+            metaKey: event.metaKey,
+        },
+        getParentTargetOrigin()
+    );
+});
+
 function scheduleMainScrollReset() {
     const apply = () => {
         const mainScroll = document.querySelector(".main-scroll");

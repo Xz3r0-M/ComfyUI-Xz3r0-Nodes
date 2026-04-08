@@ -595,6 +595,89 @@ function persistHotkeySpec(spec) {
     }
 }
 
+/**
+ * 安装全局快捷键监听器（bubble 阶段）。
+ *
+ * 设计原则：
+ * 1. 仅在 bubble 阶段监听，不使用 capture。
+ * 2. 匹配时只调用 preventDefault()，绝不调用
+ *    stopPropagation / stopImmediatePropagation，
+ *    以避免拦截 ComfyUI 或浏览器的键盘事件链。
+ * 3. 当焦点在可编辑元素时无条件跳过，防止干扰
+ *    用户文本输入。
+ */
+function installGlobalHotkeyListener() {
+    const EDITABLE_TAGS = new Set([
+        "input", "textarea", "select",
+    ]);
+
+    function isEditableTarget(el) {
+        if (!(el instanceof HTMLElement)) {
+            return false;
+        }
+        if (el.isContentEditable) {
+            return true;
+        }
+        return EDITABLE_TAGS.has(
+            el.tagName.toLowerCase()
+        );
+    }
+
+    function onDocKeydown(event) {
+        if (event.repeat) {
+            return;
+        }
+        const combo = parseHotkeySpec(hotkeySpec);
+        if (!combo || !combo.key) {
+            return;
+        }
+        // 当快捷键不含修饰键时，在可编辑元素中跳过
+        // （避免拦截纯字母键输入）。带修饰键的组合
+        // （如 Alt+X）即使在输入框中也允许触发。
+        const hasModifier = !!(
+            combo.ctrl || combo.alt
+            || combo.shift || combo.meta
+        );
+        if (
+            !hasModifier
+            && isEditableTarget(event.target)
+        ) {
+            return;
+        }
+        if (
+            event.key.toLowerCase()
+            !== combo.key.toLowerCase()
+        ) {
+            return;
+        }
+        if (!!combo.ctrl !== event.ctrlKey) {
+            return;
+        }
+        if (!!combo.alt !== event.altKey) {
+            return;
+        }
+        if (!!combo.shift !== event.shiftKey) {
+            return;
+        }
+        if (!!combo.meta !== event.metaKey) {
+            return;
+        }
+        // 仅阻止浏览器默认行为（如 Alt 唤起菜单栏）
+        event.preventDefault();
+        if (!windowEnabled) {
+            return;
+        }
+        XDataHub.toggle();
+    }
+
+    document.addEventListener("keydown", onDocKeydown);
+    return () => {
+        document.removeEventListener(
+            "keydown", onDocKeydown
+        );
+    };
+}
+
 function equalsSettingOption(value, optionCode, aliases = []) {
     const text = String(value || "").trim().toLowerCase();
     if (!text) {
@@ -911,6 +994,7 @@ app.registerExtension({
         await applyHostUiLocale();
         installLocaleSync();
         await loadHostBehaviorSettings();
+        installGlobalHotkeyListener();
         edgePeekEnabled = !!(localStorage.getItem("Xz3r0.XDataHub.EdgePeek") === "true");
         ensureColorTokensStylesheet();
         await syncThemeModeFromSettings();
@@ -3300,6 +3384,35 @@ window.addEventListener("message", (event) => {
             return;
         }
         if (isWindowCloseBlocked() && XDataHub.instance?.isVisible) {
+            return;
+        }
+        XDataHub.toggle();
+        return;
+    }
+    if (payload.type === "xdatahub:iframe-keydown") {
+        const combo = parseHotkeySpec(hotkeySpec);
+        if (!combo || !combo.key) {
+            return;
+        }
+        if (
+            String(payload.key || "").toLowerCase()
+            !== combo.key.toLowerCase()
+        ) {
+            return;
+        }
+        if (!!combo.ctrl !== !!payload.ctrlKey) {
+            return;
+        }
+        if (!!combo.alt !== !!payload.altKey) {
+            return;
+        }
+        if (!!combo.shift !== !!payload.shiftKey) {
+            return;
+        }
+        if (!!combo.meta !== !!payload.metaKey) {
+            return;
+        }
+        if (!windowEnabled) {
             return;
         }
         XDataHub.toggle();

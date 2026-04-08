@@ -658,6 +658,7 @@ function buildPanel(nodeClass) {
     baseImage.alt = nodeClass || NODE_CLASS;
     const paintOverlay = document.createElement("img");
     paintOverlay.className = "ximageget-paint-overlay";
+    paintOverlay.alt = "";
     const maskOverlay = document.createElement("div");
     maskOverlay.className = "ximageget-mask-overlay";
     const placeholder = document.createElement("div");
