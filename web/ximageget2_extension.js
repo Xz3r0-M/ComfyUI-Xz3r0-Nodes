@@ -659,8 +659,10 @@ function buildPanel(nodeClass) {
     const paintOverlay = document.createElement("img");
     paintOverlay.className = "ximageget-paint-overlay";
     paintOverlay.alt = "";
+    paintOverlay.style.display = "none";
     const maskOverlay = document.createElement("div");
     maskOverlay.className = "ximageget-mask-overlay";
+    maskOverlay.style.display = "none";
     const placeholder = document.createElement("div");
     placeholder.className = "ximageget-placeholder";
     placeholder.textContent = config.placeholder;
@@ -850,7 +852,9 @@ function setPreview(panelInfo, data = {}) {
         clearMediaElementHandlers(panelInfo.paintOverlay);
         panelInfo.baseImage.removeAttribute("src");
         panelInfo.paintOverlay.removeAttribute("src");
+        panelInfo.paintOverlay.style.display = "none";
         setMaskOverlay(panelInfo.maskOverlay, "");
+        panelInfo.maskOverlay.style.display = "none";
         if (panelInfo.title instanceof HTMLInputElement) {
             panelInfo.title.value = label;
             setTooltipText(panelInfo.title, label);
@@ -881,7 +885,6 @@ function setPreview(panelInfo, data = {}) {
         }
         panelInfo.__ximageget2_preview_state = PREVIEW_STATE_LOADED;
         panelInfo.preview.classList.add("has-media");
-        panelInfo.preview.classList.toggle("has-mask", Boolean(cacheBustedMask));
         panelInfo.placeholder.textContent = "";
         syncMaskButtonState(panelInfo.__ximageget2_node);
     };
@@ -891,6 +894,8 @@ function setPreview(panelInfo, data = {}) {
         }
         panelInfo.__ximageget2_preview_state = PREVIEW_STATE_MISSING;
         panelInfo.preview.classList.remove("has-media", "has-paint", "has-mask");
+        panelInfo.paintOverlay.style.display = "none";
+        panelInfo.maskOverlay.style.display = "none";
         panelInfo.placeholder.textContent = panelInfo.missingText;
         syncMaskButtonState(panelInfo.__ximageget2_node);
     };
@@ -901,6 +906,7 @@ function setPreview(panelInfo, data = {}) {
         if (panelInfo.__ximageget2_load_token !== loadToken) {
             return;
         }
+        panelInfo.paintOverlay.style.display = "";
         panelInfo.preview.classList.add("has-paint");
     };
     panelInfo.paintOverlay.onerror = () => {
@@ -908,16 +914,42 @@ function setPreview(panelInfo, data = {}) {
             return;
         }
         panelInfo.preview.classList.remove("has-paint");
+        panelInfo.paintOverlay.style.display = "none";
         panelInfo.paintOverlay.removeAttribute("src");
     };
     panelInfo.preview.classList.remove("has-paint");
+    panelInfo.paintOverlay.style.display = "none";
     if (cacheBustedPaint) {
         panelInfo.paintOverlay.src = cacheBustedPaint;
     } else {
         panelInfo.paintOverlay.removeAttribute("src");
     }
-    setMaskOverlay(panelInfo.maskOverlay, cacheBustedMask);
-    panelInfo.preview.classList.toggle("has-mask", Boolean(cacheBustedMask));
+    setMaskOverlay(panelInfo.maskOverlay, "");
+    panelInfo.preview.classList.remove("has-mask");
+    panelInfo.maskOverlay.style.display = "none";
+    if (cacheBustedMask) {
+        const maskProbe = new Image();
+        maskProbe.onload = () => {
+            if (panelInfo.__ximageget2_load_token !== loadToken) {
+                return;
+            }
+            setMaskOverlay(
+                panelInfo.maskOverlay,
+                cacheBustedMask
+            );
+            panelInfo.maskOverlay.style.display = "";
+            panelInfo.preview.classList.add("has-mask");
+        };
+        maskProbe.onerror = () => {
+            if (panelInfo.__ximageget2_load_token !== loadToken) {
+                return;
+            }
+            panelInfo.preview.classList.remove("has-mask");
+            panelInfo.maskOverlay.style.display = "none";
+            setMaskOverlay(panelInfo.maskOverlay, "");
+        };
+        maskProbe.src = cacheBustedMask;
+    }
     if (panelInfo.title instanceof HTMLInputElement) {
         panelInfo.title.value = label;
         setTooltipText(panelInfo.title, label);
