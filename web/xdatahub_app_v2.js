@@ -3,8 +3,8 @@ import { appStore } from "./core/store.js";
 import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
-    buildMediaUrl,
-} from "./core/api.js?v=20260403-413";
+    buildMediaUrl, buildThumbUrl,
+} from "./core/api.js?v=20260407-414";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260407-3";
 
@@ -12,13 +12,13 @@ import { setLocale, t } from "./core/i18n.js?v=20260407-3";
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-52";
-import "./components/xdh-media-grid.js?v=20260406-39";
+import "./components/xdh-media-grid.js?v=20260408-1";
 import "./components/xdh-staging-dock.js?v=20260406-15";
 import "./components/xdh-node-picker.js?v=20260406-15";
 import "./core/node-bridge.js?v=20260403-400";
 import "./components/xdh-content-nav.js?v=20260406-24";
 import "./components/xdh-pagination.js?v=20260407-2";
-import "./components/xdh-lightbox.js?v=20260407-8";
+import "./components/xdh-lightbox.js?v=20260408-4";
 import "./components/xdh-history-view.js?v=20260406-16";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
@@ -877,13 +877,15 @@ function mapItem(item, category) {
     const thumbUrl = isMock
         ? MOCK_THUMB
         : ref
-            ? buildMediaUrl(ref)
+            ? buildThumbUrl(ref)
             : MOCK_THUMB;
+    const fullUrl = isMock ? "" : ref ? buildMediaUrl(ref) : "";
     return {
         id,
         name,
         type: mediaType,
         thumbUrl,
+        fullUrl,
         mtime,
         size,
         previewable: item.previewable !== false,

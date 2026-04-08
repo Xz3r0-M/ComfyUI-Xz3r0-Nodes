@@ -1,7 +1,7 @@
 import {
     BaseElement,
     registerCustomElement,
-} from "../core/base-element.js?v=20260407-1";
+} from "../core/base-element.js?v=20260408-2";
 import { appStore } from "../core/store.js";
 import {
     icon,
@@ -382,8 +382,9 @@ export class XdhLightbox extends BaseElement {
 
     _syncChrome() {
         const stage = this.$(".fs-stage");
-        const titleEl = this.$(".fs-title");
-        const counterEl = this.$(".fs-position");
+        const titleEl = this.$(".fs-panel-title");
+        const counterEl = this.$(".fs-panel-counter");
+        const bottomPanel = this.$(".fs-bottom-panel");
         const prevBtn = this.$(".fs-prev-edge-btn");
         const nextBtn = this.$(".fs-next-edge-btn");
         const openBtn = this.$(".fs-open-btn");
@@ -414,6 +415,10 @@ export class XdhLightbox extends BaseElement {
                 })
                 : "";
         }
+        if (bottomPanel) {
+            const hasNav = !!this._navigation && this._navigation.items.length > 1;
+            bottomPanel.dataset.hasNav = hasNav ? "true" : "false";
+        }
         if (prevBtn) {
             prevBtn.disabled = !this._navigation || this._navigationIndex <= 0;
         }
@@ -427,6 +432,105 @@ export class XdhLightbox extends BaseElement {
         if (closeBtn) {
             closeBtn.disabled = !hasCurrent;
         }
+        this._syncBottomNav();
+    }
+
+    _syncBottomNav() {
+        const navContainer = this.$(".fs-bottom-nav");
+        if (!navContainer) {
+            return;
+        }
+        const hasNav = !!this._navigation && this._navigation.items.length > 1;
+        if (!hasNav) {
+            navContainer.innerHTML = "";
+            return;
+        }
+        const activeId = this._current?.id;
+        const items = this._navigation.items;
+        navContainer.innerHTML = items.map((item, index) => {
+            const isActive = item.id === activeId;
+            const isAudio = item.type === "audio";
+            const thumbUrl = item.thumbnailUrl || "";
+            return this._renderBottomNavItem(item, index, isActive, isAudio, thumbUrl);
+        }).join("");
+        this._scrollBottomNavToActive();
+    }
+
+    _renderBottomNavItem(item, index, isActive, isAudio, thumbUrl) {
+        const safeId = String(item.id || "").replace(/"/g, "&quot;");
+        const safeName = String(item.name || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const activeClass = isActive ? "is-active" : "";
+        if (isAudio) {
+            return `
+                <button class="fs-nav-item ${activeClass}" type="button"
+                        data-nav-index="${index}" data-nav-id="${safeId}"
+                        title="${safeName}">
+                    <div class="fs-nav-thumb audio-thumb">
+                        <span class="audio-icon">${icon("audio-lines", 24)}</span>
+                    </div>
+                    <div class="fs-nav-name">${safeName}</div>
+                </button>`;
+        }
+        const hasThumb = thumbUrl.length > 0;
+        const thumbHtml = hasThumb
+            ? `<img class="fs-nav-img" src="${thumbUrl.replace(/"/g, "&quot;")}" alt="" loading="lazy" />`
+            : "";
+        const fallbackHtml = !hasThumb
+            ? `<div class="fs-nav-fallback">${icon("image-off", 20)}</div>`
+            : "";
+        return `
+            <button class="fs-nav-item ${activeClass}" type="button"
+                    data-nav-index="${index}" data-nav-id="${safeId}"
+                    title="${safeName}">
+                <div class="fs-nav-thumb ${!hasThumb ? "thumb-empty" : ""}">
+                    ${thumbHtml}
+                    ${fallbackHtml}
+                </div>
+                <div class="fs-nav-name">${safeName}</div>
+            </button>`;
+    }
+
+    _onBottomNavClick(event) {
+        const item = event.target.closest(".fs-nav-item");
+        if (!item) {
+            return;
+        }
+        const indexAttr = item.dataset.navIndex;
+        const index = Number(indexAttr);
+        if (Number.isFinite(index)) {
+            void this._openNavigationByIndex(index);
+        }
+    }
+
+    _scrollBottomNavToActive() {
+        const navContainer = this.$(".fs-bottom-nav");
+        if (!navContainer) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            const activeItem = navContainer.querySelector(".fs-nav-item.is-active");
+            if (!activeItem) {
+                return;
+            }
+            const containerRect = navContainer.getBoundingClientRect();
+            const itemRect = activeItem.getBoundingClientRect();
+            const scrollLeft = navContainer.scrollLeft;
+            const relativeLeft = itemRect.left - containerRect.left;
+            const relativeRight = itemRect.right - containerRect.right;
+            const leftOverflow = relativeLeft - 8;
+            const rightOverflow = relativeRight + 8 - containerRect.width;
+            if (leftOverflow < 0) {
+                navContainer.scrollTo({
+                    left: scrollLeft + leftOverflow,
+                    behavior: "smooth",
+                });
+            } else if (rightOverflow > 0) {
+                navContainer.scrollTo({
+                    left: scrollLeft + rightOverflow,
+                    behavior: "smooth",
+                });
+            }
+        });
     }
 
     async _openNavigationByIndex(index) {
@@ -585,13 +689,12 @@ export class XdhLightbox extends BaseElement {
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, width, height);
 
-        const styles = window.getComputedStyle(state.shell);
-        const playedColor = styles.getPropertyValue("--xdh-brand-pink").trim()
-            || "#ea005e";
-        const idleColor = styles.getPropertyValue("--xdh-color-border").trim()
-            || "#2e2e2e";
-        const playheadColor = styles.getPropertyValue("--xdh-color-text-primary").trim()
-            || "#f0f0f0";
+        // 根据主题获取颜色
+        const isLightTheme = document.body.dataset.theme === "light";
+        const playedColor = isLightTheme ? "#171717" : "#ffffff";
+        const idleColor = isLightTheme ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.25)";
+        const playheadColor = isLightTheme ? "#171717" : "#ffffff";
+
         const peaks = Array.isArray(state.peaks) && state.peaks.length
             ? state.peaks
             : buildFallbackWaveformPeaks(state.audio?.src || "");
@@ -789,9 +892,8 @@ export class XdhLightbox extends BaseElement {
         shell.className = "fs-audio-shell";
 
         const panel = document.createElement("div");
-        panel.className = "fs-audio-panel xdh-tooltip xdh-tooltip-up";
-        panel.dataset.tooltip = t("lightbox.audio_hint");
-        panel.setAttribute("aria-label", t("lightbox.audio_hint"));
+        panel.className = "fs-audio-panel";
+        panel.setAttribute("aria-label", t("lightbox.audio"));
 
         const transport = document.createElement("div");
         transport.className = "fs-audio-transport";
@@ -1221,11 +1323,32 @@ export class XdhLightbox extends BaseElement {
     }
 
     _handleImageWheel(event) {
-        if (!(this._activeMedia instanceof HTMLImageElement)) {
-            return;
-        }
         const stage = this.$(".fs-stage");
         if (!stage || !isStageFullscreen(stage)) {
+            return;
+        }
+
+        // 检查鼠标是否在底部导航栏上
+        const bottomNav = this.$(".fs-bottom-nav");
+        if (bottomNav) {
+            const navRect = bottomNav.getBoundingClientRect();
+            const isOverNav = (
+                event.clientX >= navRect.left &&
+                event.clientX <= navRect.right &&
+                event.clientY >= navRect.top &&
+                event.clientY <= navRect.bottom
+            );
+            if (isOverNav) {
+                // 在导航栏上时，横向滚动导航栏
+                event.preventDefault();
+                const scrollAmount = event.deltaY || event.deltaX;
+                bottomNav.scrollLeft += scrollAmount;
+                return;
+            }
+        }
+
+        // 不在导航栏上时，执行图片缩放
+        if (!(this._activeMedia instanceof HTMLImageElement)) {
             return;
         }
 
@@ -1243,6 +1366,15 @@ export class XdhLightbox extends BaseElement {
         }
         if (this._imageScale <= IMAGE_ZOOM_MIN || event.button !== 0) {
             return;
+        }
+        const target = event.target;
+        if (target instanceof Element) {
+            const isInteractive = target.closest(
+                'button, [data-lightbox-action], .fs-top-actions, .fs-side-btn, .fs-bottom-nav'
+            );
+            if (isInteractive) {
+                return;
+            }
         }
         event.preventDefault();
         this._isImagePanning = true;
@@ -1345,26 +1477,30 @@ export class XdhLightbox extends BaseElement {
                 return;
             }
             const actionBtn = event.target.closest("[data-lightbox-action]");
-            if (!actionBtn) {
-                return;
-            }
-            const action = String(actionBtn.dataset.lightboxAction || "");
-            if (action === "prev") {
-                void this._openNavigationByStep(-1);
-                return;
-            }
-            if (action === "next") {
-                void this._openNavigationByStep(1);
-                return;
-            }
-            if (action === "open") {
-                if (this._current) {
-                    this._openInNewTab(this._current);
+            if (actionBtn) {
+                const action = String(actionBtn.dataset.lightboxAction || "");
+                if (action === "prev") {
+                    void this._openNavigationByStep(-1);
+                    return;
+                }
+                if (action === "next") {
+                    void this._openNavigationByStep(1);
+                    return;
+                }
+                if (action === "open") {
+                    if (this._current) {
+                        this._openInNewTab(this._current);
+                    }
+                    return;
+                }
+                if (action === "close") {
+                    this._close();
                 }
                 return;
             }
-            if (action === "close") {
-                this._close();
+            const navItem = event.target.closest(".fs-nav-item");
+            if (navItem) {
+                this._onBottomNavClick(event);
             }
         });
     }
@@ -1374,9 +1510,8 @@ export class XdhLightbox extends BaseElement {
 
         if (mediaType === "text") {
             const shell = document.createElement("div");
-            shell.className = "fs-text-shell xdh-scroll xdh-tooltip xdh-tooltip-up";
-            shell.dataset.tooltip = t("lightbox.text_hint");
-            shell.setAttribute("aria-label", t("lightbox.text_hint"));
+            shell.className = "fs-text-shell xdh-scroll";
+            shell.setAttribute("aria-label", t("lightbox.text"));
 
             const title = String(detail?.name || "").trim();
             if (title) {
@@ -1421,9 +1556,8 @@ export class XdhLightbox extends BaseElement {
             video.muted = previewSettings.videoMuted;
             video.loop = previewSettings.videoLoop;
             video.playsInline = true;
-            video.className = "fs-video xdh-tooltip xdh-tooltip-up";
-            video.dataset.tooltip = t("lightbox.video_hint");
-            video.setAttribute("aria-label", t("lightbox.video_hint"));
+            video.className = "fs-video";
+            video.setAttribute("aria-label", t("lightbox.video"));
             return video;
         }
 
@@ -1434,9 +1568,8 @@ export class XdhLightbox extends BaseElement {
         const image = document.createElement("img");
         image.src = detail.url;
         image.alt = detail.name || "";
-        image.className = "fs-img xdh-tooltip xdh-tooltip-up";
-        image.dataset.tooltip = t("lightbox.image_hint");
-        image.setAttribute("aria-label", t("lightbox.image_hint"));
+        image.className = "fs-img";
+        image.setAttribute("aria-label", detail.name || t("lightbox.image"));
         return image;
     }
 
@@ -1567,6 +1700,58 @@ export class XdhLightbox extends BaseElement {
                 ${TOOLTIP_CSS}
                 :host { display: contents; }
 
+                /* ============================================
+                   Vercel Design System - Theme Variables
+                   ============================================ */
+                :host {
+                    /* Dark Theme (Default) */
+                    --lb-bg: rgba(10, 10, 10, 0.5);
+                    --lb-surface: #111111;
+                    --lb-surface-elevated: #1a1a1a;
+                    --lb-text-primary: #ededed;
+                    --lb-text-secondary: #a0a0a0;
+                    --lb-text-tertiary: #808080;
+                    --lb-border: rgba(255, 255, 255, 0.1);
+                    --lb-border-light: rgba(255, 255, 255, 0.06);
+                    --lb-shadow-ring: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px;
+                    --lb-shadow-card: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px, rgba(0, 0, 0, 0.2) 0px 2px 2px 0px, rgba(255, 255, 255, 0.03) 0px 0px 0px 1px;
+                    --lb-btn-bg: rgba(255, 255, 255, 0.08);
+                    --lb-btn-bg-hover: rgba(255, 255, 255, 0.14);
+                    --lb-btn-bg-active: rgba(255, 255, 255, 0.2);
+                    --lb-thumb-bg: rgba(255, 255, 255, 0.08);
+                    --lb-waveform-bg: rgba(255, 255, 255, 0.05);
+                    --lb-focus: hsl(212, 100%, 48%);
+                    --lb-audio-gradient-start: rgba(100, 120, 180, 0.3);
+                    --lb-audio-gradient-mid: rgba(80, 100, 160, 0.2);
+                    --lb-audio-gradient-end: rgba(60, 90, 140, 0.3);
+                }
+
+                :host-context(body[data-theme="light"]) {
+                    /* Light Theme */
+                    --lb-bg: rgba(255, 255, 255, 0.5);
+                    --lb-surface: #fafafa;
+                    --lb-surface-elevated: #ffffff;
+                    --lb-text-primary: #171717;
+                    --lb-text-secondary: #4d4d4d;
+                    --lb-text-tertiary: #666666;
+                    --lb-border: rgba(0, 0, 0, 0.08);
+                    --lb-border-light: rgba(0, 0, 0, 0.04);
+                    --lb-shadow-ring: rgba(0, 0, 0, 0.08) 0px 0px 0px 1px;
+                    --lb-shadow-card: rgba(0, 0, 0, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.04) 0px 2px 2px 0px, rgb(250, 250, 250) 0px 0px 0px 1px;
+                    --lb-btn-bg: rgba(0, 0, 0, 0.04);
+                    --lb-btn-bg-hover: rgba(0, 0, 0, 0.08);
+                    --lb-btn-bg-active: rgba(0, 0, 0, 0.12);
+                    --lb-thumb-bg: rgba(0, 0, 0, 0.04);
+                    --lb-waveform-bg: rgba(0, 0, 0, 0.03);
+                    --lb-focus: hsl(212, 100%, 48%);
+                    --lb-audio-gradient-start: rgba(100, 120, 200, 0.15);
+                    --lb-audio-gradient-mid: rgba(80, 100, 180, 0.1);
+                    --lb-audio-gradient-end: rgba(60, 90, 160, 0.15);
+                }
+
+                /* ============================================
+                   Base Stage
+                   ============================================ */
                 .fs-stage {
                     position: fixed;
                     inset: 0;
@@ -1574,10 +1759,11 @@ export class XdhLightbox extends BaseElement {
                     align-items: center;
                     justify-content: center;
                     padding: 24px;
-                    background: var(--xdh-color-background, #121212);
+                    background: var(--lb-bg);
                     opacity: 0;
                     visibility: hidden;
                     pointer-events: none;
+                    z-index: 999999;
                 }
 
                 .fs-stage:fullscreen,
@@ -1585,6 +1771,7 @@ export class XdhLightbox extends BaseElement {
                     opacity: 1;
                     visibility: visible;
                     pointer-events: auto;
+                    overflow: hidden;
                 }
 
                 .fs-media {
@@ -1593,184 +1780,156 @@ export class XdhLightbox extends BaseElement {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    padding: 76px 12px 24px;
+                    padding: 103px 16px 155px;
                     box-sizing: border-box;
                     overflow: hidden;
+                    z-index: 1;
                 }
 
-                .fs-top-bar {
-                    position: absolute;
-                    left: 16px;
-                    right: 16px;
-                    top: 16px;
-                    display: grid;
-                    grid-template-columns: 1fr minmax(0, auto) 1fr;
-                    gap: 12px;
-                    align-items: start;
-                    opacity: 0;
-                    transform: translateY(-14px);
-                    transition:
-                        transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-                        opacity 0.18s ease;
-                    pointer-events: none;
-                }
-
-                .fs-stage[data-active="true"] .fs-top-bar {
-                    opacity: 1;
-                    transform: translateY(0);
-                    pointer-events: none;
-                }
-
-                .fs-top-spacer {
-                    min-width: 0;
-                }
-
-                .fs-title-box {
-                    min-width: 0;
-                    max-width: min(72vw, 920px);
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    gap: 4px;
-                    justify-self: center;
-                    padding: 10px 14px;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
-                    border-radius: 14px;
-                    background: color-mix(
-                        in srgb,
-                        var(--xdh-color-surface-1, #1a1a1a) 94%,
-                        transparent
-                    );
-                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-                    backdrop-filter: blur(10px);
-                    -webkit-backdrop-filter: blur(10px);
-                    pointer-events: auto;
-                }
-
-                .fs-title,
-                .fs-position {
-                    min-width: 0;
-                    max-width: 100%;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-
-                .fs-title {
-                    font-size: 13px;
-                    line-height: 1.35;
-                    font-weight: 600;
-                    color: var(--xdh-color-text-primary, #f0f0f0);
-                }
-
-                .fs-position {
-                    font-size: 12px;
-                    line-height: 1.3;
-                    color: var(--xdh-color-text-secondary, #999);
-                    font-variant-numeric: tabular-nums;
-                    font-family: ui-monospace, "Cascadia Mono", "Consolas",
-                        monospace;
-                }
-
+                /* ============================================
+                   Top Right Actions - Close & Open buttons
+                   ============================================ */
                 .fs-top-actions {
-                    justify-self: end;
+                    position: absolute;
+                    top: 16px;
+                    right: 16px;
                     display: inline-flex;
                     align-items: center;
                     gap: 8px;
+                    z-index: 10;
+                    opacity: 0;
+                    transform: translateY(-14px);
+                    transition:
+                        transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.22s ease;
+                    pointer-events: none;
+                }
+
+                .fs-stage[data-active="true"] .fs-top-actions {
+                    opacity: 1;
+                    transform: translateY(0);
                     pointer-events: auto;
                 }
 
+
+
+                /* ============================================
+                   Action Buttons - Solid Circular (Vercel Style)
+                   ============================================ */
+                .fs-action-btn {
+                    width: 36px;
+                    height: 36px;
+                    padding: 0;
+                    border: none;
+                    border-radius: 50%;
+                    background: var(--lb-surface-elevated);
+                    color: var(--lb-text-primary);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: var(--lb-shadow-ring);
+                    cursor: pointer;
+                    transition:
+                        background 0.15s ease,
+                        transform 0.15s ease,
+                        box-shadow 0.15s ease;
+                    flex-shrink: 0;
+                }
+
+                .fs-action-btn:hover {
+                    background: var(--lb-surface);
+                    transform: scale(1.05);
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.08);
+                }
+
+                :host-context(body[data-theme="light"]) .fs-action-btn:hover {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.06);
+                }
+
+                .fs-action-btn:focus-visible {
+                    outline: 2px solid var(--lb-focus);
+                    outline-offset: 2px;
+                }
+
+                .fs-action-btn:disabled {
+                    opacity: 0.32;
+                    cursor: not-allowed;
+                    transform: none;
+                }
+
+                /* ============================================
+                   Side Navigation Buttons - Solid Background (Vercel Style)
+                   ============================================ */
                 .fs-side-btn {
                     position: absolute;
                     top: 50%;
                     width: 48px;
-                    height: 84px;
+                    height: 48px;
                     padding: 0;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
-                    background: color-mix(
-                        in srgb,
-                        var(--xdh-color-surface-1, #1a1a1a) 94%,
-                        transparent
-                    );
-                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    border: none;
+                    border-radius: 50%;
+                    background: var(--lb-surface-elevated);
+                    color: var(--lb-text-primary);
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-                    backdrop-filter: blur(10px);
-                    -webkit-backdrop-filter: blur(10px);
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.08);
                     opacity: 0;
+                    transform: translateY(-50%) scale(0.9);
                     transition:
-                        transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-                        opacity 0.18s ease,
-                        background 0.15s ease,
-                        border-color 0.15s ease;
+                        transform 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.2s ease,
+                        background 0.15s ease;
                     pointer-events: none;
+                    z-index: 10;
+                    cursor: pointer;
+                }
+
+                :host-context(body[data-theme="light"]) .fs-side-btn {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.06);
                 }
 
                 .fs-prev-edge-btn {
-                    left: 0;
-                    transform: translate(-12px, -50%);
-                    border-left: 0;
-                    border-radius: 0 14px 14px 0;
+                    left: 16px;
                 }
 
                 .fs-next-edge-btn {
-                    right: 0;
-                    transform: translate(12px, -50%);
-                    border-right: 0;
-                    border-radius: 14px 0 0 14px;
+                    right: 16px;
                 }
 
                 .fs-stage[data-active="true"] .fs-side-btn {
                     opacity: 1;
                     pointer-events: auto;
+                    transform: translateY(-50%) scale(1);
                 }
 
-                .fs-stage[data-active="true"] .fs-prev-edge-btn {
-                    transform: translate(0, -50%);
+                .fs-side-btn:hover {
+                    background: var(--lb-btn-bg-hover);
+                    transform: translateY(-50%) scale(1.08);
                 }
 
-                .fs-stage[data-active="true"] .fs-next-edge-btn {
-                    transform: translate(0, -50%);
+                .fs-side-btn:focus-visible {
+                    outline: 2px solid var(--lb-focus);
+                    outline-offset: 2px;
                 }
 
-                .fs-action-btn {
-                    width: 36px;
-                    height: 36px;
-                    padding: 0;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
-                    border-radius: 10px;
-                    background: var(--xdh-color-surface-2, #2a2a2a);
-                    color: var(--xdh-color-text-primary, #f0f0f0);
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    transition:
-                        background 0.15s ease,
-                        border-color 0.15s ease,
-                        color 0.15s ease,
-                        transform 0.15s ease;
-                }
-
-                .fs-side-btn:hover,
-                .fs-action-btn:hover {
-                    background: var(--xdh-color-hover, #2a2a2a);
-                    border-color: color-mix(
-                        in srgb,
-                        var(--xdh-brand-pink, #ea005e) 60%,
-                        var(--xdh-color-border, #2e2e2e)
-                    );
-                    transform: translateY(-1px);
-                }
-
-                .fs-side-btn:disabled,
-                .fs-action-btn:disabled {
-                    opacity: 0.42;
+                .fs-side-btn:disabled {
+                    opacity: 0.24;
                     cursor: not-allowed;
-                    transform: none;
+                    transform: translateY(-50%) scale(1);
                 }
 
+                /* ============================================
+                   Media Elements
+                   ============================================ */
                 .fs-img,
                 .fs-video {
                     display: block;
@@ -1798,7 +1957,9 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-video {
-                    background: var(--xdh-color-background, #121212);
+                    background: var(--lb-surface);
+                    border-radius: 8px;
+                    box-shadow: var(--lb-shadow-card);
                 }
 
                 .fs-stage[data-media-type="audio"] .fs-media {
@@ -1810,27 +1971,42 @@ export class XdhLightbox extends BaseElement {
                     justify-content: center;
                 }
 
+                /* ============================================
+                   Text Content Panel
+                   ============================================ */
                 .fs-text-shell {
                     width: min(92vw, 1120px);
                     max-width: 100%;
                     height: min(88vh, 820px);
                     max-height: 100%;
-                    padding: 18px 20px;
-                    border-radius: 16px;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
-                    background: var(--xdh-color-surface-1, #1a1a1a);
-                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                    padding: 24px;
+                    border-radius: 12px;
+                    background: var(--lb-surface-elevated);
+                    box-shadow: var(--lb-shadow-card);
                     display: flex;
                     flex-direction: column;
-                    gap: 12px;
+                    gap: 16px;
                     overflow-x: auto;
                     overflow-y: scroll;
+                    /* Shadow-as-border */
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        rgba(0, 0, 0, 0.04) 0px 2px 2px 0px,
+                        rgba(0, 0, 0, 0.04) 0px 8px 8px -8px;
+                }
+
+                :host-context(body[data-theme="light"]) .fs-text-shell {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        rgba(0, 0, 0, 0.04) 0px 2px 2px 0px,
+                        rgba(0, 0, 0, 0.04) 0px 8px 8px -8px,
+                        rgb(250, 250, 250) 0px 0px 0px 1px;
                 }
 
                 .fs-text-section {
                     display: flex;
                     flex-direction: column;
-                    gap: 10px;
+                    gap: 12px;
                 }
 
                 .fs-text-section-heading {
@@ -1839,12 +2015,14 @@ export class XdhLightbox extends BaseElement {
                     justify-content: center;
                     gap: 10px;
                     min-width: 0;
-                    font-size: 15px;
+                    font-size: 12px;
                     line-height: 1.3;
-                    font-weight: 700;
-                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    font-weight: 500;
+                    color: var(--lb-text-tertiary);
                     letter-spacing: 0.03em;
                     text-align: center;
+                    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+                    text-transform: uppercase;
                 }
 
                 .fs-text-section-heading::before,
@@ -1853,54 +2031,63 @@ export class XdhLightbox extends BaseElement {
                     flex: 1 1 auto;
                     min-width: 24px;
                     height: 1px;
-                    background: color-mix(
-                        in srgb,
-                        var(--xdh-color-border, #2e2e2e) 92%,
-                        transparent
-                    );
+                    background: var(--lb-border);
                 }
 
                 .fs-text-title {
                     margin: 0;
                     font-size: 16px;
                     line-height: 1.4;
-                    font-weight: 400;
-                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    font-weight: 500;
+                    color: var(--lb-text-primary);
                     text-align: left;
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
                     flex: 0 0 auto;
+                    letter-spacing: -0.32px;
                 }
 
                 .fs-text-body {
                     margin: 0;
-                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    color: var(--lb-text-secondary);
                     font-size: 14px;
                     line-height: 1.65;
                     white-space: pre-wrap;
                     word-break: break-word;
-                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
-                        Consolas, "Liberation Mono", monospace;
+                    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
                 }
 
+                /* ============================================
+                   Audio Player (Vercel Style)
+                   ============================================ */
                 .fs-audio-shell {
-                    width: min(92vw, 860px);
+                    width: min(92vw, 720px);
                     max-width: 100%;
                 }
 
                 .fs-audio-panel {
-                    padding: 16px;
+                    padding: 24px;
                     border-radius: 16px;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
-                    background: var(--xdh-color-surface-1, #1a1a1a);
-                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                    background: var(--lb-surface-elevated);
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        rgba(0, 0, 0, 0.04) 0px 2px 2px 0px,
+                        rgba(0, 0, 0, 0.04) 0px 8px 8px -8px;
+                }
+
+                :host-context(body[data-theme="light"]) .fs-audio-panel {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        rgba(0, 0, 0, 0.04) 0px 2px 2px 0px,
+                        rgba(0, 0, 0, 0.04) 0px 8px 8px -8px,
+                        rgb(250, 250, 250) 0px 0px 0px 1px;
                 }
 
                 .fs-audio-transport {
                     display: flex;
                     align-items: center;
-                    gap: 14px;
+                    gap: 16px;
                 }
 
                 .fs-audio-play-btn,
@@ -1909,48 +2096,50 @@ export class XdhLightbox extends BaseElement {
                     align-items: center;
                     justify-content: center;
                     padding: 0;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
-                    background: var(--xdh-color-surface-2, #2a2a2a);
-                    color: var(--xdh-color-text-primary, #f0f0f0);
+                    border: none;
+                    background: var(--lb-surface-elevated);
+                    color: var(--lb-text-primary);
+                    box-shadow: var(--lb-shadow-ring);
                     flex: 0 0 auto;
+                    cursor: pointer;
                     transition:
                         background 0.15s ease,
-                        border-color 0.15s ease,
-                        transform 0.15s ease;
+                        transform 0.15s ease,
+                        box-shadow 0.15s ease;
                 }
 
                 .fs-audio-play-btn {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: 12px;
+                    width: 52px;
+                    height: 52px;
+                    border-radius: 50%;
                 }
 
                 .fs-audio-volume-btn {
                     width: 40px;
                     height: 40px;
-                    border-radius: 10px;
+                    border-radius: 50%;
                 }
 
                 .fs-audio-play-btn:hover,
-                .fs-audio-play-btn:focus-visible,
-                .fs-audio-volume-btn:hover,
-                .fs-audio-volume-btn:focus-visible,
-                .fs-audio-waveform:hover,
-                .fs-audio-waveform:focus-visible {
-                    border-color: color-mix(
-                        in srgb,
-                        var(--xdh-brand-pink, #ea005e) 60%,
-                        var(--xdh-color-border, #2e2e2e)
-                    );
-                    outline: none;
+                .fs-audio-volume-btn:hover {
+                    background: var(--lb-surface);
+                    transform: scale(1.05);
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.08);
                 }
 
-                .fs-audio-play-btn:hover,
+                :host-context(body[data-theme="light"]) .fs-audio-play-btn:hover,
+                :host-context(body[data-theme="light"]) .fs-audio-volume-btn:hover {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.06);
+                }
+
                 .fs-audio-play-btn:focus-visible,
-                .fs-audio-volume-btn:hover,
                 .fs-audio-volume-btn:focus-visible {
-                    background: var(--xdh-color-hover, #2a2a2a);
-                    transform: translateY(-1px);
+                    outline: 2px solid var(--lb-focus);
+                    outline-offset: 2px;
                 }
 
                 .fs-audio-play-btn .xdh-icon,
@@ -1959,7 +2148,7 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-audio-volume-btn[data-audio-muted="true"] {
-                    color: var(--xdh-color-text-secondary, #999);
+                    color: var(--lb-text-tertiary);
                 }
 
                 .fs-audio-volume-group {
@@ -1971,7 +2160,7 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-audio-volume-range {
-                    width: 124px;
+                    width: 100px;
                     min-width: 0;
                     margin: 0;
                     padding: 0;
@@ -1981,7 +2170,8 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-audio-volume-range:focus-visible {
-                    outline: none;
+                    outline: 2px solid var(--lb-focus);
+                    outline-offset: 2px;
                 }
 
                 .fs-audio-volume-range::-webkit-slider-runnable-track {
@@ -1989,55 +2179,54 @@ export class XdhLightbox extends BaseElement {
                     border-radius: 999px;
                     background: linear-gradient(
                         90deg,
-                        var(--xdh-brand-pink, #ea005e) 0%,
-                        var(--xdh-brand-pink, #ea005e)
-                            var(--fs-audio-volume-progress, 100%),
-                        var(--xdh-color-border, #2e2e2e)
-                            var(--fs-audio-volume-progress, 100%),
-                        var(--xdh-color-border, #2e2e2e) 100%
+                        var(--lb-text-primary) 0%,
+                        var(--lb-text-primary) var(--fs-audio-volume-progress, 100%),
+                        var(--lb-border) var(--fs-audio-volume-progress, 100%),
+                        var(--lb-border) 100%
                     );
                 }
 
                 .fs-audio-volume-range::-webkit-slider-thumb {
                     appearance: none;
-                    width: 12px;
-                    height: 12px;
-                    margin-top: -4px;
-                    border: 2px solid var(--xdh-color-surface-1, #1a1a1a);
+                    width: 14px;
+                    height: 14px;
+                    margin-top: -5px;
+                    border: 2px solid var(--lb-bg);
                     border-radius: 50%;
-                    background: var(--xdh-color-text-primary, #f0f0f0);
+                    background: var(--lb-text-primary);
+                    cursor: pointer;
                 }
 
                 .fs-audio-volume-range::-moz-range-track {
                     height: 4px;
                     border: 0;
                     border-radius: 999px;
-                    background: var(--xdh-color-border, #2e2e2e);
+                    background: var(--lb-border);
                 }
 
                 .fs-audio-volume-range::-moz-range-progress {
                     height: 4px;
                     border-radius: 999px;
-                    background: var(--xdh-brand-pink, #ea005e);
+                    background: var(--lb-text-primary);
                 }
 
                 .fs-audio-volume-range::-moz-range-thumb {
-                    width: 12px;
-                    height: 12px;
-                    border: 2px solid var(--xdh-color-surface-1, #1a1a1a);
+                    width: 14px;
+                    height: 14px;
+                    border: 2px solid var(--lb-bg);
                     border-radius: 50%;
-                    background: var(--xdh-color-text-primary, #f0f0f0);
+                    background: var(--lb-text-primary);
+                    cursor: pointer;
                 }
 
                 .fs-audio-volume-value {
-                    min-width: 44px;
-                    color: var(--xdh-color-text-secondary, #999);
-                    font-size: 12px;
+                    min-width: 40px;
+                    color: var(--lb-text-tertiary);
+                    font-size: 11px;
                     line-height: 1.3;
                     text-align: right;
                     font-variant-numeric: tabular-nums;
-                    font-family: ui-monospace, "Cascadia Mono", "Consolas",
-                        monospace;
+                    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
                 }
 
                 .fs-audio-timeline {
@@ -2045,17 +2234,17 @@ export class XdhLightbox extends BaseElement {
                     flex: 1 1 auto;
                     display: flex;
                     flex-direction: column;
-                    gap: 8px;
+                    gap: 10px;
                 }
 
                 .fs-audio-waveform {
                     position: relative;
                     width: 100%;
-                    height: 112px;
+                    height: 100px;
                     padding: 0;
-                    border: 1px solid var(--xdh-color-border, #2e2e2e);
+                    border: none;
                     border-radius: 12px;
-                    background: var(--xdh-color-surface-2, #2a2a2a);
+                    background: var(--lb-waveform-bg);
                     overflow: hidden;
                     cursor: pointer;
                 }
@@ -2069,7 +2258,7 @@ export class XdhLightbox extends BaseElement {
                     background: linear-gradient(
                         90deg,
                         transparent 0%,
-                        rgba(255, 255, 255, 0.08) 50%,
+                        var(--lb-border) 50%,
                         transparent 100%
                     );
                     transform: translateX(-100%);
@@ -2091,16 +2280,15 @@ export class XdhLightbox extends BaseElement {
                     align-items: center;
                     justify-content: space-between;
                     gap: 12px;
-                    padding: 0 2px;
+                    padding: 0 4px;
                 }
 
                 .fs-audio-time {
-                    font-size: 12px;
+                    font-size: 11px;
                     line-height: 1.3;
-                    color: var(--xdh-color-text-secondary, #999);
+                    color: var(--lb-text-tertiary);
                     font-variant-numeric: tabular-nums;
-                    font-family: ui-monospace, "Cascadia Mono", "Consolas",
-                        monospace;
+                    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
                 }
 
                 .fs-audio {
@@ -2115,42 +2303,301 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 @keyframes fs-audio-wave-sheen {
-                    from {
-                        transform: translateX(-100%);
-                    }
-                    to {
-                        transform: translateX(100%);
-                    }
+                    from { transform: translateX(-100%); }
+                    to { transform: translateX(100%); }
                 }
 
+                /* ============================================
+                   Bottom Panel - Navigation with Title & Counter
+                   ============================================ */
+                .fs-bottom-panel {
+                    position: absolute;
+                    left: 50%;
+                    bottom: 16px;
+                    transform: translateX(-50%) translateY(14px);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 8px;
+                    max-width: min(92vw, 1080px);
+                    padding: 12px 16px;
+                    border-radius: 12px;
+                    background: var(--lb-surface-elevated);
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 4px 16px rgba(0, 0, 0, 0.08);
+                    opacity: 0;
+                    visibility: hidden;
+                    pointer-events: none;
+                    transition:
+                        transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+                        visibility 0.24s ease;
+                    z-index: 10;
+                }
+
+                :host-context(body[data-theme="light"]) .fs-bottom-panel {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 4px 16px rgba(0, 0, 0, 0.06);
+                }
+
+                .fs-stage[data-active="true"] .fs-bottom-panel {
+                    opacity: 1;
+                    visibility: visible;
+                    pointer-events: auto;
+                    transform: translateX(-50%) translateY(0);
+                }
+
+                .fs-bottom-panel[data-has-nav="false"] {
+                    padding: 10px 16px;
+                }
+
+                /* Panel Header - Title & Counter */
+                .fs-panel-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 12px;
+                    width: 100%;
+                }
+
+                .fs-panel-title {
+                    flex: 1;
+                    min-width: 0;
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--lb-text-primary);
+                    letter-spacing: -0.14px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    text-align: center;
+                }
+
+                .fs-panel-counter {
+                    flex-shrink: 0;
+                    padding: 4px 10px;
+                    border-radius: 6px;
+                    background: var(--lb-surface);
+                    box-shadow: var(--lb-shadow-ring);
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: var(--lb-text-secondary);
+                    font-variant-numeric: tabular-nums;
+                    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+                    white-space: nowrap;
+                }
+
+                /* Navigation Strip */
+                .fs-bottom-nav {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    max-width: 100%;
+                    padding: 4px;
+                    overflow-x: auto;
+                    overflow-y: hidden;
+                    scrollbar-width: thin;
+                    scrollbar-color: var(--lb-border) transparent;
+                }
+
+                .fs-bottom-nav::-webkit-scrollbar {
+                    height: 4px;
+                }
+
+                .fs-bottom-nav::-webkit-scrollbar-track {
+                    background: transparent;
+                    border-radius: 2px;
+                }
+
+                .fs-bottom-nav::-webkit-scrollbar-thumb {
+                    background: var(--lb-border);
+                    border-radius: 2px;
+                }
+
+                .fs-bottom-nav::-webkit-scrollbar-thumb:hover {
+                    background: var(--lb-text-tertiary);
+                }
+
+                .fs-bottom-panel[data-has-nav="false"] .fs-bottom-nav {
+                    display: none;
+                }
+
+                .fs-nav-item {
+                    flex: 0 0 auto;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
+                    width: 64px;
+                    padding: 5px 4px 6px;
+                    border: 1px solid transparent;
+                    border-radius: 12px;
+                    background: transparent;
+                    cursor: pointer;
+                    transition:
+                        background 0.15s ease,
+                        border-color 0.15s ease,
+                        transform 0.15s ease;
+                }
+
+                .fs-nav-item:hover {
+                    background: var(--lb-btn-bg);
+                }
+
+                .fs-nav-item:focus-visible {
+                    outline: 2px solid var(--lb-focus);
+                    outline-offset: 2px;
+                }
+
+                .fs-nav-item.is-active {
+                    background: var(--lb-btn-bg-hover);
+                    border-color: var(--lb-border);
+                }
+
+                .fs-nav-thumb {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    background: var(--lb-thumb-bg);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    position: relative;
+                    /* Shadow-as-border */
+                    box-shadow: var(--lb-shadow-ring);
+                }
+
+                .fs-nav-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                }
+
+                .fs-nav-fallback {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: var(--lb-text-tertiary);
+                }
+
+                .fs-nav-thumb.thumb-empty .fs-nav-fallback {
+                    display: flex;
+                }
+
+                .fs-nav-thumb.audio-thumb {
+                    background: linear-gradient(
+                        135deg,
+                        var(--lb-audio-gradient-start) 0%,
+                        var(--lb-audio-gradient-mid) 50%,
+                        var(--lb-audio-gradient-end) 100%
+                    );
+                }
+
+                .fs-nav-thumb .audio-icon {
+                    color: var(--lb-text-secondary);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .fs-nav-name {
+                    width: 100%;
+                    font-size: 9px;
+                    line-height: 1.2;
+                    color: var(--lb-text-tertiary);
+                    text-align: center;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    letter-spacing: -0.1px;
+                }
+
+                .fs-nav-item.is-active .fs-nav-name {
+                    color: var(--lb-text-primary);
+                }
+
+                /* ============================================
+                   Responsive
+                   ============================================ */
                 @media (max-width: 640px) {
                     .fs-stage {
-                        padding: 16px;
+                        padding: 12px;
                     }
 
                     .fs-media {
-                        padding: 72px 0 24px;
+                        padding: 72px 8px 120px;
                     }
 
-                    .fs-top-bar {
-                        left: 12px;
-                        right: 12px;
+                    .fs-top-actions {
                         top: 12px;
+                        right: 12px;
+                        gap: 6px;
+                    }
+
+                    .fs-bottom-panel {
+                        bottom: 12px;
+                        padding: 10px 12px;
+                        gap: 6px;
+                    }
+
+                    .fs-bottom-panel[data-has-nav="false"] {
+                        padding: 8px 12px;
+                    }
+
+                    .fs-panel-header {
                         gap: 8px;
                     }
 
-                    .fs-title-box {
-                        max-width: min(70vw, 720px);
-                        padding: 8px 10px;
+                    .fs-panel-title {
+                        font-size: 13px;
                     }
 
-                    .fs-title {
-                        font-size: 12px;
+                    .fs-panel-counter {
+                        padding: 3px 8px;
+                        font-size: 11px;
+                    }
+
+                    .fs-action-btn {
+                        width: 32px;
+                        height: 32px;
                     }
 
                     .fs-side-btn {
-                        width: 42px;
-                        height: 72px;
+                        width: 40px;
+                        height: 40px;
+                    }
+
+                    .fs-prev-edge-btn {
+                        left: 8px;
+                    }
+
+                    .fs-next-edge-btn {
+                        right: 8px;
+                    }
+
+                    .fs-bottom-nav {
+                        bottom: 10px;
+                        padding: 6px 10px;
+                        gap: 4px;
+                    }
+
+                    .fs-nav-item {
+                        width: 52px;
+                        padding: 4px 3px;
+                    }
+
+                    .fs-nav-thumb {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 6px;
+                    }
+
+                    .fs-nav-name {
+                        font-size: 8px;
                     }
 
                     .fs-audio-shell {
@@ -2158,7 +2605,8 @@ export class XdhLightbox extends BaseElement {
                     }
 
                     .fs-audio-panel {
-                        padding: 12px;
+                        padding: 16px;
+                        border-radius: 12px;
                     }
 
                     .fs-audio-transport {
@@ -2197,36 +2645,36 @@ export class XdhLightbox extends BaseElement {
 
                     .fs-audio-waveform {
                         height: 96px;
+                        border-radius: 8px;
+                    }
+
+                    .fs-text-shell {
+                        padding: 16px;
+                        border-radius: 8px;
                     }
                 }
             </style>
 
             <div class="fs-stage">
-                <div class="fs-top-bar">
-                    <div class="fs-top-spacer"></div>
-                    <div class="fs-title-box">
-                        <div class="fs-title xdh-tooltip xdh-tooltip-down"
-                             data-tooltip=""></div>
-                        <div class="fs-position xdh-tooltip xdh-tooltip-down"
-                             data-tooltip=""></div>
-                    </div>
-                    <div class="fs-top-actions">
-                        <button class="fs-action-btn fs-open-btn xdh-tooltip xdh-tooltip-down"
-                                type="button"
-                                data-lightbox-action="open"
-                                data-tooltip="${t("lightbox.open_external")}"
-                                aria-label="${t("lightbox.open_external")}">
-                            ${icon("link-2", 16)}
-                        </button>
-                        <button class="fs-action-btn fs-close-btn xdh-tooltip xdh-tooltip-down"
-                                type="button"
-                                data-lightbox-action="close"
-                                data-tooltip="${t("lightbox.close") }"
-                                aria-label="${t("lightbox.close")}">
-                            ${icon("x", 16)}
-                        </button>
-                    </div>
+                <!-- Top Right: Open & Close buttons -->
+                <div class="fs-top-actions">
+                    <button class="fs-action-btn fs-open-btn xdh-tooltip xdh-tooltip-down"
+                            type="button"
+                            data-lightbox-action="open"
+                            data-tooltip="${t("lightbox.open_external")}"
+                            aria-label="${t("lightbox.open_external")}">
+                        ${icon("link-2", 16)}
+                    </button>
+                    <button class="fs-action-btn fs-close-btn xdh-tooltip xdh-tooltip-down"
+                            type="button"
+                            data-lightbox-action="close"
+                            data-tooltip="${t("lightbox.close") }"
+                            aria-label="${t("lightbox.close")}">
+                        ${icon("x", 16)}
+                    </button>
                 </div>
+
+                <!-- Side Navigation buttons -->
                 <button class="fs-side-btn fs-prev-edge-btn xdh-tooltip"
                         type="button"
                         data-lightbox-action="prev"
@@ -2241,7 +2689,18 @@ export class XdhLightbox extends BaseElement {
                         aria-label="${t("lightbox.next")}">
                     ${icon("arrow-right", 18)}
                 </button>
+
+                <!-- Main Media Area -->
                 <div class="fs-media"></div>
+
+                <!-- Bottom Panel: Title + Counter + Navigation -->
+                <div class="fs-bottom-panel" data-has-nav="false">
+                    <div class="fs-panel-header">
+                        <div class="fs-panel-title xdh-tooltip xdh-tooltip-up" data-tooltip=""></div>
+                        <div class="fs-panel-counter xdh-tooltip xdh-tooltip-up" data-tooltip=""></div>
+                    </div>
+                    <div class="fs-bottom-nav"></div>
+                </div>
             </div>
         `;
     }

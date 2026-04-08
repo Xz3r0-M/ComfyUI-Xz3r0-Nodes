@@ -228,3 +228,7 @@ export function buildMediaUrl(mediaRef) {
     return `/xz3r0/xdatahub/media/file?ref=${encodeURIComponent(mediaRef)}`;
 }
 
+export function buildThumbUrl(mediaRef, size = 300) {
+    return `/xz3r0/xdatahub/media/thumb?ref=${encodeURIComponent(mediaRef)}&size=${size}`;
+}
+

@@ -11,6 +11,7 @@ import math
 import mimetypes
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -80,6 +81,8 @@ MEDIA_CARD_SIZE_PRESET_VALUES = {"compact", "standard", "large"}
 THEME_MODE_VALUES = {"dark", "light"}
 UI_LOCALE_VALUES = {"zh", "en"}
 MEDIA_STREAM_CHUNK_SIZE = 256 * 1024
+THUMB_MAX_PX = 300
+THUMB_QUALITY = 80
 IMAGE_VALIDATE_CACHE_MAX = 512
 IMAGE_VALIDATE_CACHE_TTL_S = 30.0
 IMAGE_VALIDATE_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
@@ -1990,7 +1993,8 @@ class MediaStore:
                 stale_where = " AND media_type = ?"
                 stale_params.append(media_type)
             stale_rows = conn.execute(
-                "SELECT id, real_path, rel_path, filename, media_type, "
+                "SELECT id, public_ref, real_path, rel_path, "
+                "filename, media_type, "
                 "mtime, size FROM media_index WHERE valid = 0" + stale_where,
                 stale_params,
             ).fetchall()
@@ -2005,6 +2009,7 @@ class MediaStore:
                             (int(row["id"]),),
                         ).rowcount
                     )
+                    self.delete_thumb(row["public_ref"])
             conn.commit()
         return {
             "inserted": inserted,
@@ -2141,6 +2146,134 @@ class MediaStore:
                 normalized,
                 type(exc).__name__,
             )
+
+    def _thumb_path_for(
+        self,
+        media_ref: str,
+        size: int,
+    ) -> Path:
+        """返回缩略图缓存文件路径（SHA256 前 16 位 + 尺寸）。"""
+        digest = hashlib.sha256(
+            media_ref.encode("utf-8"),
+        ).hexdigest()[:16]
+        return self.thumb_root / f"{digest}_{size}.jpg"
+
+    def generate_thumb(
+        self,
+        media_ref: str,
+        source: Path,
+        size: int = THUMB_MAX_PX,
+    ) -> Path | None:
+        """按需生成缩略图，已缓存时直接返回路径。"""
+        ext = source.suffix.lower()
+        is_image = ext in MEDIA_TYPE_EXT["image"]
+        is_video = ext in MEDIA_TYPE_EXT["video"]
+        if not is_image and not is_video:
+            return None
+        thumb = self._thumb_path_for(media_ref, size)
+        if thumb.exists():
+            return thumb
+        if is_image:
+            return self._generate_image_thumb(
+                media_ref,
+                source,
+                thumb,
+                size,
+            )
+        return self._generate_video_thumb(
+            media_ref,
+            source,
+            thumb,
+            size,
+        )
+
+    def _generate_image_thumb(
+        self,
+        media_ref: str,
+        source: Path,
+        thumb: Path,
+        size: int,
+    ) -> Path | None:
+        """从图片生成缩略图。"""
+        try:
+            with Image.open(source) as img:
+                img.thumbnail((size, size))
+                rgb = img.convert("RGB")
+                rgb.save(thumb, "JPEG", quality=THUMB_QUALITY)
+            return thumb
+        except (
+            OSError,
+            UnidentifiedImageError,
+            ValueError,
+        ):
+            LOGGER.debug(
+                "[xdatahub] thumb generation failed: ref=%s",
+                media_ref,
+            )
+            return None
+
+    def _generate_video_thumb(
+        self,
+        media_ref: str,
+        source: Path,
+        thumb: Path,
+        size: int,
+    ) -> Path | None:
+        """使用 ffmpeg 从视频首帧生成缩略图。"""
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            LOGGER.debug(
+                "[xdatahub] ffmpeg not found, skip video thumb",
+            )
+            return None
+        try:
+            result = subprocess.run(  # noqa: S603
+                [
+                    ffmpeg,
+                    "-i",
+                    str(source),
+                    "-vframes",
+                    "1",
+                    "-vf",
+                    (
+                        f"scale='min({size},iw)'"
+                        f":'min({size},ih)'"
+                        ":force_original_aspect_ratio"
+                        "=decrease"
+                    ),
+                    "-f",
+                    "image2",
+                    "-y",
+                    str(thumb),
+                ],
+                capture_output=True,
+                timeout=15,
+            )
+            if result.returncode != 0 or not thumb.exists():
+                LOGGER.debug(
+                    "[xdatahub] ffmpeg video thumb failed: ref=%s rc=%s",
+                    media_ref,
+                    result.returncode,
+                )
+                return None
+            return thumb
+        except (OSError, subprocess.TimeoutExpired):
+            LOGGER.debug(
+                "[xdatahub] video thumb extraction error: ref=%s",
+                media_ref,
+            )
+            return None
+
+    def delete_thumb(self, media_ref: str) -> None:
+        """删除指定 media_ref 对应的所有尺寸缩略图。"""
+        digest = hashlib.sha256(
+            media_ref.encode("utf-8"),
+        ).hexdigest()[:16]
+        for f in self.thumb_root.glob(f"{digest}_*.jpg"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
     def clear_thumbs(self, media_type: str | None) -> int:
         target = (
@@ -4971,6 +5104,7 @@ async def api_media_clear(request: web.Request) -> web.Response:
         return json_error("quota_exceeded", status=400)
     try:
         deleted = STORE.clear(media_type)
+        STORE.clear_thumbs(media_type)
     except Exception as exc:
         LOGGER.exception(
             "[xdatahub] media clear failed: %s",
@@ -5037,6 +5171,49 @@ async def api_media_file(request: web.Request) -> web.Response:
             type(exc).__name__,
         )
         return json_error("internal_error", status=500)
+
+
+@server.PromptServer.instance.routes.get(
+    "/xz3r0/xdatahub/media/thumb",
+)
+async def api_media_thumb(request: web.Request) -> web.Response:
+    """返回指定媒体的缩略图（仅图片类型）。"""
+    media_ref = normalize_media_ref(
+        str(request.query.get("ref") or ""),
+    )
+    resolved = resolve_media_ref(media_ref, db_path=STORE.db_path)
+    if resolved.status != "ok" or resolved.resolved_path is None:
+        return media_ref_error_response(request, resolved)
+
+    size_raw = request.query.get("size", "")
+    try:
+        size = int(size_raw) if size_raw else THUMB_MAX_PX
+    except ValueError:
+        size = THUMB_MAX_PX
+    size = max(64, min(size, 1024))
+
+    loop = asyncio.get_event_loop()
+    thumb = await loop.run_in_executor(
+        None,
+        STORE.generate_thumb,
+        resolved.media_ref,
+        resolved.resolved_path,
+        size,
+    )
+    if thumb is None:
+        return await _stream_media_file_response(
+            request=request,
+            path=resolved.resolved_path,
+            media_type=resolved.media_type,
+        )
+
+    resp = web.FileResponse(thumb)
+    resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    etag = hashlib.sha256(
+        f"{media_ref}:{size}:{thumb.stat().st_mtime_ns}".encode(),
+    ).hexdigest()[:16]
+    resp.headers["ETag"] = f'"{etag}"'
+    return resp
 
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/thumb")
