@@ -7,14 +7,15 @@
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
 ![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
 
+## For non-Chinese users - Please use web translation 🌍
 
 **如果这个项目对您有帮助，可以给个星标⭐或者分享给其他人！**
 
 [📜 点击查看更新日志 | Click to view the changelog](Changelog.md)
 
-</div>
 
----
+
+</div>
 
 ## 📖 项目简介
 
