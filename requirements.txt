@@ -1,7 +1,19 @@
-# ComfyUI core dependencies (already installed by ComfyUI):
-# comfyui-frontend-package==1.37.11
-# comfyui-workflow-templates==0.8.15
-# comfyui-embedded-docs==0.4.0
+# 以下是本项目需要安装的 Python 依赖包
+# The following are the Python dependency packages that need to be installed for this project.
+# ================================================================
+
+ffmpeg-python   #   XVideoSave, XAudioSave (LUFS normalization via FFmpeg)
+
+# ================================================================
+
+
+# ================================================================
+# 以下是 ComfyUI 0.17.2 官方依赖包 - 仅做记录
+# The following is the official dependency packages of ComfyUI 0.17.2 - for record only
+# ================================================================
+# comfyui-frontend-package==1.41.20
+# comfyui-workflow-templates==0.9.21
+# comfyui-embedded-docs==0.4.3
 # torch
 # torchsde
 # torchvision
@@ -21,16 +33,19 @@
 # psutil
 # alembic
 # SQLAlchemy
+# filelock
 # av>=14.2.0
-# comfy-kitchen>=0.2.7
+# comfy-kitchen>=0.2.8
+# comfy-aimdo>=0.2.10
 # requests
+# simpleeval>=1.0.0
+# blake3
 
 # #non essential dependencies:
 # kornia>=0.7.1
 # spandrel
 # pydantic~=2.0
 # pydantic-settings~=2.0
+# PyOpenGL
+# glfw
 
-# ================
-# Additional dependencies for this extension:
-ffmpeg-python   #   XVideoSave, XAudioSave (LUFS normalization via FFmpeg)

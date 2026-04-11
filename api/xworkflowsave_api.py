@@ -15,6 +15,11 @@ from typing import Any
 import server
 from aiohttp import web
 
+try:
+    from ..xz3r0_utils import get_logger
+except ImportError:
+    from xz3r0_utils import get_logger
+
 # ================================
 # 日志配置
 # ================================
@@ -24,6 +29,7 @@ from aiohttp import web
 LOG_LEVEL: int = 0
 INTERNAL_ERROR_MESSAGE = "Internal server error"
 _EXECUTION_CLEANUP_REGISTERED = False
+LOGGER = get_logger(__name__)
 
 
 def log_info(message: str) -> None:
@@ -37,7 +43,7 @@ def log_info(message: str) -> None:
         message: 日志消息
     """
     if LOG_LEVEL >= 1:
-        print(f"[XWorkflowSave] {message}", flush=True)
+        LOGGER.info("[XWorkflowSave] %s", message)
 
 
 def log_debug(message: str) -> None:
@@ -51,7 +57,7 @@ def log_debug(message: str) -> None:
         message: 日志消息
     """
     if LOG_LEVEL >= 2:
-        print(f"[XWorkflowSave DEBUG] {message}", flush=True)
+        LOGGER.debug("[XWorkflowSave DEBUG] %s", message)
 
 
 def log_error(message: str) -> None:
@@ -64,7 +70,7 @@ def log_error(message: str) -> None:
     Args:
         message: 日志消息
     """
-    print(f"[XWorkflowSave ERROR] {message}", flush=True)
+    LOGGER.error("[XWorkflowSave ERROR] %s", message)
 
 
 class WorkflowDataStore:

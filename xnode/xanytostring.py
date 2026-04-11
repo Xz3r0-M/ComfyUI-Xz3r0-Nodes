@@ -9,6 +9,8 @@ from typing import Any
 
 from comfy_api.latest import io
 
+XDataStringType = io.Custom("xdata_string")
+
 
 class XAnyToString(io.ComfyNode):
     """
@@ -22,11 +24,12 @@ class XAnyToString(io.ComfyNode):
         - 同时输出原始数据，方便继续连接下游节点
 
     输入：
-        anything: 任意输入类型 (ANY)
+        anything: 任意输入类型 (MatchType 输入)
 
     输出：
-        anything: 原始输入数据 (ANY)
+        anything: 原始输入数据 (MatchType 透传输出)
         string: 转换后的字符串 (STRING)
+        xdata_string: 字符串 xdata 协议输出
 
     Usage example:
         anything=123
@@ -37,6 +40,8 @@ class XAnyToString(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
+        passthrough_template = io.MatchType.Template("anything_passthrough")
+
         return io.Schema(
             node_id="XAnyToString",
             display_name="XAnyToString",
@@ -46,22 +51,32 @@ class XAnyToString(io.ComfyNode):
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
-                io.AnyType.Input(
+                io.MatchType.Input(
                     "anything",
+                    template=passthrough_template,
                     tooltip=(
-                        "Any input type to convert into a string using "
-                        "Python str()"
+                        "Pass-through input. The pass-through "
+                        "output keeps the same data type as this input while "
+                        "also converting the value with Python str()"
                     ),
                 ),
             ],
             outputs=[
-                io.AnyType.Output(
-                    "anything",
-                    tooltip="Original input data passed through unchanged",
+                io.MatchType.Output(
+                    template=passthrough_template,
+                    display_name="anything",
+                    tooltip=(
+                        "Original input data passed through for downstream "
+                        "nodes"
+                    ),
                 ),
                 io.String.Output(
                     "string",
                     tooltip="String converted from the input using str()",
+                ),
+                XDataStringType.Output(
+                    "xdata_string",
+                    tooltip="xdata_string payload for XDataSave",
                 ),
             ],
         )
@@ -81,4 +96,9 @@ class XAnyToString(io.ComfyNode):
             string_value = str(anything)
         except Exception as exc:
             raise ValueError("Failed to convert input to string") from exc
-        return io.NodeOutput(anything, string_value)
+        payload = {
+            "data_type": "string",
+            "text": string_value,
+            "source": "XAnyToString",
+        }
+        return io.NodeOutput(anything, string_value, payload)

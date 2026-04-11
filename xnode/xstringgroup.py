@@ -15,28 +15,28 @@ class XStringGroup(io.ComfyNode):
     将多个字符串按照指定的分隔方法组合在一起，
     同时支持选择其中一个字符串单独输出。
 
-    功能:
-        - 支持最多5个字符串输入
+    功能：
+        - 支持最多 5 个字符串输入
         - 支持多种分隔方法（无、换行、空格、逗号等）
         - 可选择输出特定字符串
         - 同时输出组合字符串和所有原始字符串
 
-    输入:
+    输入：
         select_string: 选择要输出的字符串编号 (COMBO: 1-5)
         string_1: 第一个字符串 (STRING)
-        separation_method_1_2: 字符串1和2之间的分隔方法 (COMBO)
+        separation_method_1_2: 字符串 1 和 2 之间的分隔方法 (COMBO)
         string_2: 第二个字符串 (STRING)
-        separation_method_2_3: 字符串2和3之间的分隔方法 (COMBO)
+        separation_method_2_3: 字符串 2 和 3 之间的分隔方法 (COMBO)
         string_3: 第三个字符串 (STRING)
-        separation_method_3_4: 字符串3和4之间的分隔方法 (COMBO)
+        separation_method_3_4: 字符串 3 和 4 之间的分隔方法 (COMBO)
         string_4: 第四个字符串 (STRING)
-        separation_method_4_5: 字符串4和5之间的分隔方法 (COMBO)
+        separation_method_4_5: 字符串 4 和 5 之间的分隔方法 (COMBO)
         string_5: 第五个字符串 (STRING)
 
-    输出:
+    输出：
         total_string: 组合后的完整字符串
-        selected_string: 根据select_string选择的字符串
-        string_1-5: 原始字符串1-5
+        selected_string: 根据 select_string 选择的字符串
+        string_1-5: 原始字符串 1-5
 
     Usage example:
         string_1="Hello"
@@ -70,7 +70,7 @@ class XStringGroup(io.ComfyNode):
     }
 
     @classmethod
-    def _resolve_separation_method(cls, method_name: str) -> str:
+    def resolve_separation_method(cls, method_name: str) -> str:
         """
         将前端分隔选项解析为实际分隔符。
 
@@ -81,6 +81,11 @@ class XStringGroup(io.ComfyNode):
         if separator is None:
             raise ValueError(f"Invalid separation method: {method_name}")
         return separator
+
+    @classmethod
+    def _resolve_separation_method(cls, method_name: str) -> str:
+        """兼容旧内部调用，转发到公开分隔解析 API。"""
+        return cls.resolve_separation_method(method_name)
 
     @classmethod
     def _resolve_selected_string(
@@ -251,23 +256,23 @@ class XStringGroup(io.ComfyNode):
 
         Args:
             select_string: 选择的字符串编号
-            string_1: 字符串1
-            separation_method_1_2: 分隔方法1-2
-            string_2: 字符串2
-            separation_method_2_3: 分隔方法2-3
-            string_3: 字符串3
-            separation_method_3_4: 分隔方法3-4
-            string_4: 字符串4
-            separation_method_4_5: 分隔方法4-5
-            string_5: 字符串5
+            string_1: 字符串 1
+            separation_method_1_2: 分隔方法 1-2
+            string_2: 字符串 2
+            separation_method_2_3: 分隔方法 2-3
+            string_3: 字符串 3
+            separation_method_3_4: 分隔方法 3-4
+            string_4: 字符串 4
+            separation_method_4_5: 分隔方法 4-5
+            string_5: 字符串 5
 
         Returns:
             NodeOutput: 包含组合字符串、选中字符串和所有原始字符串
         """
-        sm_1_2 = cls._resolve_separation_method(separation_method_1_2)
-        sm_2_3 = cls._resolve_separation_method(separation_method_2_3)
-        sm_3_4 = cls._resolve_separation_method(separation_method_3_4)
-        sm_4_5 = cls._resolve_separation_method(separation_method_4_5)
+        sm_1_2 = cls.resolve_separation_method(separation_method_1_2)
+        sm_2_3 = cls.resolve_separation_method(separation_method_2_3)
+        sm_3_4 = cls.resolve_separation_method(separation_method_3_4)
+        sm_4_5 = cls.resolve_separation_method(separation_method_4_5)
 
         grouped_string = (
             string_1

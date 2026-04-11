@@ -17,3 +17,7 @@ PublisherId = "xz3r0"
 DisplayName = "ComfyUI-Xz3r0-Nodes"
 Icon = "https://avatars.githubusercontent.com/u/67074212"
 includes = []
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib --ignore=__init__.py"
+testpaths = ["tests"]

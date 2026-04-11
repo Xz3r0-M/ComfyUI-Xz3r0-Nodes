@@ -1,46 +1,51 @@
 {
+  "__comment__": "设置本地化键名规则：1) 设置项主键由 setting.id 转换，需将 '.' 替换为 '_'（例如：Xz3r0.XFitView.Delay -> Xz3r0_XFitView_Delay）；2) options 内的键名必须与代码中的实际选项值完全一致（包含大小写）。",
   "Xz3r0_XFitView_WorkflowEnterMode": {
     "name": "工作流进入模式",
     "tooltip": "选择加载主工作流时的自动适应视图行为（页面加载、加载工作流文件）",
     "options": {
-      "first": "仅首次（刷新网页后重置）",
-      "always": "每次都适应",
-      "never": "从不"
+      "First": "仅首次（刷新网页后重置）",
+      "Always": "每次都适应",
+      "Never": "从不"
     }
   },
   "Xz3r0_XFitView_WorkflowExitMode": {
     "name": "工作流退出模式",
     "tooltip": "选择从子图退出到主工作流时的自动适应视图行为",
     "options": {
-      "first": "仅首次（刷新网页后重置）",
-      "always": "每次都适应",
-      "never": "从不"
+      "First": "仅首次（刷新网页后重置）",
+      "Always": "每次都适应",
+      "Never": "从不"
     }
   },
   "Xz3r0_XFitView_SubgraphEnterMode": {
     "name": "子图进入模式",
     "tooltip": "选择进入子图时的自动适应视图行为",
     "options": {
-      "first": "仅首次（刷新网页后重置）",
-      "always": "每次都适应",
-      "never": "从不"
+      "First": "仅首次（刷新网页后重置）",
+      "Always": "每次都适应",
+      "Never": "从不"
     }
   },
   "Xz3r0_XFitView_SubgraphExitMode": {
     "name": "子图退出模式",
     "tooltip": "选择退出子图时的自动适应视图行为（返回到上级子图）",
     "options": {
-      "first": "仅首次（刷新网页后重置）",
-      "always": "每次都适应",
-      "never": "从不"
+      "First": "仅首次（刷新网页后重置）",
+      "Always": "每次都适应",
+      "Never": "从不"
     }
   },
   "Xz3r0_XFitView_Delay": {
     "name": "适应视图延迟 (毫秒)",
-    "tooltip": "适应视图前的延迟时间（毫秒）。如果视图适应不正确，请增加此值。范围：0-2000毫秒"
+    "tooltip": "适应视图前的延迟时间（毫秒）。如果视图适应不正确，请增加此值。范围：0-2000 毫秒"
   },
-  "Xz3r0_XFloatingWindow_Enabled": {
-    "name": "启用 ♾️ XFloatingWindow (按钮)",
+  "Xz3r0_XDataHub_Enabled": {
+    "name": "启用 ♾️ XDataHub (按钮)",
     "tooltip": "在顶部菜单栏显示 [♾️] 浮动窗口按钮"
+  },
+  "Xz3r0_XDataHub_UnderSidebar": {
+    "name": "将 ♾️ XDataHub 置于 ComfyUI 界面组件之下",
+    "tooltip": "开启后，XDataHub 会低于 ComfyUI 的界面组件层级（不只是侧边栏）。四周面板与工具组件都可能遮挡窗口内容或右上角按钮（最大化/关闭），请确认后再开启。"
   }
 }

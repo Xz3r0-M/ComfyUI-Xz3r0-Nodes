@@ -1,11 +1,151 @@
 {
+  "XAnyGate10": {
+    "display_name": "XAnyGate10",
+    "description": "10-channel gate node with per-channel output switches and recursive output enabled by default, using customizable recursive order.",
+    "inputs": {
+      "input_1": {
+        "name": "Input 1",
+        "tooltip": "Channel 1 input (optional, accepts any data)"
+      },
+      "input_2": {
+        "name": "Input 2",
+        "tooltip": "Channel 2 input (optional, accepts any data)"
+      },
+      "input_3": {
+        "name": "Input 3",
+        "tooltip": "Channel 3 input (optional, accepts any data)"
+      },
+      "input_4": {
+        "name": "Input 4",
+        "tooltip": "Channel 4 input (optional, accepts any data)"
+      },
+      "input_5": {
+        "name": "Input 5",
+        "tooltip": "Channel 5 input (optional, accepts any data)"
+      },
+      "input_6": {
+        "name": "Input 6",
+        "tooltip": "Channel 6 input (optional, accepts any data)"
+      },
+      "input_7": {
+        "name": "Input 7",
+        "tooltip": "Channel 7 input (optional, accepts any data)"
+      },
+      "input_8": {
+        "name": "Input 8",
+        "tooltip": "Channel 8 input (optional, accepts any data)"
+      },
+      "input_9": {
+        "name": "Input 9",
+        "tooltip": "Channel 9 input (optional, accepts any data)"
+      },
+      "input_10": {
+        "name": "Input 10",
+        "tooltip": "Channel 10 input (optional, accepts any data)"
+      },
+      "enable_1": {
+        "name": "Enable 1",
+        "tooltip": "Enable channel 1 output"
+      },
+      "enable_2": {
+        "name": "Enable 2",
+        "tooltip": "Enable channel 2 output"
+      },
+      "enable_3": {
+        "name": "Enable 3",
+        "tooltip": "Enable channel 3 output"
+      },
+      "enable_4": {
+        "name": "Enable 4",
+        "tooltip": "Enable channel 4 output"
+      },
+      "enable_5": {
+        "name": "Enable 5",
+        "tooltip": "Enable channel 5 output"
+      },
+      "enable_6": {
+        "name": "Enable 6",
+        "tooltip": "Enable channel 6 output"
+      },
+      "enable_7": {
+        "name": "Enable 7",
+        "tooltip": "Enable channel 7 output"
+      },
+      "enable_8": {
+        "name": "Enable 8",
+        "tooltip": "Enable channel 8 output"
+      },
+      "enable_9": {
+        "name": "Enable 9",
+        "tooltip": "Enable channel 9 output"
+      },
+      "enable_10": {
+        "name": "Enable 10",
+        "tooltip": "Enable channel 10 output"
+      },
+      "enable_recursive": {
+        "name": "Enable Recursive",
+        "tooltip": "Enable recursive output lookup using recursive_order from left to right"
+      },
+      "recursive_order": {
+        "name": "Recursive Order",
+        "tooltip": "Recursive order list separated by '-' (example: 1-3-5-7-9 or 5-9-3-7-1). Only 1-10 is allowed and duplicates are forbidden."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Output 1",
+        "tooltip": "Channel 1 output (None when disabled or input is empty)"
+      },
+      "1": {
+        "name": "Output 2",
+        "tooltip": "Channel 2 output (None when disabled or input is empty)"
+      },
+      "2": {
+        "name": "Output 3",
+        "tooltip": "Channel 3 output (None when disabled or input is empty)"
+      },
+      "3": {
+        "name": "Output 4",
+        "tooltip": "Channel 4 output (None when disabled or input is empty)"
+      },
+      "4": {
+        "name": "Output 5",
+        "tooltip": "Channel 5 output (None when disabled or input is empty)"
+      },
+      "5": {
+        "name": "Output 6",
+        "tooltip": "Channel 6 output (None when disabled or input is empty)"
+      },
+      "6": {
+        "name": "Output 7",
+        "tooltip": "Channel 7 output (None when disabled or input is empty)"
+      },
+      "7": {
+        "name": "Output 8",
+        "tooltip": "Channel 8 output (None when disabled or input is empty)"
+      },
+      "8": {
+        "name": "Output 9",
+        "tooltip": "Channel 9 output (None when disabled or input is empty)"
+      },
+      "9": {
+        "name": "Output 10",
+        "tooltip": "Channel 10 output (None when disabled or input is empty)"
+      },
+      "10": {
+        "name": "Recursive Output",
+        "tooltip": "First non-None output found using recursive_order when recursive mode is enabled"
+      }
+    }
+  },
   "XAnyToString": {
     "display_name": "XAnyToString",
     "description": "Converts any input data to a string while passing the original input through to downstream nodes.",
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Any input type that will be converted to a string using Python str()"
+        "tooltip": "Pass-through input. The pass-through output keeps the same data type as this input while also converting the value with Python str()"
       }
     },
     "outputs": {
@@ -16,6 +156,10 @@
       "1": {
         "name": "String",
         "tooltip": "String converted from the input using str()"
+      },
+      "2": {
+        "name": "xdata String",
+        "tooltip": "xdata_string payload for XDataSave"
       }
     }
   },
@@ -43,6 +187,50 @@
       }
     }
   },
+  "XKleinRefConditioning": {
+    "display_name": "XKleinRefConditioning",
+    "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning input"
+      },
+      "negative_conditioning": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning input"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "VAE used to encode reference images"
+      },
+      "image_1": {
+        "name": "Reference Image 1",
+        "tooltip": "Reference image 1 (optional)"
+      },
+      "image_2": {
+        "name": "Reference Image 2",
+        "tooltip": "Reference image 2 (optional)"
+      },
+      "image_3": {
+        "name": "Reference Image 3",
+        "tooltip": "Reference image 3 (optional)"
+      },
+      "image_4": {
+        "name": "Reference Image 4",
+        "tooltip": "Reference image 4 (optional)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning with reference latents"
+      },
+      "1": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning with reference latents"
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
@@ -63,11 +251,11 @@
       },
       "input_a": {
         "name": "Input A",
-        "tooltip": "input value A (accepts both INT and FLOAT, takes priority when use_input_a is enabled)"
+        "tooltip": "Input value A (accepts INT or FLOAT, takes priority when use_input_a is enabled)"
       },
       "input_b": {
         "name": "Input B",
-        "tooltip": "input value B (accepts both INT and FLOAT, takes priority when use_input_b is enabled)"
+        "tooltip": "Input value B (accepts INT or FLOAT, takes priority when use_input_b is enabled)"
       },
       "basic_a": {
         "name": "Basic A",
@@ -92,12 +280,40 @@
     },
     "outputs": {
       "0": {
-        "name": "int_result",
+        "name": "Integer Result",
         "tooltip": "Integer result (truncated decimal part towards zero)"
       },
       "1": {
-        "name": "float_result",
+        "name": "Float Result",
         "tooltip": "Float result (exact value with decimal)"
+      }
+    }
+  },
+  "XMemoryCleanup": {
+    "display_name": "XMemoryCleanup",
+    "description": "Manual cleanup node for optional Python memory cleanup, model/node usage cleanup, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
+    "inputs": {
+      "anything": {
+        "name": "Anything",
+        "tooltip": "Optional pass-through input. Output type automatically matches the connected input type."
+      },
+      "cleanup_memory": {
+        "name": "Cleanup Memory",
+        "tooltip": "Run Python garbage collection (gc.collect). Disabled by default."
+      },
+      "cleanup_node_usage": {
+        "name": "Cleanup Node Usage",
+        "tooltip": "Unload currently loaded models and run model cleanup checks. Disabled by default."
+      },
+      "cleanup_vram": {
+        "name": "Cleanup VRAM",
+        "tooltip": "Run VRAM/device cache cleanup (soft_empty_cache). Disabled by default."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Anything",
+        "tooltip": "Pass-through output (same data type as input)"
       }
     }
   },
@@ -107,15 +323,19 @@
     "inputs": {
       "preset": {
         "name": "Preset",
-        "tooltip": "Custom or standard resolution presets"
+        "tooltip": "Resolution preset (used only when image input is not connected; if preset is not Custom, it overrides custom width/height)"
+      },
+      "image_or_mask": {
+        "name": "Image or Mask",
+        "tooltip": "Image or mask input for base resolution (takes priority over preset and custom width/height)"
       },
       "width": {
         "name": "Custom Width",
-        "tooltip": "Custom resolution width"
+        "tooltip": "Custom resolution width (used only when preset is Custom and image input is not connected)"
       },
       "height": {
         "name": "Custom Height",
-        "tooltip": "Custom resolution height"
+        "tooltip": "Custom resolution height (used only when preset is Custom and image input is not connected)"
       },
       "scale": {
         "name": "Scale",
@@ -156,6 +376,34 @@
       "1": {
         "name": "height",
         "tooltip": "Output resolution height (after preset, scaling, swap, divisible adjustment, and offset)"
+      }
+    }
+  },
+  "XSeed": {
+    "display_name": "XSeed",
+    "description": "Generate non-negative seed values with native seed control, then apply max-digit truncation and optional trailing zero-padding.",
+    "inputs": {
+      "digits": {
+        "name": "Digit Limit",
+        "tooltip": "Max output digit limit (1 to 20). Truncation is applied only when seed length exceeds this limit."
+      },
+      "pad_to_limit": {
+        "name": "Pad With Zeros",
+        "tooltip": "When enabled, seeds shorter than the digit limit are padded with trailing zeros to the limit length. Because random seeds in the 64-bit range are usually high-digit values, this option is rarely triggered in practice."
+      },
+      "seed_value": {
+        "name": "Seed Value",
+        "tooltip": "Base non-negative seed value with native generate control. Final output applies digit-limit rules."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Seed Int",
+        "tooltip": "Final non-negative integer seed after limit and padding rules."
+      },
+      "1": {
+        "name": "xdata Seed",
+        "tooltip": "xdata_seed payload for passing to XDataSave as local history data."
       }
     }
   },
@@ -278,12 +526,78 @@
       }
     }
   },
+  "XStringWrap": {
+    "display_name": "XStringWrap",
+    "description": "Minimal string wrapper node that applies separators before and/or after text based on mode.",
+    "inputs": {
+      "enabled": {
+        "name": "Enable Output",
+        "tooltip": "Master switch. When disabled, the node outputs an empty string."
+      },
+      "apply_mode": {
+        "name": "Apply Mode",
+        "tooltip": "Separator apply strategy: both=apply prefix and suffix, prefix_only=apply prefix only, suffix_only=apply suffix only.",
+        "options": {
+          "both": "Both Prefix and Suffix",
+          "prefix_only": "Prefix Only",
+          "suffix_only": "Suffix Only"
+        }
+      },
+      "prefix_separator": {
+        "name": "Prefix Separator",
+        "tooltip": "Separator placed before the text.",
+        "options": {
+          "none": "None",
+          "newline": "Newline",
+          "space": "Space",
+          "comma": "Comma",
+          "comma_space": "Comma + Space",
+          "period": "Period",
+          "period_space": "Period + Space"
+        }
+      },
+      "text": {
+        "name": "Text",
+        "tooltip": "Main text input. If empty, the node outputs an empty string."
+      },
+      "suffix_separator": {
+        "name": "Suffix Separator",
+        "tooltip": "Separator placed after the text.",
+        "options": {
+          "none": "None",
+          "newline": "Newline",
+          "space": "Space",
+          "comma": "Comma",
+          "comma_space": "Comma + Space",
+          "period": "Period",
+          "period_space": "Period + Space"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Wrapped Text",
+        "tooltip": "String result generated by the current separator mode."
+      }
+    }
+  },
+  "XAudioGet": {
+    "display_name": "XAudioGet",
+    "description": "Load the latest audio sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Audio",
+        "tooltip": "Latest audio received from XDataHub"
+      }
+    }
+  },
   "XAudioSave": {
     "display_name": "XAudioSave",
     "description": "Audio saving node with WAV/FLAC lossless output, supporting custom filename, subfolder, datetime placeholders, dynamic range compression, loudness normalization, and peak limiting.",
     "inputs": {
       "audio": {
-        "name": "AUDIO",
+        "name": "Audio",
         "tooltip": "Input audio tensor"
       },
       "filename_prefix": {
@@ -348,12 +662,93 @@
     },
     "outputs": {
       "0": {
-        "name": "Processed_AUDIO",
+        "name": "Processed Audio",
         "tooltip": "Audio after resampling, compression, loudness normalization, and peak limiting"
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XDataSave": {
+    "display_name": "XDataSave",
+    "description": "Save xdata records to SQLite DB files under the project XDataSaved folder with Custom/Seed/String save types, 500-record rotation, a 120-character header limit, and a 64KB per-record limit.",
+    "inputs": {
+      "xdata_input": {
+        "name": "xdata Input",
+        "tooltip": "Composite xdata input. Currently supports xdata_seed and xdata_string."
+      },
+      "save_type": {
+        "name": "Save Type",
+        "tooltip": "Save type: Custom requires a custom filename; Seed always writes to seed_data.db; String always writes to string_data.db.",
+        "options": {
+          "Custom": "Custom",
+          "Seed": "Seed",
+          "String": "String"
+        }
+      },
+      "custom_filename_input": {
+        "name": "Custom Filename Input",
+        "tooltip": "Optional custom filename input port. When connected, it takes priority over the text field."
+      },
+      "custom_filename_text": {
+        "name": "Custom Filename",
+        "tooltip": "Fallback filename for Custom save type. Default is empty; missing filename raises an explicit configuration error."
+      },
+      "extra_header_input": {
+        "name": "Extra Header Input",
+        "tooltip": "Optional extra header input port. When connected, it takes priority over the text field."
+      },
+      "extra_header_text": {
+        "name": "Extra Header Text",
+        "tooltip": "Fallback extra header text. Saved together with the actual timestamp in each record; header length must not exceed 120 characters and each record must not exceed 64KB."
+      },
+      "enable_save": {
+        "name": "Enable Save",
+        "tooltip": "Enable or disable file writing. When disabled, this node returns a skipped status."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Save Status",
+        "tooltip": "Save execution status message."
+      },
+      "1": {
+        "name": "Save Path",
+        "tooltip": "Path relative to project root. Empty string when save is skipped."
+      }
+    }
+  },
+  "XImageGet": {
+    "display_name": "XImageGet",
+    "description": "Load images from XDataHub with X Mask Editor support.",
+    "inputs": {
+      "output_placeholder": {
+        "name": "Placeholder Black Image",
+        "tooltip": "Output a 1x1 black placeholder image when no image is available"
+      },
+      "x_mask_ref": {
+        "name": "Mask Ref",
+        "tooltip": "Separate mask file reference saved by X Mask Editor"
+      },
+      "x_paint_ref": {
+        "name": "Paint Ref",
+        "tooltip": "Separate paint layer reference saved by X Mask Editor"
+      },
+      "x_transform_state": {
+        "name": "Transform State",
+        "tooltip": "Rotation and flip state saved by X Mask Editor"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Image",
+        "tooltip": "Latest image received from XDataHub"
+      },
+      "1": {
+        "name": "Mask",
+        "tooltip": "Mask loaded from the separate X Mask Editor mask file"
       }
     }
   },
@@ -361,13 +756,25 @@
     "display_name": "XImageResize",
     "description": "Fully automatic image scaling node with intelligent landscape/portrait/square detection, multiple interpolation methods, and aspect ratio preservation.",
     "inputs": {
-      "images": {
-        "name": "Images",
-        "tooltip": "Input images"
+      "image_or_mask": {
+        "name": "Image or Mask",
+        "tooltip": "Input image or mask"
+      },
+      "resize_settings_in": {
+        "name": "Resize Settings In",
+        "tooltip": "Optional settings input. Connect upstream XImageResize settings output to pass chain settings into this node."
+      },
+      "use_passed_settings": {
+        "name": "Use Passed Settings",
+        "tooltip": "When enabled and settings input is connected, this node uses upstream settings for resize calculation. When disabled, this node uses local panel settings, but chain settings still pass through to downstream nodes."
+      },
+      "output_resize_settings": {
+        "name": "Output Resize Settings",
+        "tooltip": "When disabled, resize settings output becomes empty, equivalent to leaving the settings cable unconnected."
       },
       "scale_mode": {
         "name": "Interpolation",
-        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality",
+        "tooltip": "Select interpolation algorithm for scaling images: Nearest-exact=fastest, Bilinear=fast & medium quality, Area=best for downsampling, Bicubic=medium speed & high quality, Lanczos=slow & highest quality. For MASK input, Nearest-exact is recommended to avoid edge drift.",
         "options": {
           "Nearest-exact": "Nearest Exact (fastest, pixel-perfect, ideal for pixel art)",
           "Bilinear": "Bilinear (fast, medium quality, general purpose)",
@@ -432,8 +839,8 @@
     },
     "outputs": {
       "0": {
-        "name": "Processed Images",
-        "tooltip": "Scaled images (batch is resized with one unified target size)"
+        "name": "Processed Data",
+        "tooltip": "Scaled image or mask (batch uses one unified target size)"
       },
       "1": {
         "name": "width",
@@ -442,16 +849,20 @@
       "2": {
         "name": "height",
         "tooltip": "Output resolution height"
+      },
+      "3": {
+        "name": "Resize Settings Out",
+        "tooltip": "Outputs chain settings for downstream nodes. If valid upstream settings exist, this output keeps forwarding the chain-origin settings."
       }
     }
   },
   "XImageSave": {
     "display_name": "XImageSave",
-    "description": "Advanced image saving node with custom filename, subfolder support, and datetime placeholders.",
+    "description": "Advanced image/mask saving node with custom filename, subfolder support, and datetime placeholders.",
     "inputs": {
-      "images": {
-        "name": "Images",
-        "tooltip": "Input image"
+      "image_or_mask": {
+        "name": "Image or Mask",
+        "tooltip": "Input image or mask"
       },
       "filename_prefix": {
         "name": "Filename Prefix",
@@ -464,15 +875,19 @@
       "compression_level": {
         "name": "Compression Level",
         "tooltip": "PNG compression level (0=no compression, 9=maximum compression)"
+      },
+      "enable_preview": {
+        "name": "Enable Preview",
+        "tooltip": "Show image preview on this node after saving when enabled"
       }
     },
     "outputs": {
       "0": {
-        "name": "Images",
-        "tooltip": "Original input images (passed through)"
+        "name": "Image or Mask",
+        "tooltip": "Original input image or mask (passed through)"
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
       }
     }
@@ -520,8 +935,40 @@
         "tooltip": "Input latent (passed through)"
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XLoraGet": {
+    "display_name": "XLoraGet",
+    "description": "Receives a LoRA list from XDataHub Lora cards and applies them to the model and CLIP in order.",
+    "inputs": {
+      "model": {
+        "name": "Model",
+        "tooltip": "Base model to apply LoRAs to"
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "Optional CLIP input. When not connected, Clip strength is forced to 0."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Model",
+        "tooltip": "Model with LoRAs applied"
+      },
+      "1": {
+        "name": "CLIP",
+        "tooltip": "CLIP with LoRAs applied"
+      },
+      "2": {
+        "name": "Trigger Words",
+        "tooltip": "Enabled trigger words from all active LoRAs"
+      },
+      "3": {
+        "name": "LoRA Info",
+        "tooltip": "Summary of applied LoRA names, model strength, and Clip strength"
       }
     }
   },
@@ -588,12 +1035,47 @@
     },
     "outputs": {
       "0": {
-        "name": "content",
+        "name": "Saved Content",
         "tooltip": "Final complete string written into the markdown file, available for downstream nodes."
       },
       "1": {
-        "name": "save_path",
+        "name": "Saved Path",
         "tooltip": "Saved file path relative to ComfyUI output directory"
+      }
+    }
+  },
+  "XStringGet": {
+    "display_name": "XStringGet",
+    "description": "Load the latest text sent from XDataHub.",
+    "inputs": {
+      "text_value": {
+        "name": "Content",
+        "tooltip": "Latest body text received from XDataHub"
+      },
+      "title_value": {
+        "name": "Header",
+        "tooltip": "Latest header text received from XDataHub"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Content",
+        "tooltip": "Latest body text received from XDataHub"
+      },
+      "1": {
+        "name": "Header",
+        "tooltip": "Latest header text received from XDataHub"
+      }
+    }
+  },
+  "XVideoGet": {
+    "display_name": "XVideoGet",
+    "description": "Load the latest video sent from XDataHub.",
+    "inputs": {},
+    "outputs": {
+      "0": {
+        "name": "Video",
+        "tooltip": "Latest video received from XDataHub"
       }
     }
   },
@@ -602,7 +1084,7 @@
     "description": "Video saving node with H.265 encoding support and custom parameters.",
     "inputs": {
       "video": {
-        "name": "VIDEO",
+        "name": "Video",
         "tooltip": "The video to save."
       },
       "filename_prefix": {
@@ -648,7 +1130,7 @@
     "inputs": {
       "anything": {
         "name": "Any Input",
-        "tooltip": "Any input type for workflow connection. This input is not processed, only used to link the node into your workflow. Optional - node works without any input."
+        "tooltip": "Optional pass-through input for workflow connection. This input is not processed, only used to link the node into your workflow. The pass-through output follows the connected input data type. Node works without any input."
       },
       "save_mode": {
         "name": "Save Mode",
@@ -678,49 +1160,11 @@
         "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
       }
     }
-  },
-  "XKleinRefConditioning": {
-    "display_name": "XKleinRefConditioning",
-    "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
-    "inputs": {
-      "positive_conditioning": {
-        "name": "Positive Conditioning",
-        "tooltip": "Positive conditioning input"
-      },
-      "negative_conditioning": {
-        "name": "Negative Conditioning",
-        "tooltip": "Negative conditioning input"
-      },
-      "vae": {
-        "name": "VAE",
-        "tooltip": "VAE used to encode reference images"
-      },
-      "image_1": {
-        "name": "Reference Image 1",
-        "tooltip": "Reference image 1 (optional)"
-      },
-      "image_2": {
-        "name": "Reference Image 2",
-        "tooltip": "Reference image 2 (optional)"
-      },
-      "image_3": {
-        "name": "Reference Image 3",
-        "tooltip": "Reference image 3 (optional)"
-      },
-      "image_4": {
-        "name": "Reference Image 4",
-        "tooltip": "Reference image 4 (optional)"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "Positive Conditioning",
-        "tooltip": "Positive conditioning with reference latents"
-      },
-      "1": {
-        "name": "Negative Conditioning",
-        "tooltip": "Negative conditioning with reference latents"
-      }
-    }
   }
 }
+
+
+
+
+
+

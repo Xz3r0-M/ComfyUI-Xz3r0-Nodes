@@ -60,13 +60,13 @@ class XWorkflowSave(io.ComfyNode):
         - 安全防护 (防止路径遍历攻击，禁用路径分隔符)
 
     输入：
-        anything: 任意输入 (用于工作流连接，不处理数据，可选) (ANY)
+        anything: 任意输入 (MatchType 透传，可选，仅用于连线)
         save_mode: 保存模式选择 (COMBO: Auto/Native/Prompt+FullWorkflow)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
     输出：
-        anything: 透传输入的数据，可直接传递给下游节点 (ANY)
+        anything: 透传输入的数据 (MatchType 与输入同类型)
         workflow_info: 工作流信息摘要，包含保存状态和数据概览 (STRING)
 
     使用示例：
@@ -88,6 +88,8 @@ class XWorkflowSave(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         """Define node input types and constraints"""
+        passthrough_template = io.MatchType.Template("anything_passthrough")
+
         return io.Schema(
             node_id="XWorkflowSave",
             display_name="XWorkflowSave",
@@ -101,14 +103,17 @@ class XWorkflowSave(io.ComfyNode):
                 "data from frontend."
             ),
             inputs=[
-                io.AnyType.Input(
+                io.MatchType.Input(
                     "anything",
+                    template=passthrough_template,
                     optional=True,
                     tooltip=(
-                        "Any input type for workflow connection. "
+                        "Optional pass-through input for workflow "
+                        "connection. "
                         "This input is not processed, only used to "
                         "link the node into your workflow. "
-                        "Optional - node works without any input."
+                        "Output type follows the connected input type. "
+                        "Node works without any input."
                     ),
                 ),
                 io.Combo.Input(
@@ -147,9 +152,13 @@ class XWorkflowSave(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.AnyType.Output(
-                    "anything",
-                    tooltip="Pass through the input data to downstream nodes",
+                io.MatchType.Output(
+                    template=passthrough_template,
+                    display_name="anything",
+                    tooltip=(
+                        "Original pass-through input for downstream "
+                        "workflow chaining"
+                    ),
                 ),
                 io.String.Output(
                     "workflow_info",

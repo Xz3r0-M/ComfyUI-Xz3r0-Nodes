@@ -51,6 +51,15 @@ class XMath(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点的输入类型和约束"""
+        input_a_template = io.MatchType.Template(
+            "input_a_numeric",
+            allowed_types=[io.Int, io.Float],
+        )
+        input_b_template = io.MatchType.Template(
+            "input_b_numeric",
+            allowed_types=[io.Int, io.Float],
+        )
+
         return io.Schema(
             node_id="XMath",
             display_name="XMath",
@@ -58,20 +67,22 @@ class XMath(io.ComfyNode):
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
                 # 可选输入 - 接收其他节点的输出
-                io.MultiType.Input(
+                io.MatchType.Input(
                     "input_a",
-                    types=[io.Int, io.Float],
+                    template=input_a_template,
                     tooltip=(
-                        "input value A (accepts both INT and FLOAT, "
+                        "Optional numeric input A (allows INT or FLOAT "
+                        "independently from input B, "
                         "takes priority when use_input_a is enabled)"
                     ),
                     optional=True,
                 ),
-                io.MultiType.Input(
+                io.MatchType.Input(
                     "input_b",
-                    types=[io.Int, io.Float],
+                    template=input_b_template,
                     tooltip=(
-                        "input value B (accepts both INT and FLOAT, "
+                        "Optional numeric input B (allows INT or FLOAT "
+                        "independently from input A, "
                         "takes priority when use_input_b is enabled)"
                     ),
                     optional=True,
@@ -115,6 +126,8 @@ class XMath(io.ComfyNode):
                 io.Boolean.Input(
                     "use_input_a",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "use input value A (input_a takes "
                         "precedence when enabled, fallbacks "
@@ -125,6 +138,8 @@ class XMath(io.ComfyNode):
                 io.Boolean.Input(
                     "use_input_b",
                     default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip=(
                         "use input value B (input_b takes "
                         "precedence when enabled, fallbacks "
@@ -135,6 +150,8 @@ class XMath(io.ComfyNode):
                 io.Boolean.Input(
                     "swap_ab",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="swap a and b values",
                 ),
             ],

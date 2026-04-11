@@ -22,22 +22,13 @@ ComfyUI-Xz3r0-Nodes V3 扩展入口。
 #    - 每个分类内部按节点类名字母序排列（A->Z）
 # 8) 新增节点时必须按上述规则插入，不要按“最近修改”或“功能关联”排序。
 
-import shutil
-
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
+import shutil  # noqa: I001
 
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
-from .api import xworkflowsave_api
-from .xnode.xanytostring import XAnyToString
-from .xnode.xdatetimestring import XDateTimeString
-from .xnode.xkleinrefconditioning import XKleinRefConditioning
-from .xnode.xmath import XMath
-from .xnode.xresolution import XResolution
-from .xnode.xstringgroup import XStringGroup
+# ============================================
+# File-Processing
+
 from .xnode.xaudiosave import XAudioSave
 from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
@@ -47,14 +38,59 @@ from .xnode.xmarkdownsave import XMarkdownSave
 from .xnode.xvideosave import XVideoSave
 from .xnode.xworkflowsave import XWorkflowSave
 
+# =============================================
+# Workflow-Processing
+
+from .xnode.xanygate10 import XAnyGate10
+from .xnode.xanytostring import XAnyToString
+from .xnode.xdatetimestring import XDateTimeString
+from .xnode.xkleinrefconditioning import XKleinRefConditioning
+from .xnode.xmath import XMath
+from .xnode.xmemorycleanup import XMemoryCleanup
+from .xnode.xresolution import XResolution
+from .xnode.xseed import XSeed
+from .xnode.xstringgroup import XStringGroup
+from .xnode.xstringwrap import XStringWrap
+
+# =============================================
+# XDataHub
+
+from .xnode.xaudioget import XAudioGet
+from .xnode.xdatasave import XDataSave
+from .xnode.ximageget import XImageGet
+from .xnode.xloraget import XLoraGet
+from .xnode.xstringget import XStringGet
+from .xnode.xvideoget import XVideoGet
+
+# =============================================
+
+from .xz3r0_utils import configure_logging, get_logger
+
+LOGGER = get_logger(__name__)
+
+
+def _register_api_modules() -> None:
+    """
+    注册 API 路由模块（导入即注册）。
+
+    兼容两种场景：
+    1) 作为包导入（ComfyUI 正常加载）
+    2) 作为脚本顶层导入（pytest 某些收集模式）
+    """
+    if __package__:
+        __import__(f"{__package__}.api.xdatahub_api", fromlist=["*"])
+        __import__(f"{__package__}.api.xworkflowsave_api", fromlist=["*"])
+        return
+    __import__("api.xdatahub_api")
+    __import__("api.xworkflowsave_api")
+
+
+_register_api_modules()
+
 WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
-    XAnyToString,
-    XDateTimeString,
-    XKleinRefConditioning,
-    XMath,
-    XResolution,
-    XStringGroup,
+    # ============================================
+    # File-Processing
     XAudioSave,
     XImageResize,
     XImageSave,
@@ -63,6 +99,27 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XMarkdownSave,
     XVideoSave,
     XWorkflowSave,
+    # =============================================
+    # Workflow-Processing
+    XAnyGate10,
+    XAnyToString,
+    XDateTimeString,
+    XKleinRefConditioning,
+    XMath,
+    XMemoryCleanup,
+    XResolution,
+    XSeed,
+    XStringGroup,
+    XStringWrap,
+    # =============================================
+    # XDataHub
+    XDataSave,
+    XImageGet,
+    XAudioGet,
+    XLoraGet,
+    XStringGet,
+    XVideoGet,
+    # =============================================
 )
 
 
@@ -81,14 +138,12 @@ class Xz3r0NodesExtension(ComfyExtension):
     Xz3r0-Nodes 扩展类（V3）。
     """
 
-    @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         """
         返回固定注册节点列表。
         """
         return list(REGISTERED_NODE_CLASSES)
 
-    @override
     async def on_load(self):
         """
         扩展加载时输出最小环境提示。
@@ -96,11 +151,11 @@ class Xz3r0NodesExtension(ComfyExtension):
         说明：
             requirements.txt 内依赖不在此处检测，交由 ComfyUI/Python。
         """
+        configure_logging()
         if not is_ffmpeg_available():
-            print(
+            LOGGER.warning(
                 "[Xz3r0-Nodes] ffmpeg not found in PATH. "
                 "Some audio/video nodes may fail at runtime.",
-                flush=True,
             )
 
 

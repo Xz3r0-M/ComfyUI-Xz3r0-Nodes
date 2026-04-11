@@ -26,7 +26,9 @@ class XResolution(io.ComfyNode):
     输入：
         preset: 标准分辨率预设 (STRING)
         width: 宽度 (INT)
+            仅在 preset 为 Custom 且未连接图像输入时生效
         height: 高度 (INT)
+            仅在 preset 为 Custom 且未连接图像输入时生效
         scale: 缩放倍率 (FLOAT)
         swap: 是否互换宽高 (BOOLEAN)
         divisible: 整除数 (INT)
@@ -36,6 +38,8 @@ class XResolution(io.ComfyNode):
             在最终分辨率上添加的偏移值（正数=增加，负数=减少）
         height_offset: 高度偏移 (INT, 范围 -128 到 128)
             在最终分辨率上添加的偏移值（正数=增加，负数=减少）
+        image_or_mask: 图像或遮罩输入 (IMAGE/MASK, 可选)
+            当连接图片或遮罩时，优先使用其分辨率作为基础宽高
 
     输出：
         width: 输出宽度
@@ -112,7 +116,16 @@ class XResolution(io.ComfyNode):
                     "preset",
                     options=list(cls.PRESETS.keys()),
                     default="Custom",
-                    tooltip="Custom or standard resolution presets",
+                    tooltip="Resolution preset (used only when image input "
+                    "is not connected; if preset is not Custom, it "
+                    "overrides custom width/height)",
+                ),
+                io.MultiType.Input(
+                    "image_or_mask",
+                    types=[io.Image, io.Mask],
+                    optional=True,
+                    tooltip="Image or mask input for base resolution "
+                    "(takes priority over preset and custom width/height)",
                 ),
                 io.Int.Input(
                     "width",
@@ -121,7 +134,9 @@ class XResolution(io.ComfyNode):
                     max=16384,
                     step=1,
                     display_mode=io.NumberDisplay.number,
-                    tooltip="Custom resolution width",
+                    tooltip="Custom resolution width "
+                    "(used only when preset is Custom and image input is "
+                    "not connected)",
                 ),
                 io.Int.Input(
                     "height",
@@ -130,7 +145,9 @@ class XResolution(io.ComfyNode):
                     max=16384,
                     step=1,
                     display_mode=io.NumberDisplay.number,
-                    tooltip="Custom resolution height",
+                    tooltip="Custom resolution height "
+                    "(used only when preset is Custom and image input is "
+                    "not connected)",
                 ),
                 io.Float.Input(
                     "scale",
@@ -144,6 +161,8 @@ class XResolution(io.ComfyNode):
                 io.Boolean.Input(
                     "swap",
                     default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
                     tooltip="Swap width and height",
                 ),
                 io.Combo.Input(
@@ -213,22 +232,25 @@ class XResolution(io.ComfyNode):
         divisible_mode: str,
         width_offset: int,
         height_offset: int,
+        image_or_mask=None,
     ) -> io.NodeOutput:
         """
         处理分辨率设置
 
         处理流程：
-            1. 应用预设分辨率
-            2. 应用倍率缩放
-            3. 应用宽高互换
-            4. 应用整除调整
-            5. 应用分辨率偏移
-            6. 确保最小尺寸
+            1. 优先应用图像输入分辨率（若已连接）
+            2. 应用预设分辨率（仅在未连接图像输入时）
+            3. 应用倍率缩放
+            4. 应用宽高互换
+            5. 应用整除调整
+            6. 应用分辨率偏移
+            7. 确保最小尺寸
 
         Args:
             width: 输入宽度
             height: 输入高度
             preset: 标准分辨率预设
+            image_or_mask: 图像或遮罩输入（IMAGE/MASK，可选）
             scale: 缩放倍率
             swap: 是否互换宽高
             divisible: 使分辨率可被该数整除
@@ -241,7 +263,11 @@ class XResolution(io.ComfyNode):
         Returns:
             NodeOutput: 包含处理后的宽度和高度
         """
-        if preset in cls.PRESETS and preset != "Custom":
+        if image_or_mask is not None:
+            width, height = cls._extract_image_or_mask_resolution(
+                image_or_mask
+            )
+        elif preset in cls.PRESETS and preset != "Custom":
             preset_width, preset_height = cls.PRESETS[preset]
             if preset_width > 0 and preset_height > 0:
                 width = preset_width
@@ -279,6 +305,40 @@ class XResolution(io.ComfyNode):
         output_height = max(output_height, 1)
 
         return io.NodeOutput(output_width, output_height)
+
+    @staticmethod
+    def _extract_image_or_mask_resolution(image_or_mask) -> tuple[int, int]:
+        """
+        从 IMAGE/MASK 输入中提取分辨率（width, height）。
+        """
+        shape = getattr(image_or_mask, "shape", None)
+        if shape is None:
+            raise ValueError(
+                "image_or_mask input must be IMAGE or MASK tensor"
+            )
+
+        dims = len(shape)
+        if dims == 2:
+            height, width = int(shape[0]), int(shape[1])
+        elif dims == 3:
+            last_dim = int(shape[-1])
+            if last_dim in {1, 3, 4}:
+                height, width = int(shape[0]), int(shape[1])
+            else:
+                height, width = int(shape[-2]), int(shape[-1])
+        elif dims == 4:
+            height, width = int(shape[-3]), int(shape[-2])
+        else:
+            raise ValueError(
+                "Unsupported image_or_mask tensor shape"
+            )
+
+        if width < 1 or height < 1:
+            raise ValueError(
+                "image_or_mask resolution must be >= 1"
+            )
+
+        return width, height
 
     @staticmethod
     def _make_divisible(value: int, divisor: int, mode: str = "Up") -> int:

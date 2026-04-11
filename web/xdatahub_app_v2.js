@@ -1,0 +1,1309 @@
+// Core
+import { appStore } from "./core/store.js";
+import {
+    apiPost,
+    loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
+    buildMediaUrl,
+} from "./core/api.js?v=20260403-413";
+import { banner } from "./core/banner.js";
+import { setLocale, t } from "./core/i18n.js?v=20260407-3";
+
+// Components (side-effect imports to register custom elements)
+import "./components/xdh-button.js?v=20260403-383";
+import "./components/xdh-sidebar-filter.js?v=20260407-16";
+import "./components/xdh-folder-tree.js?v=20260407-52";
+import "./components/xdh-media-grid.js?v=20260406-39";
+import "./components/xdh-staging-dock.js?v=20260406-15";
+import "./components/xdh-node-picker.js?v=20260406-15";
+import "./core/node-bridge.js?v=20260403-400";
+import "./components/xdh-content-nav.js?v=20260406-24";
+import "./components/xdh-pagination.js?v=20260407-2";
+import "./components/xdh-lightbox.js?v=20260407-8";
+import "./components/xdh-history-view.js?v=20260406-16";
+import "./components/xdh-banner.js?v=20260406-15";
+import "./components/xdh-lora-detail.js?v=20260406-15";
+import "./components/xdh-settings-dialog.js?v=20260407-21";
+
+// Placeholder thumbnail for mock/offline mode
+const MOCK_THUMB = [
+    "data:image/svg+xml,",
+    "%3Csvg xmlns='http://www.w3.org/2000/svg'",
+    " width='100' height='100'%3E",
+    "%3Crect width='100' height='100' fill='%23383838'/%3E",
+    "%3Ctext x='50%25' y='50%25' fill='%23888' font-size='11'",
+    " font-family='sans-serif' text-anchor='middle'",
+    " dominant-baseline='middle'%3EXDataHub%3C/text%3E",
+    "%3C/svg%3E"
+].join("");
+
+const UI_STATE_STORAGE_KEY = "XDataHub.V2.UIState";
+const DEFAULT_ACTIVE_CATEGORY = "image";
+const DEFAULT_SORT_ORDER = "date-desc";
+const DEFAULT_CARD_SIZE = "small";
+const DEFAULT_CATEGORY_VIEW = Object.freeze({
+    folder: "",
+    folderLabel: "",
+    page: 1,
+});
+const DEFAULT_CATEGORY_NAV_STATE = Object.freeze({
+    history: [],
+    index: 0,
+});
+const PERSISTED_CATEGORIES = new Set([
+    "image",
+    "video",
+    "audio",
+    "lora",
+    "history",
+    "favorites",
+]);
+const PERSISTED_SORT_ORDERS = new Set([
+    "date-desc",
+    "date-asc",
+    "name-asc",
+    "name-desc",
+]);
+const PERSISTED_CARD_SIZES = new Set(["small", "medium", "large"]);
+const DIRECTORY_VIEW_CATEGORIES = new Set([
+    "image",
+    "video",
+    "audio",
+    "lora",
+]);
+
+const URL_CATEGORY_PARAM = "tab";
+const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
+const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
+const THEME_MODE_VALUES = new Set(["dark", "light"]);
+
+let lockRefreshTimer = 0;
+let lockRefreshInFlight = null;
+let lockRefreshQueued = false;
+let hasShownLockStatusError = false;
+let persistedCategoryViews = {};
+let categoryNavigationStates = {};
+let isApplyingCategoryView = false;
+let categoryViewRestoreToken = 0;
+
+function normalizeThemeMode(mode) {
+    const nextMode = String(mode || "").trim().toLowerCase();
+    return THEME_MODE_VALUES.has(nextMode) ? nextMode : "dark";
+}
+
+function normalizeMessageOrigin(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+    try {
+        const origin = new URL(value, window.location.href).origin;
+        return origin === "null" ? "" : origin;
+    } catch {
+        return "";
+    }
+}
+
+function getParentTargetOrigin() {
+    const referrerOrigin = normalizeMessageOrigin(document.referrer || "");
+    if (referrerOrigin) {
+        return referrerOrigin;
+    }
+    return normalizeMessageOrigin(window.location.origin || "");
+}
+
+function isTrustedParentMessage(event) {
+    return event?.source === window.parent
+        && normalizeMessageOrigin(String(event.origin || ""))
+            === getParentTargetOrigin();
+}
+
+function postThemeModeToHost(mode) {
+    if (!window.parent || window.parent === window) {
+        return;
+    }
+    const targetOrigin = getParentTargetOrigin();
+    window.parent.postMessage(
+        {
+            type: "xdatahub:theme-mode",
+            theme_mode: normalizeThemeMode(mode),
+        },
+        targetOrigin
+    );
+}
+
+function postToggleWindowRequest() {
+    if (!window.parent || window.parent === window) {
+        return;
+    }
+    window.parent.postMessage(
+        {
+            type: "xdatahub:toggle-window-request",
+        },
+        getParentTargetOrigin()
+    );
+}
+
+function readCategoryFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const queryCategory = String(
+            url.searchParams.get(URL_CATEGORY_PARAM) || ""
+        ).trim();
+        if (PERSISTED_CATEGORIES.has(queryCategory)) {
+            return queryCategory;
+        }
+        const hash = String(url.hash || "").replace(/^#/, "").trim();
+        if (!hash) {
+            return "";
+        }
+        const hashParams = new URLSearchParams(hash);
+        const hashCategory = String(
+            hashParams.get(URL_CATEGORY_PARAM) || hash
+        ).trim();
+        return PERSISTED_CATEGORIES.has(hashCategory) ? hashCategory : "";
+    } catch {
+        return "";
+    }
+}
+
+function syncCategoryToUrl(category, options = {}) {
+    const nextCategory = String(category || "").trim();
+    if (!PERSISTED_CATEGORIES.has(nextCategory)) {
+        return;
+    }
+    try {
+        const url = new URL(window.location.href);
+        const nextHash = `${URL_CATEGORY_PARAM}=${encodeURIComponent(nextCategory)}`;
+        const currentHash = String(url.hash || "").replace(/^#/, "");
+        if (currentHash === nextHash) {
+            return;
+        }
+        url.hash = nextHash;
+        if (options.replace) {
+            window.history.replaceState(null, "", url);
+            return;
+        }
+        window.history.pushState(null, "", url);
+    } catch {
+        // ignore URL sync errors
+    }
+}
+
+function normalizePersistedPage(value) {
+    const page = Number.parseInt(String(value || ""), 10);
+    return Number.isFinite(page) && page > 0 ? page : 1;
+}
+
+function normalizeCategoryView(category, value = {}) {
+    const page = normalizePersistedPage(value.page);
+    if (!DIRECTORY_VIEW_CATEGORIES.has(category)) {
+        return {
+            ...DEFAULT_CATEGORY_VIEW,
+            page,
+        };
+    }
+    return {
+        folder: String(value.folder || "").trim(),
+        folderLabel: String(value.folderLabel || "").trim(),
+        page,
+    };
+}
+
+function buildPersistedCategoryViews(rawViews = {}) {
+    const views = {};
+    for (const category of PERSISTED_CATEGORIES) {
+        views[category] = normalizeCategoryView(category, rawViews?.[category]);
+    }
+    return views;
+}
+
+function getPersistedCategoryView(category) {
+    return normalizeCategoryView(category, persistedCategoryViews?.[category]);
+}
+
+function rememberCategoryView(category, view) {
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return { ...DEFAULT_CATEGORY_VIEW };
+    }
+    const normalized = normalizeCategoryView(category, view);
+    persistedCategoryViews = {
+        ...persistedCategoryViews,
+        [category]: normalized,
+    };
+    return normalized;
+}
+
+function rememberCurrentCategoryView(state = appStore.state) {
+    const category = String(state.activeCategory || "").trim();
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return { ...DEFAULT_CATEGORY_VIEW };
+    }
+    return rememberCategoryView(category, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+}
+
+function createCategoryHistoryEntry(category, view) {
+    const normalized = normalizeCategoryView(category, view);
+    return {
+        category,
+        folder: normalized.folder,
+        folderLabel: normalized.folderLabel,
+        page: normalized.page,
+    };
+}
+
+function isSameCategoryView(left, right) {
+    return left.folder === right.folder
+        && left.folderLabel === right.folderLabel
+        && left.page === right.page;
+}
+
+function normalizeCategoryNavigationState(category, value = {}, fallbackView) {
+    const safeCategory = PERSISTED_CATEGORIES.has(category)
+        ? category
+        : DEFAULT_ACTIVE_CATEGORY;
+    const fallbackEntry = createCategoryHistoryEntry(
+        safeCategory,
+        fallbackView || getPersistedCategoryView(safeCategory)
+    );
+    const rawHistory = Array.isArray(value.history)
+        ? value.history
+        : DEFAULT_CATEGORY_NAV_STATE.history;
+    const history = rawHistory.map((entry) => {
+        return createCategoryHistoryEntry(safeCategory, entry);
+    });
+    const nextHistory = history.length > 0 ? history : [fallbackEntry];
+    const rawIndex = Number.parseInt(String(value.index ?? ""), 10);
+    const index = Number.isFinite(rawIndex)
+        ? Math.max(0, Math.min(rawIndex, nextHistory.length - 1))
+        : nextHistory.length - 1;
+    return {
+        history: nextHistory,
+        index,
+    };
+}
+
+function createCategoryNavigationState(category, view) {
+    return normalizeCategoryNavigationState(category, {
+        history: [createCategoryHistoryEntry(category, view)],
+        index: 0,
+    }, view);
+}
+
+function getCategoryNavigationState(category, fallbackView) {
+    return normalizeCategoryNavigationState(
+        category,
+        categoryNavigationStates?.[category],
+        fallbackView
+    );
+}
+
+function rememberCategoryNavigationState(category, value, fallbackView) {
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return createCategoryNavigationState(DEFAULT_ACTIVE_CATEGORY);
+    }
+    const normalized = normalizeCategoryNavigationState(
+        category,
+        value,
+        fallbackView
+    );
+    categoryNavigationStates = {
+        ...categoryNavigationStates,
+        [category]: normalized,
+    };
+    return normalized;
+}
+
+function rememberCurrentCategoryNavigationState(state = appStore.state) {
+    const category = String(state.activeCategory || "").trim();
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return createCategoryNavigationState(DEFAULT_ACTIVE_CATEGORY);
+    }
+    return rememberCategoryNavigationState(category, {
+        history: state.navHistory,
+        index: state.navIndex,
+    }, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+}
+
+function syncCurrentCategoryNavigationEntry(state = appStore.state) {
+    const category = String(state.activeCategory || "").trim();
+    if (!PERSISTED_CATEGORIES.has(category)) {
+        return createCategoryNavigationState(DEFAULT_ACTIVE_CATEGORY);
+    }
+    const navState = getCategoryNavigationState(category, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+    const history = navState.history.slice();
+    history[navState.index] = createCategoryHistoryEntry(category, {
+        folder: state.activeFolder || "",
+        folderLabel: state.activeFolderLabel || "",
+        page: state.currentPage || 1,
+    });
+    return rememberCategoryNavigationState(category, {
+        history,
+        index: navState.index,
+    });
+}
+
+function loadPersistedUiState() {
+    try {
+        const raw = localStorage.getItem(UI_STATE_STORAGE_KEY) || "";
+        const parsed = raw ? JSON.parse(raw) : {};
+        return {
+            activeCategory: PERSISTED_CATEGORIES.has(parsed.activeCategory)
+                ? parsed.activeCategory
+                : DEFAULT_ACTIVE_CATEGORY,
+            sortOrder: PERSISTED_SORT_ORDERS.has(parsed.sortOrder)
+                ? parsed.sortOrder
+                : DEFAULT_SORT_ORDER,
+            cardSize: PERSISTED_CARD_SIZES.has(parsed.cardSize)
+                ? parsed.cardSize
+                : DEFAULT_CARD_SIZE,
+            folderTreeVisible: parsed.folderTreeVisible !== false,
+            categoryViews: buildPersistedCategoryViews(parsed.categoryViews),
+        };
+    } catch {
+        return {
+            activeCategory: DEFAULT_ACTIVE_CATEGORY,
+            sortOrder: DEFAULT_SORT_ORDER,
+            cardSize: DEFAULT_CARD_SIZE,
+            folderTreeVisible: true,
+            categoryViews: buildPersistedCategoryViews(),
+        };
+    }
+}
+
+function persistUiState(state = appStore.state) {
+    try {
+        const category = String(
+            state.activeCategory || DEFAULT_ACTIVE_CATEGORY
+        ).trim();
+        const nextCategoryViews = PERSISTED_CATEGORIES.has(category)
+            ? {
+                ...persistedCategoryViews,
+                [category]: normalizeCategoryView(category, {
+                    folder: state.activeFolder || "",
+                    folderLabel: state.activeFolderLabel || "",
+                    page: state.currentPage || 1,
+                }),
+            }
+            : persistedCategoryViews;
+        persistedCategoryViews = buildPersistedCategoryViews(nextCategoryViews);
+        localStorage.setItem(UI_STATE_STORAGE_KEY, JSON.stringify({
+            activeCategory: category || DEFAULT_ACTIVE_CATEGORY,
+            sortOrder: String(state.sortOrder || DEFAULT_SORT_ORDER),
+            cardSize: String(state.cardSize || DEFAULT_CARD_SIZE),
+            folderTreeVisible: state.folderTreeVisible === true,
+            categoryViews: persistedCategoryViews,
+        }));
+    } catch {
+        // ignore localStorage write errors
+    }
+}
+
+const initialUiState = loadPersistedUiState();
+const initialCategoryFromUrl = readCategoryFromUrl();
+if (initialCategoryFromUrl) {
+    initialUiState.activeCategory = initialCategoryFromUrl;
+}
+persistedCategoryViews = initialUiState.categoryViews;
+const initialCategoryView = getPersistedCategoryView(
+    initialUiState.activeCategory
+);
+const initialCategoryNavState = createCategoryNavigationState(
+    initialUiState.activeCategory,
+    initialCategoryView
+);
+categoryNavigationStates = {
+    [initialUiState.activeCategory]: initialCategoryNavState,
+};
+appStore.state.activeCategory = initialUiState.activeCategory;
+appStore.state.sortOrder = initialUiState.sortOrder;
+appStore.state.cardSize = initialUiState.cardSize;
+appStore.state.folderTreeVisible = initialUiState.folderTreeVisible;
+appStore.state.activeFolder = initialCategoryView.folder;
+appStore.state.activeFolderLabel = initialCategoryView.folderLabel;
+appStore.state.currentPage = initialCategoryView.page;
+appStore.state.navHistory = initialCategoryNavState.history;
+appStore.state.navIndex = initialCategoryNavState.index;
+appStore.state.dbTaskBusy = false;
+syncCategoryToUrl(appStore.state.activeCategory, { replace: true });
+
+window.addEventListener("message", (event) => {
+    if (!isTrustedParentMessage(event)) {
+        return;
+    }
+    const payload = event?.data;
+    if (!payload || typeof payload !== "object") {
+        return;
+    }
+    if (payload.type === "xdatahub:theme-mode") {
+        applyThemeV2(payload.theme_mode, { notifyHost: false });
+        return;
+    }
+    if (payload.type === "xdatahub:ui-locale") {
+        setLocale(payload.locale);
+        return;
+    }
+    if (
+        payload.type === "xdatahub:lock-state-dirty"
+        || payload.type === "xdatahub:interrupt-requested"
+    ) {
+        scheduleLockStateRefresh(0);
+    }
+});
+
+// ------------------------------------------------------------------
+// 将带修饰键的 keydown 事件转发给父页面，
+// 供父页面全局快捷键监听器匿配。
+// ------------------------------------------------------------------
+document.addEventListener("keydown", (event) => {
+    if (event.repeat) {
+        return;
+    }
+    if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        return;
+    }
+    if (
+        !window.parent
+        || window.parent === window
+    ) {
+        return;
+    }
+    window.parent.postMessage(
+        {
+            type: "xdatahub:iframe-keydown",
+            key: event.key,
+            ctrlKey: event.ctrlKey,
+            altKey: event.altKey,
+            shiftKey: event.shiftKey,
+            metaKey: event.metaKey,
+        },
+        getParentTargetOrigin()
+    );
+});
+
+function scheduleMainScrollReset() {
+    const apply = () => {
+        const mainScroll = document.querySelector(".main-scroll");
+        if (mainScroll instanceof HTMLElement) {
+            mainScroll.scrollTop = 0;
+        }
+    };
+
+    apply();
+    requestAnimationFrame(apply);
+    requestAnimationFrame(() => requestAnimationFrame(apply));
+}
+
+document.addEventListener("xdh:reset-main-scroll", () => {
+    scheduleMainScrollReset();
+});
+
+document.addEventListener("xdh:switch-category", (event) => {
+    const category = String(event?.detail?.category || "").trim();
+    if (!category) {
+        return;
+    }
+    void applyPersistedCategoryView(category, {
+        pushNav: true,
+        syncUrl: true,
+        resetSearch: true,
+    });
+});
+
+async function loadAppSettings() {
+    try {
+        const response = await fetch("/xz3r0/xdatahub/settings");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        appStore.state.xdatahubSettings = {
+            ...appStore.state.xdatahubSettings,
+            ...(payload.settings || {}),
+        };
+    } catch (error) {
+        console.warn("[xdh-v2] Failed to load settings", error);
+    }
+}
+
+function applyThemeV2(mode, options = {}) {
+    const normalized = normalizeThemeMode(mode);
+    if (document.body.dataset.theme === normalized) {
+        return;
+    }
+    document.body.dataset.theme = normalized;
+    if (options.notifyHost !== false) {
+        postThemeModeToHost(normalized);
+    }
+}
+
+function categoryToMediaType(category) {
+    return ["image", "video", "audio"].includes(category)
+        ? category
+        : null;
+}
+
+function getSortRequest(sortOrder) {
+    switch (String(sortOrder || DEFAULT_SORT_ORDER)) {
+        case "date-asc":
+            return { sortBy: "mtime", sortOrder: "asc" };
+        case "name-asc":
+            return { sortBy: "name", sortOrder: "asc" };
+        case "name-desc":
+            return { sortBy: "name", sortOrder: "desc" };
+        case "date-desc":
+        default:
+            return { sortBy: "mtime", sortOrder: "desc" };
+    }
+}
+
+function normalizeItemMtime(value) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+    }
+
+    const text = String(value || "").trim();
+    if (!text) {
+        return 0;
+    }
+
+    const numeric = Number(text);
+    if (Number.isFinite(numeric)) {
+        return numeric;
+    }
+
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? parsed / 1000 : 0;
+}
+
+function extractItemMtime(item) {
+    return normalizeItemMtime(
+        item?.extra?.mtime ?? item?.mtime ?? item?.saved_at
+    );
+}
+
+function normalizeItemSize(value) {
+    const size = Number(value);
+    return Number.isFinite(size) ? size : 0;
+}
+
+async function runMenuAction(action) {
+    const category = String(appStore.state.activeCategory || "");
+    const mediaType = categoryToMediaType(category);
+    const canBlockDbTask = !!mediaType || category === "lora";
+
+    if (action === "clean-invalid") {
+        if (canBlockDbTask) {
+            appStore.state.dbTaskBusy = true;
+        }
+        try {
+            if (mediaType) {
+                await apiPost("/xz3r0/xdatahub/media/cleanup-invalid", {
+                    media_type: mediaType,
+                });
+            } else if (category === "lora") {
+                await apiPost("/xz3r0/xdatahub/loras/cleanup-invalid", {});
+            } else {
+                appStore.state.refreshTrigger = Date.now();
+                return;
+            }
+            banner.success(t("nav.banner.cleanup_ok"));
+            appStore.state.refreshTrigger = Date.now();
+        } catch {
+            if (canBlockDbTask) {
+                appStore.state.dbTaskBusy = false;
+            }
+            banner.error(t("nav.banner.cleanup_fail"));
+        }
+        return;
+    }
+
+    if (action === "clean-index") {
+        if (canBlockDbTask) {
+            appStore.state.dbTaskBusy = true;
+        }
+        try {
+            if (mediaType) {
+                await apiPost("/xz3r0/xdatahub/media/rebuild", {
+                    media_type: mediaType,
+                });
+            } else if (category === "lora") {
+                await apiPost("/xz3r0/xdatahub/loras/rebuild", {});
+            } else {
+                appStore.state.refreshTrigger = Date.now();
+                return;
+            }
+            appStore.state.activeFolder = "";
+            appStore.state.currentPage = 1;
+            banner.success(t("nav.banner.rebuild_ok"));
+            appStore.state.refreshTrigger = Date.now();
+        } catch {
+            if (canBlockDbTask) {
+                appStore.state.dbTaskBusy = false;
+            }
+            banner.error(t("nav.banner.rebuild_fail"));
+        }
+        return;
+    }
+
+    if (action === "clean-data") {
+        if (mediaType) {
+            appStore.state.dbTaskBusy = true;
+        }
+        try {
+            if (mediaType) {
+                await apiPost("/xz3r0/xdatahub/media/clear", {
+                    media_type: mediaType,
+                });
+                appStore.state.activeFolder = "";
+                appStore.state.currentPage = 1;
+                appStore.state.refreshTrigger = Date.now();
+            }
+        } catch {
+            if (mediaType) {
+                appStore.state.dbTaskBusy = false;
+            }
+            banner.error(t("error.save_fail"));
+        }
+    }
+
+    if (action === "open-db-folder") {
+        try {
+            const res = await apiPost(
+                "/xz3r0/xdatahub/open-db-folder", {}
+            );
+            if (res?.status === "unsupported") {
+                banner.warn(t("nav.banner.open_db_unsupported"));
+            } else {
+                banner.success(t("nav.banner.open_db_folder_ok"));
+            }
+        } catch {
+            banner.error(t("nav.banner.open_db_folder_fail"));
+        }
+    }
+}
+
+function scheduleLockStateRefresh(delay = LOCK_EVENT_REFRESH_DEBOUNCE_MS) {
+    if (lockRefreshTimer) {
+        window.clearTimeout(lockRefreshTimer);
+        lockRefreshTimer = 0;
+    }
+
+    if (delay <= 0) {
+        void refreshLockState();
+        return;
+    }
+
+    lockRefreshTimer = window.setTimeout(() => {
+        lockRefreshTimer = 0;
+        void refreshLockState();
+    }, delay);
+}
+
+async function refreshLockState() {
+    if (lockRefreshInFlight) {
+        lockRefreshQueued = true;
+        return lockRefreshInFlight;
+    }
+
+    lockRefreshInFlight = (async () => {
+        try {
+            const res = await loadLockStatus();
+            setLockState(res);
+            hasShownLockStatusError = false;
+        } catch (e) {
+            console.warn("[xdh-v2] Failed to refresh lock state", e);
+            if (!hasShownLockStatusError) {
+                hasShownLockStatusError = true;
+                banner.warn(t("nav.banner.lock_status_fail"));
+            }
+        } finally {
+            lockRefreshInFlight = null;
+            if (lockRefreshQueued) {
+                lockRefreshQueued = false;
+                scheduleLockStateRefresh(LOCK_EVENT_REFRESH_DEBOUNCE_MS);
+            }
+        }
+    })();
+
+    return lockRefreshInFlight;
+}
+
+function normalizeLockState(lock = {}) {
+    return {
+        state: lock.state || "IDLE",
+        readonly: !!lock.readonly,
+        cooldown_ms: lock.cooldown_ms || 0,
+        is_executing: !!lock.is_executing,
+        queue_remaining: lock.queue_remaining || 0,
+        queue_running: lock.queue_running || 0,
+        queue_pending: lock.queue_pending || 0,
+        interrupt_requested: !!lock.interrupt_requested,
+        last_event: lock.last_event || "",
+    };
+}
+
+function isSameLockState(left = {}, right = {}) {
+    return left.state === right.state
+        && left.readonly === right.readonly
+        && left.cooldown_ms === right.cooldown_ms
+        && left.is_executing === right.is_executing
+        && left.queue_remaining === right.queue_remaining
+        && left.queue_running === right.queue_running
+        && left.queue_pending === right.queue_pending
+        && left.interrupt_requested === right.interrupt_requested
+        && left.last_event === right.last_event;
+}
+
+function setLockState(lock) {
+    const next = normalizeLockState(lock);
+    const prev = normalizeLockState(appStore.state.lockState || {});
+    if (isSameLockState(prev, next)) {
+        return false;
+    }
+    appStore.state.lockState = next;
+    return true;
+}
+
+function buildStableFallbackId(item, category, scope) {
+    const stableParts = [
+        category,
+        scope,
+        item.path,
+        item.extra?.child_path,
+        item.extra?.media_ref,
+        item.media_ref,
+        item.ref,
+        item.title,
+        item.name,
+    ].map(value => String(value || "").trim()).filter(Boolean);
+
+    if (stableParts.length > 0) {
+        return stableParts.join("::");
+    }
+
+    try {
+        return [
+            String(category || "unknown"),
+            String(scope || "item"),
+            JSON.stringify(item),
+        ].join("::");
+    } catch {
+        return [
+            String(category || "unknown"),
+            String(scope || "item"),
+            "missing",
+        ].join("::");
+    }
+}
+
+/**
+ * Map a raw API item to the uniform card model:
+ * { id, name, type, thumbUrl, raw }
+ *
+ * Supports all three item shapes:
+ * - media  : item.id = "media:ref"  (image/video/audio)
+ * - lora   : item.media_ref          (from /loras)
+ * - record : item.id = "record:..." (history/favorites)
+ */
+function mapItem(item, category) {
+    const mtime = extractItemMtime(item);
+    const size = normalizeItemSize(item?.extra?.size ?? item?.size);
+
+    // ── Folder shape ─────────────────────────────────────
+    if (item.kind === "folder") {
+        return {
+            id: item.id || buildStableFallbackId(item, category, "folder"),
+            name: item.title || item.path || "Folder",
+            type: "folder",
+            thumbUrl: "icons/folder.svg",
+            mtime,
+            size,
+            previewable: false,
+            isFolder: true,
+            childPath: item.extra?.child_path || item.path || "",
+            raw: item,
+        };
+    }
+
+    // ── Lora shape ──────────────────────────────────────
+    if (category === "lora") {
+        const ref  = item.extra?.media_ref || item.media_ref || item.ref || "";
+        const name = item.title || item.name || ref || "Unnamed";
+        const thumbUrl = item.extra?.thumb_url || item.thumb_url || "";
+        return {
+            id: item.id || ref || buildStableFallbackId(item, category, "lora"),
+            name,
+            type: "lora",
+            thumbUrl,
+            mtime,
+            size,
+            previewable: !!(item.extra?.thumb_url || item.thumb_url),
+            raw: item,
+        };
+    }
+
+    // ── Record / Favorites shape ─────────────────────────
+    if (category === "history" || category === "favorites") {
+        const id = item.id || buildStableFallbackId(item, category, "record");
+        const name = item.title || id;
+        // Records don't have a thumb — use a placeholder
+        return {
+            id,
+            name,
+            type: "record",
+            thumbUrl: MOCK_THUMB,
+            mtime,
+            size,
+            previewable: false,
+            raw: item,
+        };
+    }
+
+    // ── Media shape (image / video / audio) ─────────────
+    const mediaType = item.kind || item.extra?.media_type || "image";
+    const id = item.id || buildStableFallbackId(item, category, mediaType);
+    const name = item.title || item.extra?.media_ref || id;
+    const ref  = item.extra?.media_ref || "";
+    const isMock = item.extra?.isMock;
+    const thumbUrl = isMock
+        ? MOCK_THUMB
+        : ref
+            ? buildMediaUrl(ref)
+            : MOCK_THUMB;
+    return {
+        id,
+        name,
+        type: mediaType,
+        thumbUrl,
+        mtime,
+        size,
+        previewable: item.previewable !== false,
+        raw: item,
+    };
+}
+
+appStore.subscribe((state, key) => {
+    if (
+        isApplyingCategoryView
+        || (key !== "navHistory" && key !== "navIndex")
+    ) {
+        return;
+    }
+    rememberCurrentCategoryNavigationState(state);
+});
+
+appStore.subscribe((state, key) => {
+    if (
+        isApplyingCategoryView
+        || (
+            key !== "activeFolder"
+            && key !== "activeFolderLabel"
+            && key !== "currentPage"
+        )
+    ) {
+        return;
+    }
+    syncCurrentCategoryNavigationEntry(state);
+});
+
+appStore.subscribe((state, key) => {
+    if (key !== "activeCategory") return;
+    if (isApplyingCategoryView) {
+        return;
+    }
+    if (state._navSkipPush) {
+        appStore.state._navSkipPush = false;
+    }
+});
+
+appStore.subscribe((state, key) => {
+    if (key !== "activeCategory") return;
+    if (isApplyingCategoryView) {
+        return;
+    }
+    syncCategoryToUrl(state.activeCategory);
+});
+
+window.addEventListener("hashchange", () => {
+    const category = readCategoryFromUrl();
+    if (!category || category === appStore.state.activeCategory) {
+        return;
+    }
+    void applyPersistedCategoryView(category, {
+        pushNav: true,
+        syncUrl: false,
+        resetSearch: false,
+    });
+});
+
+appStore.subscribe((state, key) => {
+    if (
+        isApplyingCategoryView
+        || state._navSkipPush
+        || (
+            key !== "activeFolder"
+            && key !== "activeFolderLabel"
+            && key !== "currentPage"
+        )
+    ) {
+        return;
+    }
+    rememberCurrentCategoryView(state);
+    syncCurrentCategoryNavigationEntry(state);
+    persistUiState(state);
+});
+
+appStore.subscribe((state, key) => {
+    if (
+        isApplyingCategoryView
+        || (
+            key !== "activeCategory"
+            && key !== "sortOrder"
+            && key !== "cardSize"
+            && key !== "folderTreeVisible"
+        )
+    ) {
+        return;
+    }
+    persistUiState(state);
+});
+
+// ── Data loader ──────────────────────────────────────────────────────────────
+const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
+let latestListLoadToken = 0;
+
+async function fetchCategory(category, page, folder, sortKey) {
+    const safePage = page || 1;
+    const safeFolder = folder || "";
+    const { sortBy, sortOrder } = getSortRequest(sortKey);
+    if (category === "lora") {
+        return loadLoraList(
+            safePage,
+            50,
+            safeFolder,
+            sortBy,
+            sortOrder
+        );
+    }
+    if (category === "history") return loadRecords(safePage, 50);
+    if (category === "favorites") return loadFavorites(safePage, 50);
+    if (MEDIA_CATEGORIES.has(category)) {
+        return loadMediaList(
+            category,
+            safePage,
+            50,
+            safeFolder,
+            sortBy,
+            sortOrder
+        );
+    }
+    return { items: [], page: 1, total_pages: 1 };
+}
+
+async function doesCategoryFolderExist(category, folder, sortKey) {
+    const normalizedFolder = String(folder || "").trim();
+    if (!normalizedFolder || !DIRECTORY_VIEW_CATEGORIES.has(category)) {
+        return true;
+    }
+    let segments = normalizedFolder.split("/").filter(Boolean);
+    let parentFolder = "";
+    if (category === "lora" && segments[0] === "loras") {
+        segments = segments.slice(1);
+        parentFolder = "loras";
+    }
+    if (segments.length === 0) {
+        return true;
+    }
+    for (const segment of segments) {
+        const childFolder = parentFolder
+            ? `${parentFolder}/${segment}`
+            : segment;
+        try {
+            const res = await fetchCategory(
+                category,
+                1,
+                parentFolder,
+                sortKey
+            );
+            const rawItems = Array.isArray(res?.items)
+                ? res.items
+                : Array.isArray(res?.data)
+                    ? res.data
+                    : [];
+            const exists = rawItems.some((item) => {
+                if (item?.kind !== "folder") {
+                    return false;
+                }
+                const childPath = String(
+                    item?.extra?.child_path || item?.path || ""
+                ).trim();
+                return childPath === childFolder;
+            });
+            if (!exists) {
+                return false;
+            }
+        } catch {
+            return true;
+        }
+        parentFolder = childFolder;
+    }
+    return true;
+}
+
+async function resolvePersistedCategoryView(category, sortKey, view) {
+    const normalized = normalizeCategoryView(category, view);
+    if (!normalized.folder || !DIRECTORY_VIEW_CATEGORIES.has(category)) {
+        return normalized;
+    }
+    const exists = await doesCategoryFolderExist(
+        category,
+        normalized.folder,
+        sortKey
+    );
+    if (exists) {
+        return normalized;
+    }
+    return normalizeCategoryView(category, DEFAULT_CATEGORY_VIEW);
+}
+
+async function applyPersistedCategoryView(category, options = {}) {
+    const nextCategory = String(category || "").trim();
+    if (!PERSISTED_CATEGORIES.has(nextCategory)) {
+        return;
+    }
+    const token = ++categoryViewRestoreToken;
+    const currentCategory = String(
+        appStore.state.activeCategory || DEFAULT_ACTIVE_CATEGORY
+    ).trim();
+    if (options.rememberCurrent !== false) {
+        rememberCurrentCategoryView();
+        rememberCurrentCategoryNavigationState();
+    }
+    const requestedView = normalizeCategoryView(
+        nextCategory,
+        options.view || getPersistedCategoryView(nextCategory)
+    );
+    let nextView = requestedView;
+    let resetCategoryNavigation = false;
+    if (options.validate !== false) {
+        nextView = await resolvePersistedCategoryView(
+            nextCategory,
+            appStore.state.sortOrder || DEFAULT_SORT_ORDER,
+            nextView
+        );
+        if (token !== categoryViewRestoreToken) {
+            return;
+        }
+        resetCategoryNavigation = !isSameCategoryView(requestedView, nextView);
+    }
+    rememberCategoryView(nextCategory, nextView);
+    const nextNavState = resetCategoryNavigation
+        ? createCategoryNavigationState(nextCategory, nextView)
+        : getCategoryNavigationState(nextCategory, nextView);
+    rememberCategoryNavigationState(nextCategory, nextNavState, nextView);
+    if (options.resetSearch !== false) {
+        appStore.state.searchQuery = "";
+    }
+    document.dispatchEvent(
+        new CustomEvent("xdh:reset-main-scroll")
+    );
+    isApplyingCategoryView = true;
+    appStore.state._categoryViewSyncing = true;
+    appStore.state.navHistory = nextNavState.history;
+    appStore.state.navIndex = nextNavState.index;
+    appStore.state.activeCategory = nextCategory;
+    appStore.state.activeFolder = nextView.folder;
+    appStore.state.activeFolderLabel = nextView.folderLabel;
+    appStore.state.currentPage = nextView.page;
+    appStore.state._categoryViewSyncing = false;
+    isApplyingCategoryView = false;
+    if (currentCategory !== nextCategory) {
+        rememberCategoryNavigationState(nextCategory, nextNavState, nextView);
+    }
+    if (options.syncUrl !== false) {
+        syncCategoryToUrl(nextCategory, {
+            replace: options.replaceUrl === true,
+        });
+    }
+    persistUiState();
+    appStore.state.categoryViewToken = Date.now();
+}
+
+appStore.subscribe(async (state, key) => {
+    if (
+        (isApplyingCategoryView && key !== "categoryViewToken")
+        || (
+            key !== "activeCategory"
+            && key !== "activeFolder"
+            && key !== "currentPage"
+            && key !== "sortOrder"
+            && key !== "categoryViewToken"
+            && key !== "refreshTrigger"
+        )
+    ) {
+        return;
+    }
+
+    const requestToken = ++latestListLoadToken;
+    const categorySnapshot = state.activeCategory;
+    const folderSnapshot = state.activeFolder || "";
+    const pageSnapshot = state.currentPage || 1;
+    const sortSnapshot = state.sortOrder || DEFAULT_SORT_ORDER;
+
+    appStore.state.isLoading = true;
+    appStore.state.loadError = "";
+    const shouldResetSelection = key !== "currentPage";
+    if (
+        shouldResetSelection
+        && (appStore.state.selectedItems || []).length > 0
+    ) {
+        appStore.state.selectedItems = [];
+    }
+    try {
+        const res = await fetchCategory(
+            categorySnapshot,
+            pageSnapshot,
+            folderSnapshot,
+            sortSnapshot
+        );
+        if (requestToken !== latestListLoadToken) {
+            return;
+        }
+        const raw = res.items || res.data || [];
+        appStore.state.mediaList = raw.map(
+            item => mapItem(item, categorySnapshot)
+        );
+        appStore.state.loadError = "";
+        appStore.state.currentPage = res.page        || 1;
+        appStore.state.totalPages  = res.total_pages || 1;
+        if (res.lock_state) {
+            setLockState({
+                ...appStore.state.lockState,
+                ...res.lock_state,
+            });
+        }
+    } catch (e) {
+        if (requestToken !== latestListLoadToken) {
+            return;
+        }
+        console.error("[xdh-v2] Failed to load list", e);
+        appStore.state.mediaList = [];
+        appStore.state.totalPages = 1;
+        appStore.state.loadError = t("error.load_fail");
+        banner.error(t("error.load_fail"));
+    } finally {
+        if (key === "refreshTrigger") {
+            appStore.state.dbTaskBusy = false;
+        }
+        if (requestToken !== latestListLoadToken) {
+            return;
+        }
+        appStore.state.isLoading = false;
+    }
+});
+
+document.addEventListener("xdh:menu-action", (event) => {
+    const action = event?.detail?.action;
+    if (!action) return;
+    void runMenuAction(String(action));
+});
+
+// ── 主题响应：xdatahubSettings.theme_mode 变化时即时更新 body dataset ──────
+appStore.subscribe((state, key) => {
+    if (key !== "xdatahubSettings") return;
+    applyThemeV2(state.xdatahubSettings?.theme_mode || "dark");
+    updateExecOverlay();
+});
+
+appStore.subscribe((state, key) => {
+    if (key === "lockState" || key === "dbTaskBusy") {
+        updateExecOverlay();
+    }
+});
+
+// ── 执行覆盖层（Task 5）────────────────────────────────────────────────────
+const _execOverlay = (() => {
+    const el = document.createElement("div");
+    el.id = "xdh-exec-overlay";
+    Object.assign(el.style, {
+        position: "fixed",
+        inset: "0",
+        zIndex: "4500",
+        background: "color-mix(in srgb, var(--xdh-color-background, #121212) 86%, transparent)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "all",
+        userSelect: "none",
+    });
+    const label = document.createElement("div");
+    label.id = "xdh-exec-overlay-label";
+    Object.assign(label.style, {
+        color: "var(--xdh-color-text-primary, #f0f0f0)",
+        fontSize: "15px",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        fontWeight: "500",
+        letterSpacing: "0.03em",
+        textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+        padding: "12px 24px",
+        background: "color-mix(in srgb, var(--xdh-color-surface-2, #333) 95%, transparent)",
+        border: "1px solid var(--xdh-color-border, #2e2e2e)",
+        borderRadius: "8px",
+    });
+    el.appendChild(label);
+    return el;
+})();
+
+function updateExecOverlay() {
+    // 仅在嵌入 iframe 模式下显示——直接在浏览器打开时不产生遮罩
+    if (window.parent === window) {
+        return;
+    }
+    const settings = appStore.state.xdatahubSettings || {};
+    const lock = appStore.state.lockState || {};
+    const enabled = settings.disable_interaction_while_running !== false;
+    const running = !!lock.is_executing || !!appStore.state.dbTaskBusy;
+    if (enabled && running) {
+        const label = _execOverlay.querySelector("#xdh-exec-overlay-label");
+        if (label) label.textContent = t("exec.overlay.running");
+        if (!_execOverlay.parentNode) {
+            document.body.appendChild(_execOverlay);
+        }
+    } else {
+        _execOverlay.parentNode?.removeChild(_execOverlay);
+    }
+}
+
+// Boot: trigger initial data load after sidebar is ready
+customElements.whenDefined("xdh-sidebar-filter").then(async () => {
+    await loadAppSettings();
+    await applyPersistedCategoryView(appStore.state.activeCategory, {
+        pushNav: false,
+        syncUrl: false,
+        resetSearch: false,
+        rememberCurrent: false,
+        replaceUrl: true,
+    });
+});
+
+refreshLockState();
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        scheduleLockStateRefresh(0);
+    }
+});
+window.setInterval(() => {
+    if (document.hidden) {
+        return;
+    }
+    scheduleLockStateRefresh();
+}, LOCK_FALLBACK_POLL_INTERVAL_MS);

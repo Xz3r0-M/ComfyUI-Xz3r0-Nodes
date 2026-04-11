@@ -1,8 +1,8 @@
 """
-Latent保存节点模块
+Latent 保存节点模块
 =================
 
-这个模块包含Latent保存相关的节点。
+这个模块包含 Latent 保存相关的节点。
 """
 
 import json
@@ -38,39 +38,40 @@ except ImportError:
 
 class XLatentSave(io.ComfyNode):
     """
-    XLatentSave Latent保存节点
+    XLatentSave Latent 保存节点
 
-    提供Latent保存功能,支持自定义文件名、子文件夹、日期时间标识符和安全防护。
+    提供 Latent 保存功能
+    支持自定义文件名、子文件夹、日期时间标识符和安全防护。
 
-    功能:
-        - 保存Latent到ComfyUI默认输出目录
-        - 输出Latent端口可以传递到其他节点
+    功能：
+        - 保存 Latent 到 ComfyUI 默认输出目录
+        - 输出 Latent 端口可以传递到其他节点
         - 支持自定义文件名和子文件夹
-        - 支持日期时间标识符(%Y%, %m%, %d%, %H%, %M%, %S%)
-        - 自动检测同名文件并添加序列号(从00001开始)
+        - 支持日期时间标识符 (%Y%, %m%, %d%, %H%, %M%, %S%)
+        - 自动检测同名文件并添加序列号 (从 00001 开始)
         - 仅支持单级子文件夹创建
-        - 安全防护(防止路径遍历攻击,禁用路径分隔符)
-        - 输出相对路径(不泄露绝对路径)
+        - 安全防护 (防止路径遍历攻击，禁用路径分隔符)
+        - 输出相对路径 (不泄露绝对路径)
         - 支持元数据保存
 
-    输入:
-        latent: Latent张量 (LATENT)
+    输入：
+        latent: Latent 张量 (LATENT)
         filename_prefix: 文件名前缀 (STRING)
         subfolder: 子文件夹名称 (STRING)
 
-    输出:
-        latent: 原始Latent(透传)
+    输出：
+        latent: 原始 Latent(透传)
         save_path: 保存的相对路径 (STRING)
 
-    使用示例:
+    使用示例：
         filename_prefix="MyLatent_%Y%m%d", subfolder="Latents"
-        输出: latent(原图), save_path="output/Latents/MyLatent_20260114.latent"
+        输出：latent(原图), save_path="output/Latents/MyLatent_20260114.latent"
 
-    元数据说明:
-        - 节点自动接收ComfyUI注入的隐藏参数(prompt和extra_pnginfo)
-        - prompt: 包含完整的工作流提示词JSON数据
+    元数据说明：
+        - 节点自动接收 ComfyUI 注入的隐藏参数 (prompt 和 extra_pnginfo)
+        - prompt: 包含完整的工作流提示词 JSON 数据
         - extra_pnginfo: 包含工作流结构、种子值、模型信息等额外元数据
-        - 元数据以SafeTensors格式嵌入latent文件
+        - 元数据以 SafeTensors 格式嵌入 latent 文件
     """
 
     OUTPUT_DIRECTORY_ERROR = "Unable to create output directory"
@@ -139,26 +140,26 @@ class XLatentSave(io.ComfyNode):
         subfolder: str = "Latents",
     ) -> io.NodeOutput:
         """
-        保存Latent到ComfyUI输出目录
+        保存 Latent 到 ComfyUI 输出目录
 
         Args:
-            latent: Latent字典,包含"samples"键
+            latent: Latent 字典，包含"samples"键
             filename_prefix: 文件名前缀
             subfolder: 子文件夹路径
 
         Returns:
-            NodeOutput: 包含原始Latent和保存的相对路径
+            NodeOutput: 包含原始 Latent 和保存的相对路径
 
         Raises:
-            RuntimeError: 当ComfyUI环境不可用时
+            RuntimeError: 当 ComfyUI 环境不可用时
         """
-        # 检查ComfyUI环境是否可用
+        # 检查 ComfyUI 环境是否可用
         if not COMFYUI_AVAILABLE:
             raise RuntimeError(
                 "ComfyUI environment not available, cannot save latent files"
             )
 
-        # 验证latent结构
+        # 验证 latent 结构
         if not isinstance(latent, dict):
             raise ValueError(
                 f"Expected latent to be dict, got {type(latent).__name__}"
@@ -171,7 +172,7 @@ class XLatentSave(io.ComfyNode):
                 f"Latent samples must be torch.Tensor, "
                 f"got {type(samples).__name__}"
             )
-        # 支持4D图像latent [B,C,H,W] 和 5D视频latent [B,C,T,H,W]
+        # 支持 4D 图像 latent [B,C,H,W] 和 5D 视频 latent [B,C,T,H,W]
         if samples.dim() == 4:
             # 图像 latent: [B, C, H, W]
             pass
@@ -184,7 +185,7 @@ class XLatentSave(io.ComfyNode):
                 f"or 5D [B,C,T,H,W] (video), got {samples.dim()}D"
             )
 
-        # 获取ComfyUI默认输出目录
+        # 获取 ComfyUI 默认输出目录
         output_dir = cls._get_output_directory()
 
         # 处理日期时间标识符和安全过滤
@@ -197,7 +198,7 @@ class XLatentSave(io.ComfyNode):
         # 创建完整保存路径
         save_dir = resolve_output_subpath(output_dir, safe_subfolder)
 
-        # 创建目录(仅支持单级目录)
+        # 创建目录 (仅支持单级目录)
         try:
             save_dir.mkdir(exist_ok=True)
         except OSError as exc:
@@ -206,7 +207,7 @@ class XLatentSave(io.ComfyNode):
         # 生成文件名
         base_filename = safe_filename_prefix
 
-        # 检测同名文件并添加序列号(从00001开始)
+        # 检测同名文件并添加序列号 (从 00001 开始)
         try:
             final_filename = ensure_unique_filename(
                 save_dir,
@@ -221,25 +222,25 @@ class XLatentSave(io.ComfyNode):
             cls.hidden.prompt, cls.hidden.extra_pnginfo
         )
 
-        # 保存Latent
+        # 保存 Latent
         save_path = resolve_output_subpath(
             output_dir,
             Path(safe_subfolder) / final_filename,
         )
 
-        # 准备latent数据
+        # 准备 latent 数据
         latent_tensor = latent["samples"].contiguous()
         output = {
             "latent_tensor": latent_tensor,
             "latent_format_version_0": torch.tensor([]),
         }
 
-        # 保存可选键（如noise_mask, batch_index, type等）
+        # 保存可选键（如 noise_mask, batch_index, type 等）
         for key in ["noise_mask", "batch_index", "type"]:
             if key in latent:
                 output[key] = latent[key]
 
-        # 使用comfy.utils保存latent(支持元数据)
+        # 使用 comfy.utils 保存 latent(支持元数据)
         try:
             comfy.utils.save_torch_file(
                 output,
@@ -264,7 +265,7 @@ class XLatentSave(io.ComfyNode):
             extra_pnginfo: 额外的元数据
 
         Returns:
-            字典格式的元数据或None
+            字典格式的元数据或 None
         """
         # 检查是否有元数据
         if prompt is None and extra_pnginfo is None:
@@ -273,7 +274,7 @@ class XLatentSave(io.ComfyNode):
         # 创建元数据字典
         metadata = {}
 
-        # 添加prompt元数据
+        # 添加 prompt 元数据
         if prompt is not None:
             metadata["prompt"] = json.dumps(prompt)
 
@@ -287,7 +288,7 @@ class XLatentSave(io.ComfyNode):
     @classmethod
     def _get_output_directory(cls) -> Path:
         """
-        获取ComfyUI默认输出目录
+        获取 ComfyUI 默认输出目录
 
         Returns:
             输出目录路径
