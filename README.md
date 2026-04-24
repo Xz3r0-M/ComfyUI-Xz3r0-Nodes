@@ -7,14 +7,15 @@
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
 ![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
 
+## For non-Chinese users - Please use web translation 🌍
 
 **如果这个项目对您有帮助，可以给个星标⭐或者分享给其他人！**
 
 [📜 点击查看更新日志 | Click to view the changelog](Changelog.md)
 
-</div>
 
----
+
+</div>
 
 ## 📖 项目简介
 
@@ -24,12 +25,6 @@
 
 - 🌍 多语言界面 - 节点目前支持 🇨🇳 `中文` 🇬🇧 `English` 界面
 - 🚫 安全处理 - 节点中可输入的文件名和路径已做防遍历攻击处理，请使用文字，不要使用日期时间标识符以外的特殊符号！
-
-### ✨ 当前项目节点和工具数量
-
-- 🎁 自定义节点（数量总计：`24`）
-
-- 🧩 网页扩展与工具（数量总计：`5`）
 
 ---
 
