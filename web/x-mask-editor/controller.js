@@ -61,7 +61,7 @@ export class XMaskEditorController {
         this.paintColor = "#000000";
         this.paintOpacity = 1;
         this.maskBrushColor = "black";
-        this.maskOpacity = 0.5;
+        this.maskOpacity = 0.75;
         this.rotationQuarterTurns = 0;
         this.flipX = false;
         this.flipY = false;

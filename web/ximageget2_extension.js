@@ -1365,8 +1365,8 @@ function getMaskEditorTexts() {
             key("invert_color_tip"),
             "Swap black and white"
         ),
-        paintOpacity: t(key("paint_opacity"), "Color Preview Opacity"),
-        maskOpacity: t(key("mask_opacity"), "Mask Preview Opacity"),
+        paintOpacity: t(key("paint_opacity"), "Color Opacity"),
+        maskOpacity: t(key("mask_opacity"), "Mask Opacity"),
         hardness: t(key("hardness"), "Edge Hardness"),
         showPaint: t(key("show_paint"), "Visible"),
         showPaintTip: t(key("show_paint_tip"), "Show color layer"),
