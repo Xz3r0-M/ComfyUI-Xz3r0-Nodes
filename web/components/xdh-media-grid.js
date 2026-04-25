@@ -407,7 +407,6 @@ function thumbFor(item, previewState = null) {
         : extra.mtime
         ? `<div class="card-meta-overlay">`
             + `<span class="meta-date">${formatDate(extra.mtime)}</span>`
-            + `<span class="meta-dim"></span>`
             + `</div>`
         : "";
     switch (item.type) {
@@ -822,43 +821,6 @@ export class XdhMediaGrid extends BaseElement {
         );
 
         this._syncCardSize();
-        this._initDimensions();
-    }
-
-    /** Read real image/video dimensions via fullUrl and fill .meta-dim spans */
-    _initDimensions() {
-        this.$$(".media-card:not(.is-folder)").forEach(card => {
-            const dimSpan = card.querySelector(".meta-dim");
-            if (!dimSpan) return;
-            const item = this._itemMap?.get(card.dataset.id);
-            const probeUrl = item?.fullUrl || "";
-            if (!probeUrl) return;
-            const set = (w, h) => {
-                if (!w || !h) return;
-                const dim = `${w}×${h}`;
-                dimSpan.textContent = dim;
-                card.dataset.dim = dim;
-            };
-            if (item.type === "video") {
-                const vid = document.createElement("video");
-                vid.preload = "metadata";
-                vid.muted = true;
-                const onMeta = () => {
-                    set(vid.videoWidth, vid.videoHeight);
-                    vid.src = "";
-                    vid.load();
-                };
-                vid.addEventListener(
-                    "loadedmetadata", onMeta, { once: true },
-                );
-                vid.src = probeUrl;
-            } else {
-                const probe = new Image();
-                probe.onload = () =>
-                    set(probe.naturalWidth, probe.naturalHeight);
-                probe.src = probeUrl;
-            }
-        });
     }
 
     /** 只渲染卡片列表 HTML（.grid 内部），不含 <style> */

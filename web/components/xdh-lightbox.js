@@ -313,6 +313,7 @@ export class XdhLightbox extends BaseElement {
         this._navigation = null;
         this._navigationIndex = -1;
         this._activeMedia = null;
+        this._dimension = "";
         this._audioState = null;
         this._mainScrollSnapshot = null;
         this._imageScale = IMAGE_ZOOM_MIN;
@@ -384,6 +385,7 @@ export class XdhLightbox extends BaseElement {
         const stage = this.$(".fs-stage");
         const titleEl = this.$(".fs-panel-title");
         const counterEl = this.$(".fs-panel-counter");
+        const dimensionEl = this.$(".fs-dimension");
         const bottomPanel = this.$(".fs-bottom-panel");
         const prevBtn = this.$(".fs-prev-edge-btn");
         const nextBtn = this.$(".fs-next-edge-btn");
@@ -414,6 +416,9 @@ export class XdhLightbox extends BaseElement {
                     total,
                 })
                 : "";
+        }
+        if (dimensionEl) {
+            dimensionEl.textContent = this._dimension || "";
         }
         if (bottomPanel) {
             const hasNav = !!this._navigation && this._navigation.items.length > 1;
@@ -460,6 +465,7 @@ export class XdhLightbox extends BaseElement {
         const safeId = String(item.id || "").replace(/"/g, "&quot;");
         const safeName = String(item.name || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const activeClass = isActive ? "is-active" : "";
+        const isText = item.type === "text";
         if (isAudio) {
             return `
                 <button class="fs-nav-item ${activeClass}" type="button"
@@ -467,6 +473,17 @@ export class XdhLightbox extends BaseElement {
                         title="${safeName}">
                     <div class="fs-nav-thumb audio-thumb">
                         <span class="audio-icon">${icon("audio-lines", 24)}</span>
+                    </div>
+                    <div class="fs-nav-name">${safeName}</div>
+                </button>`;
+        }
+        if (isText) {
+            return `
+                <button class="fs-nav-item ${activeClass}" type="button"
+                        data-nav-index="${index}" data-nav-id="${safeId}"
+                        title="${safeName}">
+                    <div class="fs-nav-thumb text-thumb">
+                        <span class="text-icon">${icon("file", 24)}</span>
                     </div>
                     <div class="fs-nav-name">${safeName}</div>
                 </button>`;
@@ -1573,6 +1590,36 @@ export class XdhLightbox extends BaseElement {
         return image;
     }
 
+    _probeDimension(mediaNode, mediaType) {
+        if (!mediaNode) {
+            return;
+        }
+        if (mediaNode instanceof HTMLImageElement) {
+            if (mediaNode.complete && mediaNode.naturalWidth > 0) {
+                this._dimension = `${mediaNode.naturalWidth} × ${mediaNode.naturalHeight}`;
+                return;
+            }
+            mediaNode.addEventListener("load", () => {
+                if (mediaNode !== this._activeMedia) return;
+                this._dimension = `${mediaNode.naturalWidth} × ${mediaNode.naturalHeight}`;
+                this._syncChrome();
+            }, { once: true });
+            return;
+        }
+        if (mediaNode instanceof HTMLVideoElement) {
+            mediaNode.addEventListener("loadedmetadata", () => {
+                if (mediaNode !== this._activeMedia) return;
+                const w = mediaNode.videoWidth;
+                const h = mediaNode.videoHeight;
+                if (w > 0 && h > 0) {
+                    this._dimension = `${w} × ${h}`;
+                    this._syncChrome();
+                }
+            }, { once: true });
+            return;
+        }
+    }
+
     _startPlayback() {
         const playableMedia = this._getPlayableMediaElement();
         if (!(playableMedia instanceof HTMLVideoElement)
@@ -1629,6 +1676,7 @@ export class XdhLightbox extends BaseElement {
         this._audioState = mediaNode?.__xdhAudioState || null;
         this._resetImageZoom();
         this._syncAudioState(this._audioState);
+        this._probeDimension(mediaNode, mediaType);
         this._syncChrome();
 
         if (isStageFullscreen(stage)) {
@@ -1661,6 +1709,7 @@ export class XdhLightbox extends BaseElement {
         this._audioState = null;
         this._resetImageZoom();
         this._activeMedia = null;
+        this._dimension = "";
         const stage = this.$(".fs-stage");
         const mediaHost = this.$(".fs-media");
         if (stage) {
@@ -2353,13 +2402,31 @@ export class XdhLightbox extends BaseElement {
                     padding: 10px 16px;
                 }
 
-                /* Panel Header - Title & Counter */
+                /* Panel Header - Dimension + Title + Counter */
                 .fs-panel-header {
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     gap: 12px;
                     width: 100%;
+                }
+
+                .fs-dimension {
+                    flex-shrink: 0;
+                    padding: 4px 10px;
+                    border-radius: 6px;
+                    background: var(--lb-surface);
+                    box-shadow: var(--lb-shadow-ring);
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: var(--lb-text-secondary);
+                    font-variant-numeric: tabular-nums;
+                    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+                    white-space: nowrap;
+                }
+
+                .fs-dimension:empty {
+                    display: none;
                 }
 
                 .fs-panel-title {
@@ -2498,6 +2565,22 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-nav-thumb .audio-icon {
+                    color: var(--lb-text-secondary);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .fs-nav-thumb.text-thumb {
+                    background: linear-gradient(
+                        135deg,
+                        rgba(120, 130, 150, 0.22) 0%,
+                        rgba(100, 110, 140, 0.14) 50%,
+                        rgba(80, 90, 130, 0.22) 100%
+                    );
+                }
+
+                .fs-nav-thumb .text-icon {
                     color: var(--lb-text-secondary);
                     display: flex;
                     align-items: center;
@@ -2693,9 +2776,10 @@ export class XdhLightbox extends BaseElement {
                 <!-- Main Media Area -->
                 <div class="fs-media"></div>
 
-                <!-- Bottom Panel: Title + Counter + Navigation -->
+                <!-- Bottom Panel: Dimension + Title + Counter + Navigation -->
                 <div class="fs-bottom-panel" data-has-nav="false">
                     <div class="fs-panel-header">
+                        <div class="fs-dimension"></div>
                         <div class="fs-panel-title xdh-tooltip xdh-tooltip-up" data-tooltip=""></div>
                         <div class="fs-panel-counter xdh-tooltip xdh-tooltip-up" data-tooltip=""></div>
                     </div>

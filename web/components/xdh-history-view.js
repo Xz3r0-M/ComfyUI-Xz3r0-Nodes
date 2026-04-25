@@ -234,6 +234,7 @@ export class XdhHistoryView extends BaseElement {
             items: previewItems.map((item) => ({
                 id: String(item.id || ""),
                 name: historyItemTitle(item),
+                type: "text",
             })),
             activeId: String(activeId || ""),
             resolveById: (targetId) => {
