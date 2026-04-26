@@ -187,21 +187,18 @@ class XImageGet(io.ComfyNode):
             mask,
             x_transform_state,
         )
-        image = cls._merge_mask_into_image(image, mask)
         return io.NodeOutput(image, mask)
 
     @staticmethod
     def _load_image(path: Path) -> torch.Tensor:
         """
-        加载原图。
+        加载原图，始终返回 RGB（3 通道）。
 
-        若原图自带 alpha，则保留原 alpha；否则返回 RGB。
-        遮罩合并只发生在节点输出张量中，不修改源文件本身。
+        遮罩独立作为 mask 输出，不与图像合并。
         """
         with Image.open(path) as img:
             img = ImageOps.exif_transpose(img)
-            keep_alpha = "A" in img.getbands()
-            img = img.convert("RGBA" if keep_alpha else "RGB")
+            img = img.convert("RGB")
             array = np.asarray(img).astype(np.float32) / 255.0
         return torch.from_numpy(array).unsqueeze(0)
 
