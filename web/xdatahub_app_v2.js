@@ -411,7 +411,11 @@ function persistUiState(state = appStore.state) {
 
 const initialUiState = loadPersistedUiState();
 const initialCategoryFromUrl = readCategoryFromUrl();
-if (initialCategoryFromUrl) {
+// URL hash overrides only when localStorage still has the default category,
+// meaning this could be a first visit or a shared/bookmarked link.
+// Otherwise, localStorage (user's last-selected category) takes priority
+// to prevent stale URL hashes from overriding the persisted preference.
+if (initialUiState.activeCategory === DEFAULT_ACTIVE_CATEGORY && initialCategoryFromUrl) {
     initialUiState.activeCategory = initialCategoryFromUrl;
 }
 persistedCategoryViews = initialUiState.categoryViews;
