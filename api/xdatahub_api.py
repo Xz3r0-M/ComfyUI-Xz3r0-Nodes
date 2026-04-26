@@ -3600,10 +3600,9 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         if isinstance(raw, (int, float)) and 50 <= raw <= 5000:
             patch["hover_locate_debounce_ms"] = int(raw)
     if "enable_ffmpeg_thumb_cache" in value:
-        patch["enable_ffmpeg_thumb_cache"] = (
-            parse_bool(value.get("enable_ffmpeg_thumb_cache"))
-            and shutil.which("ffmpeg") is not None
-        )
+        patch["enable_ffmpeg_thumb_cache"] = parse_bool(
+            value.get("enable_ffmpeg_thumb_cache")
+        ) and shutil.which("ffmpeg") is not None
     if "ui_locale" in value:
         raw_locale = str(value.get("ui_locale") or "").strip()
         if raw_locale:
@@ -4488,13 +4487,11 @@ async def api_settings(request: web.Request) -> web.Response:
             type(exc).__name__,
         )
         return json_error("internal_error", status=500)
-    return web.json_response(
-        {
-            "status": "success",
-            "settings": settings,
-            "ffmpeg_available": ffmpeg_available,
-        }
-    )
+    return web.json_response({
+        "status": "success",
+        "settings": settings,
+        "ffmpeg_available": ffmpeg_available,
+    })
 
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/i18n/ui")
