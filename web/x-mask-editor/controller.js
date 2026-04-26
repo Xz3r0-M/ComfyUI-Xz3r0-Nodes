@@ -61,7 +61,8 @@ export class XMaskEditorController {
         this.paintColor = "#000000";
         this.paintOpacity = 1;
         this.maskBrushColor = "black";
-        this.maskOpacity = 0.75;
+        this.maskDisplayOpacity = 0.75;
+        this.maskOpacity = 1;
         this.rotationQuarterTurns = 0;
         this.flipX = false;
         this.flipY = false;
@@ -1057,7 +1058,7 @@ export class XMaskEditorController {
             drawTransformedLayer(this.paintCanvas, this.paintOpacity);
         }
         if (this.maskVisible) {
-            drawTransformedLayer(this.maskCanvas, this.maskOpacity);
+            drawTransformedLayer(this.maskCanvas, this.maskDisplayOpacity);
         }
 
         if (this.cursorPoint && this.getEffectiveTool() !== "pan") {

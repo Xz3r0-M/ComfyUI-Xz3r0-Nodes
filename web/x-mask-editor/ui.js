@@ -756,12 +756,12 @@ export function createMaskEditorUi(texts = {}) {
     maskOpacityRange.min = "0";
     maskOpacityRange.max = "100";
     maskOpacityRange.step = "1";
-    maskOpacityRange.value = "50";
+    maskOpacityRange.value = "100";
     const maskOpacityInput = document.createElement("input");
     maskOpacityInput.className = "ximageget-mask-editor-value-input";
     maskOpacityInput.type = "text";
     maskOpacityInput.inputMode = "numeric";
-    maskOpacityInput.value = "50%";
+    maskOpacityInput.value = "100%";
     const maskVisibilityBtn = createButton(
         "ximageget-mask-editor-action ximageget-mask-editor-visibility-btn",
         texts.showMask || "Visible",

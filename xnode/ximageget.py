@@ -187,21 +187,18 @@ class XImageGet(io.ComfyNode):
             mask,
             x_transform_state,
         )
-        image = cls._merge_mask_into_image(image, mask)
         return io.NodeOutput(image, mask)
 
     @staticmethod
     def _load_image(path: Path) -> torch.Tensor:
         """
-        加载原图。
+        加载原图，始终返回 RGB（3 通道）。
 
-        若原图自带 alpha，则保留原 alpha；否则返回 RGB。
-        遮罩合并只发生在节点输出张量中，不修改源文件本身。
+        遮罩独立作为 mask 输出，不与图像合并。
         """
         with Image.open(path) as img:
             img = ImageOps.exif_transpose(img)
-            keep_alpha = "A" in img.getbands()
-            img = img.convert("RGBA" if keep_alpha else "RGB")
+            img = img.convert("RGB")
             array = np.asarray(img).astype(np.float32) / 255.0
         return torch.from_numpy(array).unsqueeze(0)
 
@@ -227,10 +224,10 @@ class XImageGet(io.ComfyNode):
         height = int(image.shape[1])
         width = int(image.shape[2])
         if mask_path is None:
-            return torch.zeros((height, width), dtype=torch.float32)
+            return torch.zeros((1, height, width), dtype=torch.float32)
         if not mask_path.exists():
             LOGGER.warning("[XImageGet] mask file missing")
-            return torch.zeros((height, width), dtype=torch.float32)
+            return torch.zeros((1, height, width), dtype=torch.float32)
         with Image.open(mask_path) as img:
             img = ImageOps.exif_transpose(img)
             alpha = None
@@ -244,7 +241,7 @@ class XImageGet(io.ComfyNode):
                 alpha_extrema = alpha.getextrema()
                 if alpha_extrema != (255, 255):
                     array = np.asarray(alpha).astype(np.float32) / 255.0
-                    return torch.from_numpy(array)
+                    return torch.from_numpy(array).unsqueeze(0)
             img = img.convert("L")
             if img.size != (width, height):
                 img = img.resize(
@@ -252,7 +249,7 @@ class XImageGet(io.ComfyNode):
                     Image.Resampling.BILINEAR,
                 )
             array = np.asarray(img).astype(np.float32) / 255.0
-        return torch.from_numpy(array)
+        return torch.from_numpy(array).unsqueeze(0)
 
     @staticmethod
     def _apply_paint_layer(
@@ -312,10 +309,10 @@ class XImageGet(io.ComfyNode):
             return image
         if not isinstance(mask, torch.Tensor):
             return image
-        if image.ndim != 4 or mask.ndim != 2:
+        if image.ndim != 4 or mask.ndim != 3:
             return image
 
-        alpha = (1.0 - mask).clamp(0.0, 1.0).unsqueeze(0).unsqueeze(-1)
+        alpha = (1.0 - mask).clamp(0.0, 1.0).unsqueeze(-1)
         if image.shape[-1] == 4:
             merged = image.clone()
             merged_alpha = torch.minimum(merged[..., 3:4], alpha)
@@ -326,7 +323,7 @@ class XImageGet(io.ComfyNode):
     @staticmethod
     def _build_placeholder_output() -> io.NodeOutput:
         image = torch.zeros((1, 1, 1, 3), dtype=torch.float32)
-        mask = torch.zeros((1, 1), dtype=torch.float32)
+        mask = torch.zeros((1, 1, 1), dtype=torch.float32)
         return io.NodeOutput(image, mask)
 
     @classmethod
@@ -383,13 +380,13 @@ class XImageGet(io.ComfyNode):
         rotation, flip_x, flip_y = cls._parse_transform_state(transform_state)
         if rotation:
             image = torch.rot90(image, (4 - rotation) % 4, dims=(1, 2))
-            mask = torch.rot90(mask, (4 - rotation) % 4, dims=(0, 1))
+            mask = torch.rot90(mask, (4 - rotation) % 4, dims=(1, 2))
         if flip_x:
             image = torch.flip(image, dims=(2,))
-            mask = torch.flip(mask, dims=(1,))
+            mask = torch.flip(mask, dims=(2,))
         if flip_y:
             image = torch.flip(image, dims=(1,))
-            mask = torch.flip(mask, dims=(0,))
+            mask = torch.flip(mask, dims=(1,))
         return image, mask
 
     @staticmethod

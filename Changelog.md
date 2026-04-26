@@ -1,5 +1,37 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.1.1
+
+<details>
+
+### 1. 🩹 修复和调整 `XImageGet`
+`♾️ Xz3r0/XDataHub`
+- 修复 遮罩维度
+- 调整 遮罩不再合并到图像中
+
+### 2. 🪛 调整 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet`
+- 编辑时遮罩固定以 75% 透明度进行显示
+- 遮罩透明度（滑动拉条）默认值从 75% 改为 100%
+    - 最终保存的遮罩透明度为 遮罩透明度（滑动拉条）的数值
+
+---
+
+### 1. 🩹 Fixed & Adjusted `XImageGet`
+`♾️ Xz3r0/XDataHub`
+- Fixed mask tensor dimensions
+- Adjusted mask no longer merged into image
+
+### 2. 🪛 Adjusted `XMaskEditor`
+`♾️ Xz3r0/XDataHub - XImageGet`
+- Mask layer always rendered at 75% opacity during editing
+- Mask opacity slider default changed from 75% to 100%
+    - Final exported mask opacity is controlled by the slider value
+
+</details>
+
+---
+
 ## 🎉 v2.1.0
 
 <details>
