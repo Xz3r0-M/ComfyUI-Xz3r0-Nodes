@@ -31,7 +31,7 @@
 > [!WARNING]
 > ## 📦 依赖说明（重要必看）
 > 本项目当前需要在您的电脑中安装有以下依赖程序：
-> - **⚠️ [FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装 FFmpeg，那么 `XVideoSave` 和 `XAudioSave` 节点将无法正常使用‼️
+> - **⚠️ [FFmpeg](https://www.ffmpeg.org/download.html)** - 安装并配置到**系统环境（PATH）**，如果不安装 FFmpeg，那么 `XVideoSave` 和 `XAudioSave` 节点，以及 `XDataHub` 的（图片和视频）缓存缩略图功能将无法正常使用‼️
 
 ---
 
