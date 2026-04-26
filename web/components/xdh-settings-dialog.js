@@ -67,7 +67,10 @@ async function loadSettings() {
     const res = await fetch("/xz3r0/xdatahub/settings");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const payload = await res.json();
-    return payload.settings || {};
+    return {
+        settings: payload.settings || {},
+        ffmpeg_available: !!payload.ffmpeg_available,
+    };
 }
 
 async function saveSettings(patch) {
@@ -105,10 +108,11 @@ function escapeHtml(value) {
         .replaceAll("'", "&#39;");
 }
 
-function syncStoreSettings(settings) {
+function syncStoreSettings(settings, ffmpegAvailable) {
     appStore.state.xdatahubSettings = {
         ...appStore.state.xdatahubSettings,
         ...(settings || {}),
+        ...(ffmpegAvailable !== undefined ? { ffmpeg_available: ffmpegAvailable } : {}),
     };
 }
 
@@ -150,13 +154,16 @@ export class XdhSettingsDialog extends BaseElement {
         if (this._open) return;
         this._open = true;
         this._loraDbConflict = null;
+        this._ffmpegAvailable = false;
         this._settings = {
             ...appStore.state.xdatahubSettings,
         };
         this.renderRoot();
         try {
-            this._settings = await loadSettings();
-            syncStoreSettings(this._settings);
+            const result = await loadSettings();
+            this._settings = result.settings;
+            this._ffmpegAvailable = result.ffmpeg_available;
+            syncStoreSettings(this._settings, this._ffmpegAvailable);
         } catch {
             this._settings = {
                 ...appStore.state.xdatahubSettings,
@@ -220,6 +227,15 @@ export class XdhSettingsDialog extends BaseElement {
         </label>`;
     }
 
+    _renderDisabledToggle(key, fallback = false) {
+        const id = `xdhs-${key}`;
+        const chk = this._checked(key, fallback);
+        return `<label class="toggle disabled" for="${id}">
+            <input id="${id}" type="checkbox" data-key="${key}" ${chk} disabled>
+            <span class="track"></span>
+        </label>`;
+    }
+
     _renderSelect(key, options, fallback = "") {
         const current = this._getStr(key, fallback);
         const optionHtml = options.map(([value, labelKey]) => `
@@ -263,7 +279,7 @@ export class XdhSettingsDialog extends BaseElement {
             ...this._settings,
             ...(updated || {}),
         };
-        syncStoreSettings(updated);
+        syncStoreSettings(updated, this._ffmpegAvailable);
         if (rerender) {
             this.renderRoot();
         }
@@ -465,9 +481,20 @@ export class XdhSettingsDialog extends BaseElement {
                 ${this._renderSection("settings.sect.thumb_cache", [
                     this._renderRow(
                         "settings.enable_ffmpeg_thumb_cache",
-                        this._renderToggle("enable_ffmpeg_thumb_cache", false),
-                        "settings.enable_ffmpeg_thumb_cache_tooltip"
+                        this._ffmpegAvailable
+                            ? this._renderToggle("enable_ffmpeg_thumb_cache", false)
+                            : this._renderDisabledToggle("enable_ffmpeg_thumb_cache", false),
+                        this._ffmpegAvailable
+                            ? "settings.enable_ffmpeg_thumb_cache_tooltip"
+                            : ""
                     ),
+                    `<div class="row ffmpeg-status ${this._ffmpegAvailable ? "is-available" : "is-missing"}">
+                        <span class="row-label">
+                            <span class="ffmpeg-status-text">${this._ffmpegAvailable
+                                ? t("settings.ffmpeg_found")
+                                : t("settings.ffmpeg_not_found")}</span>
+                        </span>
+                    </div>`,
                 ])}
                 ${this._renderSection("settings.sect.video", [
                     this._renderRow("settings.video_autoplay",
@@ -646,6 +673,26 @@ export class XdhSettingsDialog extends BaseElement {
                 .toggle input:checked + .track::after {
                     transform: translateX(16px);
                     background: #fff;
+                }
+                .toggle.disabled {
+                    opacity: 0.45;
+                    cursor: not-allowed;
+                    pointer-events: none;
+                }
+                .ffmpeg-status {
+                    padding-top: 0;
+                    margin-top: -4px;
+                }
+                .ffmpeg-status-text {
+                    font-size: 11px;
+                    opacity: 0.75;
+                }
+                .ffmpeg-status.is-available .ffmpeg-status-text {
+                    color: var(--xdh-color-text-secondary, #aaa);
+                }
+                .ffmpeg-status.is-missing .ffmpeg-status-text {
+                    color: var(--xdh-brand-pink, #EA005E);
+                    opacity: 0.9;
                 }
 
                 /* ── Select ── */

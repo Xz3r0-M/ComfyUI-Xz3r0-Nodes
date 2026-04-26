@@ -277,6 +277,8 @@ const Dictionary = {
         'settings.sect.thumb_cache':    '缩略图缓存',
         'settings.enable_ffmpeg_thumb_cache': 'FFmpeg 缓存缩略图',
         'settings.enable_ffmpeg_thumb_cache_tooltip': '启用后使用 FFmpeg 为视频生成缓存缩略图以提升列表流畅度；关闭则使用浏览器原生读取。',
+        'settings.ffmpeg_not_found':    '未检测到 FFmpeg，无法启用此功能',
+        'settings.ffmpeg_found':        '已检测到 FFmpeg',
         },
 
     'en': {
@@ -553,6 +555,8 @@ const Dictionary = {
         'settings.sect.thumb_cache':    'Thumbnail Cache',
         'settings.enable_ffmpeg_thumb_cache': 'FFmpeg cached thumbnails',
         'settings.enable_ffmpeg_thumb_cache_tooltip': 'Use FFmpeg to generate cached thumbnails for videos, improving grid performance. Disable to use native browser rendering.',
+        'settings.ffmpeg_not_found':    'FFmpeg not found, this feature cannot be enabled',
+        'settings.ffmpeg_found':        'FFmpeg detected',
         'nav.drawer.open_db_folder':    'Open Database Folder',
         'nav.banner.open_db_folder_ok':   'Opened in file manager',
         'nav.banner.open_db_folder_fail': 'Failed to open folder, please retry',
