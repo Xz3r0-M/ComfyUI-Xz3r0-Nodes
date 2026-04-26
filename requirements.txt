@@ -2,7 +2,7 @@
 # The following are the Python dependency packages that need to be installed for this project.
 # ================================================================
 
-ffmpeg-python   #   XVideoSave, XAudioSave (LUFS normalization via FFmpeg)
+ffmpeg-python   #   XVideoSave, XAudioSave (LUFS normalization via FFmpeg), XDataHub
 
 # ================================================================
 

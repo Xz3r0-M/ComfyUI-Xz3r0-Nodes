@@ -457,6 +457,8 @@ class XImageResize(io.ComfyNode):
             upscale_method=scale_mode.lower(),
             crop="disabled",
         )
+        if scaled_batch.dim() != data_batch.dim():
+            scaled_batch = scaled_batch.movedim(-1, -2).unsqueeze(1)
         output_tensor = scaled_batch.movedim(1, -1)
         restored_output = cls._restore_output_tensor(
             output_tensor,
@@ -505,8 +507,7 @@ class XImageResize(io.ComfyNode):
             return image_or_mask.unsqueeze(0).unsqueeze(-1), "mask", 2
 
         raise ValueError(
-            "Expected IMAGE(B,H,W,C) or MASK(H,W)/(B,H,W), "
-            f"got {dims}D tensor"
+            f"Expected IMAGE(B,H,W,C) or MASK(H,W)/(B,H,W), got {dims}D tensor"
         )
 
     @staticmethod
@@ -633,9 +634,7 @@ class XImageResize(io.ComfyNode):
         """
         只接受 int/float，且排除 bool。
         """
-        return isinstance(value, (int, float)) and not isinstance(
-            value, bool
-        )
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
 
     @staticmethod
     def _is_int_value(value: Any) -> bool:

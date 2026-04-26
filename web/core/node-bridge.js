@@ -216,3 +216,27 @@ export function resolveNodeClassFromCategory(category) {
     const normalizedCategory = String(category || "image").trim().toLowerCase();
     return CATEGORY_NODE_CLASS[normalizedCategory] || "XImageGet";
 }
+
+export function hoverNode(nodeId) {
+    const targetOrigin = getParentTargetOrigin();
+    try {
+        window.parent?.postMessage?.(
+            { type: "xdatahub:node_hover", node_id: String(nodeId) },
+            targetOrigin
+        );
+    } catch {
+        // ignore postMessage failures
+    }
+}
+
+export function leaveNode() {
+    const targetOrigin = getParentTargetOrigin();
+    try {
+        window.parent?.postMessage?.(
+            { type: "xdatahub:node_hover_leave" },
+            targetOrigin
+        );
+    } catch {
+        // ignore postMessage failures
+    }
+}

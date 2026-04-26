@@ -1,5 +1,95 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.1.0
+
+<details>
+
+### 1. 🛠️ 增强和调整 `XDataHub` 数据中心
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- 新增 FFmpeg 缓存缩略图 功能
+    - 调用用户系统中安装的 `FFmpeg` 生成图片和视频的缓存缩略图
+    - XDataHub 设置面板中添加对应的开关按钮和检测 FFmpeg 的文字提示
+        - 默认为：关闭
+    - 如果没有在系统中安装 FFmpeg 并配置到系统环境（PATH），此功能不可用
+        - 与 XAudioSave 和 XVideoSave 节点一样需要依赖系统中的 FFmpeg 才能正常工作
+- 新增 悬停时定位节点 功能
+    - 在节点发送栏，鼠标悬停在节点列表里的节点名称上时，网页画布视角会自动定位到当前页面中对应的节点位置
+    - 如果节点不在当前页面（比如在其他子图中）则不会自动定位
+    - XDataHub 设置面板中添加对应的开关按钮和延时设置
+        - 默认为：关闭
+        - 防抖延迟 (ms)
+            - 悬停多久才会开始移动视角进行定位
+            - 默认为：300ms
+- 调整 图片和视频的卡片中显示的文件分辨率到全屏预览中，且仅对当前预览的文件显示分辨率
+    - 原先直接显示的方式会需要读取整页里所有文件的分辨率信息，从而导致卡顿
+
+### 2. 🪛 调整和修复 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet`
+- 遮罩透明度默认值从 50% 改为 75%
+- 移除 颜色和遮罩的透明度文本中错误遗留的"预览"一词
+
+### 3. 🩹 修复 `XImageResize` 图片缩放节点
+`♾️ Xz3r0/File-Processing`
+- 修复 使用 Lanczos 插值算法时，遮罩没有正确处理的问题
+
+### 未来计划
+- XDataHub 界面统一为 Vercel 或其他设计风格和配色
+    - 让界面整体风格更加一致
+
+### 部分已知问题
+- 开启 FFmpeg 生成图片和视频的缓存缩略图功能后，浏览器不支持预览的格式或编码的媒体文件的卡片没有显示不支持的标识
+- 更改 ComfyUI 界面语言时，XDataHub 和配套节点界面可能没有正确改变
+    - 现在需要刷新一次网页
+- 更改 XDataHub 主题（浅色和深色）窗口标题栏可能没有正确改变
+    - 现在需要刷新一次网页
+- 扩展 XFitView 自动适应视图功能在某些场景下可能会失效
+
+---
+
+### 1. 🛠️ Enhanced & Adjusted `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Added FFmpeg cached thumbnails
+    - Uses `FFmpeg` installed on the user's system to generate cached thumbnails for images and videos
+    - Added corresponding toggle button and FFmpeg detection status text in XDataHub settings panel
+        - Default: Off
+    - This feature is unavailable if FFmpeg is not installed and configured in the system environment (PATH)
+        - Depends on FFmpeg in the system, just like the XAudioSave and XVideoSave nodes
+- Added hover-to-locate node feature
+    - When hovering over a node name in the node list of the send panel, the canvas view automatically pans to the corresponding node position on the current page
+    - Will not auto-locate if the node is not on the current page (e.g., in another subgraph)
+    - Added corresponding toggle button and delay setting in the XDataHub settings panel
+        - Default: Off
+        - Debounce delay (ms)
+            - How long to wait before starting to pan the view for locating
+            - Default: 300ms
+- Adjusted file resolution display: moved from media cards to fullscreen preview, now only shows resolution for the currently previewed file
+    - The previous approach read resolution info for all files on the page, causing lag
+
+### 2. 🪛 Adjusted and fixed `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet`
+- The default mask opacity is changed from 50% to 75%
+- Removed the erroneously leftover word "Preview" from the color and mask opacity text
+
+### 3. 🩹 Fixed `XImageResize` Image Resize Node
+`♾️ Xz3r0/File-Processing`
+- Fixed an issue where masks were not handled correctly when using the Lanczos interpolation algorithm
+
+### Future Plans
+- Unify XDataHub UI with Vercel or other design style and color scheme
+    - For a more consistent overall interface look
+
+### Known Issues
+- After enabling FFmpeg cached thumbnails, media cards with formats or encodings unsupported by the browser for preview do not show an unsupported indicator
+- Changing the ComfyUI interface language may not properly update the XDataHub and companion node interfaces
+    - A page refresh is currently required
+- Changing the XDataHub theme (light/dark) may not properly update the window title bar
+    - A page refresh is currently required
+- The XFitView auto-fit view extension may not work correctly in some scenarios
+
+</details>
+
+---
+
 ## 🎉 v2.0.0
 
 > [!IMPORTANT]

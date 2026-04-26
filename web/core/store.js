@@ -83,6 +83,10 @@ export const appStore = new Store({
         default_open_layout: 'center',
         close_behavior: 'hide',
         disable_interaction_while_running: true,
+        hover_locate_enabled: false,
+        hover_locate_debounce_ms: 300,
+        enable_ffmpeg_thumb_cache: false,
+        ffmpeg_available: false,
     },
 
     // i18n — default English; i18n.js overwrites at module load from Comfy.Locale

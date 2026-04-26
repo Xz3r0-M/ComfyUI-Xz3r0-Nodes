@@ -11,7 +11,7 @@ import {
     sendToNode,
     resolveNodeClassFromTargetType,
     resolveNodeClassFromCategory,
-} from '../core/node-bridge.js?v=20260403-400';
+} from '../core/node-bridge.js?v=20260426-1';
 
 function escapeAttr(value) {
     return String(value || '')
@@ -352,10 +352,6 @@ export class XdhStagingDock extends BaseElement {
                     white-space: nowrap;
                     transition: background-color 0.15s ease, color 0.15s ease;
                     border-bottom: 1px solid var(--dock-border);
-                }
-
-                .dock-header:hover {
-                    background: var(--dock-hover-bg);
                 }
 
                 .dock-title {

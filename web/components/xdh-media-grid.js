@@ -407,7 +407,6 @@ function thumbFor(item, previewState = null) {
         : extra.mtime
         ? `<div class="card-meta-overlay">`
             + `<span class="meta-date">${formatDate(extra.mtime)}</span>`
-            + `<span class="meta-dim"></span>`
             + `</div>`
         : "";
     switch (item.type) {
@@ -417,16 +416,20 @@ function thumbFor(item, previewState = null) {
                     ${statusBadgeHtml}
                     <span class="audio-icon">${icon("audio-lines", 40)}</span>
                 </div>`;
-        case "video":
+        case "video": {
+            const thumbContent = item.isVideoNativeThumb
+                ? `<video class="thumb-video" src="${safeUrl}" preload="metadata" muted playsinline></video>`
+                : (showLivePreview && safeUrl ? `<img class="thumb-img" src="${safeUrl}" alt=""
+                       loading="lazy" onerror="this.style.display='none'"/>` : "");
             return `
                 <div class="thumb-container ${isEmptyThumb ? "thumb-empty" : ""} ${showLivePreview ? "" : "preview-blocked"}">
-                    ${showLivePreview && safeUrl ? `<video class="thumb-video" src="${safeUrl}"
-                           muted playsinline preload="metadata"></video>` : ""}
+                    ${thumbContent}
                     ${fallbackHtml}
                     ${statusBadgeHtml}
                     ${metaHtml}
                     ${showLivePreview ? `<div class="play-overlay">${icon("video", 18)}</div>` : ""}
                 </div>`;
+        }
         case "folder":
             return `
                 <div class="thumb-container folder-thumb">
@@ -627,7 +630,7 @@ export class XdhMediaGrid extends BaseElement {
         return {
             id: String(item.id || ""),
             name: item.name,
-            url: item.thumbUrl,
+            url: item.fullUrl || item.thumbUrl,
             type: item.type || "image",
             iconHtml: icon("audio-lines", 56),
         };
@@ -822,51 +825,6 @@ export class XdhMediaGrid extends BaseElement {
         );
 
         this._syncCardSize();
-        this._initDimensions();
-    }
-
-    /** Read naturalWidth/videoWidth and fill .meta-dim spans + card data-dim */
-    _initDimensions() {
-        this.$$(".media-card:not(.is-folder)").forEach(card => {
-            const img = card.querySelector(".thumb-img");
-            const vid = card.querySelector(".thumb-video");
-            const dimSpan = card.querySelector(".meta-dim");
-            if (!dimSpan) return;
-            const set = (w, h) => {
-                if (!w || !h) return;
-                const dim = `${w}×${h}`;
-                dimSpan.textContent = dim;
-                card.dataset.dim = dim;
-            };
-            if (img) {
-                if (img.naturalWidth) {
-                    set(img.naturalWidth, img.naturalHeight);
-                } else {
-                    img.addEventListener("load", () =>
-                        set(img.naturalWidth, img.naturalHeight), { once: true }
-                    );
-                }
-            } else if (vid) {
-                const setVideoState = () => {
-                    if (vid.videoWidth && vid.videoHeight) {
-                        set(vid.videoWidth, vid.videoHeight);
-                        return;
-                    }
-                    this._markThumbFailed(card.dataset.id);
-                };
-                if (vid.videoWidth && vid.videoHeight) {
-                    setVideoState();
-                } else if (vid.readyState >= 1) {
-                    setVideoState();
-                } else {
-                    vid.addEventListener(
-                        "loadedmetadata",
-                        setVideoState,
-                        { once: true }
-                    );
-                }
-            }
-        });
     }
 
     /** 只渲染卡片列表 HTML（.grid 内部），不含 <style> */

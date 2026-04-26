@@ -210,6 +210,7 @@ __marimo__/
 
 # Xz3r0
 .vscode/
+.trae/
 tests/
 web/test
 ruff.toml
@@ -227,3 +228,4 @@ skills-lock.json
 icons_dev/
 V1/
 .github/instructions/
+_temp/

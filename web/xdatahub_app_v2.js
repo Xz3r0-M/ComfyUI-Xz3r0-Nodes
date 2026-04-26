@@ -3,26 +3,26 @@ import { appStore } from "./core/store.js";
 import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
-    buildMediaUrl,
-} from "./core/api.js?v=20260403-413";
+    buildMediaUrl, buildThumbUrl,
+} from "./core/api.js?v=20260407-414";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260407-3";
+import { setLocale, t } from "./core/i18n.js?v=20260426-3";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-52";
-import "./components/xdh-media-grid.js?v=20260406-39";
-import "./components/xdh-staging-dock.js?v=20260406-15";
-import "./components/xdh-node-picker.js?v=20260406-15";
-import "./core/node-bridge.js?v=20260403-400";
+import "./components/xdh-media-grid.js?v=20260426-3";
+import "./components/xdh-staging-dock.js?v=20260426-3";
+import "./components/xdh-node-picker.js?v=20260426-4";
+import "./core/node-bridge.js?v=20260426-1";
 import "./components/xdh-content-nav.js?v=20260406-24";
-import "./components/xdh-pagination.js?v=20260407-2";
-import "./components/xdh-lightbox.js?v=20260407-8";
-import "./components/xdh-history-view.js?v=20260406-16";
+import "./components/xdh-pagination.js?v=20260426-4";
+import "./components/xdh-lightbox.js?v=20260425-3";
+import "./components/xdh-history-view.js?v=20260425-3";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
-import "./components/xdh-settings-dialog.js?v=20260407-21";
+import "./components/xdh-settings-dialog.js?v=20260426-3";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -411,7 +411,11 @@ function persistUiState(state = appStore.state) {
 
 const initialUiState = loadPersistedUiState();
 const initialCategoryFromUrl = readCategoryFromUrl();
-if (initialCategoryFromUrl) {
+// URL hash overrides only when localStorage still has the default category,
+// meaning this could be a first visit or a shared/bookmarked link.
+// Otherwise, localStorage (user's last-selected category) takes priority
+// to prevent stale URL hashes from overriding the persisted preference.
+if (initialUiState.activeCategory === DEFAULT_ACTIVE_CATEGORY && initialCategoryFromUrl) {
     initialUiState.activeCategory = initialCategoryFromUrl;
 }
 persistedCategoryViews = initialUiState.categoryViews;
@@ -528,6 +532,7 @@ async function loadAppSettings() {
         appStore.state.xdatahubSettings = {
             ...appStore.state.xdatahubSettings,
             ...(payload.settings || {}),
+            ffmpeg_available: !!payload.ffmpeg_available,
         };
     } catch (error) {
         console.warn("[xdh-v2] Failed to load settings", error);
@@ -874,18 +879,30 @@ function mapItem(item, category) {
     const name = item.title || item.extra?.media_ref || id;
     const ref  = item.extra?.media_ref || "";
     const isMock = item.extra?.isMock;
-    const thumbUrl = isMock
-        ? MOCK_THUMB
-        : ref
-            ? buildMediaUrl(ref)
-            : MOCK_THUMB;
+    const settings = appStore.state.xdatahubSettings || {};
+    const useThumbCache = !!settings.enable_ffmpeg_thumb_cache
+        && !!settings.ffmpeg_available;
+    const isVideoNativeThumb = !useThumbCache && mediaType === "video";
+    let thumbUrl;
+    if (isMock) {
+        thumbUrl = MOCK_THUMB;
+    } else if (!ref) {
+        thumbUrl = MOCK_THUMB;
+    } else if (useThumbCache) {
+        thumbUrl = buildThumbUrl(ref);
+    } else {
+        thumbUrl = buildMediaUrl(ref);
+    }
+    const fullUrl = isMock ? "" : ref ? buildMediaUrl(ref) : "";
     return {
         id,
         name,
         type: mediaType,
         thumbUrl,
+        fullUrl,
         mtime,
         size,
+        isVideoNativeThumb,
         previewable: item.previewable !== false,
         raw: item,
     };
