@@ -2429,6 +2429,142 @@ function installExistingNodes() {
     });
 }
 
+let _hoverRestoreState = null;
+let _hoverRestoreGraph = null;
+let _hoverAnimationId = null;
+
+function cancelNodeHoverAnimation() {
+    if (_hoverAnimationId) {
+        cancelAnimationFrame(_hoverAnimationId);
+        _hoverAnimationId = null;
+    }
+}
+
+function animateNodeToView(node) {
+    if (!node || !app.canvas) {
+        return;
+    }
+    const currentGraph = app.canvas.graph;
+    if (!node.graph || !currentGraph || node.graph !== currentGraph) {
+        return;
+    }
+    const ds = app.canvas.ds;
+    const canvasEl = ds.element;
+    if (!ds || !canvasEl) {
+        return;
+    }
+
+    cancelNodeHoverAnimation();
+    if (!_hoverRestoreState || _hoverRestoreGraph !== currentGraph) {
+        _hoverRestoreState = {
+            offset: [ds.offset[0], ds.offset[1]],
+            scale: ds.scale,
+        };
+        _hoverRestoreGraph = currentGraph;
+    }
+
+    const cw = canvasEl.width / window.devicePixelRatio;
+    const ch = canvasEl.height / window.devicePixelRatio;
+
+    const targetZoom = 0.75;
+    const nodeW = Math.max(node.size[0], 300);
+    const nodeH = Math.max(node.size[1], 300);
+    let targetScale = (targetZoom * cw) / nodeW;
+    targetScale = Math.min(targetScale, (targetZoom * ch) / nodeH, ds.max_scale);
+    const targetCx = node.pos[0] + node.size[0] * 0.5;
+    const targetCy = node.pos[1] + node.size[1] * 0.5;
+
+    const startCx = cw * 0.5 / ds.scale - ds.offset[0];
+    const startCy = ch * 0.5 / ds.scale - ds.offset[1];
+    const startScale = ds.scale;
+
+    const duration = 350;
+    const startTime = performance.now();
+
+    function easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    }
+
+    function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = easeInOutQuad(progress);
+
+        const curScale = startScale + (targetScale - startScale) * eased;
+        const curCx = startCx + (targetCx - startCx) * eased;
+        const curCy = startCy + (targetCy - startCy) * eased;
+
+        ds.offset[0] = -(curCx - cw * 0.5 / curScale);
+        ds.offset[1] = -(curCy - ch * 0.5 / curScale);
+        ds.scale = curScale;
+        app.canvas.setDirty(true, true);
+
+        if (progress < 1) {
+            _hoverAnimationId = requestAnimationFrame(step);
+        } else {
+            _hoverAnimationId = null;
+        }
+    }
+    _hoverAnimationId = requestAnimationFrame(step);
+}
+
+function animateToSavedState() {
+    if (!_hoverRestoreState || !app.canvas) {
+        return;
+    }
+    const ds = app.canvas.ds;
+    const canvasEl = ds?.element;
+    if (!ds || !canvasEl) {
+        _hoverRestoreState = null;
+        _hoverRestoreGraph = null;
+        return;
+    }
+
+    cancelNodeHoverAnimation();
+    const saved = _hoverRestoreState;
+    _hoverRestoreState = null;
+    _hoverRestoreGraph = null;
+
+    const cw = canvasEl.width / window.devicePixelRatio;
+    const ch = canvasEl.height / window.devicePixelRatio;
+
+    const startCx = cw * 0.5 / ds.scale - ds.offset[0];
+    const startCy = ch * 0.5 / ds.scale - ds.offset[1];
+    const startScale = ds.scale;
+    const targetCx = cw * 0.5 / saved.scale - saved.offset[0];
+    const targetCy = ch * 0.5 / saved.scale - saved.offset[1];
+    const targetScale = saved.scale;
+
+    const duration = 350;
+    const startTime = performance.now();
+
+    function easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    }
+
+    function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = easeInOutQuad(progress);
+
+        const curScale = startScale + (targetScale - startScale) * eased;
+        const curCx = startCx + (targetCx - startCx) * eased;
+        const curCy = startCy + (targetCy - startCy) * eased;
+
+        ds.offset[0] = -(curCx - cw * 0.5 / curScale);
+        ds.offset[1] = -(curCy - ch * 0.5 / curScale);
+        ds.scale = curScale;
+        app.canvas.setDirty(true, true);
+
+        if (progress < 1) {
+            _hoverAnimationId = requestAnimationFrame(step);
+        } else {
+            _hoverAnimationId = null;
+        }
+    }
+    _hoverAnimationId = requestAnimationFrame(step);
+}
+
 function initXLoraGetExtension() {
     if (ROOT[EXT_GUARD_KEY]) {
         return;
@@ -2513,6 +2649,20 @@ function initXLoraGetExtension() {
                         },
                         rootOrigin
                     );
+                    return;
+                }
+                if (payload.type === "xdatahub:node_hover") {
+                    const hoverNodeId = String(
+                        payload.node_id || ""
+                    ).trim();
+                    if (hoverNodeId) {
+                        const hoverNode = getNodeById(hoverNodeId);
+                        animateNodeToView(hoverNode);
+                    }
+                    return;
+                }
+                if (payload.type === "xdatahub:node_hover_leave") {
+                    animateToSavedState();
                     return;
                 }
                 if (payload.type !== "xdatahub:send_to_node") {

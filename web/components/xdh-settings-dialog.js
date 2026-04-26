@@ -5,7 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260406-15";
+import { t } from "../core/i18n.js?v=20260426-1";
 
 const DEFAULT_HOTKEY_SPEC = "Alt + X";
 const HOST_CONTROLLED_SETTING_KEYS = new Set([
@@ -232,10 +232,10 @@ export class XdhSettingsDialog extends BaseElement {
         </select>`;
     }
 
-    _renderTextInput(key, fallback = "") {
+    _renderTextInput(key, fallback = "", type = "text") {
         const id = `xdhs-${key}`;
         const value = escapeHtml(this._getStr(key, fallback));
-        return `<input id="${id}" class="text-input" type="text"
+        return `<input id="${id}" class="text-input" type="${escapeHtml(type)}"
             data-key="${key}" value="${value}">`;
     }
 
@@ -447,6 +447,27 @@ export class XdhSettingsDialog extends BaseElement {
                     this._renderRow("settings.disable_interaction_running",
                         this._renderToggle(
                             "disable_interaction_while_running", true)),
+                ])}
+                ${this._renderSection("settings.sect.canvas", [
+                    this._renderRow(
+                        "settings.hover_locate_enabled",
+                        this._renderToggle(
+                            "hover_locate_enabled", false),
+                        "settings.hover_locate_enabled_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.hover_locate_debounce_ms",
+                        this._renderTextInput(
+                            "hover_locate_debounce_ms", "300", "number"),
+                        "settings.hover_locate_debounce_ms_tooltip"
+                    ),
+                ])}
+                ${this._renderSection("settings.sect.thumb_cache", [
+                    this._renderRow(
+                        "settings.enable_ffmpeg_thumb_cache",
+                        this._renderToggle("enable_ffmpeg_thumb_cache", false),
+                        "settings.enable_ffmpeg_thumb_cache_tooltip"
+                    ),
                 ])}
                 ${this._renderSection("settings.sect.video", [
                     this._renderRow("settings.video_autoplay",
@@ -1037,8 +1058,9 @@ export class XdhSettingsDialog extends BaseElement {
                 });
             });
 
-        this.shadowRoot?.querySelectorAll("input[type=text][data-key]")
-            .forEach(el => {
+        this.shadowRoot?.querySelectorAll(
+            "input[type=text][data-key], input[type=number][data-key]"
+        ).forEach(el => {
                 el.onchange = null;
                 el.addEventListener("keydown", (event) => {
                     if (event.key !== "Enter") {
@@ -1049,20 +1071,34 @@ export class XdhSettingsDialog extends BaseElement {
                 });
                 el.addEventListener("change", async () => {
                     const key = el.dataset.key;
-                    const prev = this._getStr(key, DEFAULT_HOTKEY_SPEC);
-                    const val = String(el.value || "").trim()
-                        || DEFAULT_HOTKEY_SPEC;
-                    if (key !== "hotkey_spec") {
+                    let prev;
+                    let val;
+                    if (key === "hover_locate_debounce_ms") {
+                        const raw = parseInt(String(el.value || ""), 10);
+                        const clamped = isFinite(raw)
+                            ? Math.max(50, Math.min(raw, 5000))
+                            : 300;
+                        prev = this._settings[key] ?? 300;
+                        val = clamped;
+                        el.value = String(clamped);
+                    } else if (key === "hotkey_spec") {
+                        prev = this._getStr(key, DEFAULT_HOTKEY_SPEC);
+                        val = String(el.value || "").trim()
+                            || DEFAULT_HOTKEY_SPEC;
+                    } else {
                         return;
                     }
                     this._settings[key] = val;
                     try {
                         const updated = await saveSettings({ [key]: val });
                         this._applyUpdatedSettings(updated);
-                        el.value = String(updated[key] || val);
+                        const resolved = key === "hotkey_spec"
+                            ? String(updated[key] || val)
+                            : String(updated[key] ?? val);
+                        el.value = resolved;
                     } catch {
                         this._settings[key] = prev;
-                        el.value = prev;
+                        el.value = String(prev);
                         banner.error(t("error.save_fail"));
                     }
                 });

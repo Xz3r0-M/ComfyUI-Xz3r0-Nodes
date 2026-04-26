@@ -160,14 +160,11 @@ export class XdhPagination extends BaseElement {
                 }
                 .page-btn:hover:not(:disabled) {
                     background: var(--xdh-color-surface-hover, #444444);
-                    border-color: var(--border-hover, var(--xdh-color-primary));
                     color: var(--xdh-color-text-primary, #eee);
-                    transform: translateY(-1px);
                 }
                 .page-btn:focus-visible,
                 .page-jump:focus-within {
                     outline: none;
-                    border-color: var(--border-hover, var(--xdh-color-primary));
                     box-shadow: 0 0 0 1px var(--border-hover, var(--xdh-color-primary));
                 }
                 .page-btn:disabled {

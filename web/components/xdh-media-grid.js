@@ -416,16 +416,20 @@ function thumbFor(item, previewState = null) {
                     ${statusBadgeHtml}
                     <span class="audio-icon">${icon("audio-lines", 40)}</span>
                 </div>`;
-        case "video":
+        case "video": {
+            const thumbContent = item.isVideoNativeThumb
+                ? `<video class="thumb-video" src="${safeUrl}" preload="metadata" muted playsinline></video>`
+                : (showLivePreview && safeUrl ? `<img class="thumb-img" src="${safeUrl}" alt=""
+                       loading="lazy" onerror="this.style.display='none'"/>` : "");
             return `
                 <div class="thumb-container ${isEmptyThumb ? "thumb-empty" : ""} ${showLivePreview ? "" : "preview-blocked"}">
-                    ${showLivePreview && safeUrl ? `<img class="thumb-img" src="${safeUrl}" alt=""
-                           loading="lazy" onerror="this.style.display='none'"/>` : ""}
+                    ${thumbContent}
                     ${fallbackHtml}
                     ${statusBadgeHtml}
                     ${metaHtml}
                     ${showLivePreview ? `<div class="play-overlay">${icon("video", 18)}</div>` : ""}
                 </div>`;
+        }
         case "folder":
             return `
                 <div class="thumb-container folder-thumb">

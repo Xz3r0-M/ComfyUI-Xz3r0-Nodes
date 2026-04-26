@@ -77,7 +77,6 @@ FILE_WRITE_RETRY = 3
 FILE_WRITE_RETRY_DELAY_S = 0.05
 MEDIA_SORT_BY_VALUES = {"mtime", "name", "size"}
 MEDIA_SORT_ORDER_VALUES = {"asc", "desc"}
-MEDIA_CARD_SIZE_PRESET_VALUES = {"compact", "standard", "large"}
 THEME_MODE_VALUES = {"dark", "light"}
 UI_LOCALE_VALUES = {"zh", "en"}
 MEDIA_STREAM_CHUNK_SIZE = 256 * 1024
@@ -553,7 +552,8 @@ def _normalize_custom_root_values(value: Any) -> list[str]:
             candidate = Path(raw)
             abs_text = os.path.normpath(os.path.abspath(str(candidate)))
             real_text = os.path.normpath(os.path.realpath(str(candidate)))
-            # 严格模式：路径存在且绝对路径必须等于 realpath，拒绝软链接/目录联接。
+            # 严格模式：路径存在且绝对路径必须等于 realpath，
+            # 拒绝软链接/目录联接。
             if os.path.normcase(abs_text) != os.path.normcase(real_text):
                 continue
             resolved = Path(real_text)
@@ -3452,9 +3452,6 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "audio_preview_autoplay": False,
         "audio_preview_muted": False,
         "audio_preview_loop": False,
-        "media_sort_by": "mtime",
-        "media_sort_order": "desc",
-        "media_card_size_preset": "standard",
         "node_send_close_after_send": True,
         "store_lora_db_in_loras": False,
         "media_custom_roots": [],
@@ -3464,6 +3461,9 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "default_open_layout": "center",
         "close_behavior": "hide",
         "disable_interaction_while_running": True,
+        "hover_locate_enabled": False,
+        "hover_locate_debounce_ms": 300,
+        "enable_ffmpeg_thumb_cache": False,
     }
 
 
@@ -3553,18 +3553,6 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
     ):
         if key in value:
             patch[key] = parse_bool(value.get(key))
-    if "media_sort_by" in value:
-        sort_by = str(value.get("media_sort_by") or "").strip().lower()
-        if sort_by in MEDIA_SORT_BY_VALUES:
-            patch["media_sort_by"] = sort_by
-    if "media_sort_order" in value:
-        sort_order = str(value.get("media_sort_order") or "").strip().lower()
-        if sort_order in MEDIA_SORT_ORDER_VALUES:
-            patch["media_sort_order"] = sort_order
-    if "media_card_size_preset" in value:
-        preset = str(value.get("media_card_size_preset") or "").strip().lower()
-        if preset in MEDIA_CARD_SIZE_PRESET_VALUES:
-            patch["media_card_size_preset"] = preset
     if "node_send_close_after_send" in value:
         patch["node_send_close_after_send"] = parse_bool(
             value.get("node_send_close_after_send")
@@ -3602,6 +3590,18 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
     if "disable_interaction_while_running" in value:
         patch["disable_interaction_while_running"] = parse_bool(
             value.get("disable_interaction_while_running")
+        )
+    if "hover_locate_enabled" in value:
+        patch["hover_locate_enabled"] = parse_bool(
+            value.get("hover_locate_enabled")
+        )
+    if "hover_locate_debounce_ms" in value:
+        raw = value.get("hover_locate_debounce_ms")
+        if isinstance(raw, (int, float)) and 50 <= raw <= 5000:
+            patch["hover_locate_debounce_ms"] = int(raw)
+    if "enable_ffmpeg_thumb_cache" in value:
+        patch["enable_ffmpeg_thumb_cache"] = parse_bool(
+            value.get("enable_ffmpeg_thumb_cache")
         )
     if "ui_locale" in value:
         raw_locale = str(value.get("ui_locale") or "").strip()

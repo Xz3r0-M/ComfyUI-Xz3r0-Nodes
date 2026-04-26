@@ -3,15 +3,17 @@ import {
     registerCustomElement,
 } from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
-import { t } from '../core/i18n.js?v=20260406-15';
+import { t } from '../core/i18n.js?v=20260426-1';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import { SCROLLBAR_CSS } from '../core/icon.js';
 import {
     requestNodes,
+    hoverNode,
+    leaveNode,
     CATEGORY_NODE_CLASS,
     resolveNodeClassFromTargetType,
     resolveNodeClassFromCategory,
-} from '../core/node-bridge.js?v=20260403-400';
+} from '../core/node-bridge.js?v=20260426-1';
 
 function compareNodeByIdAsc(left, right) {
     const leftId = String(left?.id ?? '');
@@ -60,6 +62,9 @@ export class XdhNodePicker extends BaseElement {
         this.loading = false;
         this.docsListenerAdded = false;
         this._fetchRequestSeq = 0;
+        this._hoverDebounceTimer = null;
+        this._hoveredNodeId = '';
+        this._pollInterval = null;
         this._onDocumentClick = this._handleDocumentClick.bind(this);
     }
 
@@ -149,6 +154,8 @@ export class XdhNodePicker extends BaseElement {
     _handleDocumentClick(e) {
         if (this.expanded && !this._isEventInsidePicker(e)) {
             this.expanded = false;
+            this._stopPolling();
+            this._clearHoverDebounce();
             this.renderRoot();
         }
     }
@@ -161,6 +168,10 @@ export class XdhNodePicker extends BaseElement {
                 this.expanded = !this.expanded;
                 if (this.expanded) {
                     this._fetchNodes();
+                    this._startPolling();
+                } else {
+                    this._stopPolling();
+                    this._clearHoverDebounce();
                 }
                 this.renderRoot();
             });
@@ -185,6 +196,8 @@ export class XdhNodePicker extends BaseElement {
         options.forEach(opt => {
             opt.addEventListener('click', (e) => {
                 e.stopPropagation();
+                this._stopPolling();
+                this._clearHoverDebounce();
                 const nodeId = String(opt.dataset.id || '');
                 this.selectedNode = this.nodes.find(
                     n => String(n.id) === nodeId
@@ -207,6 +220,34 @@ export class XdhNodePicker extends BaseElement {
                 this.expanded = false;
                 this.renderRoot();
             });
+
+            opt.addEventListener('mouseenter', () => {
+                const nodeId = String(opt.dataset.id || '');
+                if (this._hoveredNodeId === nodeId) {
+                    return;
+                }
+                const settings = appStore.state.xdatahubSettings || {};
+                if (!settings.hover_locate_enabled) {
+                    return;
+                }
+                const debounceMs = Number.isFinite(
+                    settings.hover_locate_debounce_ms
+                ) && settings.hover_locate_debounce_ms >= 50
+                    ? settings.hover_locate_debounce_ms
+                    : 300;
+                this._clearHoverDebounce(true);
+                this._hoveredNodeId = nodeId;
+                this._hoverDebounceTimer = setTimeout(() => {
+                    if (this._hoveredNodeId === nodeId) {
+                        hoverNode(nodeId);
+                    }
+                }, debounceMs);
+            });
+
+            opt.addEventListener('mouseleave', () => {
+                this._clearHoverDebounce();
+                this._hoveredNodeId = '';
+            });
         });
 
         // Click outside to close
@@ -218,17 +259,21 @@ export class XdhNodePicker extends BaseElement {
 
     disconnectedCallback() {
         super.disconnectedCallback?.();
+        this._stopPolling();
+        this._clearHoverDebounce();
         if (this.docsListenerAdded) {
             document.removeEventListener('click', this._onDocumentClick);
             this.docsListenerAdded = false;
         }
     }
 
-    _fetchNodes() {
+    _fetchNodes(silent = false) {
         const nodeClass = this._getNodeClass();
         const requestSeq = ++this._fetchRequestSeq;
-        this.loading = true;
-        this.renderRoot();
+        if (!silent) {
+            this.loading = true;
+            this.renderRoot();
+        }
         requestNodes(nodeClass).then((nodes) => {
             if (requestSeq !== this._fetchRequestSeq) {
                 return;
@@ -241,20 +286,69 @@ export class XdhNodePicker extends BaseElement {
                 const selectedId = String(this.selectedNode.id || '');
                 this.selectedNode = this.nodes.find(
                     (node) => String(node.id) === selectedId
-                ) || this.selectedNode;
+                ) || null;
+                if (!this.selectedNode) {
+                    this.selectedNodeId = '';
+                    this.selectedNodeTitle = '';
+                    this.selectedNodeColor = '';
+                    this.dispatchEvent(new CustomEvent(
+                        'node-selected', {
+                            detail: { nodeId: '', node: null },
+                            bubbles: true,
+                            composed: true,
+                        }
+                    ));
+                }
             }
-            this.loading = false;
-            this.renderRoot();
-            // keep search focus
-            const input = this.$('.picker-search input');
-            if (input) {
-                input.focus();
-                input.setSelectionRange(
-                    this.searchQuery.length,
-                    this.searchQuery.length
-                );
+            if (!silent) {
+                this.loading = false;
+                this.renderRoot();
+                const input = this.$('.picker-search input');
+                if (input) {
+                    input.focus();
+                    input.setSelectionRange(
+                        this.searchQuery.length,
+                        this.searchQuery.length
+                    );
+                }
+            } else if (this.expanded) {
+                this.renderRoot();
+                const input = this.$('.picker-search input');
+                if (input) {
+                    input.focus();
+                    input.setSelectionRange(
+                        this.searchQuery.length,
+                        this.searchQuery.length
+                    );
+                }
             }
         });
+    }
+
+    _startPolling() {
+        if (this._pollInterval) {
+            return;
+        }
+        this._pollInterval = setInterval(() => {
+            this._fetchNodes(true);
+        }, 1000);
+    }
+
+    _stopPolling() {
+        if (this._pollInterval) {
+            clearInterval(this._pollInterval);
+            this._pollInterval = null;
+        }
+    }
+
+    _clearHoverDebounce(preserveLeave = false) {
+        if (this._hoverDebounceTimer) {
+            clearTimeout(this._hoverDebounceTimer);
+            this._hoverDebounceTimer = null;
+        }
+        if (!preserveLeave && this._hoveredNodeId) {
+            leaveNode();
+        }
     }
 
     render() {
