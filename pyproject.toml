@@ -1,7 +1,7 @@
 [project]
 name = "xz3r0-nodes"
 description = "Custom ComfyUI nodes: XAudioSave, XImageResize, XImageSave, XLatentLoad, XLatentSave, XMarkdownSave, XVideoSave, XWorkflowSave, XAnyGate10, XAnyToString, XDateTimeString, XKleinRefConditioning, XMath, XMemoryCleanup, XResolution, XSeed, XStringGroup, XStringWrap, XAudioGet, XDataSave, XImageGet, XLoraGet, XStringGet, XVideoGet. Custom ComfyUI extensions: XDataHub, XFitView"
-version = "2.1.0"
+version = "2.1.1"
 license = { file = "LICENSE" }
 
 dependencies = ["ffmpeg-python"]
