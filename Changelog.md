@@ -20,12 +20,13 @@
         - 防抖延迟 (ms)
             - 悬停多久才会开始移动视角进行定位
             - 默认为：300ms
-- 调整 将图片和视频的卡片中显示的文件分辨率移动到全屏预览中，且仅对当前预览的文件显示分辨率
-    - 原先直接显示会导致要读取整页里所有文件的分辨率，导致卡顿
+- 调整 图片和视频的卡片中显示的文件分辨率到全屏预览中，且仅对当前预览的文件显示分辨率
+    - 原先直接显示的方式会需要读取整页里所有文件的分辨率信息，从而导致卡顿
 
-### 2. 🩹 修复 `XMaskEditor` 遮罩编辑器
+### 2. 🪛 调整和修复 `XMaskEditor` 遮罩编辑器
 `♾️ Xz3r0/XDataHub - XImageGet`
-- 移除 颜色和遮罩的透明度文本中错误遗留的“预览”一词
+- 遮罩透明度默认值从 50% 改为 75%
+- 移除 颜色和遮罩的透明度文本中错误遗留的"预览"一词
 
 ### 3. 🩹 修复 `XImageResize` 图片缩放节点
 `♾️ Xz3r0/File-Processing`
@@ -42,6 +43,48 @@
 - 更改 XDataHub 主题（浅色和深色）窗口标题栏可能没有正确改变
     - 现在需要刷新一次网页
 - 扩展 XFitView 自动适应视图功能在某些场景下可能会失效
+
+---
+
+### 1. 🛠️ Enhanced & Adjusted `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Added FFmpeg cached thumbnails
+    - Uses `FFmpeg` installed on the user's system to generate cached thumbnails for images and videos
+    - Added corresponding toggle button and FFmpeg detection status text in XDataHub settings panel
+        - Default: Off
+    - This feature is unavailable if FFmpeg is not installed and configured in the system environment (PATH)
+        - Depends on FFmpeg in the system, just like the XAudioSave and XVideoSave nodes
+- Added hover-to-locate node feature
+    - When hovering over a node name in the node list of the send panel, the canvas view automatically pans to the corresponding node position on the current page
+    - Will not auto-locate if the node is not on the current page (e.g., in another subgraph)
+    - Added corresponding toggle button and delay setting in the XDataHub settings panel
+        - Default: Off
+        - Debounce delay (ms)
+            - How long to wait before starting to pan the view for locating
+            - Default: 300ms
+- Adjusted file resolution display: moved from media cards to fullscreen preview, now only shows resolution for the currently previewed file
+    - The previous approach read resolution info for all files on the page, causing lag
+
+### 2. 🪛 Adjusted and fixed `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet`
+- The default mask opacity is changed from 50% to 75%
+- Removed the erroneously leftover word "Preview" from the color and mask opacity text
+
+### 3. 🩹 Fixed `XImageResize` Image Resize Node
+`♾️ Xz3r0/File-Processing`
+- Fixed an issue where masks were not handled correctly when using the Lanczos interpolation algorithm
+
+### Future Plans
+- Unify XDataHub UI with Vercel or other design style and color scheme
+    - For a more consistent overall interface look
+
+### Known Issues
+- After enabling FFmpeg cached thumbnails, media cards with formats or encodings unsupported by the browser for preview do not show an unsupported indicator
+- Changing the ComfyUI interface language may not properly update the XDataHub and companion node interfaces
+    - A page refresh is currently required
+- Changing the XDataHub theme (light/dark) may not properly update the window title bar
+    - A page refresh is currently required
+- The XFitView auto-fit view extension may not work correctly in some scenarios
 
 </details>
 
