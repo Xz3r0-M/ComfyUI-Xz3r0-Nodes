@@ -629,6 +629,8 @@ function _applyLocale(locale) {
     } catch {
         // Ignore document lang sync failures.
     }
+    // 通知所有 BaseElement 组件重绘
+    document.dispatchEvent(new CustomEvent("xdh:refresh-ui"));
     return true;
 }
 

@@ -455,6 +455,7 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:ui-locale") {
         setLocale(payload.locale);
+        refreshGlobalUi();
         return;
     }
     if (
@@ -539,6 +540,17 @@ async function loadAppSettings() {
     }
 }
 
+function refreshGlobalUi() {
+    // 派发全局重绘事件，所有 BaseElement 子类收到后重新 renderRoot
+    document.dispatchEvent(new CustomEvent("xdh:refresh-ui"));
+    // 双层 rAF 强制浏览器完成布局与绘制
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            document.dispatchEvent(new CustomEvent("xdh:refresh-ui-flush"));
+        });
+    });
+}
+
 function applyThemeV2(mode, options = {}) {
     const normalized = normalizeThemeMode(mode);
     if (document.body.dataset.theme === normalized) {
@@ -548,6 +560,7 @@ function applyThemeV2(mode, options = {}) {
     if (options.notifyHost !== false) {
         postThemeModeToHost(normalized);
     }
+    refreshGlobalUi();
 }
 
 function categoryToMediaType(category) {

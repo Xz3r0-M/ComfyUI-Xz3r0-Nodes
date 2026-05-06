@@ -31,6 +31,7 @@ export class BaseElement extends HTMLElement {
         super();
         this.attachShadow({ mode: 'open' });
         this._storeUnsubscribe = null;
+        this._refreshUiHandler = null;
     }
 
     connectedCallback() {
@@ -41,12 +42,24 @@ export class BaseElement extends HTMLElement {
                 this.onStoreUpdate(state, key, value);
             });
         }
+        // 监听全局重绘事件（主题/语言切换时触发）
+        this._refreshUiHandler = () => {
+            this.renderRoot();
+        };
+        document.addEventListener("xdh:refresh-ui", this._refreshUiHandler);
     }
 
     disconnectedCallback() {
         if (this._storeUnsubscribe) {
             this._storeUnsubscribe();
             this._storeUnsubscribe = null;
+        }
+        if (this._refreshUiHandler) {
+            document.removeEventListener(
+                "xdh:refresh-ui",
+                this._refreshUiHandler
+            );
+            this._refreshUiHandler = null;
         }
     }
 

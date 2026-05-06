@@ -3151,6 +3151,7 @@ const XDataHub = {
             applyThemeMode(mode) {
                 const normalized = normalizeThemeMode(mode);
                 windowEl.setAttribute("data-theme", normalized);
+                document.body.dataset.theme = normalized;
                 postThemeModeToDataFrame();
             },
             postInterruptRequestedToDataFrame() {
@@ -3378,6 +3379,11 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:host-settings-updated") {
         const settings = payload.settings;
+        if (settings && Object.prototype.hasOwnProperty.call(
+            settings, "theme_mode"
+        )) {
+            applyThemeMode(settings.theme_mode);
+        }
         applyHostBehaviorSettings(settings, {
             applyLayout: Object.prototype.hasOwnProperty.call(
                 settings || {},
