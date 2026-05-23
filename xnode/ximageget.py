@@ -292,35 +292,6 @@ class XImageGet(io.ComfyNode):
         return composed_rgb
 
     @staticmethod
-    def _merge_mask_into_image(
-        image: torch.Tensor,
-        mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        在输出张量中将遮罩合并进 alpha。
-
-        合并规则：
-        - 无 alpha 原图：新增 alpha，并使用 1 - mask 作为透明度
-        - 有 alpha 原图：alpha = min(original_alpha, 1 - mask)
-
-        这只影响节点输出数据，不会改动磁盘上的原图文件。
-        """
-        if not isinstance(image, torch.Tensor):
-            return image
-        if not isinstance(mask, torch.Tensor):
-            return image
-        if image.ndim != 4 or mask.ndim != 3:
-            return image
-
-        alpha = (1.0 - mask).clamp(0.0, 1.0).unsqueeze(-1)
-        if image.shape[-1] == 4:
-            merged = image.clone()
-            merged_alpha = torch.minimum(merged[..., 3:4], alpha)
-            merged[..., 3:4] = merged_alpha
-            return merged
-        return torch.cat([image, alpha], dim=-1)
-
-    @staticmethod
     def _build_placeholder_output() -> io.NodeOutput:
         image = torch.zeros((1, 1, 1, 3), dtype=torch.float32)
         mask = torch.zeros((1, 1, 1), dtype=torch.float32)
