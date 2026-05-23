@@ -535,7 +535,7 @@ export class XdhLightbox extends BaseElement {
             const relativeLeft = itemRect.left - containerRect.left;
             const relativeRight = itemRect.right - containerRect.right;
             const leftOverflow = relativeLeft - 8;
-            const rightOverflow = relativeRight + 8 - containerRect.width;
+            const rightOverflow = relativeRight + 8;
             if (leftOverflow < 0) {
                 navContainer.scrollTo({
                     left: scrollLeft + leftOverflow,
@@ -2463,28 +2463,29 @@ export class XdhLightbox extends BaseElement {
                     gap: 4px;
                     max-width: 100%;
                     padding: 4px;
-                    overflow-x: auto;
+                    overflow-x: scroll;
                     overflow-y: hidden;
-                    scrollbar-width: thin;
-                    scrollbar-color: var(--lb-border) transparent;
+                    scrollbar-width: auto;
+                    scrollbar-color: var(--xdh-scrollbar-thumb, var(--lb-text-tertiary))
+                        var(--xdh-scrollbar-track, transparent);
                 }
 
                 .fs-bottom-nav::-webkit-scrollbar {
-                    height: 4px;
+                    height: 6px;
                 }
 
                 .fs-bottom-nav::-webkit-scrollbar-track {
-                    background: transparent;
-                    border-radius: 2px;
+                    background: var(--xdh-scrollbar-track, transparent);
+                    border-radius: 3px;
                 }
 
                 .fs-bottom-nav::-webkit-scrollbar-thumb {
-                    background: var(--lb-border);
-                    border-radius: 2px;
+                    background: var(--xdh-scrollbar-thumb, var(--lb-text-tertiary));
+                    border-radius: 3px;
                 }
 
                 .fs-bottom-nav::-webkit-scrollbar-thumb:hover {
-                    background: var(--lb-text-tertiary);
+                    background: var(--xdh-scrollbar-thumb-hover, var(--lb-text-secondary));
                 }
 
                 .fs-bottom-panel[data-has-nav="false"] .fs-bottom-nav {
