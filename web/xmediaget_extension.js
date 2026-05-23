@@ -677,6 +677,20 @@ function ensureStyles() {
             resize: none;
             outline: none;
             font-family: inherit;
+            scrollbar-color: var(--xdh-scrollbar-thumb, #555) var(--xdh-scrollbar-track, transparent);
+        }
+        .ximageget-preview .ximageget-text-preview::-webkit-scrollbar {
+            width: 10px;
+        }
+        .ximageget-preview .ximageget-text-preview::-webkit-scrollbar-track {
+            background: var(--xdh-scrollbar-track, transparent);
+        }
+        .ximageget-preview .ximageget-text-preview::-webkit-scrollbar-thumb {
+            background: var(--xdh-scrollbar-thumb, #555);
+            border-radius: 4px;
+        }
+        .ximageget-preview .ximageget-text-preview::-webkit-scrollbar-thumb:hover {
+            background: var(--xdh-scrollbar-thumb-hover, #777);
         }
         .ximageget-preview.is-text .ximageget-text-preview {
             display: block;
@@ -1890,6 +1904,32 @@ function installNodeUi(node) {
         });
     }
     refreshNodeBadge(node);
+
+    // 转发滚轮到 ComfyUI 主画布（避开可滚动区域内的原生滚轮）
+    panelInfo.panel.addEventListener("wheel", function (e) {
+        // 检查目标是否在可滚动元素内部（textarea、overflow:auto/scroll 且有溢出内容）
+        for (var el = e.target; el && el !== panelInfo.panel; el = el.parentElement) {
+            if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) {
+                var st = getComputedStyle(el);
+                if (st.overflow.indexOf("auto") >= 0 || st.overflow.indexOf("scroll") >= 0 ||
+                    st.overflowY.indexOf("auto") >= 0 || st.overflowY.indexOf("scroll") >= 0) {
+                    return; // 让原生滚动处理
+                }
+            }
+        }
+        var gc = app.canvas && app.canvas.canvas;
+        if (gc) {
+            gc.dispatchEvent(new WheelEvent("wheel", {
+                deltaX: e.deltaX, deltaY: e.deltaY, deltaZ: e.deltaZ,
+                clientX: e.clientX, clientY: e.clientY,
+                screenX: e.screenX, screenY: e.screenY,
+                ctrlKey: e.ctrlKey, altKey: e.altKey,
+                shiftKey: e.shiftKey, metaKey: e.metaKey,
+                bubbles: true, cancelable: true,
+            }));
+        }
+    });
+
     const consumeDragEvent = (event) => {
         event.preventDefault();
         event.stopPropagation();

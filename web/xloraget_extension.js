@@ -713,6 +713,22 @@ function ensureStyles() {
             overflow-x: auto;
             overflow-y: scroll;
             overflow-anchor: none;
+            scrollbar-width: auto;
+            scrollbar-color: var(--xdh-scrollbar-thumb, #555) var(--xdh-scrollbar-track, transparent);
+        }
+        .xlora-list::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        .xlora-list::-webkit-scrollbar-track {
+            background: var(--xdh-scrollbar-track, transparent);
+        }
+        .xlora-list::-webkit-scrollbar-thumb {
+            background: var(--xdh-scrollbar-thumb, #555);
+            border-radius: 4px;
+        }
+        .xlora-list::-webkit-scrollbar-thumb:hover {
+            background: var(--xdh-scrollbar-thumb-hover, #777);
         }
         .xlora-toolbar {
             display: flex;
@@ -938,7 +954,21 @@ function ensureStyles() {
             align-items: center;
             overflow-x: auto;
             overflow-y: hidden;
-            scrollbar-width: thin;
+            scrollbar-width: auto;
+            scrollbar-color: var(--xdh-scrollbar-thumb, #555) var(--xdh-scrollbar-track, transparent);
+        }
+        .xlora-trigger-inline::-webkit-scrollbar {
+            height: 6px;
+        }
+        .xlora-trigger-inline::-webkit-scrollbar-track {
+            background: var(--xdh-scrollbar-track, transparent);
+        }
+        .xlora-trigger-inline::-webkit-scrollbar-thumb {
+            background: var(--xdh-scrollbar-thumb, #555);
+            border-radius: 3px;
+        }
+        .xlora-trigger-inline::-webkit-scrollbar-thumb:hover {
+            background: var(--xdh-scrollbar-thumb-hover, #777);
         }
         .xlora-trigger-chip {
             width: 112px;
@@ -1028,6 +1058,22 @@ function ensureStyles() {
             overflow-y: auto;
             overscroll-behavior: contain;
             padding-right: 2px;
+            scrollbar-width: auto;
+            scrollbar-color: var(--xdh-scrollbar-thumb, #555) var(--xdh-scrollbar-track, transparent);
+        }
+        .xlora-trigger-panel-list::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        .xlora-trigger-panel-list::-webkit-scrollbar-track {
+            background: var(--xdh-scrollbar-track, transparent);
+        }
+        .xlora-trigger-panel-list::-webkit-scrollbar-thumb {
+            background: var(--xdh-scrollbar-thumb, #555);
+            border-radius: 4px;
+        }
+        .xlora-trigger-panel-list::-webkit-scrollbar-thumb:hover {
+            background: var(--xdh-scrollbar-thumb-hover, #777);
         }
         .xlora-trigger-panel-empty {
             font-size: 11px;
@@ -1639,6 +1685,31 @@ function installNodeUi(node) {
             serialize: false,
         });
     }
+
+    // 转发滚轮到 ComfyUI 主画布（避开可滚动区域内的原生滚轮）
+    ui.panel.addEventListener("wheel", function (e) {
+        for (var el = e.target; el && el !== ui.panel; el = el.parentElement) {
+            if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) {
+                var st = getComputedStyle(el);
+                if (st.overflow.indexOf("auto") >= 0 || st.overflow.indexOf("scroll") >= 0 ||
+                    st.overflowY.indexOf("auto") >= 0 || st.overflowY.indexOf("scroll") >= 0) {
+                    return;
+                }
+            }
+        }
+        var gc = app.canvas && app.canvas.canvas;
+        if (gc) {
+            gc.dispatchEvent(new WheelEvent("wheel", {
+                deltaX: e.deltaX, deltaY: e.deltaY, deltaZ: e.deltaZ,
+                clientX: e.clientX, clientY: e.clientY,
+                screenX: e.screenX, screenY: e.screenY,
+                ctrlKey: e.ctrlKey, altKey: e.altKey,
+                shiftKey: e.shiftKey, metaKey: e.metaKey,
+                bubbles: true, cancelable: true,
+            }));
+        }
+    });
+
     ensureXLoraNodeMinSize(node);
     ui.globalToggleInput.checked = !!state.globalSeparateClip;
     ui.globalToggleInput.addEventListener("change", () => {

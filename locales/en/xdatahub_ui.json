@@ -126,5 +126,12 @@
   "xdatahub.ui.node.ximagecompare.res_a": "A:",
   "xdatahub.ui.node.ximagecompare.res_b": "B:",
   "xdatahub.ui.node.ximagecompare.match_ok": "Resolutions match",
-  "xdatahub.ui.node.ximagecompare.match_diff": "Resolutions differ"
+  "xdatahub.ui.node.ximagecompare.match_diff": "Resolutions differ",
+  "xdatahub.ui.node.ximagecompare.curve_label": "PP Curve:",
+  "xdatahub.ui.node.ximagecompare.curve_sine": "Sine",
+  "xdatahub.ui.node.ximagecompare.curve_eased": "Ease",
+  "xdatahub.ui.node.ximagecompare.curve_hold": "Hold",
+  "xdatahub.ui.node.ximagecompare.curve_long": "Long",
+  "xdatahub.ui.node.ximagecompare.wheel_ctrl": "Canvas Scroll",
+  "xdatahub.ui.node.ximagecompare.wheel_ctrl_tip": "When enabled, scrolling on the canvas adjusts the slider parameter for the current mode."
 }

@@ -126,5 +126,12 @@
   "xdatahub.ui.node.ximagecompare.res_a": "A:",
   "xdatahub.ui.node.ximagecompare.res_b": "B:",
   "xdatahub.ui.node.ximagecompare.match_ok": "分辨率一致",
-  "xdatahub.ui.node.ximagecompare.match_diff": "分辨率不一致"
+  "xdatahub.ui.node.ximagecompare.match_diff": "分辨率不一致",
+  "xdatahub.ui.node.ximagecompare.curve_label": "乒乓曲线:",
+  "xdatahub.ui.node.ximagecompare.curve_sine": "正弦",
+  "xdatahub.ui.node.ximagecompare.curve_eased": "缓出",
+  "xdatahub.ui.node.ximagecompare.curve_hold": "保持",
+  "xdatahub.ui.node.ximagecompare.curve_long": "长保持",
+  "xdatahub.ui.node.ximagecompare.wheel_ctrl": "画布滚动",
+  "xdatahub.ui.node.ximagecompare.wheel_ctrl_tip": "开启后，在画布上滚动滚轮可调节当前模式的滑块参数。"
 }

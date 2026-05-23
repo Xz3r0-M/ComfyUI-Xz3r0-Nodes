@@ -37,6 +37,16 @@ var MODE_KEYS = [
     { key: MODE_PINGPONG_KEY, fb: MODE_PINGPONG_FB },
 ];
 
+// 曲线标签
+var CURVE_LABEL_KEY = LOCALE_PREFIX + ".curve_label";
+var CURVE_LABEL_FB = "Curve";
+
+// 画布滚轮控制开关
+var WHEEL_CTRL_KEY = LOCALE_PREFIX + ".wheel_ctrl";
+var WHEEL_CTRL_FB = "Canvas Scroll";
+var WHEEL_CTRL_TIP_KEY = LOCALE_PREFIX + ".wheel_ctrl_tip";
+var WHEEL_CTRL_TIP_FB = "When enabled, scrolling on the canvas adjusts the slider parameter for the current mode.";
+
 // 滑块控制标签
 var LABEL_SPLIT_KEY = LOCALE_PREFIX + ".label_split";
 var LABEL_SPLIT_FB = "Split";
@@ -81,6 +91,22 @@ var MODE = {
     PINGPONG: 3,
 };
 var MODE_COUNT = 4;
+
+// 乒乓曲线枚举
+var CURVE_SINE = 0;
+var CURVE_EASED = 1;
+var CURVE_HOLD = 2;
+var CURVE_LONG_HOLD = 3;
+var CURVE_COUNT = 4;
+var CURVE_DEFAULT = CURVE_SINE;
+
+// 乒乓曲线定义
+var PINGPONG_CURVES = [
+    { name: "Sine", key: LOCALE_PREFIX + ".curve_sine" },
+    { name: "Ease", key: LOCALE_PREFIX + ".curve_eased" },
+    { name: "Hold", key: LOCALE_PREFIX + ".curve_hold" },
+    { name: "Long", key: LOCALE_PREFIX + ".curve_long" },
+];
 
 // 默认画布尺寸
 var DEFAULT_CW = 640;
@@ -197,6 +223,27 @@ function applyNodeLocale(state) {
         state.modeButtons[i].textContent = modeNames[i];
     }
 
+    // 曲线标签
+    if (state.curveLabel) {
+        state.curveLabel.textContent = t(CURVE_LABEL_KEY, CURVE_LABEL_FB);
+    }
+    // 滚轮开关文字
+    if (state.wheelToggle) {
+        state.wheelToggle.textContent = t(WHEEL_CTRL_KEY, WHEEL_CTRL_FB);
+        state.wheelToggle.title = t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB);
+    }
+
+    // 曲线按钮文字
+    if (state.curveButtons) {
+        for (var ci = 0; ci < state.curveButtons.length; ci++) {
+            state.curveButtons[ci].textContent = t(
+                PINGPONG_CURVES[ci].key,
+                PINGPONG_CURVES[ci].name
+            );
+            state.curveButtons[ci].title = state.curveButtons[ci].textContent;
+        }
+    }
+
     // 控制标签
     updateCtrlLabel(state);
 
@@ -302,6 +349,8 @@ function buildViewUrl(imgInfo) {
 var HIDDEN_WIDGET_NAMES = [
     "__compare_mode", "__compare_slider",
     "__img_a_info", "__img_b_info",
+    "__compare_curve",
+    "__compare_wheel_ctrl",
 ];
 
 function findWidget(node, name) {
@@ -387,6 +436,7 @@ function injectStyles() {
         "}",
         ".xcompare-toolbar-row.xcompare-label-row {",
         "  margin-bottom: 3px; position: relative;",
+        "  min-height: 26px;",
         "}",
         ".xcompare-toolbar-row.xcompare-buttons-row {",
         "  justify-content: center;",
@@ -463,6 +513,37 @@ function injectStyles() {
         "  width: 7px; height: 7px; border-radius: 50%;",
         "  flex-shrink: 0;",
         "}",
+        ".xcompare-curve-group {",
+        "  display: flex; align-items: center; gap: 3px;",
+        "  margin-left: auto;",
+        "}",
+        ".xcompare-curve-btn {",
+        "  padding: 3px 6px;",
+        "  border: 1px solid var(--xdh-clr-hairline, #555);",
+        "  border-radius: var(--xdh-radius-sm, 3px);",
+        "  cursor: pointer;",
+        "  background: var(--xdh-clr-surface-strong, #2a2a2a);",
+        "  color: var(--xdh-color-text-secondary, #888);",
+        "  font: var(--xdh-font-micro-label, 11px sans-serif);",
+        "  white-space: nowrap;",
+        "  opacity: 0.7;",
+        "  transition: border-color 120ms ease, background-color 120ms ease;",
+        "}",
+        ".xcompare-curve-btn:hover {",
+        "  border-color: var(--xdh-clr-primary, #ff385c);",
+        "}",
+        ".xcompare-curve-label {",
+        "  font: var(--xdh-font-micro-label, 11px sans-serif);",
+        "  color: var(--xdh-color-text-secondary, #666);",
+        "  white-space: nowrap;",
+        "  margin-right: 4px;",
+        "}",
+        ".xcompare-curve-btn.active {",
+        "  opacity: 1;",
+        "  background: var(--xdh-clr-primary, #ff385c);",
+        "  color: #fff;",
+        "  border-color: var(--xdh-clr-primary, #ff385c);",
+        "}",
         ".xcompare-canvas-wrap {",
         "  position: relative; overflow: hidden;",
         "  background: var(--xdh-clr-surface-card, #1a1a1a);",
@@ -506,6 +587,8 @@ function createCompareState(node) {
         spotRadius: DEFAULT_SPOT_RADIUS,
         blendOpacity: DEFAULT_BLEND_OPACITY,
         pingPongSpeed: DEFAULT_PINGPONG_SPEED,
+        pingPongCurve: CURVE_DEFAULT,
+        wheelControlEnabled: false,
         dragging: false,
         dragStartX: 0,
         _spotBufPt: null,
@@ -720,9 +803,7 @@ function renderBlend(state, ctx, iw, ih) {
 
     var opacity;
     if (state.mode === MODE.PINGPONG) {
-        var elapsed = (performance.now() - state.animStart) / 1000;
-        var period = getPingPongPeriod(state.pingPongSpeed);
-        opacity = Math.abs(Math.sin(elapsed / period * Math.PI));
+        opacity = getPingPongOpacity(state);
     } else {
         opacity = state.blendOpacity / 100;
     }
@@ -777,6 +858,60 @@ function renderOverlay(state, ctx, bw, bh, off) {
 
 function getPingPongPeriod(speed) {
     return 8.0 - (speed / 100) * 7.5;
+}
+
+// =========================================================================
+// 乒乓曲线 — 4 种可选动画曲线
+// =========================================================================
+
+/** 根据当前曲线计算乒乓透明度 [0, 1] */
+function getPingPongOpacity(state) {
+    var elapsed = (performance.now() - state.animStart) / 1000;
+    var period = getPingPongPeriod(state.pingPongSpeed);
+    var t = ((elapsed % period) / period); // 归一化相位 [0, 1)
+    var curve = state.pingPongCurve;
+
+    switch (curve) {
+    case CURVE_SINE:
+        // 对称正弦 sin²(πt) — A/B 视觉时间相等
+        return 0.5 * (1 - Math.cos(2 * Math.PI * t));
+
+    case CURVE_EASED:
+        // 对称正弦基础上施加 smoothstep，两端更平、中间更快
+        var v = 0.5 * (1 - Math.cos(2 * Math.PI * t));
+        return v * v * (3 - 2 * v);
+
+    case CURVE_HOLD:
+        // 两端保持：30% 保持 A → 25% 升至 B → 20% 保持 B → 25% 降至 A
+        return evalHoldCurve(t, 0.15, 0.10);
+
+    case CURVE_LONG_HOLD:
+        // 两端保持：40% 保持 A → 15% 升至 B → 30% 保持 B → 15% 降至 A
+        return evalHoldCurve(t, 0.20, 0.15);
+
+    default:
+        return Math.abs(Math.sin(t * Math.PI));
+    }
+}
+
+/** 分段保持曲线：t∈[0,1)，holdA=两端保持 A 的比例，holdB=两端保持 B 的比例 */
+function evalHoldCurve(t, holdA, holdB) {
+    if (t <= holdA) return 0;                 // hold at A
+    if (t >= 1 - holdA) return 0;             // hold at A (wrap)
+
+    var mid = 0.5;
+    if (t >= mid - holdB && t <= mid + holdB) return 1; // hold at B
+
+    var riseLen = mid - holdB - holdA;         // 上升/下降单段时长
+    if (t < mid) {
+        // 上升：A 保持区 → B 保持区
+        var p = (t - holdA) / riseLen;
+        return p * p * (3 - 2 * p);
+    } else {
+        // 下降：B 保持区 → A 保持区
+        var p = (t - (mid + holdB)) / riseLen;
+        return 1 - p * p * (3 - 2 * p);
+    }
 }
 
 // =========================================================================
@@ -870,9 +1005,10 @@ function createCompareUI(node) {
     var toolbar = document.createElement("div");
     toolbar.className = "xcompare-toolbar";
 
-    // 第1行：模式按钮（居中）
+    // 第1行：模式按钮（居中）+ 滚轮控制开关（靠右）
     var row1 = document.createElement("div");
     row1.className = "xcompare-toolbar-row xcompare-buttons-row";
+    row1.style.position = "relative";
     var modeNames = [
         t(MODE_SLIDE_KEY, MODE_SLIDE_FB),
         t(MODE_SPOTLIGHT_KEY, MODE_SPOTLIGHT_FB),
@@ -891,6 +1027,43 @@ function createCompareUI(node) {
         modeButtons.push(btn);
     }
     state.modeButtons = modeButtons;
+
+    // 画布悬停滚轮控制开关（第一行靠右）
+    var wheelToggle = document.createElement("button");
+    wheelToggle.textContent = t(WHEEL_CTRL_KEY, WHEEL_CTRL_FB);
+    wheelToggle.title = t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB);
+    wheelToggle.style.cssText = "position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:3px 6px;font:var(--xdh-font-micro-label, 11px sans-serif);";
+    wheelToggle.addEventListener("click", function () {
+        toggleWheelCtrl(state);
+    });
+    row1.appendChild(wheelToggle);
+    state.wheelToggle = wheelToggle;
+
+    // 曲线选择按钮组（靠右，仅在 PINGPONG 模式显示）
+    var curveGroup = document.createElement("span");
+    curveGroup.className = "xcompare-curve-group";
+    curveGroup.style.display = "none";
+    // 曲线标签
+    var curveLabel = document.createElement("span");
+    curveLabel.className = "xcompare-curve-label";
+    curveLabel.textContent = t(CURVE_LABEL_KEY, CURVE_LABEL_FB);
+    curveGroup.appendChild(curveLabel);
+    state.curveLabel = curveLabel;
+    var curveButtons = [];
+    for (var c = 0; c < CURVE_COUNT; c++) {
+        var cBtn = document.createElement("button");
+        cBtn.textContent = t(PINGPONG_CURVES[c].key, PINGPONG_CURVES[c].name);
+        cBtn.className = "xcompare-curve-btn";
+        cBtn.title = cBtn.textContent;
+        cBtn.addEventListener("click", (function (idx) {
+            return function () { setCurve(state, idx); };
+        })(c));
+        curveGroup.appendChild(cBtn);
+        curveButtons.push(cBtn);
+    }
+    state.curveButtons = curveButtons;
+    state.curveGroup = curveGroup;
+
     toolbar.appendChild(row1);
 
     // 第2行：A + ● + B 靠左，控制标签居中
@@ -921,6 +1094,8 @@ function createCompareUI(node) {
     ctrlLabel.textContent = t(LABEL_SPLIT_KEY, LABEL_SPLIT_FB) + ": 50%";
     state.ctrlLabel = ctrlLabel;
     row2.appendChild(ctrlLabel);
+    // 曲线选择按钮组移到第2行靠右
+    row2.appendChild(curveGroup);
     toolbar.appendChild(row2);
 
     // 第3行：参数滑块（padding=0 对齐画布宽度）
@@ -978,6 +1153,7 @@ function createCompareUI(node) {
     // --- 隐藏状态 widget（对标 XImageGet2 双向隐藏） ---
     ensureHiddenWidget(node, "__compare_mode", MODE.SLIDE);
     ensureHiddenWidget(node, "__compare_slider", "50");
+    ensureHiddenWidget(node, "__compare_curve", CURVE_DEFAULT);
     ensureHiddenWidget(node, "__img_a_info", "");
     ensureHiddenWidget(node, "__img_b_info", "");
     removeHiddenInputSlots(node);
@@ -1048,6 +1224,11 @@ function setMode(state, newMode) {
         startPingPong(state);
     }
 
+    // 曲线按钮组仅 PINGPONG 模式可见
+    if (state.curveGroup) {
+        state.curveGroup.style.display = newMode === MODE.PINGPONG ? "" : "none";
+    }
+
     saveState(state);
 }
 
@@ -1057,6 +1238,51 @@ function updateModeButtons(state) {
             state.modeButtons[i].classList.add("active");
         } else {
             state.modeButtons[i].classList.remove("active");
+        }
+    }
+}
+
+/** 切换滚轮控制开关 */
+function toggleWheelCtrl(state) {
+    state.wheelControlEnabled = !state.wheelControlEnabled;
+    updateWheelToggle(state);
+    saveState(state);
+}
+
+function updateWheelToggle(state) {
+    if (!state.wheelToggle) return;
+    if (state.wheelControlEnabled) {
+        state.wheelToggle.classList.add("active");
+    } else {
+        state.wheelToggle.classList.remove("active");
+    }
+}
+
+/** 切换曲线并更新 UI */
+function setCurve(state, curveIdx) {
+    if (state.pingPongCurve === curveIdx) return;
+    state.pingPongCurve = curveIdx;
+    updateCurveButtons(state);
+    updateCtrlLabel(state);
+
+    // 切换曲线时重启动画，使过渡从新的起点开始
+    if (state.mode === MODE.PINGPONG && state.loaded) {
+        stopPingPong(state);
+        startPingPong(state);
+    } else {
+        render(state);
+    }
+
+    saveState(state);
+}
+
+function updateCurveButtons(state) {
+    if (!state.curveButtons) return;
+    for (var i = 0; i < state.curveButtons.length; i++) {
+        if (i === state.pingPongCurve) {
+            state.curveButtons[i].classList.add("active");
+        } else {
+            state.curveButtons[i].classList.remove("active");
         }
     }
 }
@@ -1093,7 +1319,8 @@ function updateCtrlLabel(state) {
         val = Math.round(state.blendOpacity) + "%"; break;
     case MODE.PINGPONG:
         label = t(LABEL_SPEED_KEY, LABEL_SPEED_FB);
-        val = Math.round(state.pingPongSpeed) + "%"; break;
+        val = Math.round(state.pingPongSpeed) + "% \u00b7 "
+            + PINGPONG_CURVES[state.pingPongCurve].name; break;
     default:
         label = ""; val = "";
     }
@@ -1151,8 +1378,31 @@ function bindCanvasEvents(state) {
     canvas.addEventListener("contextmenu", function (e) {
         e.preventDefault();
     });
+    // 永久 wheel 监听：开启时控制滑块，关闭时转发给 ComfyUI 主画布实现缩放
     canvas.addEventListener("wheel", function (e) {
-        onWheel(state, e);
+        if (state.wheelControlEnabled) {
+            e.preventDefault();
+            onWheel(state, e);
+        } else {
+            var gc = app.canvas && app.canvas.canvas;
+            if (gc) {
+                gc.dispatchEvent(new WheelEvent("wheel", {
+                    deltaX: e.deltaX,
+                    deltaY: e.deltaY,
+                    deltaZ: e.deltaZ,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    screenX: e.screenX,
+                    screenY: e.screenY,
+                    ctrlKey: e.ctrlKey,
+                    altKey: e.altKey,
+                    shiftKey: e.shiftKey,
+                    metaKey: e.metaKey,
+                    bubbles: true,
+                    cancelable: true,
+                }));
+            }
+        }
     }, { passive: false });
 }
 
@@ -1412,6 +1662,12 @@ function saveState(state) {
 
     var sliderW = ensureHiddenWidget(node, "__compare_slider", "50");
     if (sliderW) sliderW.value = sliderVal;
+
+    var curveW = ensureHiddenWidget(node, "__compare_curve", CURVE_DEFAULT);
+    if (curveW) curveW.value = state.pingPongCurve;
+
+    var wheelW = ensureHiddenWidget(node, "__compare_wheel_ctrl", "0");
+    if (wheelW) wheelW.value = state.wheelControlEnabled ? "1" : "0";
 }
 
 function restoreState(state) {
@@ -1449,8 +1705,28 @@ function restoreState(state) {
         } catch (e) { /* ignore parse errors */ }
     }
 
+    // 恢复曲线索引
+    var curveW = ensureHiddenWidget(node, "__compare_curve", CURVE_DEFAULT);
+    if (curveW && curveW.value != null && curveW.value !== "") {
+        var cv = Number(curveW.value);
+        if (cv >= 0 && cv < CURVE_COUNT) state.pingPongCurve = cv;
+    }
+
+    // 恢复滚轮开关
+    var wheelW = ensureHiddenWidget(node, "__compare_wheel_ctrl", "0");
+    if (wheelW && wheelW.value != null && wheelW.value !== "") {
+        state.wheelControlEnabled = String(wheelW.value) === "1";
+    }
+
     updateModeButtons(state);
+    updateWheelToggle(state);
+    updateCurveButtons(state);
     updateSlider(state);
+
+    // 曲线按钮组显示状态
+    if (state.curveGroup) {
+        state.curveGroup.style.display = state.mode === MODE.PINGPONG ? "" : "none";
+    }
 
     if (state.canvas) {
         state.canvas.style.cursor = state.mode === MODE.SPOTLIGHT ? "none" : "crosshair";

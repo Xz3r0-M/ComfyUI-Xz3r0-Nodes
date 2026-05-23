@@ -1648,6 +1648,28 @@ function installNodeUi(node) {
         });
     }
 
+    // 转发滚轮到 ComfyUI 主画布，实现画布缩放
+    panelInfo.panel.addEventListener("wheel", function (e) {
+        var gc = app.canvas && app.canvas.canvas;
+        if (gc) {
+            gc.dispatchEvent(new WheelEvent("wheel", {
+                deltaX: e.deltaX,
+                deltaY: e.deltaY,
+                deltaZ: e.deltaZ,
+                clientX: e.clientX,
+                clientY: e.clientY,
+                screenX: e.screenX,
+                screenY: e.screenY,
+                ctrlKey: e.ctrlKey,
+                altKey: e.altKey,
+                shiftKey: e.shiftKey,
+                metaKey: e.metaKey,
+                bubbles: true,
+                cancelable: true,
+            }));
+        }
+    });
+
     const consumeDragEvent = (event) => {
         event.preventDefault();
         event.stopPropagation();
