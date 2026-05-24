@@ -1428,8 +1428,7 @@ function updateCtrlLabel(state) {
         val = Math.round(state.blendOpacity) + "%"; break;
     case MODE.PINGPONG:
         label = t(LABEL_SPEED_KEY, LABEL_SPEED_FB);
-        val = Math.round(state.pingPongSpeed) + "% \u00b7 "
-            + PINGPONG_CURVES[state.pingPongCurve].name; break;
+        val = Math.round(state.pingPongSpeed) + "%"; break;
     default:
         label = ""; val = "";
     }
