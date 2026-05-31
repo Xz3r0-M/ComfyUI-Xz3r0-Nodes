@@ -39,6 +39,8 @@ const Dictionary = {
         'nav.sort.date_asc':    '最旧优先',
         'nav.sort.name_asc':    '名称 A-Z',
         'nav.sort.name_desc':   '名称 Z-A',
+        'nav.sort.size_desc':   '大小降序',
+        'nav.sort.size_asc':    '大小升序',
 
         // ── nav — lock/status ────────────────────────────────
         'nav.lock.running':                 '工作',
@@ -321,6 +323,8 @@ const Dictionary = {
         'nav.sort.date_asc':    'Oldest First',
         'nav.sort.name_asc':    'Name A-Z',
         'nav.sort.name_desc':   'Name Z-A',
+        'nav.sort.size_desc':   'Size ↓',
+        'nav.sort.size_asc':    'Size ↑',
 
         // ── nav — lock/status ────────────────────────────────
         'nav.lock.running':                 'Running',

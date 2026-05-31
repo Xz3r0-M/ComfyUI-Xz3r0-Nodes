@@ -14,6 +14,8 @@ function getSortOptions() {
         { key: "date-asc",  label: t("nav.sort.date_asc") },
         { key: "name-asc",  label: t("nav.sort.name_asc") },
         { key: "name-desc", label: t("nav.sort.name_desc") },
+        { key: "size-desc", label: t("nav.sort.size_desc") },
+        { key: "size-asc",  label: t("nav.sort.size_asc") },
     ];
 }
 
