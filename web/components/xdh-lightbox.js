@@ -10,6 +10,7 @@ import {
     TOOLTIP_CSS,
 } from "../core/icon.js";
 import { t } from "../core/i18n.js?v=20260407-3";
+import { toggleMediaFavorite } from "../core/api.js?v=20260407-416";
 
 function getPreviewSettings() {
     const settings = appStore.state.xdatahubSettings || {};
@@ -389,6 +390,7 @@ export class XdhLightbox extends BaseElement {
         const bottomPanel = this.$(".fs-bottom-panel");
         const prevBtn = this.$(".fs-prev-edge-btn");
         const nextBtn = this.$(".fs-next-edge-btn");
+        const favBtn = this.$(".fs-fav-btn");
         const openBtn = this.$(".fs-open-btn");
         const closeBtn = this.$(".fs-close-btn");
         const hasCurrent = !!this._current;
@@ -430,6 +432,26 @@ export class XdhLightbox extends BaseElement {
         if (nextBtn) {
             nextBtn.disabled = !this._navigation
                 || this._navigationIndex >= total - 1;
+        }
+        if (favBtn) {
+            favBtn.disabled = !hasCurrent;
+            if (hasCurrent && this._current) {
+                const favSet = appStore.state.favoriteIdSet || [];
+                const ref = String(
+                    this._current.raw?.extra?.media_ref
+                    || this._current.raw?.media_ref
+                    || this._current.raw?.public_ref
+                    || this._current.raw?.ref
+                    || this._current.id || ""
+                );
+                const isFav = favSet.includes(ref);
+                favBtn.dataset.tooltip = isFav
+                    ? t("grid.btn.unfavorite")
+                    : t("grid.btn.favorite");
+                favBtn.setAttribute("aria-label", favBtn.dataset.tooltip);
+                favBtn.innerHTML = icon(isFav ? "star-filled" : "star", 16);
+                favBtn.classList.toggle("is-fav", isFav);
+            }
         }
         if (openBtn) {
             openBtn.disabled = !hasCurrent;
@@ -1532,6 +1554,10 @@ export class XdhLightbox extends BaseElement {
                     void this._openNavigationByStep(1);
                     return;
                 }
+                if (action === "fav") {
+                    this._toggleFavorite();
+                    return;
+                }
                 if (action === "open") {
                     if (this._current) {
                         this._openInNewTab(this._current);
@@ -1677,6 +1703,34 @@ export class XdhLightbox extends BaseElement {
             return;
         }
         window.open(detail.url, "_blank", "noopener,noreferrer");
+    }
+
+    async _toggleFavorite() {
+        if (!this._current) return;
+        const item = this._current;
+        const ref = String(
+            item.raw?.extra?.media_ref || item.raw?.media_ref
+            || item.raw?.public_ref || item.raw?.ref || item.id || ""
+        );
+        if (!ref) return;
+        const payload = {
+            public_ref: ref,
+            media_type: item.type || "",
+            filename: item.name || "",
+            rel_path: item.raw?.rel_path || item.raw?.extra?.rel_path || "",
+            file_ext: item.raw?.file_ext || item.raw?.extra?.file_ext || "",
+        };
+        const result = await toggleMediaFavorite(payload);
+        if (!result) return;
+        const set = [...(appStore.state.favoriteIdSet || [])];
+        if (result.favorited) {
+            if (!set.includes(ref)) set.push(ref);
+        } else {
+            const idx = set.indexOf(ref);
+            if (idx !== -1) set.splice(idx, 1);
+        }
+        appStore.state.favoriteIdSet = set;
+        this._syncChrome();
     }
 
     async _showDetail(detail, navigation = null) {
@@ -2798,6 +2852,13 @@ export class XdhLightbox extends BaseElement {
             <div class="fs-stage">
                 <!-- Top Right: Open & Close buttons -->
                 <div class="fs-top-actions">
+                    <button class="fs-action-btn fs-fav-btn xdh-tooltip xdh-tooltip-down"
+                            type="button"
+                            data-lightbox-action="fav"
+                            data-tooltip="${t("grid.btn.favorite")}"
+                            aria-label="${t("grid.btn.favorite")}">
+                        ${icon("star", 16)}
+                    </button>
                     <button class="fs-action-btn fs-open-btn xdh-tooltip xdh-tooltip-down"
                             type="button"
                             data-lightbox-action="open"

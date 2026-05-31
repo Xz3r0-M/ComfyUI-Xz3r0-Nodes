@@ -4325,6 +4325,30 @@ def ensure_favorites_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def ensure_media_favorites_schema(conn: sqlite3.Connection) -> None:
+    """初始化 media_favorites 表（媒体文件收藏，与工作流记录收藏隔离）。"""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS media_favorites ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "public_ref TEXT NOT NULL UNIQUE,"
+        "media_type TEXT NOT NULL,"
+        "filename TEXT NOT NULL DEFAULT '',"
+        "rel_path TEXT NOT NULL DEFAULT '',"
+        "file_ext TEXT NOT NULL DEFAULT '',"
+        "created_at TEXT NOT NULL"
+        ")"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mf_media_type "
+        "ON media_favorites(media_type)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mf_public_ref "
+        "ON media_favorites(public_ref)"
+    )
+    conn.commit()
+
+
 def normalize_favorite_payload(payload: Any) -> tuple[Any, str]:
     canonical = json.dumps(
         payload,
@@ -4935,6 +4959,350 @@ async def api_records(request: web.Request) -> web.Response:
         )
         return json_error("internal_error", status=500)
     return web.json_response({"status": "success", **list_payload(data)})
+
+
+# ── 媒体文件收藏 (media_favorites) ──────────────────────────────────────────
+
+
+def _empty_paginated(page_size: int) -> dict[str, Any]:
+    return {
+        "items": [],
+        "page": 1,
+        "page_size": page_size,
+        "total": 0,
+        "total_pages": 1,
+    }
+
+
+def _media_favorites_conn() -> sqlite3.Connection:
+    path = favorites_db_path()
+    if not path.exists():
+        raise FileNotFoundError(f"user_favorites.db not found: {path}")
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode=WAL")
+    ensure_media_favorites_schema(conn)
+    return conn
+
+
+def _resolve_media_favorite_item(
+    conn: sqlite3.Connection,
+    fav_row: sqlite3.Row,
+) -> dict[str, Any]:
+    """联表 media_index / lora_items，返回带存活状态的条目。"""
+    public_ref = str(fav_row["public_ref"] or "")
+    media_type = str(fav_row["media_type"] or "")
+    filename = str(fav_row["filename"] or "")
+    rel_path = str(fav_row["rel_path"] or "")
+    file_ext = str(fav_row["file_ext"] or "")
+    favorited_at = str(fav_row["created_at"] or "")
+
+    live_row = None
+    if media_type == "lora":
+        lora_conn = connect_lora_trigger_db()
+        try:
+            ensure_lora_trigger_schema(lora_conn)
+            live_row = lora_conn.execute(
+                "SELECT public_ref, real_path, rel_path, title,"
+                " mtime, size FROM lora_items"
+                " WHERE public_ref = ? AND valid = 1",
+                (public_ref,),
+            ).fetchone()
+        except Exception:
+            pass
+        finally:
+            lora_conn.close()
+    else:
+        media_conn = None
+        try:
+            media_conn = sqlite3.connect(str(STORE.db_path))
+            media_conn.row_factory = sqlite3.Row
+            live_row = media_conn.execute(
+                "SELECT public_ref, real_path, rel_path, filename,"
+                " media_type, mtime, size FROM media_index"
+                " WHERE public_ref = ? AND valid = 1",
+                (public_ref,),
+            ).fetchone()
+        except Exception:
+            pass
+        finally:
+            if media_conn is not None:
+                media_conn.close()
+
+    if live_row is not None:
+        return {
+            "public_ref": public_ref,
+            "media_type": media_type,
+            "filename": str(live_row["filename"] or filename),
+            "rel_path": str(live_row["rel_path"] or rel_path),
+            "file_ext": file_ext,
+            "favorited_at": favorited_at,
+            "exists": True,
+            "real_path": str(live_row["real_path"] or ""),
+            "mtime": float(live_row["mtime"] or 0),
+            "size": int(live_row["size"] or 0),
+            "title": str(
+                live_row["title"]
+                if "title" in live_row.keys()
+                else live_row["filename"]
+            ),
+        }
+    return {
+        "public_ref": public_ref,
+        "media_type": media_type,
+        "filename": filename,
+        "rel_path": rel_path,
+        "file_ext": file_ext,
+        "favorited_at": favorited_at,
+        "exists": False,
+    }
+
+
+def toggle_media_favorite(payload: dict[str, Any]) -> dict[str, Any]:
+    public_ref = normalize_media_ref(str(payload.get("public_ref") or ""))
+    media_type = str(payload.get("media_type") or "").strip().lower()
+    if not public_ref or media_type not in ("image", "video", "audio", "lora"):
+        raise ValueError("invalid media_favorite payload")
+    filename = str(payload.get("filename") or "")[:512]
+    rel_path = str(payload.get("rel_path") or "")[:1024]
+    file_ext = str(payload.get("file_ext") or "")[:32]
+    conn = _media_favorites_conn()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM media_favorites WHERE public_ref = ?",
+            (public_ref,),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                "DELETE FROM media_favorites WHERE public_ref = ?",
+                (public_ref,),
+            )
+            conn.commit()
+            return {"favorited": False}
+        conn.execute(
+            "INSERT INTO media_favorites"
+            " (public_ref, media_type, filename, rel_path, file_ext,"
+            " created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                public_ref,
+                media_type,
+                filename,
+                rel_path,
+                file_ext,
+                utc_now_iso(),
+            ),
+        )
+        conn.commit()
+        return {"favorited": True}
+    finally:
+        conn.close()
+
+
+def list_media_favorites(
+    media_type: str,
+    page: int,
+    page_size: int,
+    sort_order: str = "desc",
+) -> dict[str, Any]:
+    safe_type = str(media_type or "").strip().lower()
+    if safe_type not in ("image", "video", "audio", "lora"):
+        return _empty_paginated(page_size)
+    safe_sort = sort_order if sort_order in ("asc", "desc") else "desc"
+    if not favorites_db_path().exists():
+        return _empty_paginated(page_size)
+    conn = _media_favorites_conn()
+    try:
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM media_favorites"
+            " WHERE media_type = ?",
+            (safe_type,),
+        ).fetchone()
+        total = int(count_row["cnt"]) if count_row else 0
+        total_pages = max(1, math.ceil(total / max(1, page_size)))
+        safe_page = max(1, min(page, total_pages))
+        offset = (safe_page - 1) * page_size
+        rows = conn.execute(
+            "SELECT * FROM media_favorites"
+            " WHERE media_type = ?"
+            " ORDER BY created_at"
+            + (" DESC" if safe_sort == "desc" else " ASC")
+            + " LIMIT ? OFFSET ?",
+            (safe_type, page_size, offset),
+        ).fetchall()
+        items = [_resolve_media_favorite_item(conn, row) for row in rows]
+    finally:
+        conn.close()
+    return {
+        "items": items,
+        "page": safe_page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+    }
+
+
+def get_media_favorite_ids(media_type: str) -> list[str]:
+    safe_type = str(media_type or "").strip().lower()
+    if safe_type not in ("image", "video", "audio", "lora"):
+        return []
+    if not favorites_db_path().exists():
+        return []
+    conn = _media_favorites_conn()
+    try:
+        rows = conn.execute(
+            "SELECT public_ref FROM media_favorites WHERE media_type = ?",
+            (safe_type,),
+        ).fetchall()
+        return [str(row["public_ref"] or "") for row in rows]
+    finally:
+        conn.close()
+
+
+def cleanup_media_favorites() -> dict[str, int]:
+    if not favorites_db_path().exists():
+        return {"deleted": 0}
+    conn = _media_favorites_conn()
+    deleted = 0
+    try:
+        # 清理 media 类型孤儿
+        if STORE.db_path.exists():
+            media_conn = sqlite3.connect(str(STORE.db_path))
+            media_conn.row_factory = sqlite3.Row
+            try:
+                media_rows = media_conn.execute(
+                    "SELECT public_ref FROM media_index WHERE valid = 1"
+                ).fetchall()
+                media_refs = {
+                    str(r["public_ref"] or "") for r in media_rows
+                }
+            finally:
+                media_conn.close()
+            orphan_rows = conn.execute(
+                "SELECT public_ref FROM media_favorites"
+                " WHERE media_type != 'lora'"
+            ).fetchall()
+            for row in orphan_rows:
+                ref = str(row["public_ref"] or "")
+                if ref and ref not in media_refs:
+                    conn.execute(
+                        "DELETE FROM media_favorites WHERE public_ref = ?",
+                        (ref,),
+                    )
+                    deleted += 1
+        # 清理 lora 类型孤儿
+        lora_db = lora_trigger_db_path()
+        if lora_db.exists():
+            lora_conn = sqlite3.connect(str(lora_db))
+            lora_conn.row_factory = sqlite3.Row
+            try:
+                lora_rows = lora_conn.execute(
+                    "SELECT public_ref FROM lora_items WHERE valid = 1"
+                ).fetchall()
+                lora_refs = {
+                    str(r["public_ref"] or "") for r in lora_rows
+                }
+            finally:
+                lora_conn.close()
+            orphan_rows = conn.execute(
+                "SELECT public_ref FROM media_favorites"
+                " WHERE media_type = 'lora'"
+            ).fetchall()
+            for row in orphan_rows:
+                ref = str(row["public_ref"] or "")
+                if ref and ref not in lora_refs:
+                    conn.execute(
+                        "DELETE FROM media_favorites WHERE public_ref = ?",
+                        (ref,),
+                    )
+                    deleted += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"deleted": deleted}
+
+
+# ── 媒体收藏 API 端点 ───────────────────────────────────────────────────────
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/media/favorites/toggle"
+)
+async def api_media_favorites_toggle(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return json_error(request, "invalid_payload", 400)
+    try:
+        result = toggle_media_favorite(payload)
+    except ValueError:
+        return json_error(request, "invalid_payload", 400)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites toggle failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", **result})
+
+
+@server.PromptServer.instance.routes.get(
+    "/xz3r0/xdatahub/media/favorites/list"
+)
+async def api_media_favorites_list(request: web.Request) -> web.Response:
+    q = request.query
+    try:
+        data = list_media_favorites(
+            media_type=str(q.get("media_type") or ""),
+            page=parse_int(q.get("page"), 1),
+            page_size=parse_int(q.get("page_size"), 50),
+            sort_order=str(q.get("sort_order") or "desc"),
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites list failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", **data})
+
+
+@server.PromptServer.instance.routes.get(
+    "/xz3r0/xdatahub/media/favorites/ids"
+)
+async def api_media_favorites_ids(request: web.Request) -> web.Response:
+    media_type = str(request.query.get("media_type") or "")
+    try:
+        ids = get_media_favorite_ids(media_type)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites ids failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", "ids": ids})
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/media/favorites/cleanup"
+)
+async def api_media_favorites_cleanup(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        result = cleanup_media_favorites()
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites cleanup failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", **result})
 
 
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/favorites")

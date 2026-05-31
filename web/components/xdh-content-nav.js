@@ -211,7 +211,7 @@ export class XdhContentNav extends BaseElement {
 
     onStoreUpdate(state, key) {
         // Full re-render only for navigation/view-state changes
-        if (["activeCategory", "activeFolder", "activeFolderLabel", "cardSize", "sortOrder", "navHistory", "navIndex", "currentPage", "locale", "folderTreeVisible"].includes(key)) {
+        if (["activeCategory", "activeFolder", "activeFolderLabel", "cardSize", "sortOrder", "navHistory", "navIndex", "currentPage", "locale", "folderTreeVisible", "favoritesOnly"].includes(key)) {
             this.renderRoot();
         } else if (key === "lockState") {
             this._syncLockState();
@@ -454,6 +454,10 @@ export class XdhContentNav extends BaseElement {
             store.state.cardSize = SIZES[(SIZES.indexOf(cur) + 1) % SIZES.length];
         });
 
+        this.$(".fav-toggle-btn")?.addEventListener("click", () => {
+            store.state.favoritesOnly = !store.state.favoritesOnly;
+        });
+
         this.$(".tree-toggle-btn")?.addEventListener("click", () => {
             store.state.folderTreeVisible = !store.state.folderTreeVisible;
         });
@@ -509,6 +513,10 @@ export class XdhContentNav extends BaseElement {
         const breadcrumbPathEscaped = escapeHtml(breadcrumbPath);
         const lock       = lockMeta(state.lockState || {});
         const isRecordView = ["history", "favorites"].includes(state.activeCategory);
+        const isMediaView = ["image", "video", "audio", "lora"].includes(state.activeCategory);
+        const favTooltip = state.favoritesOnly
+            ? t("nav.btn.show_all")
+            : t("nav.btn.favorites_only");
         const treeTooltip = state.folderTreeVisible
             ? t("nav.btn.hide_tree")
             : t("nav.btn.show_tree");
@@ -933,6 +941,12 @@ export class XdhContentNav extends BaseElement {
                 <button class="sort-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.sort_title", { label: sortOpt.label })}">
                     ${icon('list-filter', 13)} <span class="label">${sortOpt.label}</span>
                 </button>
+                <button class="fav-toggle-btn xdh-tooltip xdh-tooltip-down ${state.favoritesOnly ? "active" : ""}"
+                        data-tooltip="${favTooltip}"
+                        style="display:${isMediaView ? "" : "none"}">
+                    ${icon('star', 14)}
+                </button>
+                <div style="flex:1"></div>
 
                 <div class="global-group">
                     <div class="global-more-wrap">

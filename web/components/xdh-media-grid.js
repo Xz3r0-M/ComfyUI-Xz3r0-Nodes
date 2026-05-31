@@ -5,6 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { t } from "../core/i18n.js?v=20260427-2";
+import { toggleMediaFavorite } from "../core/api.js?v=20260530-1";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -555,6 +556,7 @@ export class XdhMediaGrid extends BaseElement {
             || key === "locale"
             || key === "searchQuery"
             || key === "loadError"
+            || key === "favoriteIdSet"
         ) {
             // Full re-render needed (order or dataset changed)
             if (key === "mediaList") {
@@ -628,6 +630,7 @@ export class XdhMediaGrid extends BaseElement {
             url: item.fullUrl || item.thumbUrl,
             type: item.type || "image",
             iconHtml: icon("audio-lines", 56),
+            raw: item.raw || {},
         };
     }
 
@@ -695,6 +698,7 @@ export class XdhMediaGrid extends BaseElement {
                 }
 
                 // Card click (selection / folder nav)
+                if (e.target.closest(".fav-btn")) return;
                 const card = e.target.closest(".media-card");
                 if (!card) return;
                 if (Date.now() < this._suppressCardClickUntil) {
@@ -831,6 +835,32 @@ export class XdhMediaGrid extends BaseElement {
                 if (!card) return;
                 this._markThumbFailed(card.dataset.id);
             }, true /* capture */);
+
+            // 收藏按钮委托（独立监听器）
+            grid.addEventListener("click", (e) => {
+                const btn = e.target.closest(".fav-btn");
+                if (!btn) return;
+                e.stopPropagation();
+                const ref = btn.dataset.favRef;
+                if (!ref) return;
+                toggleMediaFavorite({
+                    public_ref: ref,
+                    media_type: btn.dataset.favType || "",
+                    filename: btn.dataset.favName || "",
+                    rel_path: btn.dataset.favPath || "",
+                    file_ext: btn.dataset.favExt || "",
+                }).then((result) => {
+                    if (!result) return;
+                    const set = [...(appStore.state.favoriteIdSet || [])];
+                    if (result.favorited) {
+                        if (!set.includes(ref)) set.push(ref);
+                    } else {
+                        const idx = set.indexOf(ref);
+                        if (idx !== -1) set.splice(idx, 1);
+                    }
+                    appStore.state.favoriteIdSet = set;
+                });
+            });
         }
 
         // 每次 DOM 更新后重建 id→item 查找表（O(n) 一次，替代 O(n²) find）
@@ -884,14 +914,34 @@ export class XdhMediaGrid extends BaseElement {
             ));
             const summaryLabels = getCardSummaryLabels(item, this.failedThumbIds);
             const hasThumbFailure = this.failedThumbIds.has(String(item.id));
-            const previewBtn = item.previewable && !previewState.blocked
-                ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${safeId}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
+            const itemExists = item.raw?.exists !== false;
+            const favoriteIdSet = appStore.state.favoriteIdSet || [];
+            const favRef = String(
+                item.raw?.extra?.media_ref || item.raw?.media_ref
+                || item.raw?.public_ref || item.raw?.ref || item.id || ""
+            );
+            const isFav = favoriteIdSet.includes(favRef);
+            const favIconName = isFav ? "star-filled" : "star";
+            const favTooltip = isFav ? t("grid.btn.unfavorite") : t("grid.btn.favorite");
+            const safeFavRef = escapeAttr(favRef);
+            const safeFavPath = escapeAttr(String(item.raw?.rel_path || item.raw?.extra?.rel_path || ""));
+            const safeFavExt = escapeAttr(String(item.raw?.file_ext || item.raw?.extra?.file_ext || ""));
+            const favBtn = !item.isFolder && item.type !== "record"
+                ? `<button class="fav-btn xdh-tooltip xdh-tooltip-down" data-fav-ref="${safeFavRef}" data-fav-type="${safeType}" data-fav-name="${safeNameAttr}" data-fav-path="${safeFavPath}" data-fav-ext="${safeFavExt}" data-fav-active="${isFav ? 'true' : 'false'}" data-tooltip="${favTooltip}">${icon(favIconName, 14)}</button>`
                 : "";
-            const editBtn = item.type === "lora"
+            const previewBtn = !itemExists
+                ? ""
+                : item.previewable && !previewState.blocked
+                    ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${safeId}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
+                    : "";
+            const editBtn = itemExists && item.type === "lora"
                 ? `<button class="edit-lora-btn xdh-tooltip xdh-tooltip-down" data-loraref="${safeLoraRef}" data-tooltip="${t("grid.btn.edit_lora")}">${icon("settings", 14)}</button>`
                 : "";
-            return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""} ${previewState.blocked ? "preview-unavailable" : ""}"
-                 draggable="${item.isFolder || item.type === "record" ? "false" : "true"}"
+            const goneBadge = !itemExists
+                ? `<div class="gone-badge">${t("grid.badge.file_gone")}</div>`
+                : "";
+            return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""} ${previewState.blocked ? "preview-unavailable" : ""} ${!itemExists ? "is-gone" : ""}"
+                 draggable="${itemExists && !item.isFolder && item.type !== "record" ? "true" : "false"}"
                  data-id="${safeId}"
                  data-name="${safeNameAttr}"
                  data-url="${safeUrl}"
@@ -899,8 +949,9 @@ export class XdhMediaGrid extends BaseElement {
                  data-size="${safeSize}"
                  data-mtime="${safeMtime}"
                  data-file-count="${safeFileCount}">
-                <div class="card-actions">${editBtn}${previewBtn}</div>
-                ${thumbFor(item, previewState)}
+                <div class="card-actions">${favBtn}${editBtn}${previewBtn}</div>
+                ${itemExists ? thumbFor(item, previewState) : `<div class="thumb-placeholder">${icon("image-off", 32)}</div>`}
+                ${goneBadge}
                 <div class="card-text">
                     <div class="card-title">${safeName}</div>
                     ${summaryLabels.length > 0
@@ -975,7 +1026,7 @@ export class XdhMediaGrid extends BaseElement {
                     pointer-events: auto;
                 }
 
-                .preview-btn, .edit-lora-btn {
+                .preview-btn, .edit-lora-btn, .fav-btn {
                     width: 26px;
                     height: 26px;
                     border-radius: 8px;
@@ -990,9 +1041,12 @@ export class XdhMediaGrid extends BaseElement {
                     flex-shrink: 0;
                     padding: 0;
                 }
-                .preview-btn:hover, .edit-lora-btn:hover {
+                .preview-btn:hover, .edit-lora-btn:hover, .fav-btn:hover {
                     background: var(--xdh-clr-surface-soft);
                     transform: scale(1.08);
+                }
+                .fav-btn[data-fav-active="true"] {
+                    color: var(--xdh-color-primary);
                 }
 
                 /* ── Thumbnail container ── */

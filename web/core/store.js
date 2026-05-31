@@ -89,6 +89,10 @@ export const appStore = new Store({
         ffmpeg_available: false,
     },
 
+    // Media favorites
+    favoritesOnly: false,        // 当前分类的收藏滤镜开关
+    favoriteIdSet: [],           // 当前分类已收藏的 public_ref 列表
+
     // i18n — default English; i18n.js overwrites at module load from Comfy.Locale
     locale: 'en',
 });

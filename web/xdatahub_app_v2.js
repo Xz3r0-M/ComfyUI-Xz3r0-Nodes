@@ -4,7 +4,8 @@ import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl, buildThumbUrl,
-} from "./core/api.js?v=20260407-416";
+    loadFavoriteList, loadFavoriteIds,
+} from "./core/api.js?v=20260530-1";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 
@@ -12,13 +13,13 @@ import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-52";
-import "./components/xdh-media-grid.js?v=20260426-6";
+import "./components/xdh-media-grid.js?v=20260530-9";
 import "./components/xdh-staging-dock.js?v=20260426-3";
 import "./components/xdh-node-picker.js?v=20260426-4";
 import "./core/node-bridge.js?v=20260426-1";
-import "./components/xdh-content-nav.js?v=20260406-25";
+import "./components/xdh-content-nav.js?v=20260530-1";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20260523-1";
+import "./components/xdh-lightbox.js?v=20260530-2";
 import "./components/xdh-history-view.js?v=20260508-1";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
@@ -37,6 +38,22 @@ const MOCK_THUMB = [
 ].join("");
 
 const UI_STATE_STORAGE_KEY = "XDataHub.V2.UIState";
+const FAV_BY_CATEGORY_KEY = "XDataHub.V2.FavoritesByCategory";
+
+function loadFavoritesByCategory() {
+    try {
+        const raw = localStorage.getItem(FAV_BY_CATEGORY_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+}
+
+function saveFavoritesByCategory(map) {
+    try {
+        localStorage.setItem(FAV_BY_CATEGORY_KEY, JSON.stringify(map));
+    } catch { /* ignore */ }
+}
 const DEFAULT_ACTIVE_CATEGORY = "image";
 const DEFAULT_SORT_ORDER = "date-desc";
 const DEFAULT_CARD_SIZE = "small";
@@ -852,10 +869,10 @@ function mapItem(item, category) {
     }
 
     // ── Media shape (image / video / audio) ─────────────
-    const mediaType = item.kind || item.extra?.media_type || "image";
+    const mediaType = item.kind || item.extra?.media_type || item.media_type || "image";
     const id = item.id || buildStableFallbackId(item, category, mediaType);
-    const name = item.title || item.extra?.media_ref || id;
-    const ref  = item.extra?.media_ref || "";
+    const name = item.title || item.filename || item.extra?.media_ref || id;
+    const ref  = item.extra?.media_ref || item.public_ref || "";
     const isMock = item.extra?.isMock;
     const settings = appStore.state.xdatahubSettings || {};
     const useThumbCache = !!settings.enable_ffmpeg_thumb_cache
@@ -942,16 +959,30 @@ appStore.subscribe((state, key) => {
     persistUiState(state);
 });
 
+// ── Favorites per-category persistence ─────────────────────────────────────
+
+appStore.subscribe((state, key) => {
+    if (key !== "favoritesOnly") return;
+    const byCat = loadFavoritesByCategory();
+    byCat[state.activeCategory] = state.favoritesOnly;
+    saveFavoritesByCategory(byCat);
+});
+
 // ── Data loader ──────────────────────────────────────────────────────────────
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 let latestListLoadToken = 0;
 let searchDebounceTimer = null;
+let previousCategory = appStore.state.activeCategory;
 
 async function fetchCategory(category, page, folder, sortKey, keyword = "") {
     const safePage = page || 1;
     const safeFolder = folder || "";
     const { sortBy, sortOrder } = getSortRequest(sortKey);
     const useFlatView = keyword.length > 0;
+    const favOnly = appStore.state.favoritesOnly;
+    if (favOnly && (MEDIA_CATEGORIES.has(category) || category === "lora")) {
+        return loadFavoriteList(category, safePage, 50, sortOrder);
+    }
     if (category === "lora") {
         return loadLoraList(
             safePage,
@@ -1132,6 +1163,7 @@ appStore.subscribe(async (state, key) => {
             && key !== "categoryViewToken"
             && key !== "_searchToken"
             && key !== "refreshTrigger"
+            && key !== "favoritesOnly"
         )
     ) {
         return;
@@ -1143,6 +1175,16 @@ appStore.subscribe(async (state, key) => {
     const pageSnapshot = state.currentPage || 1;
     const sortSnapshot = state.sortOrder || DEFAULT_SORT_ORDER;
     const searchSnapshot = String(state.searchQuery || "").trim();
+
+    // 分类切换：恢复该分类的 favoritesOnly 状态
+    if (key === "activeCategory" && previousCategory !== categorySnapshot) {
+        const byCat = loadFavoritesByCategory();
+        const nextFav = !!byCat[categorySnapshot];
+        if (state.favoritesOnly !== nextFav) {
+            state.favoritesOnly = nextFav;
+        }
+        previousCategory = categorySnapshot;
+    }
 
     appStore.state.isLoading = true;
     appStore.state.loadError = "";
@@ -1171,6 +1213,14 @@ appStore.subscribe(async (state, key) => {
         appStore.state.loadError = "";
         appStore.state.currentPage = res.page        || 1;
         appStore.state.totalPages  = res.total_pages || 1;
+        // 加载收藏 ID 集合（非收藏模式时填充，用于卡片星标显示）
+        if (!state.favoritesOnly && DIRECTORY_VIEW_CATEGORIES.has(categorySnapshot)) {
+            loadFavoriteIds(categorySnapshot).then(ids => {
+                if (categorySnapshot === appStore.state.activeCategory) {
+                    appStore.state.favoriteIdSet = ids;
+                }
+            }).catch(() => {});
+        }
         if (res.lock_state) {
             setLockState({
                 ...appStore.state.lockState,

@@ -95,6 +95,8 @@ const Dictionary = {
         'nav.banner.rebuild_ok':    '已完全重建当前分类索引',
         'nav.banner.rebuild_fail':  '完全重建失败，请重试',
         'nav.btn.sort_title':       '切换排序（当前：{label}）',
+        'nav.btn.favorites_only':   '仅显示收藏',
+        'nav.btn.show_all':         '显示全部',
         'nav.btn.size_small':       '小卡片',
         'nav.btn.size_medium':      '中卡片',
         'nav.btn.size_large':       '大卡片',
@@ -128,6 +130,9 @@ const Dictionary = {
         'grid.badge.no_preview':    '无预览',
         'grid.badge.unsupported_format': '格式/编码不支持',
         'grid.badge.no_thumbnail':  '无缩略图',
+        'grid.badge.file_gone':     '文件已不存在',
+        'grid.btn.favorite':        '收藏',
+        'grid.btn.unfavorite':      '取消收藏',
         'grid.folder_file_count':   '{count} 个文件',
 
         // ── lora detail drawer ───────────────────────────────
@@ -379,6 +384,8 @@ const Dictionary = {
         'nav.banner.rebuild_ok':    'Full rebuild completed',
         'nav.banner.rebuild_fail':  'Full rebuild failed, please retry',
         'nav.btn.sort_title':       'Toggle sort (current: {label})',
+        'nav.btn.favorites_only':   'Favorites only',
+        'nav.btn.show_all':         'Show all',
         'nav.btn.size_small':       'Small cards',
         'nav.btn.size_medium':      'Medium cards',
         'nav.btn.size_large':       'Large cards',
@@ -410,6 +417,9 @@ const Dictionary = {
         'grid.badge.no_preview':    'No Preview',
         'grid.badge.unsupported_format': 'Unsupported Format/Codec',
         'grid.badge.no_thumbnail':  'No Thumbnail',
+        'grid.badge.file_gone':     'File no longer exists',
+        'grid.btn.favorite':        'Favorite',
+        'grid.btn.unfavorite':      'Unfavorite',
         'grid.folder_file_count':   '{count} files',
 
         // ── lora detail drawer ───────────────────────────────

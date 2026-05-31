@@ -245,3 +245,68 @@ export function buildThumbUrl(mediaRef, size = 300) {
     return `/xz3r0/xdatahub/media/thumb?ref=${encodeURIComponent(mediaRef)}&size=${size}`;
 }
 
+// ── 媒体收藏 ──────────────────────────────────────────────────────────────
+
+export async function toggleMediaFavorite(payload) {
+    try {
+        const response = await fetch("/xz3r0/xdatahub/media/favorites/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } catch (e) {
+        console.warn("[xdh-api] toggleMediaFavorite failed:", e);
+        return null;
+    }
+}
+
+export async function loadFavoriteList(
+    mediaType,
+    page = 1,
+    pageSize = 50,
+    sortOrder = "desc"
+) {
+    return await apiGet(
+        "/xz3r0/xdatahub/media/favorites/list",
+        {
+            media_type: mediaType,
+            page: String(page),
+            page_size: String(pageSize),
+            sort_order: sortOrder,
+        },
+        {
+            fallbackFactory: () => ({ items: [], page: 1, total_pages: 1 }),
+        }
+    );
+}
+
+export async function loadFavoriteIds(mediaType) {
+    try {
+        const data = await apiGet(
+            "/xz3r0/xdatahub/media/favorites/ids",
+            { media_type: mediaType },
+            { fallbackFactory: () => ({ ids: [] }) }
+        );
+        return Array.isArray(data?.ids) ? data.ids : [];
+    } catch (e) {
+        console.warn("[xdh-api] loadFavoriteIds failed:", e);
+        return [];
+    }
+}
+
+export async function cleanupInvalidFavorites() {
+    try {
+        const response = await fetch(
+            "/xz3r0/xdatahub/media/favorites/cleanup",
+            { method: "POST" }
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } catch (e) {
+        console.warn("[xdh-api] cleanupInvalidFavorites failed:", e);
+        return null;
+    }
+}
+
