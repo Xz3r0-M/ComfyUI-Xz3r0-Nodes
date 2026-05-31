@@ -1016,6 +1016,8 @@ def map_folder_item(
     child_path: str,
     title: str,
     mtime: float | None = None,
+    size: int | None = None,
+    file_count: int | None = None,
 ) -> dict[str, Any]:
     extra = {
         "entry_type": "folder",
@@ -1023,6 +1025,10 @@ def map_folder_item(
     }
     if mtime is not None:
         extra["mtime"] = float(mtime)
+    if size is not None:
+        extra["size"] = int(size)
+    if file_count is not None:
+        extra["file_count"] = int(file_count)
     return {
         "id": f"folder:{child_path}",
         "kind": "folder",
@@ -1120,6 +1126,8 @@ def build_directory_items(
     ]
     folder_children: dict[str, str] = {}
     folder_mtimes: dict[str, float] = {}
+    folder_sizes: dict[str, int] = {}
+    folder_counts: dict[str, int] = {}
     file_rows: list[sqlite3.Row] = []
     for row in rows:
         rel_parts = split_rel_path(str(row["rel_path"] or ""), _root_names)
@@ -1150,6 +1158,16 @@ def build_directory_items(
         current_folder_mtime = folder_mtimes.get(remain[0])
         if current_folder_mtime is None or row_mtime > current_folder_mtime:
             folder_mtimes[remain[0]] = row_mtime
+        try:
+            row_size = int(row["size"] or 0)
+        except Exception:
+            row_size = 0
+        folder_sizes[remain[0]] = (
+            folder_sizes.get(remain[0], 0) + row_size
+        )
+        folder_counts[remain[0]] = (
+            folder_counts.get(remain[0], 0) + 1
+        )
 
     if not dir_parts and not custom_scope:
         for root_name in standard_root_order:
@@ -1167,6 +1185,8 @@ def build_directory_items(
                 path,
                 custom_titles.get(title, title),
                 mtime=folder_mtimes.get(title),
+                size=folder_sizes.get(title),
+                file_count=folder_counts.get(title),
             )
             for title, path in folder_children.items()
         ],
@@ -2528,12 +2548,14 @@ class LoraStore:
                 sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
             )
 
-            # 查询该目录级别的子目录
+            # 查询该目录级别的子目录（含大小与文件数汇总）
             query_dirs = (
-                "SELECT DISTINCT "
+                "SELECT "
                 "SUBSTR(SUBSTR(rel_path, LENGTH(?)+1), 1, "
                 "INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')-1) as dir, "
-                "MAX(mtime) as latest_mtime "
+                "MAX(mtime) as latest_mtime, "
+                "SUM(size) as total_size, "
+                "COUNT(*) as file_count "
                 "FROM lora_items WHERE valid=1"
             )
             params_dirs = [subdir_prefix, subdir_prefix]
@@ -2558,6 +2580,8 @@ class LoraStore:
                         f"{LORA_ROOT_NAME}/{rel_path}",
                         dir_name,
                         mtime=float(row[1] or 0),
+                        size=int(row[2] or 0),
+                        file_count=int(row[3] or 0),
                     )
                 )
             folder_items = sort_folder_items(

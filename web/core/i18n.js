@@ -126,6 +126,7 @@ const Dictionary = {
         'grid.badge.no_preview':    '无预览',
         'grid.badge.unsupported_format': '格式/编码不支持',
         'grid.badge.no_thumbnail':  '无缩略图',
+        'grid.folder_file_count':   '{count} 个文件',
 
         // ── lora detail drawer ───────────────────────────────
         'lora.title_default':       'LoRA 编辑',
@@ -405,6 +406,7 @@ const Dictionary = {
         'grid.badge.no_preview':    'No Preview',
         'grid.badge.unsupported_format': 'Unsupported Format/Codec',
         'grid.badge.no_thumbnail':  'No Thumbnail',
+        'grid.folder_file_count':   '{count} files',
 
         // ── lora detail drawer ───────────────────────────────
         'lora.title_default':       'Edit LoRA',

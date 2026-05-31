@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-16";
+import { t } from "../core/i18n.js?v=20260427-1";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -776,14 +776,33 @@ export class XdhMediaGrid extends BaseElement {
                     const titleEl = e.target.closest(".card-title");
                     if (!titleEl) return;
                     const card = titleEl.closest(".media-card");
-                    if (!card || card.classList.contains("is-folder")) return;
+                    if (!card) return;
+                    const isFolder = card.classList.contains("is-folder");
                     const mtime  = card.dataset.mtime;
                     const size   = card.dataset.size;
                     const isLora = card.dataset.type === "lora";
-                    const metaParts = isLora ? [] : [
-                        formatDateFull(parseFloat(mtime)),
-                        formatSize(parseInt(size, 10)),
-                    ].filter(Boolean);
+                    let metaParts = [];
+                    if (isFolder) {
+                        const fileCount = parseInt(card.dataset.fileCount, 10);
+                        const folderSize = formatSize(parseInt(size, 10));
+                        if (folderSize && fileCount > 0) {
+                            metaParts = [
+                                folderSize,
+                                t("grid.folder_file_count", { count: fileCount }),
+                            ];
+                        } else if (folderSize) {
+                            metaParts = [folderSize];
+                        } else if (fileCount > 0) {
+                            metaParts = [
+                                t("grid.folder_file_count", { count: fileCount }),
+                            ];
+                        }
+                    } else if (!isLora) {
+                        metaParts = [
+                            formatDateFull(parseFloat(mtime)),
+                            formatSize(parseInt(size, 10)),
+                        ].filter(Boolean);
+                    }
                     const titleLine = document.createElement("span");
                     titleLine.className = "filename-tooltip-title";
                     titleLine.textContent = String(titleEl.textContent || "");
@@ -867,6 +886,9 @@ export class XdhMediaGrid extends BaseElement {
             const safeMtime = escapeAttr(String(
                 item.type === "lora" ? "" : item.raw?.extra?.mtime || ""
             ));
+            const safeFileCount = escapeAttr(String(
+                item.isFolder ? (item.raw?.extra?.file_count || "") : ""
+            ));
             const summaryLabels = getCardSummaryLabels(item, this.failedThumbIds);
             const hasThumbFailure = this.failedThumbIds.has(String(item.id));
             const previewBtn = item.previewable && !previewState.blocked
@@ -882,7 +904,8 @@ export class XdhMediaGrid extends BaseElement {
                  data-url="${safeUrl}"
                  data-type="${safeType}"
                  data-size="${safeSize}"
-                 data-mtime="${safeMtime}">
+                 data-mtime="${safeMtime}"
+                 data-file-count="${safeFileCount}">
                 <div class="card-actions">${editBtn}${previewBtn}</div>
                 ${thumbFor(item, previewState)}
                 <div class="card-text">
