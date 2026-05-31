@@ -377,6 +377,24 @@ class XLoraGet(io.ComfyNode):
                 (lora_ref,),
             ).fetchone()
             if row is None:
+                # 迁移回退：尝试旧 ref → 新 ref 映射
+                try:
+                    mig_row = conn.execute(
+                        "SELECT new_ref FROM lora_ref_migration"
+                        " WHERE old_ref = ?",
+                        (lora_ref,),
+                    ).fetchone()
+                except sqlite3.OperationalError:
+                    mig_row = None
+                if mig_row is not None:
+                    new_ref = str(mig_row["new_ref"] or "")
+                    if new_ref:
+                        row = conn.execute(
+                            "SELECT rel_path FROM lora_items"
+                            " WHERE public_ref = ?",
+                            (new_ref,),
+                        ).fetchone()
+            if row is None:
                 return ""
             return cls._normalize_lora_name(str(row["rel_path"] or ""))
         except Exception:

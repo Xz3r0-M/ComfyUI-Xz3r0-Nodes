@@ -1454,22 +1454,53 @@ class MediaStore:
             "created_at TEXT NOT NULL,"
             "updated_at TEXT NOT NULL)"
         )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS public_ref_migration ("
+            "old_ref TEXT PRIMARY KEY,"
+            "new_ref TEXT NOT NULL"
+            ")"
+        )
+
+    @staticmethod
+    def _insert_migration(
+        conn: sqlite3.Connection,
+        old_ref: str,
+        new_ref: str,
+    ) -> None:
+        """记录旧 ref → 新 ref 的迁移映射，保证旧引用永不断裂。"""
+        if old_ref and old_ref != new_ref:
+            conn.execute(
+                "INSERT OR IGNORE INTO public_ref_migration"
+                " (old_ref, new_ref) VALUES (?, ?)",
+                (old_ref, new_ref),
+            )
 
     @staticmethod
     def _coerce_public_ref(
-        value: Any,
+        media_type: str,
+        rel_path: str,
         reserved: set[str],
     ) -> str:
-        normalized = normalize_media_ref(str(value or ""))
-        if normalized and normalized not in reserved:
-            reserved.add(normalized)
-            return normalized
+        """生成确定性 public_ref，极端碰撞时回退到带计数器的备用值。"""
+        new_ref = normalize_media_ref(
+            generate_public_ref(media_type, rel_path),
+        )
+        if new_ref and new_ref not in reserved:
+            reserved.add(new_ref)
+            return new_ref
+        # 碰撞回退（SHA-256 截断 144 位下实际不可能触发）
+        counter = 1
         while True:
-            generated = generate_public_ref()
-            normalized = normalize_media_ref(generated)
-            if normalized and normalized not in reserved:
-                reserved.add(normalized)
-                return normalized
+            fallback_ref = normalize_media_ref(
+                generate_public_ref(
+                    media_type,
+                    f"{rel_path}__collision_{counter}",
+                ),
+            )
+            if fallback_ref and fallback_ref not in reserved:
+                reserved.add(fallback_ref)
+                return fallback_ref
+            counter += 1
 
     @staticmethod
     def _row_public_ref_map(
@@ -1581,7 +1612,18 @@ class MediaStore:
             normalized_existing = normalize_media_ref(existing_ref)
             if normalized_existing in reserved:
                 reserved.remove(normalized_existing)
-            public_ref = self._coerce_public_ref(existing_ref, reserved)
+            media_type_val = str(entry["media_type"])
+            rel_path_val = str(entry["rel_path"])
+            public_ref = self._coerce_public_ref(
+                media_type_val,
+                rel_path_val,
+                reserved,
+            )
+            self._insert_migration(
+                conn,
+                normalized_existing,
+                public_ref,
+            )
             now = utc_now_iso()
             self._upsert_index_entry(conn, entry, public_ref, now)
             conn.commit()
@@ -1614,14 +1656,33 @@ class MediaStore:
                 self._create_media_index_table(conn, "media_index_new")
                 reserved_refs: set[str] = set()
                 for row in rows:
+                    old_ref = str(
+                        row["public_ref"]
+                        if "public_ref" in row.keys()
+                        else ""
+                    )
+                    media_type_val = str(
+                        row["media_type"]
+                        if "media_type" in row.keys()
+                        else ""
+                    )
+                    rel_path_val = str(
+                        row["rel_path"]
+                        if "rel_path" in row.keys()
+                        else ""
+                    )
                     public_ref = self._coerce_public_ref(
-                        (
-                            row["public_ref"]
-                            if "public_ref" in row.keys()
-                            else ""
-                        ),
+                        media_type_val,
+                        rel_path_val,
                         reserved_refs,
                     )
+                    normalized_old = normalize_media_ref(old_ref)
+                    if normalized_old and normalized_old != public_ref:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO public_ref_migration"
+                            " (old_ref, new_ref) VALUES (?, ?)",
+                            (normalized_old, public_ref),
+                        )
                     real_path = (
                         str(row["real_path"])
                         if "real_path" in row.keys()
@@ -1994,6 +2055,7 @@ class MediaStore:
             for entry in scan_media(media_type):
                 now = utc_now_iso()
                 rel_path = str(entry["rel_path"])
+                media_type_val = str(entry["media_type"])
                 existing_ref = str(
                     (existing_map.get(rel_path) or {}).get("public_ref") or ""
                 )
@@ -2001,8 +2063,14 @@ class MediaStore:
                 if normalized_existing in reserved_refs:
                     reserved_refs.remove(normalized_existing)
                 public_ref = self._coerce_public_ref(
-                    existing_ref,
+                    media_type_val,
+                    rel_path,
                     reserved_refs,
+                )
+                self._insert_migration(
+                    conn,
+                    normalized_existing,
+                    public_ref,
                 )
                 self._upsert_index_entry(conn, entry, public_ref, now)
                 if rel_path in existing_map:
@@ -2109,12 +2177,25 @@ class MediaStore:
             for entry in scan_media(media_type):
                 now = utc_now_iso()
                 rel_path = str(entry["rel_path"])
-                public_ref = self._coerce_public_ref(
+                media_type_val = str(entry["media_type"])
+                old_ref = str(
                     preserved_refs.get(
                         rel_path,
                         existing_map.get(rel_path, ""),
-                    ),
+                    ) or ""
+                )
+                normalized_old = normalize_media_ref(old_ref)
+                if normalized_old in reserved_refs:
+                    reserved_refs.remove(normalized_old)
+                public_ref = self._coerce_public_ref(
+                    media_type_val,
+                    rel_path,
                     reserved_refs,
+                )
+                self._insert_migration(
+                    conn,
+                    normalized_old,
+                    public_ref,
                 )
                 self._upsert_index_entry(conn, entry, public_ref, now)
                 if rel_path in existing_map:
@@ -2349,6 +2430,40 @@ class LoraStore:
                     ).fetchone()
 
                     if existing:
+                        # 检查旧 public_ref 是否需要迁移
+                        old_row = conn.execute(
+                            "SELECT public_ref FROM lora_items"
+                            " WHERE rel_path = ?",
+                            (rel_path_str,),
+                        ).fetchone()
+                        old_ref = ""
+                        if old_row is not None:
+                            old_ref = str(old_row["public_ref"] or "")
+                        normalized_old = normalize_lora_public_ref(
+                            old_ref,
+                        )
+                        new_ref = _coerce_lora_public_ref(
+                            "lora",
+                            rel_path_str,
+                            reserved_refs,
+                        )
+                        if (
+                            normalized_old
+                            and normalized_old != new_ref
+                        ):
+                            conn.execute(
+                                "INSERT OR IGNORE"
+                                " INTO lora_ref_migration"
+                                " (old_ref, new_ref)"
+                                " VALUES (?, ?)",
+                                (normalized_old, new_ref),
+                            )
+                            conn.execute(
+                                "UPDATE lora_items"
+                                " SET public_ref = ?"
+                                " WHERE rel_path = ?",
+                                (new_ref, rel_path_str),
+                            )
                         # 更新现有记录
                         conn.execute(
                             "UPDATE lora_items SET "
@@ -2373,7 +2488,8 @@ class LoraStore:
                             timespec="seconds"
                         )
                         public_ref = _coerce_lora_public_ref(
-                            "",
+                            "lora",
+                            rel_path_str,
                             reserved_refs,
                         )
                         conn.execute(
@@ -2749,18 +2865,114 @@ class LoraStore:
             conn.close()
 
     def rebuild(self) -> dict[str, int]:
-        """清空并重建 LORA 索引"""
+        """清空并重建 LORA 索引，保留用户编辑的触发词/强度/备注等数据。"""
+        # 保存旧 public_ref 及用户编辑字段，清空前就已初始化 schema
+        preserved: dict[str, dict[str, Any]] = {}
         conn = connect_lora_trigger_db(create=True)
         try:
             ensure_lora_trigger_schema(conn)
+            rows = conn.execute(
+                "SELECT rel_path, public_ref, trigger_words_json,"
+                " strength_model, strength_clip, lora_note,"
+                " sha256, trigger_words_ver, title"
+                " FROM lora_items"
+            ).fetchall()
+            for row in rows:
+                rel_path = normalize_lora_rel_path(
+                    str(row["rel_path"] or ""),
+                )
+                ref = normalize_lora_public_ref(
+                    str(row["public_ref"] or ""),
+                )
+                if not rel_path:
+                    continue
+                preserved[rel_path] = {
+                    "old_ref": ref if ref else "",
+                    "trigger_words_json": str(
+                        row["trigger_words_json"] or "[]"
+                    ),
+                    "strength_model": float(
+                        row["strength_model"] or 1.0
+                    ),
+                    "strength_clip": float(
+                        row["strength_clip"] or 1.0
+                    ),
+                    "lora_note": str(row["lora_note"] or ""),
+                    "sha256": str(row["sha256"] or ""),
+                    "trigger_words_ver": int(
+                        row["trigger_words_ver"] or 1
+                    ),
+                    "title": str(row["title"] or ""),
+                }
             conn.execute("DELETE FROM lora_items")
             conn.commit()
-            LOGGER.info("[xdatahub-lora] rebuild: cleared all records")
+            LOGGER.info(
+                "[xdatahub-lora] rebuild: cleared %d records,"
+                " preserved user data for %d items",
+                len(rows),
+                len(preserved),
+            )
         finally:
             conn.close()
 
         # 重新扫描
         result = self.scan_lora_files()
+
+        # 恢复用户编辑数据 + 建立 public_ref 迁移映射
+        if preserved:
+            conn = connect_lora_trigger_db()
+            try:
+                ensure_lora_trigger_schema(conn)
+                for rel_path, saved in preserved.items():
+                    new_row = conn.execute(
+                        "SELECT public_ref FROM lora_items"
+                        " WHERE rel_path = ?",
+                        (rel_path,),
+                    ).fetchone()
+                    if new_row is None:
+                        continue
+                    new_ref = normalize_lora_public_ref(
+                        str(new_row["public_ref"] or ""),
+                    )
+                    # 恢复用户编辑字段（覆盖扫描时写入的默认值）
+                    conn.execute(
+                        "UPDATE lora_items SET"
+                        " trigger_words_json = ?,"
+                        " strength_model = ?,"
+                        " strength_clip = ?,"
+                        " lora_note = ?,"
+                        " sha256 = ?,"
+                        " trigger_words_ver = ?,"
+                        " title = ?"
+                        " WHERE rel_path = ?",
+                        (
+                            saved["trigger_words_json"],
+                            saved["strength_model"],
+                            saved["strength_clip"],
+                            saved["lora_note"],
+                            saved["sha256"],
+                            saved["trigger_words_ver"],
+                            saved["title"],
+                            rel_path,
+                        ),
+                    )
+                    # 建立迁移映射
+                    old_ref = saved["old_ref"]
+                    if old_ref and new_ref and old_ref != new_ref:
+                        conn.execute(
+                            "INSERT OR IGNORE"
+                            " INTO lora_ref_migration"
+                            " (old_ref, new_ref) VALUES (?, ?)",
+                            (old_ref, new_ref),
+                        )
+                conn.commit()
+                LOGGER.info(
+                    "[xdatahub-lora] rebuild: restored user data"
+                    " for %d items",
+                    len(preserved),
+                )
+            finally:
+                conn.close()
         return result
 
 
@@ -3068,16 +3280,28 @@ def normalize_lora_public_ref(value: Any) -> str:
     return normalize_media_ref(str(value or ""))
 
 
-def _coerce_lora_public_ref(value: Any, reserved: set[str]) -> str:
-    normalized = normalize_lora_public_ref(value)
-    if normalized and normalized not in reserved:
-        reserved.add(normalized)
-        return normalized
+def _coerce_lora_public_ref(
+    media_type: str,
+    rel_path: str,
+    reserved: set[str],
+) -> str:
+    """生成确定性 LORA public_ref，极端碰撞时回退到带计数器的备用值。"""
+    new_ref = normalize_media_ref(generate_public_ref(media_type, rel_path))
+    if new_ref and new_ref not in reserved:
+        reserved.add(new_ref)
+        return new_ref
+    counter = 1
     while True:
-        generated = normalize_media_ref(generate_public_ref())
-        if generated and generated not in reserved:
-            reserved.add(generated)
-            return generated
+        fallback_ref = normalize_media_ref(
+            generate_public_ref(
+                media_type,
+                f"{rel_path}__collision_{counter}",
+            ),
+        )
+        if fallback_ref and fallback_ref not in reserved:
+            reserved.add(fallback_ref)
+            return fallback_ref
+        counter += 1
 
 
 def _all_lora_public_refs(conn: sqlite3.Connection) -> set[str]:
@@ -3107,7 +3331,17 @@ def _lora_public_ref_for_rel_path(
     normalized_current = normalize_lora_public_ref(current_ref)
     if normalized_current in reserved:
         reserved.remove(normalized_current)
-    public_ref = _coerce_lora_public_ref(current_ref, reserved)
+    public_ref = _coerce_lora_public_ref(
+        "lora",
+        rel_path,
+        reserved,
+    )
+    if normalized_current and normalized_current != public_ref:
+        conn.execute(
+            "INSERT OR IGNORE INTO lora_ref_migration"
+            " (old_ref, new_ref) VALUES (?, ?)",
+            (normalized_current, public_ref),
+        )
     if row is not None and public_ref != current_ref:
         conn.execute(
             "UPDATE lora_items SET public_ref = ? WHERE rel_path = ?",
@@ -3127,6 +3361,21 @@ def lora_rel_path_from_ref(lora_ref: str) -> str | None:
             "SELECT rel_path FROM lora_items WHERE public_ref = ?",
             (safe_ref,),
         ).fetchone()
+        if row is None:
+            # 迁移回退：尝试旧 ref → 新 ref 映射
+            mig_row = conn.execute(
+                "SELECT new_ref FROM lora_ref_migration"
+                " WHERE old_ref = ?",
+                (safe_ref,),
+            ).fetchone()
+            if mig_row is not None:
+                new_ref = str(mig_row["new_ref"] or "")
+                if new_ref:
+                    row = conn.execute(
+                        "SELECT rel_path FROM lora_items"
+                        " WHERE public_ref = ?",
+                        (new_ref,),
+                    ).fetchone()
         if row is None:
             return None
         return normalize_lora_rel_path(str(row["rel_path"] or ""))
@@ -3191,6 +3440,13 @@ def ensure_lora_trigger_schema(conn: sqlite3.Connection) -> None:
     if "public_ref" not in existing_columns:
         conn.execute("ALTER TABLE lora_items ADD COLUMN public_ref TEXT")
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS lora_ref_migration ("
+        "old_ref TEXT PRIMARY KEY,"
+        "new_ref TEXT NOT NULL"
+        ")"
+    )
+
     # 为历史行补齐 public_ref，避免暴露真实路径。
     rows = conn.execute(
         "SELECT rel_path, public_ref FROM lora_items"
@@ -3207,7 +3463,11 @@ def ensure_lora_trigger_schema(conn: sqlite3.Connection) -> None:
             continue
         updates.append((rel_path, ""))
     for rel_path, _ in updates:
-        new_ref = _coerce_lora_public_ref("", reserved)
+        new_ref = _coerce_lora_public_ref(
+            "lora",
+            rel_path,
+            reserved,
+        )
         conn.execute(
             "UPDATE lora_items SET public_ref = ? WHERE rel_path = ?",
             (new_ref, rel_path),

@@ -4,9 +4,10 @@ XDataHub 媒体不透明引用工具。
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
-import secrets
 import sqlite3
 import sys
 from dataclasses import dataclass
@@ -110,11 +111,16 @@ def custom_media_roots() -> list[tuple[str, Path]]:
     return output
 
 
-def generate_public_ref() -> str:
+def generate_public_ref(media_type: str, rel_path: str) -> str:
     """
-    生成稳定持久使用的不透明引用。
+    生成基于文件身份的确定性引用。
+
+    同一 (media_type, rel_path) 永远生成相同的 public_ref，
+    确保刷新、重建、删除后恢复都不会改变引用值。
     """
-    return secrets.token_urlsafe(PUBLIC_REF_BYTES).rstrip("=")
+    key = f"{media_type}:{rel_path}".encode()
+    digest = hashlib.sha256(key).digest()[:PUBLIC_REF_BYTES]
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
 def normalize_public_ref(value: str | None) -> str:
@@ -353,6 +359,23 @@ def resolve_media_ref(
             "FROM media_index WHERE public_ref = ? AND valid = 1",
             (normalized,),
         ).fetchone()
+        if row is None:
+            # 迁移回退：尝试旧 ref → 新 ref 映射
+            mig_row = conn.execute(
+                "SELECT new_ref FROM public_ref_migration"
+                " WHERE old_ref = ?",
+                (normalized,),
+            ).fetchone()
+            if mig_row is not None:
+                new_ref = str(mig_row["new_ref"] or "")
+                if new_ref:
+                    row = conn.execute(
+                        "SELECT public_ref, real_path, rel_path,"
+                        " filename, media_type"
+                        " FROM media_index"
+                        " WHERE public_ref = ? AND valid = 1",
+                        (new_ref,),
+                    ).fetchone()
     finally:
         conn.close()
     if row is None:
