@@ -134,7 +134,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260508-1";
+const XDATAHUB_ASSET_VER = "20260508-2";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"

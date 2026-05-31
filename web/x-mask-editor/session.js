@@ -1,7 +1,7 @@
 import {
     createMaskEditorUi,
     ensureMaskEditorStyles,
-} from "./ui.js?v=20260406h";
+} from "./ui.js?v=20260412a";
 
 let activeSession = null;
 
@@ -54,6 +54,7 @@ export function openMaskEditorSession(texts = {}) {
         ui.saveBtn.disabled = disabled;
         ui.cancelBtn.disabled = disabled;
         ui.brushBtn.disabled = disabled;
+        ui.fillBtn.disabled = disabled;
         ui.maskBrushBtn.disabled = disabled;
         ui.eraseBtn.disabled = disabled;
         ui.panBtn.disabled = disabled;
@@ -86,6 +87,8 @@ export function openMaskEditorSession(texts = {}) {
         ui.zoomOriginalBtn.disabled = disabled;
         ui.zoomResetBtn.disabled = disabled;
         ui.brushRange.disabled = disabled;
+        ui.fillThresholdRange.disabled = disabled;
+        ui.fillThresholdInput.disabled = disabled;
     };
 
     const setStatus = (text, isError = false) => {

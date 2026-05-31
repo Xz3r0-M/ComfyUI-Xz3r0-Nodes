@@ -71,7 +71,6 @@ const DIRECTORY_VIEW_CATEGORIES = new Set([
     "lora",
 ]);
 
-const URL_CATEGORY_PARAM = "tab";
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
 const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -154,52 +153,6 @@ function postToggleWindowRequest() {
         },
         getParentTargetOrigin()
     );
-}
-
-function readCategoryFromUrl() {
-    try {
-        const url = new URL(window.location.href);
-        const queryCategory = String(
-            url.searchParams.get(URL_CATEGORY_PARAM) || ""
-        ).trim();
-        if (PERSISTED_CATEGORIES.has(queryCategory)) {
-            return queryCategory;
-        }
-        const hash = String(url.hash || "").replace(/^#/, "").trim();
-        if (!hash) {
-            return "";
-        }
-        const hashParams = new URLSearchParams(hash);
-        const hashCategory = String(
-            hashParams.get(URL_CATEGORY_PARAM) || hash
-        ).trim();
-        return PERSISTED_CATEGORIES.has(hashCategory) ? hashCategory : "";
-    } catch {
-        return "";
-    }
-}
-
-function syncCategoryToUrl(category, options = {}) {
-    const nextCategory = String(category || "").trim();
-    if (!PERSISTED_CATEGORIES.has(nextCategory)) {
-        return;
-    }
-    try {
-        const url = new URL(window.location.href);
-        const nextHash = `${URL_CATEGORY_PARAM}=${encodeURIComponent(nextCategory)}`;
-        const currentHash = String(url.hash || "").replace(/^#/, "");
-        if (currentHash === nextHash) {
-            return;
-        }
-        url.hash = nextHash;
-        if (options.replace) {
-            window.history.replaceState(null, "", url);
-            return;
-        }
-        window.history.pushState(null, "", url);
-    } catch {
-        // ignore URL sync errors
-    }
 }
 
 function normalizePersistedPage(value) {
@@ -424,14 +377,6 @@ function persistUiState(state = appStore.state) {
 }
 
 const initialUiState = loadPersistedUiState();
-const initialCategoryFromUrl = readCategoryFromUrl();
-// URL hash overrides only when localStorage still has the default category,
-// meaning this could be a first visit or a shared/bookmarked link.
-// Otherwise, localStorage (user's last-selected category) takes priority
-// to prevent stale URL hashes from overriding the persisted preference.
-if (initialUiState.activeCategory === DEFAULT_ACTIVE_CATEGORY && initialCategoryFromUrl) {
-    initialUiState.activeCategory = initialCategoryFromUrl;
-}
 persistedCategoryViews = initialUiState.categoryViews;
 const initialCategoryView = getPersistedCategoryView(
     initialUiState.activeCategory
@@ -453,7 +398,6 @@ appStore.state.currentPage = initialCategoryView.page;
 appStore.state.navHistory = initialCategoryNavState.history;
 appStore.state.navIndex = initialCategoryNavState.index;
 appStore.state.dbTaskBusy = false;
-syncCategoryToUrl(appStore.state.activeCategory, { replace: true });
 
 window.addEventListener("message", (event) => {
     if (!isTrustedParentMessage(event)) {
@@ -533,8 +477,6 @@ document.addEventListener("xdh:switch-category", (event) => {
         return;
     }
     void applyPersistedCategoryView(category, {
-        pushNav: true,
-        syncUrl: true,
         resetSearch: true,
     });
 });
@@ -963,36 +905,6 @@ appStore.subscribe((state, key) => {
 });
 
 appStore.subscribe((state, key) => {
-    if (key !== "activeCategory") return;
-    if (isApplyingCategoryView) {
-        return;
-    }
-    if (state._navSkipPush) {
-        appStore.state._navSkipPush = false;
-    }
-});
-
-appStore.subscribe((state, key) => {
-    if (key !== "activeCategory") return;
-    if (isApplyingCategoryView) {
-        return;
-    }
-    syncCategoryToUrl(state.activeCategory);
-});
-
-window.addEventListener("hashchange", () => {
-    const category = readCategoryFromUrl();
-    if (!category || category === appStore.state.activeCategory) {
-        return;
-    }
-    void applyPersistedCategoryView(category, {
-        pushNav: true,
-        syncUrl: false,
-        resetSearch: false,
-    });
-});
-
-appStore.subscribe((state, key) => {
     if (
         isApplyingCategoryView
         || state._navSkipPush
@@ -1176,11 +1088,6 @@ async function applyPersistedCategoryView(category, options = {}) {
     if (currentCategory !== nextCategory) {
         rememberCategoryNavigationState(nextCategory, nextNavState, nextView);
     }
-    if (options.syncUrl !== false) {
-        syncCategoryToUrl(nextCategory, {
-            replace: options.replaceUrl === true,
-        });
-    }
     persistUiState();
     appStore.state.categoryViewToken = Date.now();
 }
@@ -1334,11 +1241,8 @@ function updateExecOverlay() {
 customElements.whenDefined("xdh-sidebar-filter").then(async () => {
     await loadAppSettings();
     await applyPersistedCategoryView(appStore.state.activeCategory, {
-        pushNav: false,
-        syncUrl: false,
         resetSearch: false,
         rememberCurrent: false,
-        replaceUrl: true,
     });
 });
 

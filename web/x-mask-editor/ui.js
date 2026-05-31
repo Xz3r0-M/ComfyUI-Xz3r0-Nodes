@@ -268,6 +268,9 @@ export function ensureMaskEditorStyles() {
             background: var(--ximageget-mask-editor-accent);
             color: #ffffff;
         }
+        .ximageget-mask-editor-tool-separated {
+            margin-left: 6px;
+        }
         .ximageget-mask-editor-action.is-hidden {
             background: color-mix(
                 in srgb,
@@ -642,6 +645,12 @@ export function createMaskEditorUi(texts = {}) {
         "palette.svg"
     );
     setButtonTooltip(brushBtn, texts.toolBrushTip || "Paint color");
+    const fillBtn = createButton(
+        "ximageget-mask-editor-tool ximageget-mask-editor-tool-separated",
+        texts.toolFill || "Fill",
+        "paint-bucket.svg"
+    );
+    setButtonTooltip(fillBtn, texts.toolFillTip || "Flood fill region");
     const colorLabel = document.createElement("span");
     colorLabel.className = "ximageget-mask-editor-label";
     colorLabel.textContent = String(texts.color || "Color");
@@ -649,9 +658,37 @@ export function createMaskEditorUi(texts = {}) {
     colorInput.className = "ximageget-mask-editor-color";
     colorInput.type = "color";
     colorInput.value = "#000000";
+    const fillThresholdLabel = document.createElement("span");
+    fillThresholdLabel.className = "ximageget-mask-editor-label";
+    fillThresholdLabel.textContent = String(
+        texts.fillThreshold || "Tolerance"
+    );
+    const fillThresholdRange = document.createElement("input");
+    fillThresholdRange.className = (
+        "ximageget-mask-editor-range "
+        + "ximageget-mask-editor-range-short"
+    );
+    fillThresholdRange.type = "range";
+    fillThresholdRange.min = "0";
+    fillThresholdRange.max = "255";
+    fillThresholdRange.step = "1";
+    fillThresholdRange.value = "32";
+    setButtonTooltip(
+        fillThresholdRange,
+        texts.fillThresholdTip || "Color tolerance for flood fill"
+    );
+    const fillThresholdInput = document.createElement("input");
+    fillThresholdInput.className = "ximageget-mask-editor-value-input";
+    fillThresholdInput.type = "text";
+    fillThresholdInput.inputMode = "numeric";
+    fillThresholdInput.value = "32";
     colorGroup.appendChild(brushBtn);
+    colorGroup.appendChild(fillBtn);
     colorGroup.appendChild(colorLabel);
     colorGroup.appendChild(colorInput);
+    colorGroup.appendChild(fillThresholdLabel);
+    colorGroup.appendChild(fillThresholdRange);
+    colorGroup.appendChild(fillThresholdInput);
     firstRow.appendChild(colorGroup);
 
     const firstRowSpacer = document.createElement("div");
@@ -993,6 +1030,7 @@ export function createMaskEditorUi(texts = {}) {
         hotkeySink,
         title,
         brushBtn,
+        fillBtn,
         maskBrushBtn,
         eraseBtn,
         panBtn,
@@ -1028,6 +1066,8 @@ export function createMaskEditorUi(texts = {}) {
         clearMaskBtn,
         viewport,
         canvas,
+        fillThresholdRange,
+        fillThresholdInput,
         saveBtn,
         cancelBtn,
     };

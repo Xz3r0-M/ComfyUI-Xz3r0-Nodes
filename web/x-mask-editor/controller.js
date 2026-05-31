@@ -12,6 +12,14 @@ const BRUSH_MAX_FRACTION = 0.8;
 const BRUSH_MIN = 1;
 const SESSION_KEY = "xz3r0_xmaskeditor_settings";
 
+function maxChannelDiff(r1, g1, b1, r2, g2, b2) {
+    return Math.max(
+        Math.abs(r1 - r2),
+        Math.abs(g1 - g2),
+        Math.abs(b1 - b2)
+    );
+}
+
 export class XMaskEditorController {
     constructor({
         canvas,
@@ -68,6 +76,7 @@ export class XMaskEditorController {
         this.maskBrushColor = "black";
         this.maskDisplayOpacity = 0.75;
         this.maskOpacity = 1;
+        this.threshold = 32;
 
         this._loadSessionSettings();
         this.rotationQuarterTurns = 0;
@@ -183,10 +192,10 @@ export class XMaskEditorController {
 
     setTool(tool) {
         const value = String(tool || "mask");
-        this.tool = ["paint", "mask", "erase", "pan"].includes(value)
+        this.tool = ["paint", "mask", "erase", "pan", "fill"].includes(value)
             ? value
             : "mask";
-        if (this.tool === "paint") {
+        if (this.tool === "paint" || this.tool === "fill") {
             this.activeLayer = "paint";
         } else if (this.tool === "mask") {
             this.activeLayer = "mask";
@@ -263,6 +272,153 @@ export class XMaskEditorController {
         this._saveSessionSettings();
         this.render();
         this.emitStateChange();
+    }
+
+    setThreshold(value) {
+        this.threshold = clamp(value, 0, 255);
+        this._saveSessionSettings();
+        this.emitStateChange();
+    }
+
+    floodFill(sourceX, sourceY) {
+        const effectiveTool = this.getEffectiveTool();
+        const isErase = effectiveTool === "erase";
+        const activeCtx = this.activeLayer === "paint"
+            ? this.paintCtx
+            : this.maskCtx;
+        const canvas = activeCtx.canvas;
+        const width = canvas.width;
+        const height = canvas.height;
+
+        const sx = Math.round(sourceX);
+        const sy = Math.round(sourceY);
+        if (sx < 0 || sx >= width || sy < 0 || sy >= height) {
+            return;
+        }
+
+        // Write layer is the active layer (paint / mask)
+        const imageData = activeCtx.getImageData(0, 0, width, height);
+        const pixels = imageData.data;
+
+        // Determine fill color
+        let fillR; let fillG; let fillB; let fillA;
+        if (isErase) {
+            fillR = 0; fillG = 0; fillB = 0; fillA = 0;
+        } else if (this.activeLayer === "paint") {
+            const rgb = this.hexToRgb(this.paintColor);
+            fillR = rgb.r; fillG = rgb.g; fillB = rgb.b; fillA = 255;
+        } else {
+            const val = this.maskBrushColor === "black" ? 0 : 255;
+            fillR = val; fillG = val; fillB = val; fillA = 255;
+        }
+
+        const threshold = this.threshold;
+
+        // Skip if the write-layer pixel at click point is already filled
+        const writeIdx = (sy * width + sx) * 4;
+        if (
+            maxChannelDiff(
+                pixels[writeIdx], pixels[writeIdx + 1], pixels[writeIdx + 2],
+                fillR, fillG, fillB
+            ) <= threshold
+            && pixels[writeIdx + 3] === fillA
+        ) {
+            return;
+        }
+
+        // Build composite at source resolution for sampling
+        // (base image → paint → mask, matching render() layer order)
+        const composite = document.createElement("canvas");
+        composite.width = width;
+        composite.height = height;
+        const compCtx = composite.getContext("2d", { alpha: true });
+        compCtx.drawImage(this.baseImage, 0, 0, width, height);
+        if (this.paintVisible) {
+            compCtx.globalAlpha = this.paintOpacity;
+            compCtx.drawImage(this.paintCanvas, 0, 0);
+            compCtx.globalAlpha = 1;
+        }
+        if (this.maskVisible) {
+            compCtx.globalAlpha = this.maskDisplayOpacity;
+            compCtx.drawImage(this.maskCanvas, 0, 0);
+            compCtx.globalAlpha = 1;
+        }
+        const compData = compCtx.getImageData(0, 0, width, height);
+        const compPixels = compData.data;
+
+        // Target colour sampled from the composite
+        const targetIdx = (sy * width + sx) * 4;
+        const targetR = compPixels[targetIdx];
+        const targetG = compPixels[targetIdx + 1];
+        const targetB = compPixels[targetIdx + 2];
+
+        // BFS flood fill — match against composite, write to active layer
+        const maxPixels = width * height;
+        const queueX = new Int32Array(maxPixels);
+        const queueY = new Int32Array(maxPixels);
+        let head = 0;
+        let tail = 0;
+        queueX[tail] = sx;
+        queueY[tail] = sy;
+        tail += 1;
+
+        const visited = new Uint8Array(maxPixels);
+        visited[sy * width + sx] = 1;
+
+        const dirs = [-1, 0, 1, 0, -1];
+
+        while (head < tail) {
+            const x = queueX[head];
+            const y = queueY[head];
+            head += 1;
+
+            const idx = (y * width + x) * 4;
+
+            // Already filled on the write layer — skip
+            if (
+                maxChannelDiff(
+                    pixels[idx], pixels[idx + 1], pixels[idx + 2],
+                    fillR, fillG, fillB
+                ) <= threshold
+                && pixels[idx + 3] === fillA
+            ) {
+                continue;
+            }
+
+            // Match against the *composite*, not the write layer
+            const cr = compPixels[idx];
+            const cg = compPixels[idx + 1];
+            const cb = compPixels[idx + 2];
+
+            if (maxChannelDiff(cr, cg, cb, targetR, targetG, targetB) > threshold) {
+                continue;
+            }
+
+            // Write to the active layer
+            pixels[idx] = fillR;
+            pixels[idx + 1] = fillG;
+            pixels[idx + 2] = fillB;
+            pixels[idx + 3] = fillA;
+
+            // Enqueue neighbours
+            for (let d = 0; d < 4; d += 1) {
+                const nx = x + dirs[d];
+                const ny = y + dirs[d + 1];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+                    continue;
+                }
+                const nIdx = ny * width + nx;
+                if (visited[nIdx]) {
+                    continue;
+                }
+                visited[nIdx] = 1;
+                queueX[tail] = nx;
+                queueY[tail] = ny;
+                tail += 1;
+            }
+        }
+
+        activeCtx.putImageData(imageData, 0, 0);
     }
 
     togglePaintVisibility() {
@@ -604,6 +760,10 @@ export class XMaskEditorController {
 
     updateCursorStyle() {
         const effectiveTool = this.getEffectiveTool();
+        if (this.tool === "fill") {
+            this.canvas.style.cursor = "crosshair";
+            return;
+        }
         this.canvas.style.cursor = effectiveTool === "pan"
             ? (this.isPanning ? "grabbing" : "grab")
             : "none";
@@ -778,6 +938,7 @@ export class XMaskEditorController {
             brushSizeText: this.getBrushSizeText(),
             canUndo: this.canUndo(),
             canRedo: this.canRedo(),
+            threshold: this.threshold,
         });
     }
 
@@ -842,6 +1003,13 @@ export class XMaskEditorController {
             return;
         }
         if (event.button !== 0) {
+            return;
+        }
+        if (this.tool === "fill") {
+            const canvasPoint = this.getCanvasPoint(event);
+            this.floodFill(canvasPoint.x, canvasPoint.y);
+            this.render();
+            this.commitHistory();
             return;
         }
         this.isDrawing = true;
@@ -1045,6 +1213,7 @@ export class XMaskEditorController {
             if (typeof saved.hardness === "number") this.hardness = saved.hardness;
             if (typeof saved.paintOpacity === "number") this.paintOpacity = saved.paintOpacity;
             if (typeof saved.maskOpacity === "number") this.maskOpacity = saved.maskOpacity;
+            if (typeof saved.threshold === "number") this.threshold = saved.threshold;
         } catch (e) { /* ignore */ }
     }
 
@@ -1056,6 +1225,7 @@ export class XMaskEditorController {
                 hardness: this.hardness,
                 paintOpacity: this.paintOpacity,
                 maskOpacity: this.maskOpacity,
+                threshold: this.threshold,
             }));
         } catch (e) { /* ignore */ }
     }
@@ -1108,7 +1278,11 @@ export class XMaskEditorController {
             drawTransformedLayer(this.maskCanvas, this.maskDisplayOpacity);
         }
 
-        if (this.cursorPoint && this.getEffectiveTool() !== "pan") {
+        if (
+            this.cursorPoint
+            && this.getEffectiveTool() !== "pan"
+            && this.tool !== "fill"
+        ) {
             const cursorX = this.cursorPoint.x;
             const cursorY = this.cursorPoint.y;
             const cursorRadius = (this.brushSize * imageRect.scale) / 2;

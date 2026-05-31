@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260406h";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260412b";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -1350,9 +1350,19 @@ function getMaskEditorTexts() {
         ),
         toolBrushTip: t(key("tool_brush_tip"), "Paint color"),
         color: t(key("color"), "Color"),
+        fillThreshold: t(key("fill_threshold"), "Tolerance"),
+        fillThresholdTip: t(
+            key("fill_threshold_tip"),
+            "Color tolerance for flood fill (scroll wheel to adjust)"
+        ),
         maskColor: t(key("mask_color"), "Mask"),
         toolMaskBrushTip: t(key("tool_mask_brush_tip"), "Paint mask"),
         toolEraseTip: t(key("tool_erase_tip"), "Erase current layer"),
+        toolFill: t(key("tool_fill"), "Fill"),
+        toolFillTip: t(
+            key("tool_fill_tip"),
+            "Flood fill region (samples all visible layers)"
+        ),
         toolPanTip: t(
             key("tool_pan_tip"),
             "Move the canvas (middle mouse drag / Ctrl+left drag)"
