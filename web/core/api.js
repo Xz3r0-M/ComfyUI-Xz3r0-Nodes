@@ -127,18 +127,24 @@ export async function loadMediaList(
     pageSize = 50,
     dir = "",
     sortBy = "mtime",
-    sortOrder = "desc"
+    sortOrder = "desc",
+    keyword = "",
+    flatView = false
 ) {
     const params = CATEGORY_PARAMS[category] || CATEGORY_PARAMS.image;
-    return await apiGet("/xz3r0/xdatahub/media", {
+    const query = {
         media_type: params.media_type,
         dir:        dir || params.dir || undefined,
         page,
         page_size:  pageSize,
         sort_by:    sortBy,
         sort_order: sortOrder,
-        flat:       0,
-    }, {
+        flat:       flatView ? 1 : 0,
+    };
+    if (keyword) {
+        query.keyword = keyword;
+    }
+    return await apiGet("/xz3r0/xdatahub/media", query, {
         fallbackFactory: () => buildMockListResponse(category || "Item"),
     });
 }
@@ -148,15 +154,22 @@ export async function loadLoraList(
     pageSize = 50,
     dir = "",
     sortBy = "mtime",
-    sortOrder = "desc"
+    sortOrder = "desc",
+    keyword = "",
+    flatView = false
 ) {
-    return await apiGet("/xz3r0/xdatahub/loras", {
+    const query = {
         page,
         page_size: pageSize,
         dir: dir || undefined,
         sort_by: sortBy,
         sort_order: sortOrder,
-    }, {
+        flat: flatView ? 1 : 0,
+    };
+    if (keyword) {
+        query.keyword = keyword;
+    }
+    return await apiGet("/xz3r0/xdatahub/loras", query, {
         fallbackFactory: () => buildMockListResponse("Lora"),
     });
 }

@@ -4,9 +4,9 @@ import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl, buildThumbUrl,
-} from "./core/api.js?v=20260407-414";
+} from "./core/api.js?v=20260407-416";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260426-3";
+import { setLocale, t } from "./core/i18n.js?v=20260427-1";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
@@ -939,18 +939,22 @@ appStore.subscribe((state, key) => {
 // ── Data loader ──────────────────────────────────────────────────────────────
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 let latestListLoadToken = 0;
+let searchDebounceTimer = null;
 
-async function fetchCategory(category, page, folder, sortKey) {
+async function fetchCategory(category, page, folder, sortKey, keyword = "") {
     const safePage = page || 1;
     const safeFolder = folder || "";
     const { sortBy, sortOrder } = getSortRequest(sortKey);
+    const useFlatView = keyword.length > 0;
     if (category === "lora") {
         return loadLoraList(
             safePage,
             50,
             safeFolder,
             sortBy,
-            sortOrder
+            sortOrder,
+            keyword,
+            useFlatView
         );
     }
     if (category === "history") return loadRecords(safePage, 50);
@@ -962,7 +966,9 @@ async function fetchCategory(category, page, folder, sortKey) {
             50,
             safeFolder,
             sortBy,
-            sortOrder
+            sortOrder,
+            keyword,
+            useFlatView
         );
     }
     return { items: [], page: 1, total_pages: 1 };
@@ -1093,6 +1099,23 @@ async function applyPersistedCategoryView(category, options = {}) {
 }
 
 appStore.subscribe(async (state, key) => {
+    // ── 搜索防抖：store 即时更新（UI 响应），API 延迟触发 ──
+    if (key === "searchQuery") {
+        clearTimeout(searchDebounceTimer);
+        const query = String(state.searchQuery || "").trim();
+        if (!query) {
+            // 清空搜索：立即触发，无延迟
+            appStore.state.currentPage = 1;
+            appStore.state._searchToken = Date.now();
+        } else {
+            searchDebounceTimer = setTimeout(() => {
+                appStore.state.currentPage = 1;
+                appStore.state._searchToken = Date.now();
+            }, 300);
+        }
+        return;
+    }
+
     if (
         (isApplyingCategoryView && key !== "categoryViewToken")
         || (
@@ -1101,6 +1124,7 @@ appStore.subscribe(async (state, key) => {
             && key !== "currentPage"
             && key !== "sortOrder"
             && key !== "categoryViewToken"
+            && key !== "_searchToken"
             && key !== "refreshTrigger"
         )
     ) {
@@ -1112,6 +1136,7 @@ appStore.subscribe(async (state, key) => {
     const folderSnapshot = state.activeFolder || "";
     const pageSnapshot = state.currentPage || 1;
     const sortSnapshot = state.sortOrder || DEFAULT_SORT_ORDER;
+    const searchSnapshot = String(state.searchQuery || "").trim();
 
     appStore.state.isLoading = true;
     appStore.state.loadError = "";
@@ -1127,7 +1152,8 @@ appStore.subscribe(async (state, key) => {
             categorySnapshot,
             pageSnapshot,
             folderSnapshot,
-            sortSnapshot
+            sortSnapshot,
+            searchSnapshot
         );
         if (requestToken !== latestListLoadToken) {
             return;

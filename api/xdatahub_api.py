@@ -984,6 +984,7 @@ def list_lora_directory(
     include_size: bool = True,
     sort_by: str = "mtime",
     sort_order: str = "desc",
+    flat_view: bool = False,
 ) -> dict[str, Any]:
     # 委托给 LORA_STORE 从数据库查询（替代实时文件系统扫描）
     return LORA_STORE.list(
@@ -993,6 +994,7 @@ def list_lora_directory(
         keyword=keyword,
         sort_by=sort_by,
         sort_order=sort_order,
+        flat_view=flat_view,
     )
 
 
@@ -2488,6 +2490,7 @@ class LoraStore:
         keyword: str = "",
         sort_by: str = "mtime",
         sort_order: str = "desc",
+        flat_view: bool = False,
     ) -> dict[str, Any]:
         """从数据库查询 LORA 列表（替代 list_lora_directory）"""
         root = self._get_root()
@@ -2547,6 +2550,72 @@ class LoraStore:
             safe_sort_order = (
                 sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
             )
+            sort_col = "mtime" if safe_sort_by == "mtime" else "filename"
+            if safe_sort_by == "size":
+                sort_col = "size"
+            order = "DESC" if safe_sort_order == "desc" else "ASC"
+
+            if flat_view:
+                # 平铺视图：忽略目录层级，直接分页查询所有匹配文件
+                flat_cond = ["valid = 1"]
+                flat_params: list[Any] = []
+                if subdir_prefix:
+                    flat_cond.append("rel_path LIKE ?")
+                    flat_params.append(subdir_prefix + "%")
+                if keyword_normalized:
+                    flat_cond.append(
+                        "(LOWER(filename) LIKE ?"
+                        " OR LOWER(rel_path) LIKE ?)"
+                    )
+                    kw = f"%{keyword_normalized}%"
+                    flat_params.extend([kw, kw])
+                flat_where = " AND ".join(flat_cond)
+                total = int(
+                    conn.execute(
+                        f"SELECT COUNT(*) FROM lora_items"
+                        f" WHERE {flat_where}",
+                        flat_params,
+                    ).fetchone()[0]
+                )
+                total_pages = max(
+                    1, (total + page_size - 1) // page_size
+                )
+                safe_page = min(max(1, page), total_pages)
+                offset = (safe_page - 1) * page_size
+                rows = conn.execute(
+                    (
+                        "SELECT public_ref, rel_path, filename,"
+                        " mtime, size, trigger_words_json,"
+                        " lora_note, strength_model, strength_clip"
+                        f" FROM lora_items WHERE {flat_where}"
+                        f" ORDER BY {sort_col} {order}, filename"
+                        " LIMIT ? OFFSET ?"
+                    ),
+                    [*flat_params, page_size, offset],
+                ).fetchall()
+                items: list[dict[str, Any]] = []
+                for row in rows:
+                    items.append(
+                        _lora_item_payload_from_db(
+                            root,
+                            str(row[0] or ""),
+                            str(row[1] or ""),
+                            str(row[2] or ""),
+                            float(row[3] or 0),
+                            int(row[4] or 0),
+                            str(row[5] or "[]"),
+                            str(row[6] or ""),
+                            row[7],
+                            row[8],
+                        )
+                    )
+                return {
+                    "items": items,
+                    "page": safe_page,
+                    "page_size": page_size,
+                    "total": total,
+                    "total_pages": total_pages,
+                }
 
             # 查询该目录级别的子目录（含大小与文件数汇总）
             query_dirs = (
@@ -4883,6 +4952,11 @@ async def api_loras(request: web.Request) -> web.Response:
     if sort_order not in MEDIA_SORT_ORDER_VALUES:
         sort_order = "desc"
     directory = normalize_lora_dir_query(str(q.get("dir") or ""))
+    flat_view = str(q.get("flat") or "0").strip() in {
+        "1",
+        "true",
+        "True",
+    }
     try:
         data = list_lora_directory(
             directory=directory,
@@ -4893,6 +4967,7 @@ async def api_loras(request: web.Request) -> web.Response:
             include_size=include_size,
             sort_by=sort_by,
             sort_order=sort_order,
+            flat_view=flat_view,
         )
     except PermissionError:
         return json_error("permission_denied", status=403)

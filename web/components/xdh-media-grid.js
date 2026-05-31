@@ -604,15 +604,8 @@ export class XdhMediaGrid extends BaseElement {
 
     _filteredItems() {
         const sortOrder = appStore.state.sortOrder || "date-desc";
-        const searchQ = String(appStore.state.searchQuery || "")
-            .toLowerCase()
-            .trim();
-        const sortedItems = applySort(this.items, sortOrder);
-        return searchQ
-            ? sortedItems.filter((item) =>
-                String(item.name || "").toLowerCase().includes(searchQ)
-            )
-            : sortedItems;
+        // 搜索已由后端处理，前端仅排序
+        return applySort(this.items, sortOrder);
     }
 
     _previewItems() {
