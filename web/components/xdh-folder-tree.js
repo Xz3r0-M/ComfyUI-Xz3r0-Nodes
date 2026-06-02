@@ -266,10 +266,28 @@ export class XdhFolderTree extends BaseElement {
 
         try {
             await this._ensurePathReady(category, state.activeFolder || "");
+            this._cleanupStaleExpanded(category);
         } finally {
             if (token === this._syncToken) {
                 this.renderRoot();
             }
+        }
+    }
+
+    _cleanupStaleExpanded(category) {
+        const expanded = this._getExpandedSet(category);
+        const cache = this._getCategoryCache(category);
+        let changed = false;
+        for (const path of expanded) {
+            if (!path) continue;  // 保留根路径
+            const entry = cache.get(path);
+            if (entry?.status === "ready" && entry.items.length === 0) {
+                expanded.delete(path);
+                changed = true;
+            }
+        }
+        if (changed) {
+            this._persistExpandedState();
         }
     }
 
@@ -306,6 +324,7 @@ export class XdhFolderTree extends BaseElement {
             return entry.promise;
         }
 
+        const wasAlreadyReady = entry.status === "ready";
         entry.status = "loading";
         entry.error = "";
         this.renderRoot();
@@ -317,6 +336,29 @@ export class XdhFolderTree extends BaseElement {
                 entry.error = "";
                 entry.promise = null;
                 cache.set(safePath, entry);
+                const expanded = this._getExpandedSet(safeCategory);
+                // 空文件夹：从展开集合中移除，保持与 ± 图标同步
+                if (items.length === 0 && safePath) {
+                    if (expanded.has(safePath)) {
+                        expanded.delete(safePath);
+                    }
+                }
+                // 首次加载子项：清除旧持久化中的子路径展开状态
+                // 确保展开父级时子级默认显示为 +
+                if (!wasAlreadyReady && items.length > 0) {
+                    let childChanged = false;
+                    for (const item of items) {
+                        if (expanded.has(item.path)) {
+                            expanded.delete(item.path);
+                            childChanged = true;
+                        }
+                    }
+                    if (childChanged) {
+                        this._persistExpandedState();
+                    }
+                } else if (items.length === 0 && safePath) {
+                    this._persistExpandedState();
+                }
                 this.renderRoot();
                 return entry;
             })
@@ -367,9 +409,13 @@ export class XdhFolderTree extends BaseElement {
                 const childPath = normalizePath(
                     item?.extra?.child_path || item?.path || ""
                 );
+                const hasChildren = item?.extra?.has_children;
                 return {
                     path: childPath,
                     label: getPathLabel(childPath, item?.title || item?.path),
+                    hasChildren: typeof hasChildren === "boolean"
+                        ? hasChildren
+                        : undefined,
                 };
             })
             .filter((item) => item.path)
@@ -469,14 +515,20 @@ export class XdhFolderTree extends BaseElement {
             </div>`;
     }
 
-    _renderNode(node, depth, activePath, category) {
+    _renderNode(node, depth, activePath, category, isLastChild = false) {
         const path = normalizePath(node.path);
-        const expanded = this._getExpandedSet(category).has(path);
         const cache = this._getCategoryCache(category).get(path);
         const hasLoadedChildren = cache?.status === "ready";
-        const showToggle = !hasLoadedChildren || (cache.items || []).length > 0;
+        const hasCachedChildren = hasLoadedChildren
+            && (cache.items || []).length > 0;
+        // 优先使用后端返回的 has_children，未返回时回退到缓存判断
+        const showToggle = node.hasChildren === true
+            || (node.hasChildren !== false && hasCachedChildren);
+        // 展开状态必须与 showToggle 同步：无子项的文件夹不可展开
+        const expanded = showToggle
+            && this._getExpandedSet(category).has(path);
         const isActive = path === activePath;
-        const paddingLeft = 8 + (depth * 14);
+        const paddingLeft = 14 + (depth * 24);
         const toggleTooltip = expanded
             ? t("nav.tree.collapse")
             : t("nav.tree.expand");
@@ -495,28 +547,44 @@ export class XdhFolderTree extends BaseElement {
                     "danger"
                 );
             } else if (cache?.status === "ready" && cache.items.length > 0) {
+                const lastIdx = cache.items.length - 1;
                 childrenHtml = cache.items
-                    .map((child) =>
-                        this._renderNode(child, depth + 1, activePath, category)
+                    .map((child, idx) =>
+                        this._renderNode(
+                            child, depth + 1, activePath, category,
+                            idx === lastIdx,
+                        )
                     )
                     .join("");
             }
         }
 
+        // 树形引导线定位（所有深度统一，从根目录开始）
+        const guideX = depth === 0
+            ? 14  // 根级别：对齐根行图标中心
+            : 14 + depth * 24 + 9;  // 对齐当前层级 toggle 中心
+        const connectorW = depth === 0 ? 22 : 14;
+        const nodeGuideStyle = `--guide-x:${guideX}px;--guide-connector-w:${connectorW}px`;
+        const nodeGuideClass = isLastChild ? " tree-node--last" : "";
+        // ± 独立于行，绝对定位在引导线交界处
+        let toggleHtml = "";
+        if (showToggle) {
+            toggleHtml = `<button class="tree-branch-toggle tree-toggle--junction xdh-tooltip"
+                data-path="${escapeHtml(path)}"
+                data-tooltip="${toggleTooltip}">
+                ${icon(expanded ? "minus" : "plus", 12)}
+            </button>`;
+        }
+
         return `
-            <div class="tree-node">
+            <div class="tree-node${nodeGuideClass}" style="${nodeGuideStyle}">
+                ${toggleHtml}
                 <div class="tree-row ${isActive ? "is-active" : ""} xdh-tooltip"
                      data-path="${escapeHtml(path)}"
                      data-label="${escapeHtml(node.label)}"
                      data-tooltip="${escapeHtml(node.label)}"
                      style="padding-left:${paddingLeft}px;">
-                    ${showToggle
-                        ? `<button class="tree-branch-toggle xdh-tooltip"
-                                   data-path="${escapeHtml(path)}"
-                                   data-tooltip="${toggleTooltip}">
-                                ${icon(expanded ? "arrow-down" : "arrow-right", 12)}
-                           </button>`
-                        : '<span class="tree-toggle-spacer" aria-hidden="true"></span>'}
+                    <span class="tree-toggle-spacer" aria-hidden="true"></span>
                     <span class="tree-folder">${icon("folder", 14)}</span>
                     <span class="tree-label">${escapeHtml(node.label)}</span>
                 </div>
@@ -709,8 +777,11 @@ export class XdhFolderTree extends BaseElement {
                     "danger"
                 );
             } else if (rootCache.status === "ready" && rootCache.items.length) {
+                const lastRootIdx = rootCache.items.length - 1;
                 treeBody = rootCache.items
-                    .map((node) => this._renderNode(node, 0, activePath, category))
+                    .map((node, idx) => this._renderNode(
+                        node, 0, activePath, category, idx === lastRootIdx,
+                    ))
                     .join("");
             } else if (rootCache.status === "ready") {
                 treeBody = this._renderStatusRow(t("nav.tree.empty"), 0);
@@ -836,6 +907,39 @@ export class XdhFolderTree extends BaseElement {
 
                 .tree-node {
                     display: block;
+                    position: relative;
+                }
+
+                /* 树形引导线 —— 垂直虚线 */
+                .tree-node[style*="--guide-x"]::before {
+                    content: "";
+                    position: absolute;
+                    left: var(--guide-x);
+                    top: 0;
+                    bottom: 0;
+                    width: 0;
+                    border-left: 1px dotted var(--xdh-color-border);
+                    pointer-events: none;
+                    z-index: 1;
+                }
+
+                /* 末位节点：垂直线在行中点终止，形成 └ 形 */
+                .tree-node--last[style*="--guide-x"]::before {
+                    bottom: auto;
+                    height: 15px;
+                }
+
+                /* 树形引导线 —— 水平连接线（从交界处到文件夹图标） */
+                .tree-node[style*="--guide-x"] > .tree-row::before {
+                    content: "";
+                    position: absolute;
+                    left: var(--guide-x);
+                    top: 50%;
+                    width: var(--guide-connector-w);
+                    height: 0;
+                    border-top: 1px dotted var(--xdh-color-border);
+                    pointer-events: none;
+                    z-index: 1;
                 }
 
                 .tree-row,
@@ -844,6 +948,7 @@ export class XdhFolderTree extends BaseElement {
                     min-height: 30px;
                     display: flex;
                     align-items: center;
+                    position: relative;
                     gap: var(--xdh-space-sm);
                     border: 1px solid transparent;
                     border-radius: var(--xdh-radius-sm);
@@ -884,11 +989,19 @@ export class XdhFolderTree extends BaseElement {
                     width: 18px;
                     height: 18px;
                     padding: 0;
-                    border: 0;
+                    border: 1px solid var(--xdh-color-border);
                     border-radius: var(--xdh-radius-xs);
-                    color: inherit;
-                    background: transparent;
+                    color: var(--xdh-color-text-secondary);
+                    background: var(--xdh-color-surface-1);
                     flex-shrink: 0;
+                }
+
+                /* ± 独立于行，绝对定位在引导线交界处（垂直线中心） */
+                .tree-toggle--junction {
+                    position: absolute;
+                    left: calc(var(--guide-x) - 8px);
+                    top: 6px;
+                    z-index: 2;
                 }
 
                 .tree-branch-toggle:hover {

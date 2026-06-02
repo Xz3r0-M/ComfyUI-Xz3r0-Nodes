@@ -1020,6 +1020,7 @@ def map_folder_item(
     mtime: float | None = None,
     size: int | None = None,
     file_count: int | None = None,
+    has_children: bool | None = None,
 ) -> dict[str, Any]:
     extra = {
         "entry_type": "folder",
@@ -1031,6 +1032,8 @@ def map_folder_item(
         extra["size"] = int(size)
     if file_count is not None:
         extra["file_count"] = int(file_count)
+    if has_children is not None:
+        extra["has_children"] = bool(has_children)
     return {
         "id": f"folder:{child_path}",
         "kind": "folder",
@@ -1130,6 +1133,7 @@ def build_directory_items(
     folder_mtimes: dict[str, float] = {}
     folder_sizes: dict[str, int] = {}
     folder_counts: dict[str, int] = {}
+    folder_has_children: dict[str, bool] = {}
     file_rows: list[sqlite3.Row] = []
     for row in rows:
         rel_parts = split_rel_path(str(row["rel_path"] or ""), _root_names)
@@ -1170,6 +1174,8 @@ def build_directory_items(
         folder_counts[remain[0]] = (
             folder_counts.get(remain[0], 0) + 1
         )
+        if len(remain) > 2:
+            folder_has_children[remain[0]] = True
 
     if not dir_parts and not custom_scope:
         for root_name in standard_root_order:
@@ -1189,6 +1195,7 @@ def build_directory_items(
                 mtime=folder_mtimes.get(title),
                 size=folder_sizes.get(title),
                 file_count=folder_counts.get(title),
+                has_children=folder_has_children.get(title),
             )
             for title, path in folder_children.items()
         ],
@@ -2769,6 +2776,35 @@ class LoraStore:
                         file_count=int(row[3] or 0),
                     )
                 )
+            # 检测哪些子目录还包含更深层的子目录
+            dirs_with_children: set[str] = set()
+            if folder_items:
+                prefix_len = len(subdir_prefix) + 1 if subdir_prefix else 0
+                if subdir_prefix:
+                    child_like = subdir_prefix + "/%"
+                else:
+                    child_like = "%"
+                try:
+                    for (deep_dir,) in conn.execute(
+                        "SELECT DISTINCT "
+                        "SUBSTR(SUBSTR(rel_path, ?), 1, "
+                        "INSTR(SUBSTR(rel_path, ?), '/')-1) as dir "
+                        "FROM lora_items WHERE valid=1 "
+                        "AND rel_path LIKE ? "
+                        "AND (LENGTH(SUBSTR(rel_path, ?)) - "
+                        "LENGTH(REPLACE(SUBSTR(rel_path, ?), '/', ''))) >= 2",
+                        [prefix_len, prefix_len, child_like,
+                         prefix_len, prefix_len],
+                    ):
+                        dirs_with_children.add(deep_dir)
+                except Exception:
+                    pass
+            for item in folder_items:
+                child_path = item.get("extra", {}).get("child_path", "")
+                dir_name = child_path.split("/")[-1] if child_path else ""
+                if dir_name and dir_name in dirs_with_children:
+                    item["extra"]["has_children"] = True
+
             folder_items = sort_folder_items(
                 folder_items,
                 sort_by=safe_sort_by,

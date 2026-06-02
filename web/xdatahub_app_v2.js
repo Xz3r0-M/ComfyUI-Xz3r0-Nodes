@@ -12,7 +12,7 @@ import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
-import "./components/xdh-folder-tree.js?v=20260407-58";
+import "./components/xdh-folder-tree.js?v=20260407-88";
 import "./components/xdh-media-grid.js?v=20260531-3";
 import "./components/xdh-staging-dock.js?v=20260426-3";
 import "./components/xdh-node-picker.js?v=20260426-4";
