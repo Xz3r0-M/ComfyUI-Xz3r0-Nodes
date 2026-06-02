@@ -5000,8 +5000,9 @@ def _resolve_media_favorite_item(
 
     live_row = None
     if media_type == "lora":
-        lora_conn = connect_lora_trigger_db()
+        lora_conn = None
         try:
+            lora_conn = connect_lora_trigger_db()
             ensure_lora_trigger_schema(lora_conn)
             live_row = lora_conn.execute(
                 "SELECT public_ref, real_path, rel_path, title,"
@@ -5012,7 +5013,8 @@ def _resolve_media_favorite_item(
         except Exception:
             pass
         finally:
-            lora_conn.close()
+            if lora_conn is not None:
+                lora_conn.close()
     else:
         media_conn = None
         try:
@@ -5031,10 +5033,20 @@ def _resolve_media_favorite_item(
                 media_conn.close()
 
     if live_row is not None:
+        resolved_filename = str(
+            live_row["filename"]
+            if "filename" in live_row.keys()
+            else live_row["title"]
+        )
+        resolved_title = str(
+            live_row["title"]
+            if "title" in live_row.keys()
+            else live_row["filename"]
+        )
         return {
             "public_ref": public_ref,
             "media_type": media_type,
-            "filename": str(live_row["filename"] or filename),
+            "filename": resolved_filename or filename,
             "rel_path": str(live_row["rel_path"] or rel_path),
             "file_ext": file_ext,
             "favorited_at": favorited_at,
@@ -5042,11 +5054,7 @@ def _resolve_media_favorite_item(
             "real_path": str(live_row["real_path"] or ""),
             "mtime": float(live_row["mtime"] or 0),
             "size": int(live_row["size"] or 0),
-            "title": str(
-                live_row["title"]
-                if "title" in live_row.keys()
-                else live_row["filename"]
-            ),
+            "title": resolved_title,
         }
     return {
         "public_ref": public_ref,

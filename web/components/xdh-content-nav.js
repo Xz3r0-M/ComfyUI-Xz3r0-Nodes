@@ -941,6 +941,7 @@ export class XdhContentNav extends BaseElement {
                 <button class="sort-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.sort_title", { label: sortOpt.label })}">
                     ${icon('list-filter', 13)} <span class="label">${sortOpt.label}</span>
                 </button>
+                <div class="divider"></div>
                 <button class="fav-toggle-btn xdh-tooltip xdh-tooltip-down ${state.favoritesOnly ? "active" : ""}"
                         data-tooltip="${favTooltip}"
                         style="display:${isMediaView ? "" : "none"}">

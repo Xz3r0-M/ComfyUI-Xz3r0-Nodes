@@ -21,7 +21,6 @@ const TREE_EXPANDED_STATE_STORAGE_KEY = "XDataHub.V2.TreeExpandedState.v2";
 const TREE_STATE_CATEGORIES = ["image", "video", "audio", "lora"];
 const TREE_WIDTH_STORAGE_KEY = "XDataHub.V2.TreeWidth";
 const TREE_MIN_WIDTH = 140;
-const TREE_MAX_WIDTH = 600;
 const TREE_DEFAULT_WIDTH = 220;
 
 function createCacheEntry() {
@@ -145,14 +144,25 @@ export class XdhFolderTree extends BaseElement {
         this._isResizing = false;
         this._resizeStartX = 0;
         this._resizeStartWidth = TREE_DEFAULT_WIDTH;
+        this._parentResizeObserver = null;
     }
 
     connectedCallback() {
         super.connectedCallback();
         this._loadSavedWidth();
+        this._clampToMaxWidth();
         this._applyTreeWidth();
         this._syncHostState();
         void this._syncTreeState();
+        this._startParentResizeObserver();
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        if (this._parentResizeObserver) {
+            this._parentResizeObserver.disconnect();
+            this._parentResizeObserver = null;
+        }
     }
 
     renderRoot() {
@@ -498,7 +508,7 @@ export class XdhFolderTree extends BaseElement {
                 <div class="tree-row ${isActive ? "is-active" : ""} xdh-tooltip"
                      data-path="${escapeHtml(path)}"
                      data-label="${escapeHtml(node.label)}"
-                     data-tooltip="${escapeHtml(path)}"
+                     data-tooltip="${escapeHtml(node.label)}"
                      style="padding-left:${paddingLeft}px;">
                     ${showToggle
                         ? `<button class="tree-branch-toggle xdh-tooltip"
@@ -555,11 +565,39 @@ export class XdhFolderTree extends BaseElement {
         );
     }
 
+    _getTreeMaxWidth() {
+        // 上限 = 布局容器宽度 - 保留宽度（侧边栏 + 卡片区最小空间）
+        // 确保拖拽目录树时右侧卡片区域始终可见
+        const parentWidth = this.parentElement?.clientWidth || window.innerWidth;
+        const MIN_CONTENT_RESERVE = 250; // 侧边栏 48px + 卡片区最低 ~200px
+        return Math.max(TREE_MIN_WIDTH, parentWidth - MIN_CONTENT_RESERVE);
+    }
+
+    _clampToMaxWidth() {
+        const maxWidth = this._getTreeMaxWidth();
+        if (this._treeWidth > maxWidth) {
+            this._treeWidth = maxWidth;
+            this._applyTreeWidth();
+        }
+    }
+
+    _startParentResizeObserver() {
+        if (this._parentResizeObserver) return;
+        const target = this.parentElement;
+        if (!target) return;
+        if (typeof ResizeObserver === "undefined") return;
+        this._parentResizeObserver = new ResizeObserver(() => {
+            this._clampToMaxWidth();
+        });
+        this._parentResizeObserver.observe(target);
+    }
+
     _loadSavedWidth() {
         try {
             const saved = localStorage.getItem(TREE_WIDTH_STORAGE_KEY);
             const width = parseInt(saved, 10);
-            if (width >= TREE_MIN_WIDTH && width <= TREE_MAX_WIDTH) {
+            const maxWidth = this._getTreeMaxWidth();
+            if (width >= TREE_MIN_WIDTH && width <= maxWidth) {
                 this._treeWidth = width;
             }
         } catch {
@@ -608,8 +646,9 @@ export class XdhFolderTree extends BaseElement {
     _resizePointerMove(clientX) {
         if (!this._isResizing) return;
         const delta = clientX - this._resizeStartX;
+        const maxWidth = this._getTreeMaxWidth();
         const newWidth = Math.min(
-            TREE_MAX_WIDTH,
+            maxWidth,
             Math.max(TREE_MIN_WIDTH, this._resizeStartWidth + delta)
         );
         if (newWidth !== this._treeWidth) {
@@ -791,7 +830,7 @@ export class XdhFolderTree extends BaseElement {
                 }
 
                 .tree-scroll-content {
-                    min-width: max-content;
+                    width: 100%;
                     min-height: 100%;
                 }
 
@@ -801,8 +840,7 @@ export class XdhFolderTree extends BaseElement {
 
                 .tree-row,
                 .tree-root-row {
-                    width: max-content;
-                    min-width: 100%;
+                    width: 100%;
                     min-height: 30px;
                     display: flex;
                     align-items: center;
@@ -903,9 +941,9 @@ export class XdhFolderTree extends BaseElement {
                 }
 
                 .tree-label {
-                    min-width: max-content;
-                    overflow: visible;
-                    text-overflow: clip;
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                     white-space: nowrap;
                 }
 

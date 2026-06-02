@@ -953,7 +953,10 @@ export class XdhMediaGrid extends BaseElement {
                 ${itemExists ? thumbFor(item, previewState) : `<div class="thumb-placeholder">${icon("image-off", 32)}</div>`}
                 ${goneBadge}
                 <div class="card-text">
-                    <div class="card-title">${safeName}</div>
+                    <div class="card-title-row">
+                        ${isFav ? `<span class="fav-indicator"><svg width="14" height="14" viewBox="0 0 24 24" style="display:block"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor"/></svg></span>` : ""}
+                        <div class="card-title">${safeName}</div>
+                    </div>
                     ${summaryLabels.length > 0
                         ? `<div class="card-summary">${summaryLabels.join(" · ")}</div>`
                         : ""}
@@ -1047,6 +1050,13 @@ export class XdhMediaGrid extends BaseElement {
                 }
                 .fav-btn[data-fav-active="true"] {
                     color: var(--xdh-color-primary);
+                }
+
+                /* ── 已收藏指示器（左上角，hover 时隐藏）── */
+                .fav-indicator {
+                    color: var(--xdh-color-primary);
+                    pointer-events: none;
+                    flex-shrink: 0;
                 }
 
                 /* ── Thumbnail container ── */
@@ -1252,6 +1262,13 @@ export class XdhMediaGrid extends BaseElement {
                     gap: var(--xdh-space-xxs);
                     padding: var(--xdh-space-xs) var(--xdh-space-sm) var(--xdh-space-sm);
                 }
+                .card-title-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 4px;
+                    min-width: 0;
+                }
                 .card-title {
                     font: var(--xdh-font-micro-label);
                     color: var(--xdh-color-text-secondary);
@@ -1259,6 +1276,7 @@ export class XdhMediaGrid extends BaseElement {
                     overflow: hidden;
                     white-space: nowrap;
                     text-align: center;
+                    min-width: 0;
                 }
                 .card-summary {
                     min-height: 14px;

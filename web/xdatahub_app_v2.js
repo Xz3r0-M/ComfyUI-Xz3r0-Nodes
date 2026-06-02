@@ -5,21 +5,21 @@ import {
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl, buildThumbUrl,
     loadFavoriteList, loadFavoriteIds,
-} from "./core/api.js?v=20260530-1";
+} from "./core/api.js?v=20260530-3";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
-import "./components/xdh-folder-tree.js?v=20260407-52";
-import "./components/xdh-media-grid.js?v=20260530-9";
+import "./components/xdh-folder-tree.js?v=20260407-58";
+import "./components/xdh-media-grid.js?v=20260531-3";
 import "./components/xdh-staging-dock.js?v=20260426-3";
 import "./components/xdh-node-picker.js?v=20260426-4";
 import "./core/node-bridge.js?v=20260426-1";
-import "./components/xdh-content-nav.js?v=20260530-1";
+import "./components/xdh-content-nav.js?v=20260531-1";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20260530-2";
+import "./components/xdh-lightbox.js?v=20260530-3";
 import "./components/xdh-history-view.js?v=20260508-1";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
@@ -836,9 +836,19 @@ function mapItem(item, category) {
 
     // ── Lora shape ──────────────────────────────────────
     if (category === "lora") {
-        const ref  = item.extra?.media_ref || item.media_ref || item.ref || "";
-        const name = item.title || item.name || ref || "Unnamed";
-        const thumbUrl = item.extra?.thumb_url || item.thumb_url || "";
+        const ref  = item.extra?.media_ref
+            || item.media_ref
+            || item.ref
+            || item.public_ref
+            || "";
+        const name = item.title
+            || item.filename
+            || item.name
+            || ref
+            || "Unnamed";
+        const thumbUrl = item.extra?.thumb_url
+            || item.thumb_url
+            || (ref ? `/xz3r0/xdatahub/loras/thumb?ref=${encodeURIComponent(ref)}` : "");
         return {
             id: item.id || ref || buildStableFallbackId(item, category, "lora"),
             name,
@@ -846,7 +856,7 @@ function mapItem(item, category) {
             thumbUrl,
             mtime,
             size,
-            previewable: !!(item.extra?.thumb_url || item.thumb_url),
+            previewable: !!(thumbUrl),
             raw: item,
         };
     }
@@ -1177,7 +1187,8 @@ appStore.subscribe(async (state, key) => {
     const searchSnapshot = String(state.searchQuery || "").trim();
 
     // 分类切换：恢复该分类的 favoritesOnly 状态
-    if (key === "activeCategory" && previousCategory !== categorySnapshot) {
+    // 注意：分类切换通过 categoryViewToken 触发，不直接通过 activeCategory key
+    if (previousCategory !== categorySnapshot) {
         const byCat = loadFavoritesByCategory();
         const nextFav = !!byCat[categorySnapshot];
         if (state.favoritesOnly !== nextFav) {

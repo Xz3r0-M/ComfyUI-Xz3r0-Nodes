@@ -1986,6 +1986,10 @@ export class XdhLightbox extends BaseElement {
                     outline-offset: 2px;
                 }
 
+                .fs-fav-btn.is-fav {
+                    color: var(--xdh-color-primary);
+                }
+
                 .fs-action-btn:disabled {
                     opacity: 0.32;
                     cursor: not-allowed;
