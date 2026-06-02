@@ -5,7 +5,7 @@ import {
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl, buildThumbUrl,
     loadFavoriteList, loadFavoriteIds,
-} from "./core/api.js?v=20260601-1";
+} from "./core/api.js?v=20260601-5";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 
@@ -929,6 +929,7 @@ appStore.subscribe((state, key) => {
 appStore.subscribe((state, key) => {
     if (
         isApplyingCategoryView
+        || loadFavoritesByCategory()[state.activeCategory]
         || (
             key !== "activeFolder"
             && key !== "activeFolderLabel"
@@ -944,6 +945,7 @@ appStore.subscribe((state, key) => {
     if (
         isApplyingCategoryView
         || state._navSkipPush
+        || loadFavoritesByCategory()[state.activeCategory]
         || (
             key !== "activeFolder"
             && key !== "activeFolderLabel"
@@ -987,12 +989,14 @@ let latestListLoadToken = 0;
 let searchDebounceTimer = null;
 let previousCategory = appStore.state.activeCategory;
 
-async function fetchCategory(category, page, folder, sortKey, keyword = "") {
+async function fetchCategory(category, page, folder, sortKey, keyword = "", opts = {}) {
     const safePage = page || 1;
     const safeFolder = folder || "";
     const { sortBy, sortOrder } = getSortRequest(sortKey);
     const useFlatView = keyword.length > 0;
-    const favOnly = !!(loadFavoritesByCategory()[category] ?? false);
+    const favOnly = opts.ignoreFavorites
+        ? false
+        : !!(loadFavoritesByCategory()[category] ?? false);
     if (favOnly && (MEDIA_CATEGORIES.has(category) || category === "lora")) {
         return loadFavoriteList(category, safePage, 50, sortOrder);
     }
@@ -1047,7 +1051,9 @@ async function doesCategoryFolderExist(category, folder, sortKey) {
                 category,
                 1,
                 parentFolder,
-                sortKey
+                sortKey,
+                "",
+                { ignoreFavorites: true }
             );
             const rawItems = Array.isArray(res?.items)
                 ? res.items
@@ -1099,7 +1105,10 @@ async function applyPersistedCategoryView(category, options = {}) {
     const currentCategory = String(
         appStore.state.activeCategory || DEFAULT_ACTIVE_CATEGORY
     ).trim();
-    if (options.rememberCurrent !== false) {
+    if (
+        options.rememberCurrent !== false
+        && !loadFavoritesByCategory()[currentCategory]
+    ) {
         rememberCurrentCategoryView();
         rememberCurrentCategoryNavigationState();
     }
