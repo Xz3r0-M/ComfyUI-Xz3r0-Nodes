@@ -743,7 +743,10 @@ export class XdhMediaGrid extends BaseElement {
                     e.preventDefault(); return;
                 }
                 const extra    = item.raw?.extra || {};
-                const mediaRef = String(extra.media_ref || item.raw?.media_ref || item.raw?.ref || "");
+                const mediaRef = String(
+                    extra.media_ref || item.raw?.media_ref
+                    || item.raw?.public_ref || item.raw?.ref || ""
+                );
                 const mediaType = String(item.type || "image").toLowerCase();
                 const payload  = {
                     source: "xdatahub",
@@ -751,9 +754,21 @@ export class XdhMediaGrid extends BaseElement {
                     title: String(item.title || item.name || ""),
                 };
                 if (mediaType === "lora") {
-                    payload.thumb_url = String(extra.thumb_url || "");
-                    if (extra.strength_model != null) payload.strength_model = Number(extra.strength_model);
-                    if (extra.strength_clip  != null) payload.strength_clip  = Number(extra.strength_clip);
+                    const rawExtra = item.raw?.extra || {};
+                    const raw = item.raw || {};
+                    payload.thumb_url = String(
+                        rawExtra.thumb_url || raw.thumb_url || ""
+                    );
+                    const strengthModel = rawExtra.strength_model
+                        ?? raw.strength_model;
+                    const strengthClip = rawExtra.strength_clip
+                        ?? raw.strength_clip;
+                    if (strengthModel != null) {
+                        payload.strength_model = Number(strengthModel);
+                    }
+                    if (strengthClip != null) {
+                        payload.strength_clip = Number(strengthClip);
+                    }
                 }
                 e.dataTransfer.setData("application/x-xdatahub-media+json", JSON.stringify(payload));
                 card.style.opacity = "0.5";
@@ -914,7 +929,7 @@ export class XdhMediaGrid extends BaseElement {
             ));
             const summaryLabels = getCardSummaryLabels(item, this.failedThumbIds);
             const hasThumbFailure = this.failedThumbIds.has(String(item.id));
-            const itemExists = item.raw?.exists !== false;
+            const itemExists = item.raw?.extra?.exists !== false;
             const favoriteIdSet = appStore.state.favoriteIdSet || [];
             const favRef = String(
                 item.raw?.extra?.media_ref || item.raw?.media_ref
@@ -1159,7 +1174,7 @@ export class XdhMediaGrid extends BaseElement {
                 .lora-meta-overlay {
                     justify-content: flex-start;
                     align-items: center;
-                    gap: var(--xdh-space-sm);
+                    gap: 3px;
                     flex-wrap: wrap;
                     padding: 0 var(--xdh-space-sm) var(--xdh-space-sm);
                     background: linear-gradient(
@@ -1175,8 +1190,8 @@ export class XdhMediaGrid extends BaseElement {
                     display: inline-flex;
                     align-items: center;
                     gap: var(--xdh-space-xs);
-                    min-height: 22px;
-                    padding: 0 7px;
+                    min-height: 18px;
+                    padding: 0 6px;
                     border-radius: var(--xdh-radius-full);
                     border: 1px solid var(--xdh-color-border);
                     background: var(--xdh-color-surface-2);

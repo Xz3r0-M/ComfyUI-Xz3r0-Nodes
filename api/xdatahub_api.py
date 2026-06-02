@@ -5043,7 +5043,9 @@ def _resolve_media_favorite_item(
             ensure_lora_trigger_schema(lora_conn)
             live_row = lora_conn.execute(
                 "SELECT public_ref, real_path, rel_path, title,"
-                " mtime, size FROM lora_items"
+                " mtime, size, trigger_words_json,"
+                " strength_model, strength_clip, lora_note"
+                " FROM lora_items"
                 " WHERE public_ref = ? AND valid = 1",
                 (public_ref,),
             ).fetchone()
@@ -5080,27 +5082,74 @@ def _resolve_media_favorite_item(
             if "title" in live_row.keys()
             else live_row["filename"]
         )
-        return {
-            "public_ref": public_ref,
+        live_mtime = float(live_row["mtime"] or 0)
+        live_size = int(live_row["size"] or 0)
+        extra: dict[str, Any] = {
             "media_type": media_type,
-            "filename": resolved_filename or filename,
-            "rel_path": str(live_row["rel_path"] or rel_path),
+            "media_ref": public_ref,
+            "mtime": live_mtime,
+            "size": live_size,
             "file_ext": file_ext,
-            "favorited_at": favorited_at,
-            "exists": True,
-            "real_path": str(live_row["real_path"] or ""),
-            "mtime": float(live_row["mtime"] or 0),
-            "size": int(live_row["size"] or 0),
-            "title": resolved_title,
+            "rel_path": str(live_row["rel_path"] or rel_path),
+        }
+        if media_type == "lora":
+            extra["trigger_words"] = _parse_lora_trigger_words_json(
+                str(live_row["trigger_words_json"] or "[]")
+            )
+            extra["strength_model"] = float(
+                live_row["strength_model"] or 1.0
+            )
+            extra["strength_clip"] = float(
+                live_row["strength_clip"] or 1.0
+            )
+            extra["lora_note"] = str(live_row["lora_note"] or "")
+            extra["thumb_url"] = lora_thumb_url(public_ref)
+            extra["has_thumbnail"] = True
+        saved_at = ""
+        if live_mtime:
+            saved_at = datetime.fromtimestamp(
+                live_mtime, tz=timezone.utc
+            ).isoformat(timespec="seconds")
+        if media_type == "lora":
+            return {
+                "id": f"lora:{public_ref}",
+                "media_ref": public_ref,
+                "title": resolved_title,
+                "saved_at": saved_at or favorited_at,
+                "extra": extra,
+            }
+        return {
+            "id": f"media:{public_ref}",
+            "kind": media_type,
+            "title": resolved_filename or filename,
+            "saved_at": saved_at or favorited_at,
+            "previewable": True,
+            "extra": extra,
+        }
+    # 文件已不存在：返回占位信息
+    gone_extra = {
+        "media_type": media_type,
+        "media_ref": "",
+        "file_ext": file_ext,
+        "rel_path": rel_path,
+        "exists": False,
+    }
+    if media_type == "lora":
+        return {
+            "id": f"lora:{public_ref}",
+            "media_ref": "",
+            "title": filename or rel_path,
+            "saved_at": favorited_at,
+            "extra": {**gone_extra, "thumb_url": "", "has_thumbnail": False},
         }
     return {
+        "id": f"media:{public_ref}",
+        "kind": media_type,
+        "title": filename or rel_path,
+        "saved_at": favorited_at,
+        "previewable": False,
         "public_ref": public_ref,
-        "media_type": media_type,
-        "filename": filename,
-        "rel_path": rel_path,
-        "file_ext": file_ext,
-        "favorited_at": favorited_at,
-        "exists": False,
+        "extra": gone_extra,
     }
 
 

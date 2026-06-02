@@ -5,7 +5,7 @@ import {
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl, buildThumbUrl,
     loadFavoriteList, loadFavoriteIds,
-} from "./core/api.js?v=20260530-3";
+} from "./core/api.js?v=20260601-1";
 import { banner } from "./core/banner.js";
 import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 
@@ -13,8 +13,8 @@ import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-93";
-import "./components/xdh-media-grid.js?v=20260531-3";
-import "./components/xdh-staging-dock.js?v=20260426-3";
+import "./components/xdh-media-grid.js?v=20260601-1";
+import "./components/xdh-staging-dock.js?v=20260531-1";
 import "./components/xdh-node-picker.js?v=20260426-4";
 import "./core/node-bridge.js?v=20260426-1";
 import "./components/xdh-content-nav.js?v=20260531-1";
@@ -417,6 +417,9 @@ appStore.state.currentPage = initialCategoryView.page;
 appStore.state.navHistory = initialCategoryNavState.history;
 appStore.state.navIndex = initialCategoryNavState.index;
 appStore.state.dbTaskBusy = false;
+appStore.state.favoritesOnly = !!(
+    loadFavoritesByCategory()[initialUiState.activeCategory] ?? false
+);
 
 window.addEventListener("message", (event) => {
     if (!isTrustedParentMessage(event)) {
@@ -989,7 +992,7 @@ async function fetchCategory(category, page, folder, sortKey, keyword = "") {
     const safeFolder = folder || "";
     const { sortBy, sortOrder } = getSortRequest(sortKey);
     const useFlatView = keyword.length > 0;
-    const favOnly = appStore.state.favoritesOnly;
+    const favOnly = !!(loadFavoritesByCategory()[category] ?? false);
     if (favOnly && (MEDIA_CATEGORIES.has(category) || category === "lora")) {
         return loadFavoriteList(category, safePage, 50, sortOrder);
     }
@@ -1179,6 +1182,8 @@ appStore.subscribe(async (state, key) => {
         return;
     }
 
+
+
     const requestToken = ++latestListLoadToken;
     const categorySnapshot = state.activeCategory;
     const folderSnapshot = state.activeFolder || "";
@@ -1186,9 +1191,9 @@ appStore.subscribe(async (state, key) => {
     const sortSnapshot = state.sortOrder || DEFAULT_SORT_ORDER;
     const searchSnapshot = String(state.searchQuery || "").trim();
 
-    // 分类切换：恢复该分类的 favoritesOnly 状态
-    // 注意：分类切换通过 categoryViewToken 触发，不直接通过 activeCategory key
+    // 分类切换：恢复该分类的 favoritesOnly 状态，清空旧收藏 ID 集合
     if (previousCategory !== categorySnapshot) {
+        appStore.state.favoriteIdSet = [];
         const byCat = loadFavoritesByCategory();
         const nextFav = !!byCat[categorySnapshot];
         if (state.favoritesOnly !== nextFav) {
@@ -1224,13 +1229,22 @@ appStore.subscribe(async (state, key) => {
         appStore.state.loadError = "";
         appStore.state.currentPage = res.page        || 1;
         appStore.state.totalPages  = res.total_pages || 1;
-        // 加载收藏 ID 集合（非收藏模式时填充，用于卡片星标显示）
-        if (!state.favoritesOnly && DIRECTORY_VIEW_CATEGORIES.has(categorySnapshot)) {
-            loadFavoriteIds(categorySnapshot).then(ids => {
-                if (categorySnapshot === appStore.state.activeCategory) {
-                    appStore.state.favoriteIdSet = ids;
-                }
-            }).catch(() => {});
+        // 填充收藏 ID 集合（用于卡片星标显示）
+        if (DIRECTORY_VIEW_CATEGORIES.has(categorySnapshot) || categorySnapshot === "lora") {
+            if (state.favoritesOnly) {
+                // 收藏视图：从 extra.media_ref 提取 public_ref
+                const ids = raw.map(item =>
+                    item.extra?.media_ref || item.public_ref || ""
+                ).filter(Boolean);
+                appStore.state.favoriteIdSet = ids;
+            } else {
+                // 普通视图：后台加载该分类全部收藏 ID
+                loadFavoriteIds(categorySnapshot).then(ids => {
+                    if (categorySnapshot === appStore.state.activeCategory) {
+                        appStore.state.favoriteIdSet = ids;
+                    }
+                }).catch(() => {});
+            }
         }
         if (res.lock_state) {
             setLockState({
