@@ -17,8 +17,6 @@ import { t } from "../core/i18n.js?v=20260406-15";
 
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 const TREE_PAGE_SIZE = 200;
-const TREE_EXPANDED_STATE_STORAGE_KEY = "XDataHub.V2.TreeExpandedState.v2";
-const TREE_STATE_CATEGORIES = ["image", "video", "audio", "lora"];
 const TREE_WIDTH_STORAGE_KEY = "XDataHub.V2.TreeWidth";
 const TREE_MIN_WIDTH = 140;
 const TREE_DEFAULT_WIDTH = 220;
@@ -90,53 +88,11 @@ function compareFolderNodes(left, right) {
     );
 }
 
-function loadExpandedStateByCategory() {
-    const expandedByCategory = new Map();
-    try {
-        const raw = localStorage.getItem(TREE_EXPANDED_STATE_STORAGE_KEY) || "";
-        const parsed = raw ? JSON.parse(raw) : {};
-        TREE_STATE_CATEGORIES.forEach((category) => {
-            const expanded = new Set([""]);
-            const stored = Array.isArray(parsed?.[category])
-                ? parsed[category]
-                : [];
-            stored
-                .map((path) => normalizePath(path))
-                .filter(Boolean)
-                .forEach((path) => expanded.add(path));
-            expandedByCategory.set(category, expanded);
-        });
-    } catch {
-        // ignore localStorage read errors
-    }
-    return expandedByCategory;
-}
-
-function persistExpandedStateByCategory(expandedByCategory) {
-    try {
-        const payload = {};
-        TREE_STATE_CATEGORIES.forEach((category) => {
-            const expanded = expandedByCategory.get(category);
-            payload[category] = expanded
-                ? Array.from(expanded)
-                    .map((path) => normalizePath(path))
-                    .filter(Boolean)
-                : [];
-        });
-        localStorage.setItem(
-            TREE_EXPANDED_STATE_STORAGE_KEY,
-            JSON.stringify(payload)
-        );
-    } catch {
-        // ignore localStorage write errors
-    }
-}
-
 export class XdhFolderTree extends BaseElement {
     constructor() {
         super();
         this._cacheByCategory = new Map();
-        this._expandedByCategory = loadExpandedStateByCategory();
+        this._expandedByCategory = new Map();
         this._syncToken = 0;
         this._treeScrollTop = 0;
         this._treeScrollLeft = 0;
@@ -245,10 +201,6 @@ export class XdhFolderTree extends BaseElement {
         return expanded;
     }
 
-    _persistExpandedState() {
-        persistExpandedStateByCategory(this._expandedByCategory);
-    }
-
     _invalidateCategory(category) {
         this._cacheByCategory.delete(String(category || ""));
     }
@@ -266,28 +218,10 @@ export class XdhFolderTree extends BaseElement {
 
         try {
             await this._ensurePathReady(category, state.activeFolder || "");
-            this._cleanupStaleExpanded(category);
         } finally {
             if (token === this._syncToken) {
                 this.renderRoot();
             }
-        }
-    }
-
-    _cleanupStaleExpanded(category) {
-        const expanded = this._getExpandedSet(category);
-        const cache = this._getCategoryCache(category);
-        let changed = false;
-        for (const path of expanded) {
-            if (!path) continue;  // 保留根路径
-            const entry = cache.get(path);
-            if (entry?.status === "ready" && entry.items.length === 0) {
-                expanded.delete(path);
-                changed = true;
-            }
-        }
-        if (changed) {
-            this._persistExpandedState();
         }
     }
 
@@ -300,9 +234,6 @@ export class XdhFolderTree extends BaseElement {
         for (const path of chain) {
             expanded.add(path);
             await this._ensureChildrenLoaded(category, path);
-        }
-        if (chain.length > 0) {
-            this._persistExpandedState();
         }
     }
 
@@ -343,21 +274,11 @@ export class XdhFolderTree extends BaseElement {
                         expanded.delete(safePath);
                     }
                 }
-                // 首次加载子项：清除旧持久化中的子路径展开状态
-                // 确保展开父级时子级默认显示为 +
-                if (!wasAlreadyReady && items.length > 0) {
-                    let childChanged = false;
+                // 清除子路径的展开状态，确保子级默认显示 +
+                if (items.length > 0) {
                     for (const item of items) {
-                        if (expanded.has(item.path)) {
-                            expanded.delete(item.path);
-                            childChanged = true;
-                        }
+                        expanded.delete(item.path);
                     }
-                    if (childChanged) {
-                        this._persistExpandedState();
-                    }
-                } else if (items.length === 0 && safePath) {
-                    this._persistExpandedState();
                 }
                 this.renderRoot();
                 return entry;
@@ -429,13 +350,11 @@ export class XdhFolderTree extends BaseElement {
 
         if (expanded.has(path)) {
             expanded.delete(path);
-            this._persistExpandedState();
             this.renderRoot();
             return;
         }
 
         expanded.add(path);
-        this._persistExpandedState();
         this.renderRoot();
         void this._ensureChildrenLoaded(category, path);
     }
@@ -455,24 +374,13 @@ export class XdhFolderTree extends BaseElement {
             return;
         }
 
-        const expanded = this._getExpandedSet(category);
-        if (expanded.has(path)) {
-            expanded.delete(path);
-            this._persistExpandedState();
-            this.renderRoot();
-            return;
-        }
-
-        expanded.add(path);
-        this._persistExpandedState();
-        this.renderRoot();
-        void this._ensureChildrenLoaded(category, path);
+        // 当前文件夹：与点击 ± 按钮走相同执行路径
+        this._toggleExpanded(pathText);
     }
 
     _collapseAll() {
         const category = String(store.state.activeCategory || "");
         this._expandedByCategory.set(category, new Set([""]));
-        this._persistExpandedState();
         this.renderRoot();
     }
 
@@ -521,9 +429,10 @@ export class XdhFolderTree extends BaseElement {
         const hasLoadedChildren = cache?.status === "ready";
         const hasCachedChildren = hasLoadedChildren
             && (cache.items || []).length > 0;
-        // 优先使用后端返回的 has_children，未返回时回退到缓存判断
+        // hasChildren: true=显示, false=隐藏, undefined=乐观(未加载时显示)
         const showToggle = node.hasChildren === true
-            || (node.hasChildren !== false && hasCachedChildren);
+            || (node.hasChildren !== false
+                && (!hasLoadedChildren || hasCachedChildren));
         // 展开状态必须与 showToggle 同步：无子项的文件夹不可展开
         const expanded = showToggle
             && this._getExpandedSet(category).has(path);

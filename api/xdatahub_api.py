@@ -1195,7 +1195,7 @@ def build_directory_items(
                 mtime=folder_mtimes.get(title),
                 size=folder_sizes.get(title),
                 file_count=folder_counts.get(title),
-                has_children=folder_has_children.get(title),
+                has_children=folder_has_children.get(title, False),
             )
             for title, path in folder_children.items()
         ],
@@ -2802,8 +2802,9 @@ class LoraStore:
             for item in folder_items:
                 child_path = item.get("extra", {}).get("child_path", "")
                 dir_name = child_path.split("/")[-1] if child_path else ""
-                if dir_name and dir_name in dirs_with_children:
-                    item["extra"]["has_children"] = True
+                item["extra"]["has_children"] = (
+                    dir_name in dirs_with_children if dir_name else False
+                )
 
             folder_items = sort_folder_items(
                 folder_items,
