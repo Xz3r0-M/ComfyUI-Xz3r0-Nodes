@@ -77,6 +77,8 @@ export class XMaskEditorController {
         this.maskDisplayOpacity = 0.75;
         this.maskOpacity = 1;
         this.threshold = 32;
+        this.erasePaintEnabled = true;
+        this.eraseMaskEnabled = true;
 
         this._loadSessionSettings();
         this.rotationQuarterTurns = 0;
@@ -280,6 +282,18 @@ export class XMaskEditorController {
         this.emitStateChange();
     }
 
+    setErasePaintEnabled(enabled) {
+        this.erasePaintEnabled = !!enabled;
+        this._saveSessionSettings();
+        this.emitStateChange();
+    }
+
+    setEraseMaskEnabled(enabled) {
+        this.eraseMaskEnabled = !!enabled;
+        this._saveSessionSettings();
+        this.emitStateChange();
+    }
+
     floodFill(sourceX, sourceY) {
         const effectiveTool = this.getEffectiveTool();
         const isErase = effectiveTool === "erase";
@@ -296,11 +310,15 @@ export class XMaskEditorController {
             return;
         }
 
+        if (isErase && !this.erasePaintEnabled && !this.eraseMaskEnabled) {
+            return;
+        }
+
         // Write layer is the active layer (paint / mask)
         const imageData = activeCtx.getImageData(0, 0, width, height);
         const pixels = imageData.data;
         let maskImageData; let maskPixels;
-        if (isErase) {
+        if (isErase && this.eraseMaskEnabled) {
             maskImageData = this.maskCtx.getImageData(0, 0, width, height);
             maskPixels = maskImageData.data;
         }
@@ -322,7 +340,9 @@ export class XMaskEditorController {
         // Skip if the write-layer pixel at click point is already filled
         const writeIdx = (sy * width + sx) * 4;
         if (isErase) {
-            if (pixels[writeIdx + 3] === 0 && maskPixels[writeIdx + 3] === 0) {
+            const paintDone = !this.erasePaintEnabled || pixels[writeIdx + 3] === 0;
+            const maskDone = !this.eraseMaskEnabled || (maskPixels ? maskPixels[writeIdx + 3] === 0 : true);
+            if (paintDone && maskDone) {
                 return;
             }
         } else if (
@@ -385,7 +405,9 @@ export class XMaskEditorController {
 
             // Already filled on the write layer — skip
             if (isErase) {
-                if (pixels[idx + 3] === 0 && maskPixels[idx + 3] === 0) {
+                const paintDone = !this.erasePaintEnabled || pixels[idx + 3] === 0;
+                const maskDone = !this.eraseMaskEnabled || (maskPixels ? maskPixels[idx + 3] === 0 : true);
+                if (paintDone && maskDone) {
                     continue;
                 }
             } else if (
@@ -409,14 +431,18 @@ export class XMaskEditorController {
 
             // Write to the active layer(s)
             if (isErase) {
-                pixels[idx] = 0;
-                pixels[idx + 1] = 0;
-                pixels[idx + 2] = 0;
-                pixels[idx + 3] = 0;
-                maskPixels[idx] = 0;
-                maskPixels[idx + 1] = 0;
-                maskPixels[idx + 2] = 0;
-                maskPixels[idx + 3] = 0;
+                if (this.erasePaintEnabled) {
+                    pixels[idx] = 0;
+                    pixels[idx + 1] = 0;
+                    pixels[idx + 2] = 0;
+                    pixels[idx + 3] = 0;
+                }
+                if (this.eraseMaskEnabled && maskPixels) {
+                    maskPixels[idx] = 0;
+                    maskPixels[idx + 1] = 0;
+                    maskPixels[idx + 2] = 0;
+                    maskPixels[idx + 3] = 0;
+                }
             } else {
                 pixels[idx] = fillR;
                 pixels[idx + 1] = fillG;
@@ -443,8 +469,12 @@ export class XMaskEditorController {
         }
 
         if (isErase) {
-            this.paintCtx.putImageData(imageData, 0, 0);
-            this.maskCtx.putImageData(maskImageData, 0, 0);
+            if (this.erasePaintEnabled) {
+                this.paintCtx.putImageData(imageData, 0, 0);
+            }
+            if (this.eraseMaskEnabled && maskImageData) {
+                this.maskCtx.putImageData(maskImageData, 0, 0);
+            }
         } else {
             activeCtx.putImageData(imageData, 0, 0);
         }
@@ -968,6 +998,8 @@ export class XMaskEditorController {
             canUndo: this.canUndo(),
             canRedo: this.canRedo(),
             threshold: this.threshold,
+            erasePaintEnabled: this.erasePaintEnabled,
+            eraseMaskEnabled: this.eraseMaskEnabled,
         });
     }
 
@@ -1126,8 +1158,12 @@ export class XMaskEditorController {
             return;
         }
         if (effectiveTool === "erase") {
-            this.erasePaintLine(fromPoint, toPoint);
-            this.drawMaskLine(fromPoint, toPoint, true);
+            if (this.erasePaintEnabled) {
+                this.erasePaintLine(fromPoint, toPoint);
+            }
+            if (this.eraseMaskEnabled) {
+                this.drawMaskLine(fromPoint, toPoint, true);
+            }
         }
     }
 
@@ -1240,6 +1276,8 @@ export class XMaskEditorController {
             if (typeof saved.paintOpacity === "number") this.paintOpacity = saved.paintOpacity;
             if (typeof saved.maskOpacity === "number") this.maskOpacity = saved.maskOpacity;
             if (typeof saved.threshold === "number") this.threshold = saved.threshold;
+            if (typeof saved.erasePaintEnabled === "boolean") this.erasePaintEnabled = saved.erasePaintEnabled;
+            if (typeof saved.eraseMaskEnabled === "boolean") this.eraseMaskEnabled = saved.eraseMaskEnabled;
         } catch (e) { /* ignore */ }
     }
 
@@ -1252,6 +1290,8 @@ export class XMaskEditorController {
                 paintOpacity: this.paintOpacity,
                 maskOpacity: this.maskOpacity,
                 threshold: this.threshold,
+                erasePaintEnabled: this.erasePaintEnabled,
+                eraseMaskEnabled: this.eraseMaskEnabled,
             }));
         } catch (e) { /* ignore */ }
     }

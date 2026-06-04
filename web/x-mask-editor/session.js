@@ -89,6 +89,8 @@ export function openMaskEditorSession(texts = {}) {
         ui.brushRange.disabled = disabled;
         ui.fillThresholdRange.disabled = disabled;
         ui.fillThresholdInput.disabled = disabled;
+        ui.erasePaintLock.disabled = disabled;
+        ui.eraseMaskLock.disabled = disabled;
     };
 
     const setStatus = (text, isError = false) => {

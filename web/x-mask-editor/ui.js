@@ -489,6 +489,46 @@ export function ensureMaskEditorStyles() {
             background: transparent;
             touch-action: none;
         }
+        .ximageget-mask-editor-erase-locks {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 1px;
+            margin: 0 3px;
+        }
+        .ximageget-mask-editor-erase-lock {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 10px;
+            line-height: 1;
+            color: var(--ximageget-mask-editor-text-muted);
+            user-select: none;
+            white-space: nowrap;
+        }
+        .ximageget-mask-editor-erase-lock:hover {
+            background: color-mix(
+                in srgb,
+                var(--ximageget-mask-editor-text) 8%,
+                transparent
+            );
+        }
+        .ximageget-mask-editor-erase-lock input {
+            width: 11px;
+            height: 11px;
+            margin: 0;
+            accent-color: var(--ximageget-mask-editor-accent);
+            cursor: pointer;
+        }
+        .ximageget-mask-editor-erase-divider {
+            width: 1px;
+            align-self: stretch;
+            margin: 5px 6px;
+            background: var(--ximageget-mask-editor-border);
+        }
         @media (max-width: 840px) {
             .ximageget-mask-editor-dialog {
                 height: 100%;
@@ -661,7 +701,7 @@ export function createMaskEditorUi(texts = {}) {
     const fillThresholdLabel = document.createElement("span");
     fillThresholdLabel.className = "ximageget-mask-editor-label";
     fillThresholdLabel.textContent = String(
-        texts.fillThreshold || "Tolerance"
+        texts.fillThreshold || "Paint Bucket Tolerance"
     );
     const fillThresholdRange = document.createElement("input");
     fillThresholdRange.className = (
@@ -833,6 +873,45 @@ export function createMaskEditorUi(texts = {}) {
             || "Move the canvas (middle mouse drag / Ctrl+left drag)"
     );
     optionsTools.appendChild(eraseBtn);
+
+    const eraseLocks = document.createElement("div");
+    eraseLocks.className = "ximageget-mask-editor-erase-locks";
+
+    const erasePaintLock = document.createElement("label");
+    erasePaintLock.className = "ximageget-mask-editor-erase-lock";
+    const erasePaintCheckbox = document.createElement("input");
+    erasePaintCheckbox.type = "checkbox";
+    erasePaintCheckbox.checked = true;
+    erasePaintLock.appendChild(erasePaintCheckbox);
+    erasePaintLock.appendChild(document.createTextNode(
+        String(texts.erasePaintLock || "Paint")
+    ));
+    setButtonTooltip(
+        erasePaintLock,
+        texts.erasePaintLockTip || "Allow eraser to clear paint layer"
+    );
+
+    const eraseMaskLock = document.createElement("label");
+    eraseMaskLock.className = "ximageget-mask-editor-erase-lock";
+    const eraseMaskCheckbox = document.createElement("input");
+    eraseMaskCheckbox.type = "checkbox";
+    eraseMaskCheckbox.checked = true;
+    eraseMaskLock.appendChild(eraseMaskCheckbox);
+    eraseMaskLock.appendChild(document.createTextNode(
+        String(texts.eraseMaskLock || "Mask")
+    ));
+    setButtonTooltip(
+        eraseMaskLock,
+        texts.eraseMaskLockTip || "Allow eraser to clear mask layer"
+    );
+
+    eraseLocks.appendChild(erasePaintLock);
+    eraseLocks.appendChild(eraseMaskLock);
+    optionsTools.appendChild(eraseLocks);
+
+    const eraseDivider = document.createElement("span");
+    eraseDivider.className = "ximageget-mask-editor-erase-divider";
+    optionsTools.appendChild(eraseDivider);
     optionsTools.appendChild(panBtn);
     thirdRow.appendChild(optionsTools);
 
@@ -1068,6 +1147,8 @@ export function createMaskEditorUi(texts = {}) {
         canvas,
         fillThresholdRange,
         fillThresholdInput,
+        erasePaintLock: erasePaintCheckbox,
+        eraseMaskLock: eraseMaskCheckbox,
         saveBtn,
         cancelBtn,
     };

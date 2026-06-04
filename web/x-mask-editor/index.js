@@ -206,6 +206,8 @@ export async function openXMaskEditor(options = {}) {
             canUndo,
             canRedo,
             threshold,
+            erasePaintEnabled,
+            eraseMaskEnabled,
         }) => {
             ui.zoomInput.value = `${Math.round(zoom * 100)}%`;
             ui.imageSizeValue.textContent = `${imageSize.width}x${imageSize.height}`;
@@ -258,6 +260,8 @@ export async function openXMaskEditor(options = {}) {
             ui.redoBtn.disabled = !canRedo;
             ui.fillThresholdRange.value = String(threshold);
             syncInputValue(ui.fillThresholdInput, String(threshold));
+            ui.erasePaintLock.checked = erasePaintEnabled;
+            ui.eraseMaskLock.checked = eraseMaskEnabled;
         },
     });
     session.bind(ui.brushBtn, "click", () => controller.setTool("paint"));
@@ -265,6 +269,12 @@ export async function openXMaskEditor(options = {}) {
     session.bind(ui.maskBrushBtn, "click", () => controller.setTool("mask"));
     session.bind(ui.eraseBtn, "click", () => controller.setTool("erase"));
     session.bind(ui.panBtn, "click", () => controller.setTool("pan"));
+    session.bind(ui.erasePaintLock, "change", () => {
+        controller.setErasePaintEnabled(ui.erasePaintLock.checked);
+    });
+    session.bind(ui.eraseMaskLock, "change", () => {
+        controller.setEraseMaskEnabled(ui.eraseMaskLock.checked);
+    });
     session.bind(ui.colorInput, "input", () => {
         controller.setPaintColor(ui.colorInput.value);
     });

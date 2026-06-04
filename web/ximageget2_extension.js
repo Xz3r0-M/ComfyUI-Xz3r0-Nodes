@@ -1350,7 +1350,7 @@ function getMaskEditorTexts() {
         ),
         toolBrushTip: t(key("tool_brush_tip"), "Paint color"),
         color: t(key("color"), "Color"),
-        fillThreshold: t(key("fill_threshold"), "Tolerance"),
+        fillThreshold: t(key("fill_threshold"), "Paint Bucket Tolerance"),
         fillThresholdTip: t(
             key("fill_threshold_tip"),
             "Color tolerance for flood fill (scroll wheel to adjust)"
@@ -1358,6 +1358,16 @@ function getMaskEditorTexts() {
         maskColor: t(key("mask_color"), "Mask"),
         toolMaskBrushTip: t(key("tool_mask_brush_tip"), "Paint mask"),
         toolEraseTip: t(key("tool_erase_tip"), "Erase current layer"),
+        erasePaintLock: t(key("erase_paint_lock"), "Paint"),
+        erasePaintLockTip: t(
+            key("erase_paint_lock_tip"),
+            "Uncheck to lock paint layer from eraser"
+        ),
+        eraseMaskLock: t(key("erase_mask_lock"), "Mask"),
+        eraseMaskLockTip: t(
+            key("erase_mask_lock_tip"),
+            "Uncheck to lock mask layer from eraser"
+        ),
         toolFill: t(key("tool_fill"), "Fill"),
         toolFillTip: t(
             key("tool_fill_tip"),
