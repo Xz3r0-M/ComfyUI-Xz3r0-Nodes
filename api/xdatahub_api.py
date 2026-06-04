@@ -1426,6 +1426,7 @@ class MediaStore:
         )
         conn.row_factory = sqlite3.Row
         conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
     @contextmanager
@@ -3855,6 +3856,8 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "hover_locate_debounce_ms": 300,
         "enable_ffmpeg_thumb_cache": False,
         "edge_peek": False,
+        "media_sort_by": "mtime",
+        "media_sort_order": "desc",
     }
 
 
@@ -4002,6 +4005,14 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
                 patch["ui_locale"] = locale
     if "edge_peek" in value:
         patch["edge_peek"] = parse_bool(value.get("edge_peek"))
+    if "media_sort_by" in value:
+        sort_by = str(value.get("media_sort_by") or "").strip().lower()
+        if sort_by in MEDIA_SORT_BY_VALUES:
+            patch["media_sort_by"] = sort_by
+    if "media_sort_order" in value:
+        sort_order = str(value.get("media_sort_order") or "").strip().lower()
+        if sort_order in MEDIA_SORT_ORDER_VALUES:
+            patch["media_sort_order"] = sort_order
     return patch
 
 
@@ -4536,18 +4547,8 @@ def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
     conn = connect_favorites_db(create=True)
     try:
         ensure_favorites_schema(conn)
-        existing = conn.execute(
-            "SELECT id FROM favorites WHERE content_hash = ?",
-            (content_hash,),
-        ).fetchone()
-        if existing is not None:
-            return {
-                "created": False,
-                "duplicate": True,
-                "favorite_id": int(existing["id"]),
-            }
-        conn.execute(
-            "INSERT INTO favorites ("
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO favorites ("
             "created_at, source_record_key, extra_header, data_type, "
             "source, payload_json, content_hash"
             ") VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -4561,6 +4562,20 @@ def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
                 content_hash,
             ),
         )
+        if cursor.rowcount == 0:
+            existing = conn.execute(
+                "SELECT id FROM favorites WHERE content_hash = ?",
+                (content_hash,),
+            ).fetchone()
+            return {
+                "created": False,
+                "duplicate": True,
+                "favorite_id": (
+                    int(existing["id"])
+                    if existing is not None
+                    else 0
+                ),
+            }
         row = conn.execute(
             "SELECT id FROM favorites WHERE content_hash = ?",
             (content_hash,),
