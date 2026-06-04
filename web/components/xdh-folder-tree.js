@@ -805,12 +805,13 @@ export class XdhFolderTree extends BaseElement {
                     height: 100%;
                     overflow-y: scroll;
                     overflow-x: scroll;
-                    padding: var(--xdh-space-xs);
+                    padding: var(--xdh-space-xs) 0;
                     scrollbar-gutter: stable;
                 }
 
                 .tree-scroll-content {
-                    width: 100%;
+                    min-width: 100%;
+                    width: max-content;
                     min-height: 100%;
                 }
 
@@ -853,7 +854,8 @@ export class XdhFolderTree extends BaseElement {
 
                 .tree-row,
                 .tree-root-row {
-                    width: 100%;
+                    min-width: 100%;
+                    width: max-content;
                     min-height: 30px;
                     display: flex;
                     align-items: center;
@@ -885,16 +887,20 @@ export class XdhFolderTree extends BaseElement {
                 .tree-root-row:hover {
                     background: var(--xdh-color-hover);
                     color: var(--xdh-color-text-primary);
+                    border-radius: 0;
                 }
 
                 .tree-row.is-active,
                 .tree-root-row.is-active {
                     background: var(--xdh-color-primary-muted);
                     color: var(--xdh-color-primary);
-                    border-color: var(--xdh-color-primary);
+                    border-radius: 0;
                 }
 
                 .tree-branch-toggle {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
                     width: 18px;
                     height: 18px;
                     padding: 0;
@@ -954,6 +960,8 @@ export class XdhFolderTree extends BaseElement {
                 }
 
                 .tree-folder {
+                    display: flex;
+                    align-items: center;
                     color: color-mix(
                         in srgb,
                         var(--xdh-color-primary) 64%,
@@ -964,8 +972,6 @@ export class XdhFolderTree extends BaseElement {
 
                 .tree-label {
                     min-width: 0;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
                     white-space: nowrap;
                 }
 
