@@ -22,11 +22,13 @@ let _hideTimer = null;
 let _displayTimer = null;
 let _showId = 0;
 let _showRafId = null;
+let _currentTarget = null; // track current tooltip target to avoid re-triggering on child mouseover
 const MARGIN = 8;   // min distance from viewport edges (px)
 const SHOW_DELAY = 0;  // ms before tooltip appears (0 = instant)
 const HIDE_DELAY = 80; // ms before tooltip hides after mouse leaves
 const FADE_DURATION = 120;
 const SIDE_VERTICAL_OFFSET = 12;
+const CURSOR_GAP = 14; // tooltip offset from mouse cursor (px)
 
 function clearDisplayTimer() {
     clearTimeout(_displayTimer);
@@ -131,7 +133,7 @@ function getTooltipTargetFromEvent(event) {
     );
 }
 
-export function showTooltip(text, targetRect, direction, target = null) {
+export function showTooltip(text, targetRect, direction, target = null, cursorX = null, cursorY = null) {
     clearTimeout(_hideTimer);
     clearDisplayTimer();
     if (_showRafId !== null) {
@@ -155,6 +157,8 @@ export function showTooltip(text, targetRect, direction, target = null) {
     el.style.opacity = "0";
     el.style.display = "block";
 
+    const useCursor = cursorX !== null && cursorY !== null;
+
     _showRafId = requestAnimationFrame(() => {
         _showRafId = null;
         if (showId !== _showId) {
@@ -165,28 +169,39 @@ export function showTooltip(text, targetRect, direction, target = null) {
         const th = el.offsetHeight;
         const vw = window.innerWidth;
         const vh = window.innerHeight;
-        const gap = 10;
 
         let left, top;
-        switch (direction) {
-            case "down":
-                left = targetRect.left + (targetRect.width - tw) / 2;
-                top  = targetRect.bottom + gap;
-                break;
-            case "up":
-                left = targetRect.left + (targetRect.width - tw) / 2;
-                top  = targetRect.top - th - gap;
-                break;
-            case "left":
-                left = targetRect.left - tw - gap;
-                top  = targetRect.top + (targetRect.height - th) / 2
-                    + SIDE_VERTICAL_OFFSET;
-                break;
-            default: // right
-                left = targetRect.right + gap;
-                top  = targetRect.top + (targetRect.height - th) / 2
-                    + SIDE_VERTICAL_OFFSET;
-                break;
+        if (useCursor) {
+            left = cursorX + CURSOR_GAP;
+            top = cursorY + CURSOR_GAP;
+            if (left + tw > vw - MARGIN) {
+                left = cursorX - tw - CURSOR_GAP;
+            }
+            if (top + th > vh - MARGIN) {
+                top = cursorY - th - CURSOR_GAP;
+            }
+        } else {
+            const gap = 10;
+            switch (direction) {
+                case "down":
+                    left = targetRect.left + (targetRect.width - tw) / 2;
+                    top  = targetRect.bottom + gap;
+                    break;
+                case "up":
+                    left = targetRect.left + (targetRect.width - tw) / 2;
+                    top  = targetRect.top - th - gap;
+                    break;
+                case "left":
+                    left = targetRect.left - tw - gap;
+                    top  = targetRect.top + (targetRect.height - th) / 2
+                        + SIDE_VERTICAL_OFFSET;
+                    break;
+                default: // right
+                    left = targetRect.right + gap;
+                    top  = targetRect.top + (targetRect.height - th) / 2
+                        + SIDE_VERTICAL_OFFSET;
+                    break;
+            }
         }
 
         // Clamp to viewport
@@ -201,7 +216,32 @@ export function showTooltip(text, targetRect, direction, target = null) {
     });
 }
 
+function positionAtCursor(clientX, clientY) {
+    if (!_el || _el.getAttribute("aria-hidden") === "true") return;
+    const tw = _el.offsetWidth;
+    const th = _el.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let left = clientX + CURSOR_GAP;
+    let top = clientY + CURSOR_GAP;
+
+    if (left + tw > vw - MARGIN) {
+        left = clientX - tw - CURSOR_GAP;
+    }
+    if (top + th > vh - MARGIN) {
+        top = clientY - th - CURSOR_GAP;
+    }
+
+    left = Math.max(MARGIN, Math.min(vw - tw - MARGIN, left));
+    top = Math.max(MARGIN, Math.min(vh - th - MARGIN, top));
+
+    _el.style.left = `${Math.round(left)}px`;
+    _el.style.top = `${Math.round(top)}px`;
+}
+
 export function hideTooltip(immediate = false) {
+    _currentTarget = null;
     clearTimeout(_hideTimer);
     _showId += 1;
     if (_showRafId !== null) {
@@ -225,14 +265,26 @@ export function installTooltips(shadowRoot) {
     shadowRoot.addEventListener("mouseover", (e) => {
         const target = getTooltipTargetFromEvent(e);
         if (!target) return;
+        // Same target: just update cursor position, skip re-show (avoids flicker on deeply nested elements)
+        if (target === _currentTarget) {
+            positionAtCursor(e.clientX, e.clientY);
+            return;
+        }
+        _currentTarget = target;
         const text = target.getAttribute("data-tooltip");
         if (!text) return;
         showTooltip(
             text,
             target.getBoundingClientRect(),
             getDirection(target),
-            target
+            target,
+            e.clientX,
+            e.clientY
         );
+    }, true);
+
+    shadowRoot.addEventListener("mousemove", (e) => {
+        positionAtCursor(e.clientX, e.clientY);
     }, true);
 
     shadowRoot.addEventListener("mouseout", (e) => {
