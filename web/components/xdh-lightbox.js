@@ -1747,7 +1747,11 @@ export class XdhLightbox extends BaseElement {
             return;
         }
 
-        this._captureMainScrollPosition();
+        // 仅在首次打开（非全屏）时捕获滚动位置。全屏期间再捕获
+        // 会读到 0（浏览器全屏可能导致主滚动容器被重置），覆盖正确快照。
+        if (!isStageFullscreen(stage)) {
+            this._captureMainScrollPosition();
+        }
         const mediaNode = this._buildMedia(detail, previewSettings);
         this._teardown({ preserveCurrent: true, preserveNavigation: true });
         this._current = detail;
