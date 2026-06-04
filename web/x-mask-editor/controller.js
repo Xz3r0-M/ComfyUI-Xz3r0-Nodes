@@ -283,9 +283,9 @@ export class XMaskEditorController {
     floodFill(sourceX, sourceY) {
         const effectiveTool = this.getEffectiveTool();
         const isErase = effectiveTool === "erase";
-        const activeCtx = this.activeLayer === "paint"
+        const activeCtx = isErase
             ? this.paintCtx
-            : this.maskCtx;
+            : (this.activeLayer === "paint" ? this.paintCtx : this.maskCtx);
         const canvas = activeCtx.canvas;
         const width = canvas.width;
         const height = canvas.height;
@@ -299,6 +299,11 @@ export class XMaskEditorController {
         // Write layer is the active layer (paint / mask)
         const imageData = activeCtx.getImageData(0, 0, width, height);
         const pixels = imageData.data;
+        let maskImageData; let maskPixels;
+        if (isErase) {
+            maskImageData = this.maskCtx.getImageData(0, 0, width, height);
+            maskPixels = maskImageData.data;
+        }
 
         // Determine fill color
         let fillR; let fillG; let fillB; let fillA;
@@ -316,7 +321,11 @@ export class XMaskEditorController {
 
         // Skip if the write-layer pixel at click point is already filled
         const writeIdx = (sy * width + sx) * 4;
-        if (
+        if (isErase) {
+            if (pixels[writeIdx + 3] === 0 && maskPixels[writeIdx + 3] === 0) {
+                return;
+            }
+        } else if (
             maxChannelDiff(
                 pixels[writeIdx], pixels[writeIdx + 1], pixels[writeIdx + 2],
                 fillR, fillG, fillB
@@ -375,7 +384,11 @@ export class XMaskEditorController {
             const idx = (y * width + x) * 4;
 
             // Already filled on the write layer — skip
-            if (
+            if (isErase) {
+                if (pixels[idx + 3] === 0 && maskPixels[idx + 3] === 0) {
+                    continue;
+                }
+            } else if (
                 maxChannelDiff(
                     pixels[idx], pixels[idx + 1], pixels[idx + 2],
                     fillR, fillG, fillB
@@ -394,11 +407,22 @@ export class XMaskEditorController {
                 continue;
             }
 
-            // Write to the active layer
-            pixels[idx] = fillR;
-            pixels[idx + 1] = fillG;
-            pixels[idx + 2] = fillB;
-            pixels[idx + 3] = fillA;
+            // Write to the active layer(s)
+            if (isErase) {
+                pixels[idx] = 0;
+                pixels[idx + 1] = 0;
+                pixels[idx + 2] = 0;
+                pixels[idx + 3] = 0;
+                maskPixels[idx] = 0;
+                maskPixels[idx + 1] = 0;
+                maskPixels[idx + 2] = 0;
+                maskPixels[idx + 3] = 0;
+            } else {
+                pixels[idx] = fillR;
+                pixels[idx + 1] = fillG;
+                pixels[idx + 2] = fillB;
+                pixels[idx + 3] = fillA;
+            }
 
             // Enqueue neighbours
             for (let d = 0; d < 4; d += 1) {
@@ -418,7 +442,12 @@ export class XMaskEditorController {
             }
         }
 
-        activeCtx.putImageData(imageData, 0, 0);
+        if (isErase) {
+            this.paintCtx.putImageData(imageData, 0, 0);
+            this.maskCtx.putImageData(maskImageData, 0, 0);
+        } else {
+            activeCtx.putImageData(imageData, 0, 0);
+        }
     }
 
     togglePaintVisibility() {
@@ -1097,11 +1126,8 @@ export class XMaskEditorController {
             return;
         }
         if (effectiveTool === "erase") {
-            if (this.activeLayer === "paint") {
-                this.erasePaintLine(fromPoint, toPoint);
-            } else {
-                this.drawMaskLine(fromPoint, toPoint, true);
-            }
+            this.erasePaintLine(fromPoint, toPoint);
+            this.drawMaskLine(fromPoint, toPoint, true);
         }
     }
 
