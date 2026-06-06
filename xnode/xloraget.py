@@ -377,23 +377,32 @@ class XLoraGet(io.ComfyNode):
                 (lora_ref,),
             ).fetchone()
             if row is None:
-                # 迁移回退：尝试旧 ref → 新 ref 映射
+                # 迁移回退：传递追踪旧 ref → 新 ref 映射链
                 try:
-                    mig_row = conn.execute(
-                        "SELECT new_ref FROM lora_ref_migration"
-                        " WHERE old_ref = ?",
-                        (lora_ref,),
-                    ).fetchone()
-                except sqlite3.OperationalError:
-                    mig_row = None
-                if mig_row is not None:
-                    new_ref = str(mig_row["new_ref"] or "")
-                    if new_ref:
+                    seen: set[str] = {lora_ref}
+                    cursor_ref = lora_ref
+                    for _ in range(10):
+                        mig_row = conn.execute(
+                            "SELECT new_ref FROM lora_ref_migration"
+                            " WHERE old_ref = ?",
+                            (cursor_ref,),
+                        ).fetchone()
+                        if mig_row is None:
+                            break
+                        next_ref = str(mig_row["new_ref"] or "")
+                        if not next_ref or next_ref in seen:
+                            break
+                        seen.add(next_ref)
                         row = conn.execute(
                             "SELECT rel_path FROM lora_items"
                             " WHERE public_ref = ?",
-                            (new_ref,),
+                            (next_ref,),
                         ).fetchone()
+                        if row is not None:
+                            break
+                        cursor_ref = next_ref
+                except sqlite3.OperationalError:
+                    pass
             if row is None:
                 return ""
             return cls._normalize_lora_name(str(row["rel_path"] or ""))

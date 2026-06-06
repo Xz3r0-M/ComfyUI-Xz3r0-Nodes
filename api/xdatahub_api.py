@@ -1478,7 +1478,7 @@ class MediaStore:
         """记录旧 ref → 新 ref 的迁移映射，保证旧引用永不断裂。"""
         if old_ref and old_ref != new_ref:
             conn.execute(
-                "INSERT OR IGNORE INTO public_ref_migration"
+                "INSERT OR REPLACE INTO public_ref_migration"
                 " (old_ref, new_ref) VALUES (?, ?)",
                 (old_ref, new_ref),
             )
@@ -1687,7 +1687,7 @@ class MediaStore:
                     normalized_old = normalize_media_ref(old_ref)
                     if normalized_old and normalized_old != public_ref:
                         conn.execute(
-                            "INSERT OR IGNORE INTO public_ref_migration"
+                            "INSERT OR REPLACE INTO public_ref_migration"
                             " (old_ref, new_ref) VALUES (?, ?)",
                             (normalized_old, public_ref),
                         )
@@ -2450,6 +2450,8 @@ class LoraStore:
                         normalized_old = normalize_lora_public_ref(
                             old_ref,
                         )
+                        if normalized_old in reserved_refs:
+                            reserved_refs.remove(normalized_old)
                         new_ref = _coerce_lora_public_ref(
                             "lora",
                             rel_path_str,
@@ -2460,7 +2462,7 @@ class LoraStore:
                             and normalized_old != new_ref
                         ):
                             conn.execute(
-                                "INSERT OR IGNORE"
+                                "INSERT OR REPLACE"
                                 " INTO lora_ref_migration"
                                 " (old_ref, new_ref)"
                                 " VALUES (?, ?)",
@@ -2998,7 +3000,7 @@ class LoraStore:
                     old_ref = saved["old_ref"]
                     if old_ref and new_ref and old_ref != new_ref:
                         conn.execute(
-                            "INSERT OR IGNORE"
+                            "INSERT OR REPLACE"
                             " INTO lora_ref_migration"
                             " (old_ref, new_ref) VALUES (?, ?)",
                             (old_ref, new_ref),
@@ -3376,7 +3378,7 @@ def _lora_public_ref_for_rel_path(
     )
     if normalized_current and normalized_current != public_ref:
         conn.execute(
-            "INSERT OR IGNORE INTO lora_ref_migration"
+            "INSERT OR REPLACE INTO lora_ref_migration"
             " (old_ref, new_ref) VALUES (?, ?)",
             (normalized_current, public_ref),
         )
@@ -5064,6 +5066,32 @@ def _resolve_media_favorite_item(
                 " WHERE public_ref = ? AND valid = 1",
                 (public_ref,),
             ).fetchone()
+            if live_row is None:
+                seen: set[str] = {public_ref}
+                cursor_ref = public_ref
+                for _ in range(10):
+                    mig_row = lora_conn.execute(
+                        "SELECT new_ref FROM lora_ref_migration"
+                        " WHERE old_ref = ?",
+                        (cursor_ref,),
+                    ).fetchone()
+                    if mig_row is None:
+                        break
+                    next_ref = str(mig_row["new_ref"] or "")
+                    if not next_ref or next_ref in seen:
+                        break
+                    seen.add(next_ref)
+                    live_row = lora_conn.execute(
+                        "SELECT public_ref, real_path, rel_path, title,"
+                        " mtime, size, trigger_words_json,"
+                        " strength_model, strength_clip, lora_note"
+                        " FROM lora_items"
+                        " WHERE public_ref = ? AND valid = 1",
+                        (next_ref,),
+                    ).fetchone()
+                    if live_row is not None:
+                        break
+                    cursor_ref = next_ref
         except Exception:
             pass
         finally:
@@ -5080,6 +5108,30 @@ def _resolve_media_favorite_item(
                 " WHERE public_ref = ? AND valid = 1",
                 (public_ref,),
             ).fetchone()
+            if live_row is None:
+                seen: set[str] = {public_ref}
+                cursor_ref = public_ref
+                for _ in range(10):
+                    mig_row = media_conn.execute(
+                        "SELECT new_ref FROM public_ref_migration"
+                        " WHERE old_ref = ?",
+                        (cursor_ref,),
+                    ).fetchone()
+                    if mig_row is None:
+                        break
+                    next_ref = str(mig_row["new_ref"] or "")
+                    if not next_ref or next_ref in seen:
+                        break
+                    seen.add(next_ref)
+                    live_row = media_conn.execute(
+                        "SELECT public_ref, real_path, rel_path, filename,"
+                        " media_type, mtime, size FROM media_index"
+                        " WHERE public_ref = ? AND valid = 1",
+                        (next_ref,),
+                    ).fetchone()
+                    if live_row is not None:
+                        break
+                    cursor_ref = next_ref
         except Exception:
             pass
         finally:

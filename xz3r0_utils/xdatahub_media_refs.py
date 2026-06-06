@@ -360,22 +360,31 @@ def resolve_media_ref(
             (normalized,),
         ).fetchone()
         if row is None:
-            # 迁移回退：尝试旧 ref → 新 ref 映射
-            mig_row = conn.execute(
-                "SELECT new_ref FROM public_ref_migration"
-                " WHERE old_ref = ?",
-                (normalized,),
-            ).fetchone()
-            if mig_row is not None:
-                new_ref = str(mig_row["new_ref"] or "")
-                if new_ref:
-                    row = conn.execute(
-                        "SELECT public_ref, real_path, rel_path,"
-                        " filename, media_type"
-                        " FROM media_index"
-                        " WHERE public_ref = ? AND valid = 1",
-                        (new_ref,),
-                    ).fetchone()
+            # 迁移回退：传递追踪旧 ref → 新 ref 映射链
+            seen: set[str] = {normalized}
+            cursor_ref = normalized
+            for _ in range(10):
+                mig_row = conn.execute(
+                    "SELECT new_ref FROM public_ref_migration"
+                    " WHERE old_ref = ?",
+                    (cursor_ref,),
+                ).fetchone()
+                if mig_row is None:
+                    break
+                next_ref = str(mig_row["new_ref"] or "")
+                if not next_ref or next_ref in seen:
+                    break
+                seen.add(next_ref)
+                row = conn.execute(
+                    "SELECT public_ref, real_path, rel_path,"
+                    " filename, media_type"
+                    " FROM media_index"
+                    " WHERE public_ref = ? AND valid = 1",
+                    (next_ref,),
+                ).fetchone()
+                if row is not None:
+                    break
+                cursor_ref = next_ref
     finally:
         conn.close()
     if row is None:
