@@ -1556,6 +1556,7 @@ class MediaStore:
                 "mtime, size, valid, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?) "
                 "ON CONFLICT(rel_path) DO UPDATE SET "
+                "public_ref=excluded.public_ref, "
                 "real_path=excluded.real_path, "
                 "filename=excluded.filename, "
                 "media_type=excluded.media_type, "
