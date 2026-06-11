@@ -479,12 +479,17 @@ export class XdhSettingsDialog extends BaseElement {
                 ])}
                 ${this._renderSection("settings.sect.thumb_cache", [
                     this._renderRow(
-                        "settings.enable_ffmpeg_thumb_cache",
+                        "settings.enable_image_thumb_cache",
+                        this._renderToggle("enable_image_thumb_cache", false),
+                        "settings.enable_image_thumb_cache_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.enable_video_thumb_cache",
                         this._ffmpegAvailable
-                            ? this._renderToggle("enable_ffmpeg_thumb_cache", false)
-                            : this._renderDisabledToggle("enable_ffmpeg_thumb_cache", false),
+                            ? this._renderToggle("enable_video_thumb_cache", false)
+                            : this._renderDisabledToggle("enable_video_thumb_cache", false),
                         this._ffmpegAvailable
-                            ? "settings.enable_ffmpeg_thumb_cache_tooltip"
+                            ? "settings.enable_video_thumb_cache_tooltip"
                             : ""
                     ),
                     `<div class="row ffmpeg-status ${this._ffmpegAvailable ? "is-available" : "is-missing"}">

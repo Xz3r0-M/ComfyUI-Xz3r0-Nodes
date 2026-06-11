@@ -85,7 +85,8 @@ export const appStore = new Store({
         disable_interaction_while_running: true,
         hover_locate_enabled: false,
         hover_locate_debounce_ms: 300,
-        enable_ffmpeg_thumb_cache: false,
+        enable_image_thumb_cache: false,
+        enable_video_thumb_cache: false,
         ffmpeg_available: false,
     },
 

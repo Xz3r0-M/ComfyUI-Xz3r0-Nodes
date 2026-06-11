@@ -3857,7 +3857,8 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "disable_interaction_while_running": True,
         "hover_locate_enabled": False,
         "hover_locate_debounce_ms": 300,
-        "enable_ffmpeg_thumb_cache": False,
+        "enable_image_thumb_cache": False,
+        "enable_video_thumb_cache": False,
         "edge_peek": False,
         "media_sort_by": "mtime",
         "media_sort_order": "desc",
@@ -3996,9 +3997,22 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         raw = value.get("hover_locate_debounce_ms")
         if isinstance(raw, (int, float)) and 50 <= raw <= 5000:
             patch["hover_locate_debounce_ms"] = int(raw)
+    # 迁移旧键 enable_ffmpeg_thumb_cache → 两个新键
     if "enable_ffmpeg_thumb_cache" in value:
-        patch["enable_ffmpeg_thumb_cache"] = parse_bool(
-            value.get("enable_ffmpeg_thumb_cache")
+        legacy = parse_bool(value.get("enable_ffmpeg_thumb_cache"))
+        if "enable_image_thumb_cache" not in value:
+            patch["enable_image_thumb_cache"] = legacy
+        if "enable_video_thumb_cache" not in value:
+            patch["enable_video_thumb_cache"] = (
+                legacy and shutil.which("ffmpeg") is not None
+            )
+    if "enable_image_thumb_cache" in value:
+        patch["enable_image_thumb_cache"] = parse_bool(
+            value.get("enable_image_thumb_cache")
+        )
+    if "enable_video_thumb_cache" in value:
+        patch["enable_video_thumb_cache"] = parse_bool(
+            value.get("enable_video_thumb_cache")
         ) and shutil.which("ffmpeg") is not None
     if "ui_locale" in value:
         raw_locale = str(value.get("ui_locale") or "").strip()

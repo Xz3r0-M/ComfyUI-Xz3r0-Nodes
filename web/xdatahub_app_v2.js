@@ -888,9 +888,13 @@ function mapItem(item, category) {
     const ref  = item.extra?.media_ref || item.public_ref || "";
     const isMock = item.extra?.isMock;
     const settings = appStore.state.xdatahubSettings || {};
-    const useThumbCache = !!settings.enable_ffmpeg_thumb_cache
-        && !!settings.ffmpeg_available;
-    const isVideoNativeThumb = !useThumbCache && mediaType === "video";
+    const isVideo = mediaType === "video";
+    const useThumbCache = isVideo
+        ? (!!settings.enable_video_thumb_cache
+            && !!settings.ffmpeg_available)
+        : !!settings.enable_image_thumb_cache;
+    const isVideoNativeThumb = isVideo && !(!!settings.enable_video_thumb_cache
+        && !!settings.ffmpeg_available);
     let thumbUrl;
     if (isMock) {
         thumbUrl = MOCK_THUMB;
