@@ -5031,9 +5031,9 @@ def _empty_paginated(page_size: int) -> dict[str, Any]:
 
 def _media_favorites_conn() -> sqlite3.Connection:
     path = favorites_db_path()
-    if not path.exists():
-        raise FileNotFoundError(f"user_favorites.db not found: {path}")
-    conn = sqlite3.connect(path)
+    # sqlite3.connect auto-creates the file; data_root() already
+    # ensures the parent directory exists.
+    conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA journal_mode=WAL")
