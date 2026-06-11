@@ -151,6 +151,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: false,
             showSummary: false,
             label: "",
+            tooltip: "",
             iconName: "eye-off",
             tone: "muted",
             reason: "none",
@@ -164,6 +165,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: true,
             showSummary: false,
             label: t("grid.badge.unsupported_format"),
+            tooltip: t("grid.badge.load_failed_tooltip"),
             iconName: "triangle-alert",
             tone: "warning",
             reason: "load_failed",
@@ -176,6 +178,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: true,
             showSummary: false,
             label: t("grid.badge.no_preview"),
+            tooltip: t("grid.badge.no_preview_tooltip"),
             iconName: "eye-off",
             tone: "muted",
             reason: "preview_disabled",
@@ -188,6 +191,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: true,
             showSummary: false,
             label: t("grid.badge.unsupported_format"),
+            tooltip: t("grid.badge.unsupported_format_tooltip"),
             iconName: "eye-off",
             tone: "warning",
             reason: "unsupported_preview",
@@ -199,6 +203,7 @@ function getCardPreviewState(item, failedThumbIds) {
         showBadge: false,
         showSummary: false,
         label: "",
+        tooltip: "",
         iconName: "eye-off",
         tone: "muted",
         reason: "ok",
@@ -213,9 +218,11 @@ function renderCardStatusBadge(previewState) {
     const toneClass = previewState.tone === "warning"
         ? "is-warning"
         : "is-muted";
+    const tooltip = previewState.tooltip || previewState.label || "";
 
     return `
-        <div class="card-status-badge ${toneClass}">
+        <div class="card-status-badge ${toneClass} xdh-tooltip xdh-tooltip-down"
+             data-tooltip="${escapeAttr(tooltip)}">
             ${icon(previewState.iconName, 12)}
             <span>${escapeHtml(previewState.label)}</span>
         </div>`;
@@ -244,8 +251,12 @@ function syncCardPreviewUi(card, previewState) {
             }
             badge.className = [
                 "card-status-badge",
+                "xdh-tooltip",
+                "xdh-tooltip-down",
                 previewState.tone === "warning" ? "is-warning" : "is-muted",
             ].join(" ");
+            const tooltip = previewState.tooltip || previewState.label || "";
+            badge.setAttribute("data-tooltip", tooltip);
             badge.innerHTML = `${icon(previewState.iconName, 12)}<span>${escapeHtml(previewState.label)}</span>`;
         } else {
             badge?.remove();
@@ -290,7 +301,8 @@ function renderLoraMeta(item) {
 
     if (meta.hasStrength) {
         badges.push(`
-            <span class="lora-badge is-active">
+            <span class="lora-badge is-active xdh-tooltip xdh-tooltip-up"
+                  data-tooltip="${escapeAttr(meta.strengthTooltip)}">
                 ${icon("settings", 10)}
                 <span>${t("lora.badge.strength")}</span>
             </span>`);
@@ -298,7 +310,8 @@ function renderLoraMeta(item) {
 
     if (meta.hasNote) {
         badges.push(`
-            <span class="lora-badge is-active">
+            <span class="lora-badge is-active xdh-tooltip xdh-tooltip-up"
+                  data-tooltip="${escapeAttr(meta.note)}">
                 ${icon("file", 10)}
                 <span>${t("lora.label.note")}</span>
             </span>`);
@@ -306,7 +319,8 @@ function renderLoraMeta(item) {
 
     if (meta.hasTriggerWords) {
         badges.push(`
-            <span class="lora-badge is-active">
+            <span class="lora-badge is-active xdh-tooltip xdh-tooltip-up"
+                  data-tooltip="${escapeAttr(meta.triggerWords.join("，"))}">
                 ${icon("wand-sparkles", 10)}
                 <span>${t("lora.badge.trigger")}</span>
             </span>`);
@@ -378,13 +392,31 @@ function getLoraMetaState(item) {
     const clipStrength = normalizeNumber(
         extra.strength_clip ?? raw.strength_clip
     );
+    const hasStrength = (
+        (modelStrength !== null && Math.abs(modelStrength - 1) > 1e-6)
+        || (clipStrength !== null && Math.abs(clipStrength - 1) > 1e-6)
+    );
+    // Build tooltip strings
+    let strengthTooltip = "";
+    if (hasStrength) {
+        const parts = [];
+        if (modelStrength !== null) {
+            parts.push(`${t("lora.label.model_strength")}: ${modelStrength.toFixed(2)}`);
+        }
+        if (clipStrength !== null) {
+            parts.push(`${t("lora.label.clip_strength")}: ${clipStrength.toFixed(2)}`);
+        }
+        strengthTooltip = parts.join(", ");
+    }
     return {
         hasTriggerWords: triggerWords.length > 0,
         hasNote: note.length > 0,
-        hasStrength: (
-            (modelStrength !== null && Math.abs(modelStrength - 1) > 1e-6)
-            || (clipStrength !== null && Math.abs(clipStrength - 1) > 1e-6)
-        ),
+        hasStrength,
+        modelStrength,
+        clipStrength,
+        note,
+        triggerWords,
+        strengthTooltip,
     };
 }
 
@@ -1198,6 +1230,7 @@ export class XdhMediaGrid extends BaseElement {
                     color: var(--xdh-color-text-secondary);
                     font: 600 var(--xdh-font-uppercase-tag);
                     letter-spacing: 0.02em;
+                    pointer-events: auto;
                 }
                 .lora-badge.is-active {
                     border-color: var(--xdh-brand-pink);
@@ -1230,7 +1263,7 @@ export class XdhMediaGrid extends BaseElement {
                     color: var(--xdh-color-text-primary);
                     font: 600 var(--xdh-font-uppercase-tag);
                     letter-spacing: 0.02em;
-                    pointer-events: none;
+                    pointer-events: auto;
                 }
                 .card-status-badge span {
                     overflow: hidden;
