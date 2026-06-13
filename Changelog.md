@@ -55,6 +55,8 @@
     - 视频缓存缩略图
     - 两者均默认为：关闭
     - 因为只有视频的缓存缩略图生成会使用 `FFmpeg`，而图片不需要，原先的 1 个开关同时控制不够灵活。
+- 设置面板中新增清除所有缩略图缓存功能
+    - 刷新按钮不再同时清理缩略图缓存
 - 移除将当前选择的文件分类写入网页地址后缀的功能
     - 这个功能原本是为了让 XDataHub 可以支持使用浏览器的 后退/前进 来控制标签页，但是现在我认为此功能不是必要并且有一定侵入性
 - 修复全屏预览切换文件时滚动条定位问题
@@ -92,11 +94,17 @@
 - Special info capsules on file cards now show tooltips on hover
 - Improved the visual appearance of hover tooltips overall
 - Directory tree visual improvements and adjustments
+- Added a "Last Position" option to the default open layout setting in the settings panel
+    - When a layout is selected (Center, Left, Right, Maximized), XDataHub's window always displays at the chosen layout position after a browser page refresh
+    - Now defaults to: Last Position
+        - If the user is using XDataHub for the first time, the window position automatically falls back to Center
 - The image and video cached thumbnail feature in the settings panel is now split into two separate toggles
     - Image cached thumbnails
     - Video cached thumbnails
     - Both default: Disabled
     - This is because only video cached thumbnail generation uses `FFmpeg`, while images do not — the previous single toggle controlling both was not flexible enough
+- Added a "Clear All Thumbnail Cache" feature in the settings panel
+    - The refresh button no longer also clears the thumbnail cache
 - Removed the feature that wrote the currently selected file category to the URL hash
     - This feature was originally intended to let XDataHub support using the browser's back/forward buttons to control tabs, but is now considered unnecessary and somewhat intrusive
 - Fixed scrollbar positioning when switching files in fullscreen preview
