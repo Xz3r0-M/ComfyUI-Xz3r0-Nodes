@@ -95,6 +95,8 @@ pip install -r requirements.txt
 ## XDataHub 预览
 <img src="preview/XDataHub_preview_EN.png" alt="XMetadataWorkflow preview" width="800">
 
+https://github.com/user-attachments/assets/8cd339ab-f054-440e-a7eb-6cbd50cb76eb
+
 ---
 
 ## XMetadataWorkflow 预览

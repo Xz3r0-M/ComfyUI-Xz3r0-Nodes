@@ -23,7 +23,7 @@ import "./components/xdh-lightbox.js?v=20260530-3";
 import "./components/xdh-history-view.js?v=20260508-1";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
-import "./components/xdh-settings-dialog.js?v=20260426-3";
+import "./components/xdh-settings-dialog.js?v=20260428-3";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [

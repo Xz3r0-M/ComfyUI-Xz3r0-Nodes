@@ -1952,7 +1952,7 @@ class MediaStore:
         located = locate_media_entry(row, active_roots)
         if located["status"] != "ok":
             if located["status"] == "blocked":
-                LOGGER.info(
+                LOGGER.debug(
                     "[xdatahub] media blocked by root guard: id=%s, "
                     "candidates=%s",
                     int(row["id"]),
@@ -1978,6 +1978,29 @@ class MediaStore:
         )
         if not need_repair:
             return resolved
+        if str(located.get("source", "")) == "legacy_path":
+            root_names = {name for name, _ in active_roots}
+            existing = conn.execute(
+                "SELECT id, rel_path FROM media_index "
+                "WHERE id != ? AND real_path = ?",
+                (int(row["id"]), str(resolved)),
+            ).fetchone()
+            if existing is not None:
+                existing_rel = (
+                    str(existing["rel_path"] or "")
+                    .strip()
+                    .replace("\\", "/")
+                )
+                if "/" in existing_rel:
+                    existing_root = (
+                        existing_rel.split("/", 1)[0].strip().lower()
+                    )
+                    if existing_root in root_names:
+                        conn.execute(
+                            "DELETE FROM media_index WHERE id = ?",
+                            (int(row["id"]),),
+                        )
+                        return None
         self._repair_row_path(
             conn=conn,
             row_id=int(row["id"]),
@@ -2099,8 +2122,22 @@ class MediaStore:
             ).fetchall()
             if stale_rows:
                 roots = comfy_dirs()
+                root_names = {name for name, _ in roots}
+                orphan_ids: list[int] = []
                 for row in stale_rows:
-                    if self.resolve_runtime_path(conn, row, roots) is not None:
+                    rel_path_str = (
+                        str(row["rel_path"] or "").strip().replace("\\", "/")
+                    )
+                    if "/" in rel_path_str:
+                        root_name = (
+                            rel_path_str.split("/", 1)[0].strip().lower()
+                        )
+                        if root_name and root_name not in root_names:
+                            orphan_ids.append(int(row["id"]))
+                            continue
+                    if self.resolve_runtime_path(
+                        conn, row, roots
+                    ) is not None:
                         continue
                     deleted += int(
                         conn.execute(
@@ -2109,6 +2146,23 @@ class MediaStore:
                         ).rowcount
                     )
                     self.delete_thumb(row["public_ref"])
+                if orphan_ids:
+                    chunk_size = 500
+                    for i in range(0, len(orphan_ids), chunk_size):
+                        chunk = orphan_ids[i : i + chunk_size]
+                        placeholders = ",".join(
+                            ["?"] * len(chunk)
+                        )
+                        deleted += int(
+                            conn.execute(
+                                "DELETE FROM media_index "
+                                f"WHERE id IN ({placeholders})",
+                                chunk,
+                            ).rowcount
+                        )
+                    # Skip delete_thumb for orphan rows — root is gone
+                    # so thumbnails are harmless cache. Users can clear
+                    # them via the "Clear Thumbnails" button if needed.
             conn.commit()
         return {
             "inserted": inserted,
@@ -3852,7 +3906,7 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "theme_mode": "dark",
         "auto_show_on_startup": False,
         "hotkey_spec": "Alt + X",
-        "default_open_layout": "center",
+        "default_open_layout": "last",
         "close_behavior": "hide",
         "disable_interaction_while_running": True,
         "hover_locate_enabled": False,
@@ -3874,6 +3928,7 @@ XDATAHUB_OPEN_LAYOUT_VALUES = {
     "left",
     "right",
     "maximized",
+    "last",
 }
 
 XDATAHUB_CLOSE_BEHAVIOR_VALUES = {
