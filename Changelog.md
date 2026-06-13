@@ -42,7 +42,7 @@
 - 搜索功能从原来的搜索当前分页改为搜索当前目录（含子目录）
     - 搜索结果全部显示在窗口中，多文件保持分页
 - 排序功能新增文件大小排序选项
-- 鼠标悬停在 文件夹卡片 名称区域上时，完整显示文件夹的名称、大小、文件数量
+- 鼠标悬停在 文件夹 名称区域上时，完整显示文件夹的名称、大小、文件数量
 - 文件卡片上的特殊信息（胶囊形状）支持鼠标悬停显示提示信息（tooltip）
 - 优化鼠标悬停提示信息的整体视觉效果
 - 目录树的外观优化和调整
@@ -90,7 +90,7 @@
 - Search now scans the current directory (including subdirectories) instead of only the current page
     - All search results are displayed in the window, with pagination preserved for multiple files
 - Added file size as a new sort option
-- Hovering over the folder card name area now fully displays the folder's name, size, and file count
+- Hovering over the folder name area now fully displays the folder's name, size, and file count
 - Special info capsules on file cards now show tooltips on hover
 - Improved the visual appearance of hover tooltips overall
 - Directory tree visual improvements and adjustments

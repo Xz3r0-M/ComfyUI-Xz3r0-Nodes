@@ -88,6 +88,20 @@ function compareFolderNodes(left, right) {
     );
 }
 
+function formatSize(bytes) {
+    if (!bytes || bytes <= 0) return "";
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildFolderTooltip(label, fileCount, size) {
+    const meta = [];
+    if (size > 0) meta.push(formatSize(size));
+    if (fileCount > 0) meta.push(t("grid.folder_file_count", { count: fileCount }));
+    if (meta.length) return `${label} — ${meta.join(" · ")}`;
+    return label;
+}
+
 export class XdhFolderTree extends BaseElement {
     constructor() {
         super();
@@ -337,6 +351,12 @@ export class XdhFolderTree extends BaseElement {
                     hasChildren: typeof hasChildren === "boolean"
                         ? hasChildren
                         : undefined,
+                    fileCount: parseInt(
+                        item?.extra?.file_count, 10
+                    ) || 0,
+                    size: parseInt(
+                        item?.extra?.size || item?.size, 10
+                    ) || 0,
                 };
             })
             .filter((item) => item.path)
@@ -491,7 +511,7 @@ export class XdhFolderTree extends BaseElement {
                 <div class="tree-row ${isActive ? "is-active" : ""} xdh-tooltip"
                      data-path="${escapeHtml(path)}"
                      data-label="${escapeHtml(node.label)}"
-                     data-tooltip="${escapeHtml(node.label)}"
+                     data-tooltip="${escapeHtml(buildFolderTooltip(node.label, node.fileCount || 0, node.size || 0))}"
                      style="padding-left:${paddingLeft}px;">
                     <span class="tree-toggle-spacer" aria-hidden="true"></span>
                     <span class="tree-folder">${icon("folder", 14)}</span>
