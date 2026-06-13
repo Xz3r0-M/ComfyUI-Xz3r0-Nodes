@@ -167,8 +167,12 @@ export class XdhStagingDock extends BaseElement {
         const item = mediaList.find((m) => String(m.id) === String(selectedId))
             || this.selectedItemSnapshot;
         const extra = item?.raw?.extra || {};
+        const raw = item?.raw || {};
         const mediaRef = item
-            ? String(extra.media_ref || item.media_ref || item.ref || '')
+            ? String(
+                extra.media_ref || raw.media_ref
+                || raw.public_ref || raw.ref || ''
+            )
             : '';
         const rawPayload = extra?.payload;
         let textValue = '';

@@ -85,9 +85,14 @@ export const appStore = new Store({
         disable_interaction_while_running: true,
         hover_locate_enabled: false,
         hover_locate_debounce_ms: 300,
-        enable_ffmpeg_thumb_cache: false,
+        enable_image_thumb_cache: false,
+        enable_video_thumb_cache: false,
         ffmpeg_available: false,
     },
+
+    // Media favorites
+    favoritesOnly: false,        // 当前分类的收藏滤镜开关
+    favoriteIdSet: [],           // 当前分类已收藏的 public_ref 列表
 
     // i18n — default English; i18n.js overwrites at module load from Comfy.Locale
     locale: 'en',

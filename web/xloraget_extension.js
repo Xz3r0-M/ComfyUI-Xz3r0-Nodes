@@ -1686,8 +1686,12 @@ function installNodeUi(node) {
         });
     }
 
-    // 转发滚轮到 ComfyUI 主画布（避开可滚动区域内的原生滚轮）
+    // 转发滚轮到 ComfyUI 主画布（避开表单控件和可滚动区域内的原生滚轮）
     ui.panel.addEventListener("wheel", function (e) {
+        var tag = (e.target.tagName || "").toUpperCase();
+        if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
+            return;
+        }
         for (var el = e.target; el && el !== ui.panel; el = el.parentElement) {
             if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) {
                 var st = getComputedStyle(el);

@@ -17,11 +17,8 @@ import { t } from "../core/i18n.js?v=20260406-15";
 
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 const TREE_PAGE_SIZE = 200;
-const TREE_EXPANDED_STATE_STORAGE_KEY = "XDataHub.V2.TreeExpandedState.v2";
-const TREE_STATE_CATEGORIES = ["image", "video", "audio", "lora"];
 const TREE_WIDTH_STORAGE_KEY = "XDataHub.V2.TreeWidth";
 const TREE_MIN_WIDTH = 140;
-const TREE_MAX_WIDTH = 600;
 const TREE_DEFAULT_WIDTH = 220;
 
 function createCacheEntry() {
@@ -91,53 +88,25 @@ function compareFolderNodes(left, right) {
     );
 }
 
-function loadExpandedStateByCategory() {
-    const expandedByCategory = new Map();
-    try {
-        const raw = localStorage.getItem(TREE_EXPANDED_STATE_STORAGE_KEY) || "";
-        const parsed = raw ? JSON.parse(raw) : {};
-        TREE_STATE_CATEGORIES.forEach((category) => {
-            const expanded = new Set([""]);
-            const stored = Array.isArray(parsed?.[category])
-                ? parsed[category]
-                : [];
-            stored
-                .map((path) => normalizePath(path))
-                .filter(Boolean)
-                .forEach((path) => expanded.add(path));
-            expandedByCategory.set(category, expanded);
-        });
-    } catch {
-        // ignore localStorage read errors
-    }
-    return expandedByCategory;
+function formatSize(bytes) {
+    if (!bytes || bytes <= 0) return "";
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function persistExpandedStateByCategory(expandedByCategory) {
-    try {
-        const payload = {};
-        TREE_STATE_CATEGORIES.forEach((category) => {
-            const expanded = expandedByCategory.get(category);
-            payload[category] = expanded
-                ? Array.from(expanded)
-                    .map((path) => normalizePath(path))
-                    .filter(Boolean)
-                : [];
-        });
-        localStorage.setItem(
-            TREE_EXPANDED_STATE_STORAGE_KEY,
-            JSON.stringify(payload)
-        );
-    } catch {
-        // ignore localStorage write errors
-    }
+function buildFolderTooltip(label, fileCount, size) {
+    const meta = [];
+    if (size > 0) meta.push(formatSize(size));
+    if (fileCount > 0) meta.push(t("grid.folder_file_count", { count: fileCount }));
+    if (meta.length) return `${label} — ${meta.join(" · ")}`;
+    return label;
 }
 
 export class XdhFolderTree extends BaseElement {
     constructor() {
         super();
         this._cacheByCategory = new Map();
-        this._expandedByCategory = loadExpandedStateByCategory();
+        this._expandedByCategory = new Map();
         this._syncToken = 0;
         this._treeScrollTop = 0;
         this._treeScrollLeft = 0;
@@ -145,14 +114,25 @@ export class XdhFolderTree extends BaseElement {
         this._isResizing = false;
         this._resizeStartX = 0;
         this._resizeStartWidth = TREE_DEFAULT_WIDTH;
+        this._parentResizeObserver = null;
     }
 
     connectedCallback() {
         super.connectedCallback();
         this._loadSavedWidth();
+        this._clampToMaxWidth();
         this._applyTreeWidth();
         this._syncHostState();
         void this._syncTreeState();
+        this._startParentResizeObserver();
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        if (this._parentResizeObserver) {
+            this._parentResizeObserver.disconnect();
+            this._parentResizeObserver = null;
+        }
     }
 
     renderRoot() {
@@ -235,10 +215,6 @@ export class XdhFolderTree extends BaseElement {
         return expanded;
     }
 
-    _persistExpandedState() {
-        persistExpandedStateByCategory(this._expandedByCategory);
-    }
-
     _invalidateCategory(category) {
         this._cacheByCategory.delete(String(category || ""));
     }
@@ -273,9 +249,6 @@ export class XdhFolderTree extends BaseElement {
             expanded.add(path);
             await this._ensureChildrenLoaded(category, path);
         }
-        if (chain.length > 0) {
-            this._persistExpandedState();
-        }
     }
 
     async _ensureChildrenLoaded(category, pathText, options = {}) {
@@ -296,6 +269,7 @@ export class XdhFolderTree extends BaseElement {
             return entry.promise;
         }
 
+        const wasAlreadyReady = entry.status === "ready";
         entry.status = "loading";
         entry.error = "";
         this.renderRoot();
@@ -307,6 +281,19 @@ export class XdhFolderTree extends BaseElement {
                 entry.error = "";
                 entry.promise = null;
                 cache.set(safePath, entry);
+                const expanded = this._getExpandedSet(safeCategory);
+                // 空文件夹：从展开集合中移除，保持与 ± 图标同步
+                if (items.length === 0 && safePath) {
+                    if (expanded.has(safePath)) {
+                        expanded.delete(safePath);
+                    }
+                }
+                // 清除子路径的展开状态，确保子级默认显示 +
+                if (items.length > 0) {
+                    for (const item of items) {
+                        expanded.delete(item.path);
+                    }
+                }
                 this.renderRoot();
                 return entry;
             })
@@ -357,9 +344,19 @@ export class XdhFolderTree extends BaseElement {
                 const childPath = normalizePath(
                     item?.extra?.child_path || item?.path || ""
                 );
+                const hasChildren = item?.extra?.has_children;
                 return {
                     path: childPath,
                     label: getPathLabel(childPath, item?.title || item?.path),
+                    hasChildren: typeof hasChildren === "boolean"
+                        ? hasChildren
+                        : undefined,
+                    fileCount: parseInt(
+                        item?.extra?.file_count, 10
+                    ) || 0,
+                    size: parseInt(
+                        item?.extra?.size || item?.size, 10
+                    ) || 0,
                 };
             })
             .filter((item) => item.path)
@@ -373,13 +370,11 @@ export class XdhFolderTree extends BaseElement {
 
         if (expanded.has(path)) {
             expanded.delete(path);
-            this._persistExpandedState();
             this.renderRoot();
             return;
         }
 
         expanded.add(path);
-        this._persistExpandedState();
         this.renderRoot();
         void this._ensureChildrenLoaded(category, path);
     }
@@ -399,24 +394,13 @@ export class XdhFolderTree extends BaseElement {
             return;
         }
 
-        const expanded = this._getExpandedSet(category);
-        if (expanded.has(path)) {
-            expanded.delete(path);
-            this._persistExpandedState();
-            this.renderRoot();
-            return;
-        }
-
-        expanded.add(path);
-        this._persistExpandedState();
-        this.renderRoot();
-        void this._ensureChildrenLoaded(category, path);
+        // 当前文件夹：与点击 ± 按钮走相同执行路径
+        this._toggleExpanded(pathText);
     }
 
     _collapseAll() {
         const category = String(store.state.activeCategory || "");
         this._expandedByCategory.set(category, new Set([""]));
-        this._persistExpandedState();
         this.renderRoot();
     }
 
@@ -459,14 +443,21 @@ export class XdhFolderTree extends BaseElement {
             </div>`;
     }
 
-    _renderNode(node, depth, activePath, category) {
+    _renderNode(node, depth, activePath, category, isLastChild = false) {
         const path = normalizePath(node.path);
-        const expanded = this._getExpandedSet(category).has(path);
         const cache = this._getCategoryCache(category).get(path);
         const hasLoadedChildren = cache?.status === "ready";
-        const showToggle = !hasLoadedChildren || (cache.items || []).length > 0;
+        const hasCachedChildren = hasLoadedChildren
+            && (cache.items || []).length > 0;
+        // hasChildren: true=显示, false=隐藏, undefined=乐观(未加载时显示)
+        const showToggle = node.hasChildren === true
+            || (node.hasChildren !== false
+                && (!hasLoadedChildren || hasCachedChildren));
+        // 展开状态必须与 showToggle 同步：无子项的文件夹不可展开
+        const expanded = showToggle
+            && this._getExpandedSet(category).has(path);
         const isActive = path === activePath;
-        const paddingLeft = 8 + (depth * 14);
+        const paddingLeft = 14 + (depth * 24);
         const toggleTooltip = expanded
             ? t("nav.tree.collapse")
             : t("nav.tree.expand");
@@ -485,28 +476,44 @@ export class XdhFolderTree extends BaseElement {
                     "danger"
                 );
             } else if (cache?.status === "ready" && cache.items.length > 0) {
+                const lastIdx = cache.items.length - 1;
                 childrenHtml = cache.items
-                    .map((child) =>
-                        this._renderNode(child, depth + 1, activePath, category)
+                    .map((child, idx) =>
+                        this._renderNode(
+                            child, depth + 1, activePath, category,
+                            idx === lastIdx,
+                        )
                     )
                     .join("");
             }
         }
 
+        // 树形引导线定位（所有深度统一，从根目录开始）
+        const guideX = depth === 0
+            ? 14  // 根级别：对齐根行图标中心
+            : 14 + depth * 24 + 9;  // 对齐当前层级 toggle 中心
+        const connectorW = depth === 0 ? 22 : 14;
+        const nodeGuideStyle = `--guide-x:${guideX}px;--guide-connector-w:${connectorW}px`;
+        const nodeGuideClass = isLastChild ? " tree-node--last" : "";
+        // ± 独立于行，绝对定位在引导线交界处
+        let toggleHtml = "";
+        if (showToggle) {
+            toggleHtml = `<button class="tree-branch-toggle tree-toggle--junction xdh-tooltip"
+                data-path="${escapeHtml(path)}"
+                data-tooltip="${toggleTooltip}">
+                ${icon(expanded ? "minus" : "plus", 12)}
+            </button>`;
+        }
+
         return `
-            <div class="tree-node">
+            <div class="tree-node${nodeGuideClass}" style="${nodeGuideStyle}">
+                ${toggleHtml}
                 <div class="tree-row ${isActive ? "is-active" : ""} xdh-tooltip"
                      data-path="${escapeHtml(path)}"
                      data-label="${escapeHtml(node.label)}"
-                     data-tooltip="${escapeHtml(path)}"
+                     data-tooltip="${escapeHtml(buildFolderTooltip(node.label, node.fileCount || 0, node.size || 0))}"
                      style="padding-left:${paddingLeft}px;">
-                    ${showToggle
-                        ? `<button class="tree-branch-toggle xdh-tooltip"
-                                   data-path="${escapeHtml(path)}"
-                                   data-tooltip="${toggleTooltip}">
-                                ${icon(expanded ? "arrow-down" : "arrow-right", 12)}
-                           </button>`
-                        : '<span class="tree-toggle-spacer" aria-hidden="true"></span>'}
+                    <span class="tree-toggle-spacer" aria-hidden="true"></span>
                     <span class="tree-folder">${icon("folder", 14)}</span>
                     <span class="tree-label">${escapeHtml(node.label)}</span>
                 </div>
@@ -555,11 +562,39 @@ export class XdhFolderTree extends BaseElement {
         );
     }
 
+    _getTreeMaxWidth() {
+        // 上限 = 布局容器宽度 - 保留宽度（侧边栏 + 卡片区最小空间）
+        // 确保拖拽目录树时右侧卡片区域始终可见
+        const parentWidth = this.parentElement?.clientWidth || window.innerWidth;
+        const MIN_CONTENT_RESERVE = 250; // 侧边栏 48px + 卡片区最低 ~200px
+        return Math.max(TREE_MIN_WIDTH, parentWidth - MIN_CONTENT_RESERVE);
+    }
+
+    _clampToMaxWidth() {
+        const maxWidth = this._getTreeMaxWidth();
+        if (this._treeWidth > maxWidth) {
+            this._treeWidth = maxWidth;
+            this._applyTreeWidth();
+        }
+    }
+
+    _startParentResizeObserver() {
+        if (this._parentResizeObserver) return;
+        const target = this.parentElement;
+        if (!target) return;
+        if (typeof ResizeObserver === "undefined") return;
+        this._parentResizeObserver = new ResizeObserver(() => {
+            this._clampToMaxWidth();
+        });
+        this._parentResizeObserver.observe(target);
+    }
+
     _loadSavedWidth() {
         try {
             const saved = localStorage.getItem(TREE_WIDTH_STORAGE_KEY);
             const width = parseInt(saved, 10);
-            if (width >= TREE_MIN_WIDTH && width <= TREE_MAX_WIDTH) {
+            const maxWidth = this._getTreeMaxWidth();
+            if (width >= TREE_MIN_WIDTH && width <= maxWidth) {
                 this._treeWidth = width;
             }
         } catch {
@@ -608,8 +643,9 @@ export class XdhFolderTree extends BaseElement {
     _resizePointerMove(clientX) {
         if (!this._isResizing) return;
         const delta = clientX - this._resizeStartX;
+        const maxWidth = this._getTreeMaxWidth();
         const newWidth = Math.min(
-            TREE_MAX_WIDTH,
+            maxWidth,
             Math.max(TREE_MIN_WIDTH, this._resizeStartWidth + delta)
         );
         if (newWidth !== this._treeWidth) {
@@ -670,8 +706,11 @@ export class XdhFolderTree extends BaseElement {
                     "danger"
                 );
             } else if (rootCache.status === "ready" && rootCache.items.length) {
+                const lastRootIdx = rootCache.items.length - 1;
                 treeBody = rootCache.items
-                    .map((node) => this._renderNode(node, 0, activePath, category))
+                    .map((node, idx) => this._renderNode(
+                        node, 0, activePath, category, idx === lastRootIdx,
+                    ))
                     .join("");
             } else if (rootCache.status === "ready") {
                 treeBody = this._renderStatusRow(t("nav.tree.empty"), 0);
@@ -786,26 +825,61 @@ export class XdhFolderTree extends BaseElement {
                     height: 100%;
                     overflow-y: scroll;
                     overflow-x: scroll;
-                    padding: var(--xdh-space-xs);
+                    padding: var(--xdh-space-xs) 0;
                     scrollbar-gutter: stable;
                 }
 
                 .tree-scroll-content {
-                    min-width: max-content;
+                    min-width: 100%;
+                    width: max-content;
                     min-height: 100%;
                 }
 
                 .tree-node {
                     display: block;
+                    position: relative;
+                }
+
+                /* 树形引导线 —— 垂直虚线 */
+                .tree-node[style*="--guide-x"]::before {
+                    content: "";
+                    position: absolute;
+                    left: var(--guide-x);
+                    top: 0;
+                    bottom: 0;
+                    width: 0;
+                    border-left: 1px dotted var(--xdh-color-border);
+                    pointer-events: none;
+                    z-index: 1;
+                }
+
+                /* 末位节点：垂直线在行中点终止，形成 └ 形 */
+                .tree-node--last[style*="--guide-x"]::before {
+                    bottom: auto;
+                    height: 15px;
+                }
+
+                /* 树形引导线 —— 水平连接线（从交界处到文件夹图标） */
+                .tree-node[style*="--guide-x"] > .tree-row::before {
+                    content: "";
+                    position: absolute;
+                    left: var(--guide-x);
+                    top: 50%;
+                    width: var(--guide-connector-w);
+                    height: 0;
+                    border-top: 1px dotted var(--xdh-color-border);
+                    pointer-events: none;
+                    z-index: 1;
                 }
 
                 .tree-row,
                 .tree-root-row {
-                    width: max-content;
                     min-width: 100%;
+                    width: max-content;
                     min-height: 30px;
                     display: flex;
                     align-items: center;
+                    position: relative;
                     gap: var(--xdh-space-sm);
                     border: 1px solid transparent;
                     border-radius: var(--xdh-radius-sm);
@@ -833,24 +907,36 @@ export class XdhFolderTree extends BaseElement {
                 .tree-root-row:hover {
                     background: var(--xdh-color-hover);
                     color: var(--xdh-color-text-primary);
+                    border-radius: 0;
                 }
 
                 .tree-row.is-active,
                 .tree-root-row.is-active {
                     background: var(--xdh-color-primary-muted);
                     color: var(--xdh-color-primary);
-                    border-color: var(--xdh-color-primary);
+                    border-radius: 0;
                 }
 
                 .tree-branch-toggle {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
                     width: 18px;
                     height: 18px;
                     padding: 0;
-                    border: 0;
+                    border: 1px solid var(--xdh-color-border);
                     border-radius: var(--xdh-radius-xs);
-                    color: inherit;
-                    background: transparent;
+                    color: var(--xdh-color-text-secondary);
+                    background: var(--xdh-color-surface-1);
                     flex-shrink: 0;
+                }
+
+                /* ± 独立于行，绝对定位在引导线交界处（垂直线中心） */
+                .tree-toggle--junction {
+                    position: absolute;
+                    left: calc(var(--guide-x) - 8px);
+                    top: 6px;
+                    z-index: 2;
                 }
 
                 .tree-branch-toggle:hover {
@@ -894,6 +980,8 @@ export class XdhFolderTree extends BaseElement {
                 }
 
                 .tree-folder {
+                    display: flex;
+                    align-items: center;
                     color: color-mix(
                         in srgb,
                         var(--xdh-color-primary) 64%,
@@ -903,9 +991,7 @@ export class XdhFolderTree extends BaseElement {
                 }
 
                 .tree-label {
-                    min-width: max-content;
-                    overflow: visible;
-                    text-overflow: clip;
+                    min-width: 0;
                     white-space: nowrap;
                 }
 

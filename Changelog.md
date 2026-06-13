@@ -1,5 +1,123 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.4.0
+
+> [!WARNING]
+> - 基于对旧版本的兼容性，v2.4.0 版本会在 ComfyUI 完全启动后会自动修改和迁移 XDataHub 数据库中的部分旧数据（随机生成的文件唯一性哈希值）至新数据（完全固定的文件唯一性哈希值）
+> - 由于之前使用的是 随机生成的文件唯一性哈希值（唯一性哈希值可以理解为用于定位文件的身份证）保存到数据库中，如果用户删除数据库文件或者使用 完全重建索引 功能建立新的数据库，XDataHub 会再次给所有文件生成一个新的随机哈希值，导致相关功能或工作流的 `X*Get` 节点找不到之前的文件（哈希值不相同了），本次更新将随机改为固定哈希值就是为了解决这个遗留问题
+> - 自动修改和迁移属于兼容旧版本数据库的功能，任何重建数据库的动作都会破坏自动修改和迁移的兼容（因为新的数据库没有了旧的随机生成的哈希值），但是重建能够让数据库从新开始使用完全固定的文件唯一性哈希值来建立
+> - 重建数据库的代价直观的体现是：旧版本工作流中的 `X*Get` 节点会显示文件数据丢失（之前保存到节点的是随机性哈希值），已收藏的文件和 Lora 自定义数据丢失（与节点同样情况）。需要用户重新为工作流中的 `X*Get` 节点重新加载文件、重新收藏文件、重新编辑保存 Lora 自定义信息
+> - 推荐先备份工作流文件和记录之前保存的 Lora 信息，然后在新版本 v2.4.0 中使用 完全重建索引（或手动删除旧的数据库文件）从新开始
+> - 如果不出意外，从这个版本开始，数据库采用新的 完全固定的文件唯一性哈希值 以后应该不会再有改动了
+
+> [!WARNING]
+> - For backward compatibility with older versions, v2.4.0 will automatically modify and migrate some old data (randomly generated file uniqueness hash values) in the XDataHub database to new data (static file uniqueness hash values) after ComfyUI fully starts up.
+> - Previously, randomly generated file uniqueness hash values (the uniqueness hash can be understood as the file's ID card used to locate files) were saved in the database. If the user deleted the database file or used the "Rebuild Index" function to create a new database, XDataHub would generate a new random hash value for all files again, causing related features or `X*Get` nodes in workflows to lose track of previously referenced files (hash values no longer match). This update changes from random to static hash values precisely to solve this legacy issue.
+> - The automatic modification and migration is a backward-compatible feature for older database versions. Any action that rebuilds the database will break this compatibility (since the new database no longer contains the old randomly generated hash values), but rebuilding allows the database to start fresh and fully use static file uniqueness hash values.
+> - The cost of rebuilding the database is directly reflected as: `X*Get` nodes in older workflow files will show that file data is lost (the previously saved random hash values were stored in the nodes), and favorited files and Lora custom data will be lost (same situation as the nodes). Users will need to reload files for `X*Get` nodes in their workflows, re-favorite files, and re-edit/save Lora custom information.
+> - It is recommended to back up workflow files and record previously saved Lora information, then use "Rebuild Index" (or manually delete the old database files) in the new version v2.4.0 to start fresh.
+> - Barring unforeseen issues, starting from this version, once the database adopts the new static file uniqueness hash values, there should be no further changes.
+
+<details>
+
+### 1. 🛠️ 增强 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet`
+- 新增油漆桶（填充）工具，点击图像区域可将相连的同色区域填充为当前选定的颜色
+    - 与画笔工具共用颜色
+    - 填充区域颜色容差值调整滑块
+- 橡皮擦新增图层勾选开关
+    - 橡皮擦使用时会清除已勾选的图层内容：
+        - 画笔（油漆桶）
+        - 遮罩
+    - 默认为：全部勾选（即默认清除全部图层）
+
+### 2. 🛠️ 增强、调整和修复 `XDataHub` 数据中心
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- 将文件数据库中保存的文件唯一性哈希值从原来的随机生成改为完全基于文件的路径（包含名称）来生成固定哈希值，避免使用数据库重建功能后文件引用丢失
+- 新增媒体文件（图片、视频、音频）和 Lora 文件的收藏功能
+    - 收藏状态持久化保存到数据库中
+    - 顶部功能栏（排序按钮的右侧）新增 已收藏文件视图切换按钮 `⭐`
+        - 不同类型文件的已收藏视图打开状态为独立
+    - 文件卡片上方提供收藏按钮，点击按钮可对文件进行 收藏 或 取消收藏
+- 搜索功能从原来的搜索当前分页改为搜索当前目录（含子目录）
+    - 搜索结果全部显示在窗口中，多文件保持分页
+- 排序功能新增文件大小排序选项
+- 鼠标悬停在 文件夹 名称区域上时，完整显示文件夹的名称、大小、文件数量
+- 文件卡片上的特殊信息（胶囊形状）支持鼠标悬停显示提示信息（tooltip）
+- 优化鼠标悬停提示信息的整体视觉效果
+- 目录树的外观优化和调整
+- 设置面板中的默认打开布局新增 上次的位置 选项
+    - 布局选择：居中、靠左、靠右、最大化时，XDataHub 的窗口在浏览器页面刷新后总是按照选择的布局位置来显示
+    - 现在默认为：上次的位置
+        - 如果用户是第一次使用 XDataHub，窗口位置会自动回退到居中
+- 设置面板中的图片和视频缓存缩略图功能从原先 1 个开关分离为 2 个开关分别控制
+    - 图片缓存缩略图
+    - 视频缓存缩略图
+    - 两者均默认为：关闭
+    - 因为只有视频的缓存缩略图生成会使用 `FFmpeg`，而图片不需要，原先的 1 个开关同时控制不够灵活。
+- 设置面板中新增清除所有缩略图缓存功能
+    - 刷新按钮不再同时清理缩略图缓存
+- 移除将当前选择的文件分类写入网页地址后缀的功能
+    - 这个功能原本是为了让 XDataHub 可以支持使用浏览器的 后退/前进 来控制标签页，但是现在我认为此功能不是必要并且有一定侵入性
+- 修复全屏预览切换文件时滚动条定位问题
+- 其他优化和问题修复
+
+### 3. 🩹 修复 `XLoraGet` 与 XDataHub 配套的 Lora 数据接收和加载节点
+`♾️ Xz3r0/XDataHub`
+- 修复输入框无法正常响应鼠标滚轮滚动的问题
+
+---
+
+### 1. 🛠️ Enhanced `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet`
+- Added paint bucket (flood fill) tool — clicking on the image area fills connected regions of the same color with the currently selected color
+    - Shares color settings with the brush tool
+    - Color tolerance adjustment slider for the fill region
+- Added layer checkboxes for the eraser
+    - The eraser clears the content of checked layers when used:
+        - Brush (Paint Bucket)
+        - Mask
+    - Default: All checked (i.e., clears all layers by default)
+
+### 2. 🛠️ Enhanced, Adjusted & Fixed `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Changed the file uniqueness hash value stored in the file database from randomly generated to static, based on the file path (including name), preventing file reference loss after using the database rebuild function
+- Added favorites for media files (images, videos, audio) and Lora files
+    - Favorite status is persisted in the database
+    - Added a Favorited Files view toggle button `⭐` in the top function bar (to the right of the sort button)
+        - The favorited view open state is independent for different file types
+    - Favorite button above file cards — click to favorite or unfavorite a file
+- Search now scans the current directory (including subdirectories) instead of only the current page
+    - All search results are displayed in the window, with pagination preserved for multiple files
+- Added file size as a new sort option
+- Hovering over the folder name area now fully displays the folder's name, size, and file count
+- Special info capsules on file cards now show tooltips on hover
+- Improved the visual appearance of hover tooltips overall
+- Directory tree visual improvements and adjustments
+- Added a "Last Position" option to the default open layout setting in the settings panel
+    - When a layout is selected (Center, Left, Right, Maximized), XDataHub's window always displays at the chosen layout position after a browser page refresh
+    - Now defaults to: Last Position
+        - If the user is using XDataHub for the first time, the window position automatically falls back to Center
+- The image and video cached thumbnail feature in the settings panel is now split into two separate toggles
+    - Image cached thumbnails
+    - Video cached thumbnails
+    - Both default: Disabled
+    - This is because only video cached thumbnail generation uses `FFmpeg`, while images do not — the previous single toggle controlling both was not flexible enough
+- Added a "Clear All Thumbnail Cache" feature in the settings panel
+    - The refresh button no longer also clears the thumbnail cache
+- Removed the feature that wrote the currently selected file category to the URL hash
+    - This feature was originally intended to let XDataHub support using the browser's back/forward buttons to control tabs, but is now considered unnecessary and somewhat intrusive
+- Fixed scrollbar positioning when switching files in fullscreen preview
+- Other optimizations and bug fixes
+
+### 3. 🩹 Fixed `XLoraGet` Lora Data Receiver & Loader Node for XDataHub
+`♾️ Xz3r0/XDataHub`
+- Fixed an issue where the input field did not properly respond to mouse wheel scrolling
+
+</details>
+
+---
+
 ## 🎉 v2.3.0
 
 <details>
@@ -57,29 +175,29 @@
 - Added Canvas Scroll toggle button in the top-right corner
     - When enabled, hovering over the image area lets you control the slider values above with the mouse wheel
     - When disabled, the mouse wheel zooms the ComfyUI canvas normally
-    - Default: Off
+    - Default: Disabled
 
 ### 2. 🛠️ Enhanced `XDataHub` Data Center
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
 - The volume boost (>100%) feature in fullscreen audio preview now uses a lock button to enable/disable
-    - Default: Off
+    - Default: Disabled
 
 ### 3. 🛠️ Enhanced `XAudioGet` Audio Receiver Node for XDataHub
 `♾️ Xz3r0/XDataHub`
 - Replaced the browser's native audio player with a custom audio player component
     - Audio waveform progress bar
     - Supports volume boost beyond 100% (lock button)
-        - Default: Off
+        - Default: Disabled
 - Added Loop Playback toggle button
-    - Default: Off
+    - Default: Disabled
 
 ### 4. 🛠️ Enhanced `XVideoGet` Video Receiver Node for XDataHub
 `♾️ Xz3r0/XDataHub`
 - Replaced the browser's native video player controls with custom video player controls
     - Supports volume boost beyond 100% (lock button)
-        - Default: Off
+        - Default: Disabled
 - Added Loop Playback toggle button
-    - Default: Off
+    - Default: Disabled
 
 ### 5. 🔧 Adjusted `X*Get` — All XDataHub Companion Series Nodes
 `♾️ Xz3r0/XDataHub`
@@ -130,7 +248,7 @@
 - 修复 XDataHub 的主题配色和语言切换不同步
 - 修复音频文件卡片缺少文件日期
 
-### 3. 🛠️ 增强 XMaskEditor 遮罩编辑器
+### 3. 🛠️ 增强 `XMaskEditor` 遮罩编辑器
 `♾️ Xz3r0/XDataHub - XImageGet`
 - 鼠标悬停在滑块拉条上时可以使用滚轮调整数值
 - 画笔和橡皮大小将按照图片尺寸自动设置数值范围
@@ -155,12 +273,12 @@
 - Displays A/B resolution
     - Red dot in the center if the two images or masks being compared have different resolutions, green dot if they match
 - Save input images to `output/XImageCompare` toggle switch
-    - When off, images are saved to ComfyUI's default temp cache folder; when on, files are saved to `output/XImageCompare`
+    - When Disabled, images are saved to ComfyUI's default temp cache folder; when on, files are saved to `output/XImageCompare`
         - When enabled, as long as the files are not deleted, the comparison preview images will reappear in the node UI even after restarting the browser or ComfyUI
-    - Default: Off
+    - Default: Disabled
 - Swap A/B
     - Swaps the display and output positions of A and B in the node
-    - Default: Off
+    - Default: Disabled
 - The color scheme for non-native ComfyUI components follows the XDataHub theme.
 
 ### 2. 🛠️ Enhanced, Adjusted & Fixed `XDataHub` Data Center
@@ -175,7 +293,7 @@
 - Fixed theme color and language switching not syncing in XDataHub
 - Fixed missing file date on audio file cards
 
-### 3. 🛠️ Enhanced XMaskEditor Mask Editor
+### 3. 🛠️ Enhanced `XMaskEditor` Mask Editor
 `♾️ Xz3r0/XDataHub - XImageGet`
 - Mouse scroll wheel can now adjust slider values when hovering over the slider track
 - Brush and eraser sizes now automatically set their value range based on image dimensions
@@ -269,14 +387,14 @@
 - Added FFmpeg cached thumbnails
     - Uses `FFmpeg` installed on the user's system to generate cached thumbnails for images and videos
     - Added corresponding toggle button and FFmpeg detection status text in XDataHub settings panel
-        - Default: Off
+        - Default: Disabled
     - This feature is unavailable if FFmpeg is not installed and configured in the system environment (PATH)
         - Depends on FFmpeg in the system, just like the XAudioSave and XVideoSave nodes
 - Added hover-to-locate node feature
     - When hovering over a node name in the node list of the send panel, the canvas view automatically pans to the corresponding node position on the current page
     - Will not auto-locate if the node is not on the current page (e.g., in another subgraph)
     - Added corresponding toggle button and delay setting in the XDataHub settings panel
-        - Default: Off
+        - Default: Disabled
         - Debounce delay (ms)
             - How long to wait before starting to pan the view for locating
             - Default: 300ms

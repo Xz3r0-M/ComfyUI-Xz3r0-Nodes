@@ -127,18 +127,24 @@ export async function loadMediaList(
     pageSize = 50,
     dir = "",
     sortBy = "mtime",
-    sortOrder = "desc"
+    sortOrder = "desc",
+    keyword = "",
+    flatView = false
 ) {
     const params = CATEGORY_PARAMS[category] || CATEGORY_PARAMS.image;
-    return await apiGet("/xz3r0/xdatahub/media", {
+    const query = {
         media_type: params.media_type,
         dir:        dir || params.dir || undefined,
         page,
         page_size:  pageSize,
         sort_by:    sortBy,
         sort_order: sortOrder,
-        flat:       0,
-    }, {
+        flat:       flatView ? 1 : 0,
+    };
+    if (keyword) {
+        query.keyword = keyword;
+    }
+    return await apiGet("/xz3r0/xdatahub/media", query, {
         fallbackFactory: () => buildMockListResponse(category || "Item"),
     });
 }
@@ -148,15 +154,22 @@ export async function loadLoraList(
     pageSize = 50,
     dir = "",
     sortBy = "mtime",
-    sortOrder = "desc"
+    sortOrder = "desc",
+    keyword = "",
+    flatView = false
 ) {
-    return await apiGet("/xz3r0/xdatahub/loras", {
+    const query = {
         page,
         page_size: pageSize,
         dir: dir || undefined,
         sort_by: sortBy,
         sort_order: sortOrder,
-    }, {
+        flat: flatView ? 1 : 0,
+    };
+    if (keyword) {
+        query.keyword = keyword;
+    }
+    return await apiGet("/xz3r0/xdatahub/loras", query, {
         fallbackFactory: () => buildMockListResponse("Lora"),
     });
 }
@@ -230,5 +243,70 @@ export function buildMediaUrl(mediaRef) {
 
 export function buildThumbUrl(mediaRef, size = 300) {
     return `/xz3r0/xdatahub/media/thumb?ref=${encodeURIComponent(mediaRef)}&size=${size}`;
+}
+
+// ── 媒体收藏 ──────────────────────────────────────────────────────────────
+
+export async function toggleMediaFavorite(payload) {
+    try {
+        const response = await fetch("/xz3r0/xdatahub/media/favorites/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } catch (e) {
+        console.warn("[xdh-api] toggleMediaFavorite failed:", e);
+        return null;
+    }
+}
+
+export async function loadFavoriteList(
+    mediaType,
+    page = 1,
+    pageSize = 50,
+    sortOrder = "desc"
+) {
+    return await apiGet(
+        "/xz3r0/xdatahub/media/favorites/list",
+        {
+            media_type: mediaType,
+            page: String(page),
+            page_size: String(pageSize),
+            sort_order: sortOrder,
+        },
+        {
+            fallbackFactory: () => ({ items: [], page: 1, total_pages: 1 }),
+        }
+    );
+}
+
+export async function loadFavoriteIds(mediaType) {
+    try {
+        const data = await apiGet(
+            "/xz3r0/xdatahub/media/favorites/ids",
+            { media_type: mediaType },
+            { fallbackFactory: () => ({ ids: [] }) }
+        );
+        return Array.isArray(data?.ids) ? data.ids : [];
+    } catch (e) {
+        console.warn("[xdh-api] loadFavoriteIds failed:", e);
+        return [];
+    }
+}
+
+export async function cleanupInvalidFavorites() {
+    try {
+        const response = await fetch(
+            "/xz3r0/xdatahub/media/favorites/cleanup",
+            { method: "POST" }
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } catch (e) {
+        console.warn("[xdh-api] cleanupInvalidFavorites failed:", e);
+        return null;
+    }
 }
 

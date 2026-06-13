@@ -984,6 +984,7 @@ def list_lora_directory(
     include_size: bool = True,
     sort_by: str = "mtime",
     sort_order: str = "desc",
+    flat_view: bool = False,
 ) -> dict[str, Any]:
     # 委托给 LORA_STORE 从数据库查询（替代实时文件系统扫描）
     return LORA_STORE.list(
@@ -993,6 +994,7 @@ def list_lora_directory(
         keyword=keyword,
         sort_by=sort_by,
         sort_order=sort_order,
+        flat_view=flat_view,
     )
 
 
@@ -1016,6 +1018,9 @@ def map_folder_item(
     child_path: str,
     title: str,
     mtime: float | None = None,
+    size: int | None = None,
+    file_count: int | None = None,
+    has_children: bool | None = None,
 ) -> dict[str, Any]:
     extra = {
         "entry_type": "folder",
@@ -1023,6 +1028,12 @@ def map_folder_item(
     }
     if mtime is not None:
         extra["mtime"] = float(mtime)
+    if size is not None:
+        extra["size"] = int(size)
+    if file_count is not None:
+        extra["file_count"] = int(file_count)
+    if has_children is not None:
+        extra["has_children"] = bool(has_children)
     return {
         "id": f"folder:{child_path}",
         "kind": "folder",
@@ -1120,6 +1131,9 @@ def build_directory_items(
     ]
     folder_children: dict[str, str] = {}
     folder_mtimes: dict[str, float] = {}
+    folder_sizes: dict[str, int] = {}
+    folder_counts: dict[str, int] = {}
+    folder_has_children: dict[str, bool] = {}
     file_rows: list[sqlite3.Row] = []
     for row in rows:
         rel_parts = split_rel_path(str(row["rel_path"] or ""), _root_names)
@@ -1150,6 +1164,18 @@ def build_directory_items(
         current_folder_mtime = folder_mtimes.get(remain[0])
         if current_folder_mtime is None or row_mtime > current_folder_mtime:
             folder_mtimes[remain[0]] = row_mtime
+        try:
+            row_size = int(row["size"] or 0)
+        except Exception:
+            row_size = 0
+        folder_sizes[remain[0]] = (
+            folder_sizes.get(remain[0], 0) + row_size
+        )
+        folder_counts[remain[0]] = (
+            folder_counts.get(remain[0], 0) + 1
+        )
+        if len(remain) > 2:
+            folder_has_children[remain[0]] = True
 
     if not dir_parts and not custom_scope:
         for root_name in standard_root_order:
@@ -1167,6 +1193,9 @@ def build_directory_items(
                 path,
                 custom_titles.get(title, title),
                 mtime=folder_mtimes.get(title),
+                size=folder_sizes.get(title),
+                file_count=folder_counts.get(title),
+                has_children=folder_has_children.get(title, False),
             )
             for title, path in folder_children.items()
         ],
@@ -1397,6 +1426,7 @@ class MediaStore:
         )
         conn.row_factory = sqlite3.Row
         conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
     @contextmanager
@@ -1432,22 +1462,53 @@ class MediaStore:
             "created_at TEXT NOT NULL,"
             "updated_at TEXT NOT NULL)"
         )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS public_ref_migration ("
+            "old_ref TEXT PRIMARY KEY,"
+            "new_ref TEXT NOT NULL"
+            ")"
+        )
+
+    @staticmethod
+    def _insert_migration(
+        conn: sqlite3.Connection,
+        old_ref: str,
+        new_ref: str,
+    ) -> None:
+        """记录旧 ref → 新 ref 的迁移映射，保证旧引用永不断裂。"""
+        if old_ref and old_ref != new_ref:
+            conn.execute(
+                "INSERT OR REPLACE INTO public_ref_migration"
+                " (old_ref, new_ref) VALUES (?, ?)",
+                (old_ref, new_ref),
+            )
 
     @staticmethod
     def _coerce_public_ref(
-        value: Any,
+        media_type: str,
+        rel_path: str,
         reserved: set[str],
     ) -> str:
-        normalized = normalize_media_ref(str(value or ""))
-        if normalized and normalized not in reserved:
-            reserved.add(normalized)
-            return normalized
+        """生成确定性 public_ref，极端碰撞时回退到带计数器的备用值。"""
+        new_ref = normalize_media_ref(
+            generate_public_ref(media_type, rel_path),
+        )
+        if new_ref and new_ref not in reserved:
+            reserved.add(new_ref)
+            return new_ref
+        # 碰撞回退（SHA-256 截断 144 位下实际不可能触发）
+        counter = 1
         while True:
-            generated = generate_public_ref()
-            normalized = normalize_media_ref(generated)
-            if normalized and normalized not in reserved:
-                reserved.add(normalized)
-                return normalized
+            fallback_ref = normalize_media_ref(
+                generate_public_ref(
+                    media_type,
+                    f"{rel_path}__collision_{counter}",
+                ),
+            )
+            if fallback_ref and fallback_ref not in reserved:
+                reserved.add(fallback_ref)
+                return fallback_ref
+            counter += 1
 
     @staticmethod
     def _row_public_ref_map(
@@ -1495,6 +1556,7 @@ class MediaStore:
                 "mtime, size, valid, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?) "
                 "ON CONFLICT(rel_path) DO UPDATE SET "
+                "public_ref=excluded.public_ref, "
                 "real_path=excluded.real_path, "
                 "filename=excluded.filename, "
                 "media_type=excluded.media_type, "
@@ -1559,7 +1621,18 @@ class MediaStore:
             normalized_existing = normalize_media_ref(existing_ref)
             if normalized_existing in reserved:
                 reserved.remove(normalized_existing)
-            public_ref = self._coerce_public_ref(existing_ref, reserved)
+            media_type_val = str(entry["media_type"])
+            rel_path_val = str(entry["rel_path"])
+            public_ref = self._coerce_public_ref(
+                media_type_val,
+                rel_path_val,
+                reserved,
+            )
+            self._insert_migration(
+                conn,
+                normalized_existing,
+                public_ref,
+            )
             now = utc_now_iso()
             self._upsert_index_entry(conn, entry, public_ref, now)
             conn.commit()
@@ -1592,14 +1665,33 @@ class MediaStore:
                 self._create_media_index_table(conn, "media_index_new")
                 reserved_refs: set[str] = set()
                 for row in rows:
+                    old_ref = str(
+                        row["public_ref"]
+                        if "public_ref" in row.keys()
+                        else ""
+                    )
+                    media_type_val = str(
+                        row["media_type"]
+                        if "media_type" in row.keys()
+                        else ""
+                    )
+                    rel_path_val = str(
+                        row["rel_path"]
+                        if "rel_path" in row.keys()
+                        else ""
+                    )
                     public_ref = self._coerce_public_ref(
-                        (
-                            row["public_ref"]
-                            if "public_ref" in row.keys()
-                            else ""
-                        ),
+                        media_type_val,
+                        rel_path_val,
                         reserved_refs,
                     )
+                    normalized_old = normalize_media_ref(old_ref)
+                    if normalized_old and normalized_old != public_ref:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO public_ref_migration"
+                            " (old_ref, new_ref) VALUES (?, ?)",
+                            (normalized_old, public_ref),
+                        )
                     real_path = (
                         str(row["real_path"])
                         if "real_path" in row.keys()
@@ -1860,7 +1952,7 @@ class MediaStore:
         located = locate_media_entry(row, active_roots)
         if located["status"] != "ok":
             if located["status"] == "blocked":
-                LOGGER.info(
+                LOGGER.debug(
                     "[xdatahub] media blocked by root guard: id=%s, "
                     "candidates=%s",
                     int(row["id"]),
@@ -1886,6 +1978,29 @@ class MediaStore:
         )
         if not need_repair:
             return resolved
+        if str(located.get("source", "")) == "legacy_path":
+            root_names = {name for name, _ in active_roots}
+            existing = conn.execute(
+                "SELECT id, rel_path FROM media_index "
+                "WHERE id != ? AND real_path = ?",
+                (int(row["id"]), str(resolved)),
+            ).fetchone()
+            if existing is not None:
+                existing_rel = (
+                    str(existing["rel_path"] or "")
+                    .strip()
+                    .replace("\\", "/")
+                )
+                if "/" in existing_rel:
+                    existing_root = (
+                        existing_rel.split("/", 1)[0].strip().lower()
+                    )
+                    if existing_root in root_names:
+                        conn.execute(
+                            "DELETE FROM media_index WHERE id = ?",
+                            (int(row["id"]),),
+                        )
+                        return None
         self._repair_row_path(
             conn=conn,
             row_id=int(row["id"]),
@@ -1972,6 +2087,7 @@ class MediaStore:
             for entry in scan_media(media_type):
                 now = utc_now_iso()
                 rel_path = str(entry["rel_path"])
+                media_type_val = str(entry["media_type"])
                 existing_ref = str(
                     (existing_map.get(rel_path) or {}).get("public_ref") or ""
                 )
@@ -1979,8 +2095,14 @@ class MediaStore:
                 if normalized_existing in reserved_refs:
                     reserved_refs.remove(normalized_existing)
                 public_ref = self._coerce_public_ref(
-                    existing_ref,
+                    media_type_val,
+                    rel_path,
                     reserved_refs,
+                )
+                self._insert_migration(
+                    conn,
+                    normalized_existing,
+                    public_ref,
                 )
                 self._upsert_index_entry(conn, entry, public_ref, now)
                 if rel_path in existing_map:
@@ -2000,8 +2122,22 @@ class MediaStore:
             ).fetchall()
             if stale_rows:
                 roots = comfy_dirs()
+                root_names = {name for name, _ in roots}
+                orphan_ids: list[int] = []
                 for row in stale_rows:
-                    if self.resolve_runtime_path(conn, row, roots) is not None:
+                    rel_path_str = (
+                        str(row["rel_path"] or "").strip().replace("\\", "/")
+                    )
+                    if "/" in rel_path_str:
+                        root_name = (
+                            rel_path_str.split("/", 1)[0].strip().lower()
+                        )
+                        if root_name and root_name not in root_names:
+                            orphan_ids.append(int(row["id"]))
+                            continue
+                    if self.resolve_runtime_path(
+                        conn, row, roots
+                    ) is not None:
                         continue
                     deleted += int(
                         conn.execute(
@@ -2010,6 +2146,23 @@ class MediaStore:
                         ).rowcount
                     )
                     self.delete_thumb(row["public_ref"])
+                if orphan_ids:
+                    chunk_size = 500
+                    for i in range(0, len(orphan_ids), chunk_size):
+                        chunk = orphan_ids[i : i + chunk_size]
+                        placeholders = ",".join(
+                            ["?"] * len(chunk)
+                        )
+                        deleted += int(
+                            conn.execute(
+                                "DELETE FROM media_index "
+                                f"WHERE id IN ({placeholders})",
+                                chunk,
+                            ).rowcount
+                        )
+                    # Skip delete_thumb for orphan rows — root is gone
+                    # so thumbnails are harmless cache. Users can clear
+                    # them via the "Clear Thumbnails" button if needed.
             conn.commit()
         return {
             "inserted": inserted,
@@ -2087,12 +2240,25 @@ class MediaStore:
             for entry in scan_media(media_type):
                 now = utc_now_iso()
                 rel_path = str(entry["rel_path"])
-                public_ref = self._coerce_public_ref(
+                media_type_val = str(entry["media_type"])
+                old_ref = str(
                     preserved_refs.get(
                         rel_path,
                         existing_map.get(rel_path, ""),
-                    ),
+                    ) or ""
+                )
+                normalized_old = normalize_media_ref(old_ref)
+                if normalized_old in reserved_refs:
+                    reserved_refs.remove(normalized_old)
+                public_ref = self._coerce_public_ref(
+                    media_type_val,
+                    rel_path,
                     reserved_refs,
+                )
+                self._insert_migration(
+                    conn,
+                    normalized_old,
+                    public_ref,
                 )
                 self._upsert_index_entry(conn, entry, public_ref, now)
                 if rel_path in existing_map:
@@ -2327,6 +2493,42 @@ class LoraStore:
                     ).fetchone()
 
                     if existing:
+                        # 检查旧 public_ref 是否需要迁移
+                        old_row = conn.execute(
+                            "SELECT public_ref FROM lora_items"
+                            " WHERE rel_path = ?",
+                            (rel_path_str,),
+                        ).fetchone()
+                        old_ref = ""
+                        if old_row is not None:
+                            old_ref = str(old_row["public_ref"] or "")
+                        normalized_old = normalize_lora_public_ref(
+                            old_ref,
+                        )
+                        if normalized_old in reserved_refs:
+                            reserved_refs.remove(normalized_old)
+                        new_ref = _coerce_lora_public_ref(
+                            "lora",
+                            rel_path_str,
+                            reserved_refs,
+                        )
+                        if (
+                            normalized_old
+                            and normalized_old != new_ref
+                        ):
+                            conn.execute(
+                                "INSERT OR REPLACE"
+                                " INTO lora_ref_migration"
+                                " (old_ref, new_ref)"
+                                " VALUES (?, ?)",
+                                (normalized_old, new_ref),
+                            )
+                            conn.execute(
+                                "UPDATE lora_items"
+                                " SET public_ref = ?"
+                                " WHERE rel_path = ?",
+                                (new_ref, rel_path_str),
+                            )
                         # 更新现有记录
                         conn.execute(
                             "UPDATE lora_items SET "
@@ -2351,7 +2553,8 @@ class LoraStore:
                             timespec="seconds"
                         )
                         public_ref = _coerce_lora_public_ref(
-                            "",
+                            "lora",
+                            rel_path_str,
                             reserved_refs,
                         )
                         conn.execute(
@@ -2468,6 +2671,7 @@ class LoraStore:
         keyword: str = "",
         sort_by: str = "mtime",
         sort_order: str = "desc",
+        flat_view: bool = False,
     ) -> dict[str, Any]:
         """从数据库查询 LORA 列表（替代 list_lora_directory）"""
         root = self._get_root()
@@ -2527,13 +2731,81 @@ class LoraStore:
             safe_sort_order = (
                 sort_order if sort_order in MEDIA_SORT_ORDER_VALUES else "desc"
             )
+            sort_col = "mtime" if safe_sort_by == "mtime" else "filename"
+            if safe_sort_by == "size":
+                sort_col = "size"
+            order = "DESC" if safe_sort_order == "desc" else "ASC"
 
-            # 查询该目录级别的子目录
+            if flat_view:
+                # 平铺视图：忽略目录层级，直接分页查询所有匹配文件
+                flat_cond = ["valid = 1"]
+                flat_params: list[Any] = []
+                if subdir_prefix:
+                    flat_cond.append("rel_path LIKE ?")
+                    flat_params.append(subdir_prefix + "%")
+                if keyword_normalized:
+                    flat_cond.append(
+                        "(LOWER(filename) LIKE ?"
+                        " OR LOWER(rel_path) LIKE ?)"
+                    )
+                    kw = f"%{keyword_normalized}%"
+                    flat_params.extend([kw, kw])
+                flat_where = " AND ".join(flat_cond)
+                total = int(
+                    conn.execute(
+                        f"SELECT COUNT(*) FROM lora_items"
+                        f" WHERE {flat_where}",
+                        flat_params,
+                    ).fetchone()[0]
+                )
+                total_pages = max(
+                    1, (total + page_size - 1) // page_size
+                )
+                safe_page = min(max(1, page), total_pages)
+                offset = (safe_page - 1) * page_size
+                rows = conn.execute(
+                    (
+                        "SELECT public_ref, rel_path, filename,"
+                        " mtime, size, trigger_words_json,"
+                        " lora_note, strength_model, strength_clip"
+                        f" FROM lora_items WHERE {flat_where}"
+                        f" ORDER BY {sort_col} {order}, filename"
+                        " LIMIT ? OFFSET ?"
+                    ),
+                    [*flat_params, page_size, offset],
+                ).fetchall()
+                items: list[dict[str, Any]] = []
+                for row in rows:
+                    items.append(
+                        _lora_item_payload_from_db(
+                            root,
+                            str(row[0] or ""),
+                            str(row[1] or ""),
+                            str(row[2] or ""),
+                            float(row[3] or 0),
+                            int(row[4] or 0),
+                            str(row[5] or "[]"),
+                            str(row[6] or ""),
+                            row[7],
+                            row[8],
+                        )
+                    )
+                return {
+                    "items": items,
+                    "page": safe_page,
+                    "page_size": page_size,
+                    "total": total,
+                    "total_pages": total_pages,
+                }
+
+            # 查询该目录级别的子目录（含大小与文件数汇总）
             query_dirs = (
-                "SELECT DISTINCT "
+                "SELECT "
                 "SUBSTR(SUBSTR(rel_path, LENGTH(?)+1), 1, "
                 "INSTR(SUBSTR(rel_path, LENGTH(?)+1), '/')-1) as dir, "
-                "MAX(mtime) as latest_mtime "
+                "MAX(mtime) as latest_mtime, "
+                "SUM(size) as total_size, "
+                "COUNT(*) as file_count "
                 "FROM lora_items WHERE valid=1"
             )
             params_dirs = [subdir_prefix, subdir_prefix]
@@ -2558,8 +2830,40 @@ class LoraStore:
                         f"{LORA_ROOT_NAME}/{rel_path}",
                         dir_name,
                         mtime=float(row[1] or 0),
+                        size=int(row[2] or 0),
+                        file_count=int(row[3] or 0),
                     )
                 )
+            # 检测哪些子目录还包含更深层的子目录
+            dirs_with_children: set[str] = set()
+            if folder_items:
+                prefix_len = len(subdir_prefix) + 1 if subdir_prefix else 0
+                if subdir_prefix:
+                    child_like = subdir_prefix + "/%"
+                else:
+                    child_like = "%"
+                try:
+                    for (deep_dir,) in conn.execute(
+                        "SELECT DISTINCT "
+                        "SUBSTR(SUBSTR(rel_path, ?), 1, "
+                        "INSTR(SUBSTR(rel_path, ?), '/')-1) as dir "
+                        "FROM lora_items WHERE valid=1 "
+                        "AND rel_path LIKE ? "
+                        "AND (LENGTH(SUBSTR(rel_path, ?)) - "
+                        "LENGTH(REPLACE(SUBSTR(rel_path, ?), '/', ''))) >= 2",
+                        [prefix_len, prefix_len, child_like,
+                         prefix_len, prefix_len],
+                    ):
+                        dirs_with_children.add(deep_dir)
+                except Exception:
+                    pass
+            for item in folder_items:
+                child_path = item.get("extra", {}).get("child_path", "")
+                dir_name = child_path.split("/")[-1] if child_path else ""
+                item["extra"]["has_children"] = (
+                    dir_name in dirs_with_children if dir_name else False
+                )
+
             folder_items = sort_folder_items(
                 folder_items,
                 sort_by=safe_sort_by,
@@ -2656,18 +2960,114 @@ class LoraStore:
             conn.close()
 
     def rebuild(self) -> dict[str, int]:
-        """清空并重建 LORA 索引"""
+        """清空并重建 LORA 索引，保留用户编辑的触发词/强度/备注等数据。"""
+        # 保存旧 public_ref 及用户编辑字段，清空前就已初始化 schema
+        preserved: dict[str, dict[str, Any]] = {}
         conn = connect_lora_trigger_db(create=True)
         try:
             ensure_lora_trigger_schema(conn)
+            rows = conn.execute(
+                "SELECT rel_path, public_ref, trigger_words_json,"
+                " strength_model, strength_clip, lora_note,"
+                " sha256, trigger_words_ver, title"
+                " FROM lora_items"
+            ).fetchall()
+            for row in rows:
+                rel_path = normalize_lora_rel_path(
+                    str(row["rel_path"] or ""),
+                )
+                ref = normalize_lora_public_ref(
+                    str(row["public_ref"] or ""),
+                )
+                if not rel_path:
+                    continue
+                preserved[rel_path] = {
+                    "old_ref": ref if ref else "",
+                    "trigger_words_json": str(
+                        row["trigger_words_json"] or "[]"
+                    ),
+                    "strength_model": float(
+                        row["strength_model"] or 1.0
+                    ),
+                    "strength_clip": float(
+                        row["strength_clip"] or 1.0
+                    ),
+                    "lora_note": str(row["lora_note"] or ""),
+                    "sha256": str(row["sha256"] or ""),
+                    "trigger_words_ver": int(
+                        row["trigger_words_ver"] or 1
+                    ),
+                    "title": str(row["title"] or ""),
+                }
             conn.execute("DELETE FROM lora_items")
             conn.commit()
-            LOGGER.info("[xdatahub-lora] rebuild: cleared all records")
+            LOGGER.info(
+                "[xdatahub-lora] rebuild: cleared %d records,"
+                " preserved user data for %d items",
+                len(rows),
+                len(preserved),
+            )
         finally:
             conn.close()
 
         # 重新扫描
         result = self.scan_lora_files()
+
+        # 恢复用户编辑数据 + 建立 public_ref 迁移映射
+        if preserved:
+            conn = connect_lora_trigger_db()
+            try:
+                ensure_lora_trigger_schema(conn)
+                for rel_path, saved in preserved.items():
+                    new_row = conn.execute(
+                        "SELECT public_ref FROM lora_items"
+                        " WHERE rel_path = ?",
+                        (rel_path,),
+                    ).fetchone()
+                    if new_row is None:
+                        continue
+                    new_ref = normalize_lora_public_ref(
+                        str(new_row["public_ref"] or ""),
+                    )
+                    # 恢复用户编辑字段（覆盖扫描时写入的默认值）
+                    conn.execute(
+                        "UPDATE lora_items SET"
+                        " trigger_words_json = ?,"
+                        " strength_model = ?,"
+                        " strength_clip = ?,"
+                        " lora_note = ?,"
+                        " sha256 = ?,"
+                        " trigger_words_ver = ?,"
+                        " title = ?"
+                        " WHERE rel_path = ?",
+                        (
+                            saved["trigger_words_json"],
+                            saved["strength_model"],
+                            saved["strength_clip"],
+                            saved["lora_note"],
+                            saved["sha256"],
+                            saved["trigger_words_ver"],
+                            saved["title"],
+                            rel_path,
+                        ),
+                    )
+                    # 建立迁移映射
+                    old_ref = saved["old_ref"]
+                    if old_ref and new_ref and old_ref != new_ref:
+                        conn.execute(
+                            "INSERT OR REPLACE"
+                            " INTO lora_ref_migration"
+                            " (old_ref, new_ref) VALUES (?, ?)",
+                            (old_ref, new_ref),
+                        )
+                conn.commit()
+                LOGGER.info(
+                    "[xdatahub-lora] rebuild: restored user data"
+                    " for %d items",
+                    len(preserved),
+                )
+            finally:
+                conn.close()
         return result
 
 
@@ -2975,16 +3375,28 @@ def normalize_lora_public_ref(value: Any) -> str:
     return normalize_media_ref(str(value or ""))
 
 
-def _coerce_lora_public_ref(value: Any, reserved: set[str]) -> str:
-    normalized = normalize_lora_public_ref(value)
-    if normalized and normalized not in reserved:
-        reserved.add(normalized)
-        return normalized
+def _coerce_lora_public_ref(
+    media_type: str,
+    rel_path: str,
+    reserved: set[str],
+) -> str:
+    """生成确定性 LORA public_ref，极端碰撞时回退到带计数器的备用值。"""
+    new_ref = normalize_media_ref(generate_public_ref(media_type, rel_path))
+    if new_ref and new_ref not in reserved:
+        reserved.add(new_ref)
+        return new_ref
+    counter = 1
     while True:
-        generated = normalize_media_ref(generate_public_ref())
-        if generated and generated not in reserved:
-            reserved.add(generated)
-            return generated
+        fallback_ref = normalize_media_ref(
+            generate_public_ref(
+                media_type,
+                f"{rel_path}__collision_{counter}",
+            ),
+        )
+        if fallback_ref and fallback_ref not in reserved:
+            reserved.add(fallback_ref)
+            return fallback_ref
+        counter += 1
 
 
 def _all_lora_public_refs(conn: sqlite3.Connection) -> set[str]:
@@ -3014,7 +3426,17 @@ def _lora_public_ref_for_rel_path(
     normalized_current = normalize_lora_public_ref(current_ref)
     if normalized_current in reserved:
         reserved.remove(normalized_current)
-    public_ref = _coerce_lora_public_ref(current_ref, reserved)
+    public_ref = _coerce_lora_public_ref(
+        "lora",
+        rel_path,
+        reserved,
+    )
+    if normalized_current and normalized_current != public_ref:
+        conn.execute(
+            "INSERT OR REPLACE INTO lora_ref_migration"
+            " (old_ref, new_ref) VALUES (?, ?)",
+            (normalized_current, public_ref),
+        )
     if row is not None and public_ref != current_ref:
         conn.execute(
             "UPDATE lora_items SET public_ref = ? WHERE rel_path = ?",
@@ -3034,6 +3456,21 @@ def lora_rel_path_from_ref(lora_ref: str) -> str | None:
             "SELECT rel_path FROM lora_items WHERE public_ref = ?",
             (safe_ref,),
         ).fetchone()
+        if row is None:
+            # 迁移回退：尝试旧 ref → 新 ref 映射
+            mig_row = conn.execute(
+                "SELECT new_ref FROM lora_ref_migration"
+                " WHERE old_ref = ?",
+                (safe_ref,),
+            ).fetchone()
+            if mig_row is not None:
+                new_ref = str(mig_row["new_ref"] or "")
+                if new_ref:
+                    row = conn.execute(
+                        "SELECT rel_path FROM lora_items"
+                        " WHERE public_ref = ?",
+                        (new_ref,),
+                    ).fetchone()
         if row is None:
             return None
         return normalize_lora_rel_path(str(row["rel_path"] or ""))
@@ -3098,6 +3535,13 @@ def ensure_lora_trigger_schema(conn: sqlite3.Connection) -> None:
     if "public_ref" not in existing_columns:
         conn.execute("ALTER TABLE lora_items ADD COLUMN public_ref TEXT")
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS lora_ref_migration ("
+        "old_ref TEXT PRIMARY KEY,"
+        "new_ref TEXT NOT NULL"
+        ")"
+    )
+
     # 为历史行补齐 public_ref，避免暴露真实路径。
     rows = conn.execute(
         "SELECT rel_path, public_ref FROM lora_items"
@@ -3114,7 +3558,11 @@ def ensure_lora_trigger_schema(conn: sqlite3.Connection) -> None:
             continue
         updates.append((rel_path, ""))
     for rel_path, _ in updates:
-        new_ref = _coerce_lora_public_ref("", reserved)
+        new_ref = _coerce_lora_public_ref(
+            "lora",
+            rel_path,
+            reserved,
+        )
         conn.execute(
             "UPDATE lora_items SET public_ref = ? WHERE rel_path = ?",
             (new_ref, rel_path),
@@ -3458,13 +3906,16 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "theme_mode": "dark",
         "auto_show_on_startup": False,
         "hotkey_spec": "Alt + X",
-        "default_open_layout": "center",
+        "default_open_layout": "last",
         "close_behavior": "hide",
         "disable_interaction_while_running": True,
         "hover_locate_enabled": False,
         "hover_locate_debounce_ms": 300,
-        "enable_ffmpeg_thumb_cache": False,
+        "enable_image_thumb_cache": False,
+        "enable_video_thumb_cache": False,
         "edge_peek": False,
+        "media_sort_by": "mtime",
+        "media_sort_order": "desc",
     }
 
 
@@ -3477,6 +3928,7 @@ XDATAHUB_OPEN_LAYOUT_VALUES = {
     "left",
     "right",
     "maximized",
+    "last",
 }
 
 XDATAHUB_CLOSE_BEHAVIOR_VALUES = {
@@ -3600,9 +4052,22 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         raw = value.get("hover_locate_debounce_ms")
         if isinstance(raw, (int, float)) and 50 <= raw <= 5000:
             patch["hover_locate_debounce_ms"] = int(raw)
+    # 迁移旧键 enable_ffmpeg_thumb_cache → 两个新键
     if "enable_ffmpeg_thumb_cache" in value:
-        patch["enable_ffmpeg_thumb_cache"] = parse_bool(
-            value.get("enable_ffmpeg_thumb_cache")
+        legacy = parse_bool(value.get("enable_ffmpeg_thumb_cache"))
+        if "enable_image_thumb_cache" not in value:
+            patch["enable_image_thumb_cache"] = legacy
+        if "enable_video_thumb_cache" not in value:
+            patch["enable_video_thumb_cache"] = (
+                legacy and shutil.which("ffmpeg") is not None
+            )
+    if "enable_image_thumb_cache" in value:
+        patch["enable_image_thumb_cache"] = parse_bool(
+            value.get("enable_image_thumb_cache")
+        )
+    if "enable_video_thumb_cache" in value:
+        patch["enable_video_thumb_cache"] = parse_bool(
+            value.get("enable_video_thumb_cache")
         ) and shutil.which("ffmpeg") is not None
     if "ui_locale" in value:
         raw_locale = str(value.get("ui_locale") or "").strip()
@@ -3612,6 +4077,14 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
                 patch["ui_locale"] = locale
     if "edge_peek" in value:
         patch["edge_peek"] = parse_bool(value.get("edge_peek"))
+    if "media_sort_by" in value:
+        sort_by = str(value.get("media_sort_by") or "").strip().lower()
+        if sort_by in MEDIA_SORT_BY_VALUES:
+            patch["media_sort_by"] = sort_by
+    if "media_sort_order" in value:
+        sort_order = str(value.get("media_sort_order") or "").strip().lower()
+        if sort_order in MEDIA_SORT_ORDER_VALUES:
+            patch["media_sort_order"] = sort_order
     return patch
 
 
@@ -3972,6 +4445,30 @@ def ensure_favorites_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def ensure_media_favorites_schema(conn: sqlite3.Connection) -> None:
+    """初始化 media_favorites 表（媒体文件收藏，与工作流记录收藏隔离）。"""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS media_favorites ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "public_ref TEXT NOT NULL UNIQUE,"
+        "media_type TEXT NOT NULL,"
+        "filename TEXT NOT NULL DEFAULT '',"
+        "rel_path TEXT NOT NULL DEFAULT '',"
+        "file_ext TEXT NOT NULL DEFAULT '',"
+        "created_at TEXT NOT NULL"
+        ")"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mf_media_type "
+        "ON media_favorites(media_type)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mf_public_ref "
+        "ON media_favorites(public_ref)"
+    )
+    conn.commit()
+
+
 def normalize_favorite_payload(payload: Any) -> tuple[Any, str]:
     canonical = json.dumps(
         payload,
@@ -4122,18 +4619,8 @@ def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
     conn = connect_favorites_db(create=True)
     try:
         ensure_favorites_schema(conn)
-        existing = conn.execute(
-            "SELECT id FROM favorites WHERE content_hash = ?",
-            (content_hash,),
-        ).fetchone()
-        if existing is not None:
-            return {
-                "created": False,
-                "duplicate": True,
-                "favorite_id": int(existing["id"]),
-            }
-        conn.execute(
-            "INSERT INTO favorites ("
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO favorites ("
             "created_at, source_record_key, extra_header, data_type, "
             "source, payload_json, content_hash"
             ") VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -4147,6 +4634,20 @@ def save_favorite(payload: dict[str, Any]) -> dict[str, Any]:
                 content_hash,
             ),
         )
+        if cursor.rowcount == 0:
+            existing = conn.execute(
+                "SELECT id FROM favorites WHERE content_hash = ?",
+                (content_hash,),
+            ).fetchone()
+            return {
+                "created": False,
+                "duplicate": True,
+                "favorite_id": (
+                    int(existing["id"])
+                    if existing is not None
+                    else 0
+                ),
+            }
         row = conn.execute(
             "SELECT id FROM favorites WHERE content_hash = ?",
             (content_hash,),
@@ -4584,6 +5085,457 @@ async def api_records(request: web.Request) -> web.Response:
     return web.json_response({"status": "success", **list_payload(data)})
 
 
+# ── 媒体文件收藏 (media_favorites) ──────────────────────────────────────────
+
+
+def _empty_paginated(page_size: int) -> dict[str, Any]:
+    return {
+        "items": [],
+        "page": 1,
+        "page_size": page_size,
+        "total": 0,
+        "total_pages": 1,
+    }
+
+
+def _media_favorites_conn() -> sqlite3.Connection:
+    path = favorites_db_path()
+    # sqlite3.connect auto-creates the file; data_root() already
+    # ensures the parent directory exists.
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode=WAL")
+    ensure_media_favorites_schema(conn)
+    return conn
+
+
+def _resolve_media_favorite_item(
+    conn: sqlite3.Connection,
+    fav_row: sqlite3.Row,
+) -> dict[str, Any]:
+    """联表 media_index / lora_items，返回带存活状态的条目。"""
+    public_ref = str(fav_row["public_ref"] or "")
+    media_type = str(fav_row["media_type"] or "")
+    filename = str(fav_row["filename"] or "")
+    rel_path = str(fav_row["rel_path"] or "")
+    file_ext = str(fav_row["file_ext"] or "")
+    favorited_at = str(fav_row["created_at"] or "")
+
+    live_row = None
+    if media_type == "lora":
+        lora_conn = None
+        try:
+            lora_conn = connect_lora_trigger_db()
+            ensure_lora_trigger_schema(lora_conn)
+            live_row = lora_conn.execute(
+                "SELECT public_ref, real_path, rel_path, title,"
+                " mtime, size, trigger_words_json,"
+                " strength_model, strength_clip, lora_note"
+                " FROM lora_items"
+                " WHERE public_ref = ? AND valid = 1",
+                (public_ref,),
+            ).fetchone()
+            if live_row is None:
+                seen: set[str] = {public_ref}
+                cursor_ref = public_ref
+                for _ in range(10):
+                    mig_row = lora_conn.execute(
+                        "SELECT new_ref FROM lora_ref_migration"
+                        " WHERE old_ref = ?",
+                        (cursor_ref,),
+                    ).fetchone()
+                    if mig_row is None:
+                        break
+                    next_ref = str(mig_row["new_ref"] or "")
+                    if not next_ref or next_ref in seen:
+                        break
+                    seen.add(next_ref)
+                    live_row = lora_conn.execute(
+                        "SELECT public_ref, real_path, rel_path, title,"
+                        " mtime, size, trigger_words_json,"
+                        " strength_model, strength_clip, lora_note"
+                        " FROM lora_items"
+                        " WHERE public_ref = ? AND valid = 1",
+                        (next_ref,),
+                    ).fetchone()
+                    if live_row is not None:
+                        break
+                    cursor_ref = next_ref
+        except Exception:
+            pass
+        finally:
+            if lora_conn is not None:
+                lora_conn.close()
+    else:
+        media_conn = None
+        try:
+            media_conn = sqlite3.connect(str(STORE.db_path))
+            media_conn.row_factory = sqlite3.Row
+            live_row = media_conn.execute(
+                "SELECT public_ref, real_path, rel_path, filename,"
+                " media_type, mtime, size FROM media_index"
+                " WHERE public_ref = ? AND valid = 1",
+                (public_ref,),
+            ).fetchone()
+            if live_row is None:
+                seen: set[str] = {public_ref}
+                cursor_ref = public_ref
+                for _ in range(10):
+                    mig_row = media_conn.execute(
+                        "SELECT new_ref FROM public_ref_migration"
+                        " WHERE old_ref = ?",
+                        (cursor_ref,),
+                    ).fetchone()
+                    if mig_row is None:
+                        break
+                    next_ref = str(mig_row["new_ref"] or "")
+                    if not next_ref or next_ref in seen:
+                        break
+                    seen.add(next_ref)
+                    live_row = media_conn.execute(
+                        "SELECT public_ref, real_path, rel_path, filename,"
+                        " media_type, mtime, size FROM media_index"
+                        " WHERE public_ref = ? AND valid = 1",
+                        (next_ref,),
+                    ).fetchone()
+                    if live_row is not None:
+                        break
+                    cursor_ref = next_ref
+        except Exception:
+            pass
+        finally:
+            if media_conn is not None:
+                media_conn.close()
+
+    if live_row is not None:
+        resolved_filename = str(
+            live_row["filename"]
+            if "filename" in live_row.keys()
+            else live_row["title"]
+        )
+        resolved_title = str(
+            live_row["title"]
+            if "title" in live_row.keys()
+            else live_row["filename"]
+        )
+        live_mtime = float(live_row["mtime"] or 0)
+        live_size = int(live_row["size"] or 0)
+        extra: dict[str, Any] = {
+            "media_type": media_type,
+            "media_ref": public_ref,
+            "mtime": live_mtime,
+            "size": live_size,
+            "file_ext": file_ext,
+            "rel_path": str(live_row["rel_path"] or rel_path),
+        }
+        if media_type == "lora":
+            extra["trigger_words"] = _parse_lora_trigger_words_json(
+                str(live_row["trigger_words_json"] or "[]")
+            )
+            extra["strength_model"] = float(
+                live_row["strength_model"] or 1.0
+            )
+            extra["strength_clip"] = float(
+                live_row["strength_clip"] or 1.0
+            )
+            extra["lora_note"] = str(live_row["lora_note"] or "")
+            extra["thumb_url"] = lora_thumb_url(public_ref)
+            extra["has_thumbnail"] = True
+        saved_at = ""
+        if live_mtime:
+            saved_at = datetime.fromtimestamp(
+                live_mtime, tz=timezone.utc
+            ).isoformat(timespec="seconds")
+        if media_type == "lora":
+            return {
+                "id": f"lora:{public_ref}",
+                "media_ref": public_ref,
+                "title": resolved_title,
+                "saved_at": saved_at or favorited_at,
+                "extra": extra,
+            }
+        return {
+            "id": f"media:{public_ref}",
+            "kind": media_type,
+            "title": resolved_filename or filename,
+            "saved_at": saved_at or favorited_at,
+            "previewable": True,
+            "extra": extra,
+        }
+    # 文件已不存在：返回占位信息
+    gone_extra = {
+        "media_type": media_type,
+        "media_ref": "",
+        "file_ext": file_ext,
+        "rel_path": rel_path,
+        "exists": False,
+    }
+    if media_type == "lora":
+        return {
+            "id": f"lora:{public_ref}",
+            "media_ref": "",
+            "title": filename or rel_path,
+            "saved_at": favorited_at,
+            "extra": {**gone_extra, "thumb_url": "", "has_thumbnail": False},
+        }
+    return {
+        "id": f"media:{public_ref}",
+        "kind": media_type,
+        "title": filename or rel_path,
+        "saved_at": favorited_at,
+        "previewable": False,
+        "public_ref": public_ref,
+        "extra": gone_extra,
+    }
+
+
+def toggle_media_favorite(payload: dict[str, Any]) -> dict[str, Any]:
+    public_ref = normalize_media_ref(str(payload.get("public_ref") or ""))
+    media_type = str(payload.get("media_type") or "").strip().lower()
+    if not public_ref or media_type not in ("image", "video", "audio", "lora"):
+        raise ValueError("invalid media_favorite payload")
+    filename = str(payload.get("filename") or "")[:512]
+    rel_path = str(payload.get("rel_path") or "")[:1024]
+    file_ext = str(payload.get("file_ext") or "")[:32]
+    conn = _media_favorites_conn()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM media_favorites WHERE public_ref = ?",
+            (public_ref,),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                "DELETE FROM media_favorites WHERE public_ref = ?",
+                (public_ref,),
+            )
+            conn.commit()
+            return {"favorited": False}
+        conn.execute(
+            "INSERT INTO media_favorites"
+            " (public_ref, media_type, filename, rel_path, file_ext,"
+            " created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                public_ref,
+                media_type,
+                filename,
+                rel_path,
+                file_ext,
+                utc_now_iso(),
+            ),
+        )
+        conn.commit()
+        return {"favorited": True}
+    finally:
+        conn.close()
+
+
+def list_media_favorites(
+    media_type: str,
+    page: int,
+    page_size: int,
+    sort_order: str = "desc",
+) -> dict[str, Any]:
+    safe_type = str(media_type or "").strip().lower()
+    if safe_type not in ("image", "video", "audio", "lora"):
+        return _empty_paginated(page_size)
+    safe_sort = sort_order if sort_order in ("asc", "desc") else "desc"
+    if not favorites_db_path().exists():
+        return _empty_paginated(page_size)
+    conn = _media_favorites_conn()
+    try:
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM media_favorites"
+            " WHERE media_type = ?",
+            (safe_type,),
+        ).fetchone()
+        total = int(count_row["cnt"]) if count_row else 0
+        total_pages = max(1, math.ceil(total / max(1, page_size)))
+        safe_page = max(1, min(page, total_pages))
+        offset = (safe_page - 1) * page_size
+        rows = conn.execute(
+            "SELECT * FROM media_favorites"
+            " WHERE media_type = ?"
+            " ORDER BY created_at"
+            + (" DESC" if safe_sort == "desc" else " ASC")
+            + " LIMIT ? OFFSET ?",
+            (safe_type, page_size, offset),
+        ).fetchall()
+        items = [_resolve_media_favorite_item(conn, row) for row in rows]
+    finally:
+        conn.close()
+    return {
+        "items": items,
+        "page": safe_page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+    }
+
+
+def get_media_favorite_ids(media_type: str) -> list[str]:
+    safe_type = str(media_type or "").strip().lower()
+    if safe_type not in ("image", "video", "audio", "lora"):
+        return []
+    if not favorites_db_path().exists():
+        return []
+    conn = _media_favorites_conn()
+    try:
+        rows = conn.execute(
+            "SELECT public_ref FROM media_favorites WHERE media_type = ?",
+            (safe_type,),
+        ).fetchall()
+        return [str(row["public_ref"] or "") for row in rows]
+    finally:
+        conn.close()
+
+
+def cleanup_media_favorites() -> dict[str, int]:
+    if not favorites_db_path().exists():
+        return {"deleted": 0}
+    conn = _media_favorites_conn()
+    deleted = 0
+    try:
+        # 清理 media 类型孤儿
+        if STORE.db_path.exists():
+            media_conn = sqlite3.connect(str(STORE.db_path))
+            media_conn.row_factory = sqlite3.Row
+            try:
+                media_rows = media_conn.execute(
+                    "SELECT public_ref FROM media_index WHERE valid = 1"
+                ).fetchall()
+                media_refs = {
+                    str(r["public_ref"] or "") for r in media_rows
+                }
+            finally:
+                media_conn.close()
+            orphan_rows = conn.execute(
+                "SELECT public_ref FROM media_favorites"
+                " WHERE media_type != 'lora'"
+            ).fetchall()
+            for row in orphan_rows:
+                ref = str(row["public_ref"] or "")
+                if ref and ref not in media_refs:
+                    conn.execute(
+                        "DELETE FROM media_favorites WHERE public_ref = ?",
+                        (ref,),
+                    )
+                    deleted += 1
+        # 清理 lora 类型孤儿
+        lora_db = lora_trigger_db_path()
+        if lora_db.exists():
+            lora_conn = sqlite3.connect(str(lora_db))
+            lora_conn.row_factory = sqlite3.Row
+            try:
+                lora_rows = lora_conn.execute(
+                    "SELECT public_ref FROM lora_items WHERE valid = 1"
+                ).fetchall()
+                lora_refs = {
+                    str(r["public_ref"] or "") for r in lora_rows
+                }
+            finally:
+                lora_conn.close()
+            orphan_rows = conn.execute(
+                "SELECT public_ref FROM media_favorites"
+                " WHERE media_type = 'lora'"
+            ).fetchall()
+            for row in orphan_rows:
+                ref = str(row["public_ref"] or "")
+                if ref and ref not in lora_refs:
+                    conn.execute(
+                        "DELETE FROM media_favorites WHERE public_ref = ?",
+                        (ref,),
+                    )
+                    deleted += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"deleted": deleted}
+
+
+# ── 媒体收藏 API 端点 ───────────────────────────────────────────────────────
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/media/favorites/toggle"
+)
+async def api_media_favorites_toggle(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return json_error(request, "invalid_payload", 400)
+    try:
+        result = toggle_media_favorite(payload)
+    except ValueError:
+        return json_error(request, "invalid_payload", 400)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites toggle failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", **result})
+
+
+@server.PromptServer.instance.routes.get(
+    "/xz3r0/xdatahub/media/favorites/list"
+)
+async def api_media_favorites_list(request: web.Request) -> web.Response:
+    q = request.query
+    try:
+        data = list_media_favorites(
+            media_type=str(q.get("media_type") or ""),
+            page=parse_int(q.get("page"), 1),
+            page_size=parse_int(q.get("page_size"), 50),
+            sort_order=str(q.get("sort_order") or "desc"),
+        )
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites list failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", **data})
+
+
+@server.PromptServer.instance.routes.get(
+    "/xz3r0/xdatahub/media/favorites/ids"
+)
+async def api_media_favorites_ids(request: web.Request) -> web.Response:
+    media_type = str(request.query.get("media_type") or "")
+    try:
+        ids = get_media_favorite_ids(media_type)
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites ids failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", "ids": ids})
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/media/favorites/cleanup"
+)
+async def api_media_favorites_cleanup(request: web.Request) -> web.Response:
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        result = cleanup_media_favorites()
+    except Exception as exc:
+        LOGGER.exception(
+            "[xdatahub] media_favorites cleanup failed: %s",
+            type(exc).__name__,
+        )
+        return json_error(request, "internal_error", 500)
+    return web.json_response({"status": "success", **result})
+
+
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/favorites")
 async def api_favorites(request: web.Request) -> web.Response:
     q = request.query
@@ -4859,6 +5811,11 @@ async def api_loras(request: web.Request) -> web.Response:
     if sort_order not in MEDIA_SORT_ORDER_VALUES:
         sort_order = "desc"
     directory = normalize_lora_dir_query(str(q.get("dir") or ""))
+    flat_view = str(q.get("flat") or "0").strip() in {
+        "1",
+        "true",
+        "True",
+    }
     try:
         data = list_lora_directory(
             directory=directory,
@@ -4869,6 +5826,7 @@ async def api_loras(request: web.Request) -> web.Response:
             include_size=include_size,
             sort_by=sort_by,
             sort_order=sort_order,
+            flat_view=flat_view,
         )
     except PermissionError:
         return json_error("permission_denied", status=403)

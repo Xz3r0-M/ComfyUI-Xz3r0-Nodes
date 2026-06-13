@@ -4,25 +4,26 @@ import {
     apiPost,
     loadMediaList, loadLoraList, loadRecords, loadFavorites, loadLockStatus,
     buildMediaUrl, buildThumbUrl,
-} from "./core/api.js?v=20260407-414";
+    loadFavoriteList, loadFavoriteIds,
+} from "./core/api.js?v=20260601-5";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260426-3";
+import { setLocale, t } from "./core/i18n.js?v=20260427-2";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
-import "./components/xdh-folder-tree.js?v=20260407-52";
-import "./components/xdh-media-grid.js?v=20260426-3";
-import "./components/xdh-staging-dock.js?v=20260426-3";
+import "./components/xdh-folder-tree.js?v=20260407-93";
+import "./components/xdh-media-grid.js?v=20260601-1";
+import "./components/xdh-staging-dock.js?v=20260531-1";
 import "./components/xdh-node-picker.js?v=20260426-4";
 import "./core/node-bridge.js?v=20260426-1";
-import "./components/xdh-content-nav.js?v=20260406-24";
+import "./components/xdh-content-nav.js?v=20260531-1";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20260523-1";
+import "./components/xdh-lightbox.js?v=20260530-3";
 import "./components/xdh-history-view.js?v=20260508-1";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
-import "./components/xdh-settings-dialog.js?v=20260426-3";
+import "./components/xdh-settings-dialog.js?v=20260428-3";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -37,6 +38,22 @@ const MOCK_THUMB = [
 ].join("");
 
 const UI_STATE_STORAGE_KEY = "XDataHub.V2.UIState";
+const FAV_BY_CATEGORY_KEY = "XDataHub.V2.FavoritesByCategory";
+
+function loadFavoritesByCategory() {
+    try {
+        const raw = localStorage.getItem(FAV_BY_CATEGORY_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+}
+
+function saveFavoritesByCategory(map) {
+    try {
+        localStorage.setItem(FAV_BY_CATEGORY_KEY, JSON.stringify(map));
+    } catch { /* ignore */ }
+}
 const DEFAULT_ACTIVE_CATEGORY = "image";
 const DEFAULT_SORT_ORDER = "date-desc";
 const DEFAULT_CARD_SIZE = "small";
@@ -62,6 +79,8 @@ const PERSISTED_SORT_ORDERS = new Set([
     "date-asc",
     "name-asc",
     "name-desc",
+    "size-asc",
+    "size-desc",
 ]);
 const PERSISTED_CARD_SIZES = new Set(["small", "medium", "large"]);
 const DIRECTORY_VIEW_CATEGORIES = new Set([
@@ -71,7 +90,6 @@ const DIRECTORY_VIEW_CATEGORIES = new Set([
     "lora",
 ]);
 
-const URL_CATEGORY_PARAM = "tab";
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
 const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -154,52 +172,6 @@ function postToggleWindowRequest() {
         },
         getParentTargetOrigin()
     );
-}
-
-function readCategoryFromUrl() {
-    try {
-        const url = new URL(window.location.href);
-        const queryCategory = String(
-            url.searchParams.get(URL_CATEGORY_PARAM) || ""
-        ).trim();
-        if (PERSISTED_CATEGORIES.has(queryCategory)) {
-            return queryCategory;
-        }
-        const hash = String(url.hash || "").replace(/^#/, "").trim();
-        if (!hash) {
-            return "";
-        }
-        const hashParams = new URLSearchParams(hash);
-        const hashCategory = String(
-            hashParams.get(URL_CATEGORY_PARAM) || hash
-        ).trim();
-        return PERSISTED_CATEGORIES.has(hashCategory) ? hashCategory : "";
-    } catch {
-        return "";
-    }
-}
-
-function syncCategoryToUrl(category, options = {}) {
-    const nextCategory = String(category || "").trim();
-    if (!PERSISTED_CATEGORIES.has(nextCategory)) {
-        return;
-    }
-    try {
-        const url = new URL(window.location.href);
-        const nextHash = `${URL_CATEGORY_PARAM}=${encodeURIComponent(nextCategory)}`;
-        const currentHash = String(url.hash || "").replace(/^#/, "");
-        if (currentHash === nextHash) {
-            return;
-        }
-        url.hash = nextHash;
-        if (options.replace) {
-            window.history.replaceState(null, "", url);
-            return;
-        }
-        window.history.pushState(null, "", url);
-    } catch {
-        // ignore URL sync errors
-    }
 }
 
 function normalizePersistedPage(value) {
@@ -424,14 +396,6 @@ function persistUiState(state = appStore.state) {
 }
 
 const initialUiState = loadPersistedUiState();
-const initialCategoryFromUrl = readCategoryFromUrl();
-// URL hash overrides only when localStorage still has the default category,
-// meaning this could be a first visit or a shared/bookmarked link.
-// Otherwise, localStorage (user's last-selected category) takes priority
-// to prevent stale URL hashes from overriding the persisted preference.
-if (initialUiState.activeCategory === DEFAULT_ACTIVE_CATEGORY && initialCategoryFromUrl) {
-    initialUiState.activeCategory = initialCategoryFromUrl;
-}
 persistedCategoryViews = initialUiState.categoryViews;
 const initialCategoryView = getPersistedCategoryView(
     initialUiState.activeCategory
@@ -453,7 +417,9 @@ appStore.state.currentPage = initialCategoryView.page;
 appStore.state.navHistory = initialCategoryNavState.history;
 appStore.state.navIndex = initialCategoryNavState.index;
 appStore.state.dbTaskBusy = false;
-syncCategoryToUrl(appStore.state.activeCategory, { replace: true });
+appStore.state.favoritesOnly = !!(
+    loadFavoritesByCategory()[initialUiState.activeCategory] ?? false
+);
 
 window.addEventListener("message", (event) => {
     if (!isTrustedParentMessage(event)) {
@@ -533,8 +499,6 @@ document.addEventListener("xdh:switch-category", (event) => {
         return;
     }
     void applyPersistedCategoryView(category, {
-        pushNav: true,
-        syncUrl: true,
         resetSearch: true,
     });
 });
@@ -594,6 +558,10 @@ function getSortRequest(sortOrder) {
             return { sortBy: "name", sortOrder: "asc" };
         case "name-desc":
             return { sortBy: "name", sortOrder: "desc" };
+        case "size-asc":
+            return { sortBy: "size", sortOrder: "asc" };
+        case "size-desc":
+            return { sortBy: "size", sortOrder: "desc" };
         case "date-desc":
         default:
             return { sortBy: "mtime", sortOrder: "desc" };
@@ -871,9 +839,19 @@ function mapItem(item, category) {
 
     // ── Lora shape ──────────────────────────────────────
     if (category === "lora") {
-        const ref  = item.extra?.media_ref || item.media_ref || item.ref || "";
-        const name = item.title || item.name || ref || "Unnamed";
-        const thumbUrl = item.extra?.thumb_url || item.thumb_url || "";
+        const ref  = item.extra?.media_ref
+            || item.media_ref
+            || item.ref
+            || item.public_ref
+            || "";
+        const name = item.title
+            || item.filename
+            || item.name
+            || ref
+            || "Unnamed";
+        const thumbUrl = item.extra?.thumb_url
+            || item.thumb_url
+            || (ref ? `/xz3r0/xdatahub/loras/thumb?ref=${encodeURIComponent(ref)}` : "");
         return {
             id: item.id || ref || buildStableFallbackId(item, category, "lora"),
             name,
@@ -881,7 +859,7 @@ function mapItem(item, category) {
             thumbUrl,
             mtime,
             size,
-            previewable: !!(item.extra?.thumb_url || item.thumb_url),
+            previewable: !!(thumbUrl),
             raw: item,
         };
     }
@@ -904,15 +882,19 @@ function mapItem(item, category) {
     }
 
     // ── Media shape (image / video / audio) ─────────────
-    const mediaType = item.kind || item.extra?.media_type || "image";
+    const mediaType = item.kind || item.extra?.media_type || item.media_type || "image";
     const id = item.id || buildStableFallbackId(item, category, mediaType);
-    const name = item.title || item.extra?.media_ref || id;
-    const ref  = item.extra?.media_ref || "";
+    const name = item.title || item.filename || item.extra?.media_ref || id;
+    const ref  = item.extra?.media_ref || item.public_ref || "";
     const isMock = item.extra?.isMock;
     const settings = appStore.state.xdatahubSettings || {};
-    const useThumbCache = !!settings.enable_ffmpeg_thumb_cache
-        && !!settings.ffmpeg_available;
-    const isVideoNativeThumb = !useThumbCache && mediaType === "video";
+    const isVideo = mediaType === "video";
+    const useThumbCache = isVideo
+        ? (!!settings.enable_video_thumb_cache
+            && !!settings.ffmpeg_available)
+        : !!settings.enable_image_thumb_cache;
+    const isVideoNativeThumb = isVideo && !(!!settings.enable_video_thumb_cache
+        && !!settings.ffmpeg_available);
     let thumbUrl;
     if (isMock) {
         thumbUrl = MOCK_THUMB;
@@ -951,6 +933,7 @@ appStore.subscribe((state, key) => {
 appStore.subscribe((state, key) => {
     if (
         isApplyingCategoryView
+        || loadFavoritesByCategory()[state.activeCategory]
         || (
             key !== "activeFolder"
             && key !== "activeFolderLabel"
@@ -963,39 +946,10 @@ appStore.subscribe((state, key) => {
 });
 
 appStore.subscribe((state, key) => {
-    if (key !== "activeCategory") return;
-    if (isApplyingCategoryView) {
-        return;
-    }
-    if (state._navSkipPush) {
-        appStore.state._navSkipPush = false;
-    }
-});
-
-appStore.subscribe((state, key) => {
-    if (key !== "activeCategory") return;
-    if (isApplyingCategoryView) {
-        return;
-    }
-    syncCategoryToUrl(state.activeCategory);
-});
-
-window.addEventListener("hashchange", () => {
-    const category = readCategoryFromUrl();
-    if (!category || category === appStore.state.activeCategory) {
-        return;
-    }
-    void applyPersistedCategoryView(category, {
-        pushNav: true,
-        syncUrl: false,
-        resetSearch: false,
-    });
-});
-
-appStore.subscribe((state, key) => {
     if (
         isApplyingCategoryView
         || state._navSkipPush
+        || loadFavoritesByCategory()[state.activeCategory]
         || (
             key !== "activeFolder"
             && key !== "activeFolderLabel"
@@ -1024,21 +978,41 @@ appStore.subscribe((state, key) => {
     persistUiState(state);
 });
 
+// ── Favorites per-category persistence ─────────────────────────────────────
+
+appStore.subscribe((state, key) => {
+    if (key !== "favoritesOnly") return;
+    const byCat = loadFavoritesByCategory();
+    byCat[state.activeCategory] = state.favoritesOnly;
+    saveFavoritesByCategory(byCat);
+});
+
 // ── Data loader ──────────────────────────────────────────────────────────────
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 let latestListLoadToken = 0;
+let searchDebounceTimer = null;
+let previousCategory = appStore.state.activeCategory;
 
-async function fetchCategory(category, page, folder, sortKey) {
+async function fetchCategory(category, page, folder, sortKey, keyword = "", opts = {}) {
     const safePage = page || 1;
     const safeFolder = folder || "";
     const { sortBy, sortOrder } = getSortRequest(sortKey);
+    const useFlatView = keyword.length > 0;
+    const favOnly = opts.ignoreFavorites
+        ? false
+        : !!(loadFavoritesByCategory()[category] ?? false);
+    if (favOnly && (MEDIA_CATEGORIES.has(category) || category === "lora")) {
+        return loadFavoriteList(category, safePage, 50, sortOrder);
+    }
     if (category === "lora") {
         return loadLoraList(
             safePage,
             50,
             safeFolder,
             sortBy,
-            sortOrder
+            sortOrder,
+            keyword,
+            useFlatView
         );
     }
     if (category === "history") return loadRecords(safePage, 50);
@@ -1050,7 +1024,9 @@ async function fetchCategory(category, page, folder, sortKey) {
             50,
             safeFolder,
             sortBy,
-            sortOrder
+            sortOrder,
+            keyword,
+            useFlatView
         );
     }
     return { items: [], page: 1, total_pages: 1 };
@@ -1079,7 +1055,9 @@ async function doesCategoryFolderExist(category, folder, sortKey) {
                 category,
                 1,
                 parentFolder,
-                sortKey
+                sortKey,
+                "",
+                { ignoreFavorites: true }
             );
             const rawItems = Array.isArray(res?.items)
                 ? res.items
@@ -1131,7 +1109,10 @@ async function applyPersistedCategoryView(category, options = {}) {
     const currentCategory = String(
         appStore.state.activeCategory || DEFAULT_ACTIVE_CATEGORY
     ).trim();
-    if (options.rememberCurrent !== false) {
+    if (
+        options.rememberCurrent !== false
+        && !loadFavoritesByCategory()[currentCategory]
+    ) {
         rememberCurrentCategoryView();
         rememberCurrentCategoryNavigationState();
     }
@@ -1176,16 +1157,28 @@ async function applyPersistedCategoryView(category, options = {}) {
     if (currentCategory !== nextCategory) {
         rememberCategoryNavigationState(nextCategory, nextNavState, nextView);
     }
-    if (options.syncUrl !== false) {
-        syncCategoryToUrl(nextCategory, {
-            replace: options.replaceUrl === true,
-        });
-    }
     persistUiState();
     appStore.state.categoryViewToken = Date.now();
 }
 
 appStore.subscribe(async (state, key) => {
+    // ── 搜索防抖：store 即时更新（UI 响应），API 延迟触发 ──
+    if (key === "searchQuery") {
+        clearTimeout(searchDebounceTimer);
+        const query = String(state.searchQuery || "").trim();
+        if (!query) {
+            // 清空搜索：立即触发，无延迟
+            appStore.state.currentPage = 1;
+            appStore.state._searchToken = Date.now();
+        } else {
+            searchDebounceTimer = setTimeout(() => {
+                appStore.state.currentPage = 1;
+                appStore.state._searchToken = Date.now();
+            }, 300);
+        }
+        return;
+    }
+
     if (
         (isApplyingCategoryView && key !== "categoryViewToken")
         || (
@@ -1194,17 +1187,33 @@ appStore.subscribe(async (state, key) => {
             && key !== "currentPage"
             && key !== "sortOrder"
             && key !== "categoryViewToken"
+            && key !== "_searchToken"
             && key !== "refreshTrigger"
+            && key !== "favoritesOnly"
         )
     ) {
         return;
     }
+
+
 
     const requestToken = ++latestListLoadToken;
     const categorySnapshot = state.activeCategory;
     const folderSnapshot = state.activeFolder || "";
     const pageSnapshot = state.currentPage || 1;
     const sortSnapshot = state.sortOrder || DEFAULT_SORT_ORDER;
+    const searchSnapshot = String(state.searchQuery || "").trim();
+
+    // 分类切换：恢复该分类的 favoritesOnly 状态，清空旧收藏 ID 集合
+    if (previousCategory !== categorySnapshot) {
+        appStore.state.favoriteIdSet = [];
+        const byCat = loadFavoritesByCategory();
+        const nextFav = !!byCat[categorySnapshot];
+        if (state.favoritesOnly !== nextFav) {
+            state.favoritesOnly = nextFav;
+        }
+        previousCategory = categorySnapshot;
+    }
 
     appStore.state.isLoading = true;
     appStore.state.loadError = "";
@@ -1220,7 +1229,8 @@ appStore.subscribe(async (state, key) => {
             categorySnapshot,
             pageSnapshot,
             folderSnapshot,
-            sortSnapshot
+            sortSnapshot,
+            searchSnapshot
         );
         if (requestToken !== latestListLoadToken) {
             return;
@@ -1232,6 +1242,23 @@ appStore.subscribe(async (state, key) => {
         appStore.state.loadError = "";
         appStore.state.currentPage = res.page        || 1;
         appStore.state.totalPages  = res.total_pages || 1;
+        // 填充收藏 ID 集合（用于卡片星标显示）
+        if (DIRECTORY_VIEW_CATEGORIES.has(categorySnapshot) || categorySnapshot === "lora") {
+            if (state.favoritesOnly) {
+                // 收藏视图：从 extra.media_ref 提取 public_ref
+                const ids = raw.map(item =>
+                    item.extra?.media_ref || item.public_ref || ""
+                ).filter(Boolean);
+                appStore.state.favoriteIdSet = ids;
+            } else {
+                // 普通视图：后台加载该分类全部收藏 ID
+                loadFavoriteIds(categorySnapshot).then(ids => {
+                    if (categorySnapshot === appStore.state.activeCategory) {
+                        appStore.state.favoriteIdSet = ids;
+                    }
+                }).catch(() => {});
+            }
+        }
         if (res.lock_state) {
             setLockState({
                 ...appStore.state.lockState,
@@ -1334,11 +1361,8 @@ function updateExecOverlay() {
 customElements.whenDefined("xdh-sidebar-filter").then(async () => {
     await loadAppSettings();
     await applyPersistedCategoryView(appStore.state.activeCategory, {
-        pushNav: false,
-        syncUrl: false,
         resetSearch: false,
         rememberCurrent: false,
-        replaceUrl: true,
     });
 });
 

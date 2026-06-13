@@ -268,6 +268,9 @@ export function ensureMaskEditorStyles() {
             background: var(--ximageget-mask-editor-accent);
             color: #ffffff;
         }
+        .ximageget-mask-editor-tool-separated {
+            margin-left: 6px;
+        }
         .ximageget-mask-editor-action.is-hidden {
             background: color-mix(
                 in srgb,
@@ -486,6 +489,46 @@ export function ensureMaskEditorStyles() {
             background: transparent;
             touch-action: none;
         }
+        .ximageget-mask-editor-erase-locks {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 1px;
+            margin: 0 3px;
+        }
+        .ximageget-mask-editor-erase-lock {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 10px;
+            line-height: 1;
+            color: var(--ximageget-mask-editor-text-muted);
+            user-select: none;
+            white-space: nowrap;
+        }
+        .ximageget-mask-editor-erase-lock:hover {
+            background: color-mix(
+                in srgb,
+                var(--ximageget-mask-editor-text) 8%,
+                transparent
+            );
+        }
+        .ximageget-mask-editor-erase-lock input {
+            width: 11px;
+            height: 11px;
+            margin: 0;
+            accent-color: var(--ximageget-mask-editor-accent);
+            cursor: pointer;
+        }
+        .ximageget-mask-editor-erase-divider {
+            width: 1px;
+            align-self: stretch;
+            margin: 5px 6px;
+            background: var(--ximageget-mask-editor-border);
+        }
         @media (max-width: 840px) {
             .ximageget-mask-editor-dialog {
                 height: 100%;
@@ -642,6 +685,12 @@ export function createMaskEditorUi(texts = {}) {
         "palette.svg"
     );
     setButtonTooltip(brushBtn, texts.toolBrushTip || "Paint color");
+    const fillBtn = createButton(
+        "ximageget-mask-editor-tool ximageget-mask-editor-tool-separated",
+        texts.toolFill || "Fill",
+        "paint-bucket.svg"
+    );
+    setButtonTooltip(fillBtn, texts.toolFillTip || "Flood fill region");
     const colorLabel = document.createElement("span");
     colorLabel.className = "ximageget-mask-editor-label";
     colorLabel.textContent = String(texts.color || "Color");
@@ -649,9 +698,37 @@ export function createMaskEditorUi(texts = {}) {
     colorInput.className = "ximageget-mask-editor-color";
     colorInput.type = "color";
     colorInput.value = "#000000";
+    const fillThresholdLabel = document.createElement("span");
+    fillThresholdLabel.className = "ximageget-mask-editor-label";
+    fillThresholdLabel.textContent = String(
+        texts.fillThreshold || "Paint Bucket Tolerance"
+    );
+    const fillThresholdRange = document.createElement("input");
+    fillThresholdRange.className = (
+        "ximageget-mask-editor-range "
+        + "ximageget-mask-editor-range-short"
+    );
+    fillThresholdRange.type = "range";
+    fillThresholdRange.min = "0";
+    fillThresholdRange.max = "255";
+    fillThresholdRange.step = "1";
+    fillThresholdRange.value = "32";
+    setButtonTooltip(
+        fillThresholdRange,
+        texts.fillThresholdTip || "Color tolerance for flood fill"
+    );
+    const fillThresholdInput = document.createElement("input");
+    fillThresholdInput.className = "ximageget-mask-editor-value-input";
+    fillThresholdInput.type = "text";
+    fillThresholdInput.inputMode = "numeric";
+    fillThresholdInput.value = "32";
     colorGroup.appendChild(brushBtn);
+    colorGroup.appendChild(fillBtn);
     colorGroup.appendChild(colorLabel);
     colorGroup.appendChild(colorInput);
+    colorGroup.appendChild(fillThresholdLabel);
+    colorGroup.appendChild(fillThresholdRange);
+    colorGroup.appendChild(fillThresholdInput);
     firstRow.appendChild(colorGroup);
 
     const firstRowSpacer = document.createElement("div");
@@ -796,6 +873,45 @@ export function createMaskEditorUi(texts = {}) {
             || "Move the canvas (middle mouse drag / Ctrl+left drag)"
     );
     optionsTools.appendChild(eraseBtn);
+
+    const eraseLocks = document.createElement("div");
+    eraseLocks.className = "ximageget-mask-editor-erase-locks";
+
+    const erasePaintLock = document.createElement("label");
+    erasePaintLock.className = "ximageget-mask-editor-erase-lock";
+    const erasePaintCheckbox = document.createElement("input");
+    erasePaintCheckbox.type = "checkbox";
+    erasePaintCheckbox.checked = true;
+    erasePaintLock.appendChild(erasePaintCheckbox);
+    erasePaintLock.appendChild(document.createTextNode(
+        String(texts.erasePaintLock || "Paint")
+    ));
+    setButtonTooltip(
+        erasePaintLock,
+        texts.erasePaintLockTip || "Allow eraser to clear paint layer"
+    );
+
+    const eraseMaskLock = document.createElement("label");
+    eraseMaskLock.className = "ximageget-mask-editor-erase-lock";
+    const eraseMaskCheckbox = document.createElement("input");
+    eraseMaskCheckbox.type = "checkbox";
+    eraseMaskCheckbox.checked = true;
+    eraseMaskLock.appendChild(eraseMaskCheckbox);
+    eraseMaskLock.appendChild(document.createTextNode(
+        String(texts.eraseMaskLock || "Mask")
+    ));
+    setButtonTooltip(
+        eraseMaskLock,
+        texts.eraseMaskLockTip || "Allow eraser to clear mask layer"
+    );
+
+    eraseLocks.appendChild(erasePaintLock);
+    eraseLocks.appendChild(eraseMaskLock);
+    optionsTools.appendChild(eraseLocks);
+
+    const eraseDivider = document.createElement("span");
+    eraseDivider.className = "ximageget-mask-editor-erase-divider";
+    optionsTools.appendChild(eraseDivider);
     optionsTools.appendChild(panBtn);
     thirdRow.appendChild(optionsTools);
 
@@ -993,6 +1109,7 @@ export function createMaskEditorUi(texts = {}) {
         hotkeySink,
         title,
         brushBtn,
+        fillBtn,
         maskBrushBtn,
         eraseBtn,
         panBtn,
@@ -1028,6 +1145,10 @@ export function createMaskEditorUi(texts = {}) {
         clearMaskBtn,
         viewport,
         canvas,
+        fillThresholdRange,
+        fillThresholdInput,
+        erasePaintLock: erasePaintCheckbox,
+        eraseMaskLock: eraseMaskCheckbox,
         saveBtn,
         cancelBtn,
     };

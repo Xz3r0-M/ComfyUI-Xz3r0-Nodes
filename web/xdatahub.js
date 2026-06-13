@@ -66,6 +66,7 @@ const OPEN_LAYOUT_VALUE_CENTER = "center";
 const OPEN_LAYOUT_VALUE_LEFT = "left";
 const OPEN_LAYOUT_VALUE_RIGHT = "right";
 const OPEN_LAYOUT_VALUE_MAXIMIZED = "maximized";
+const OPEN_LAYOUT_VALUE_LAST = "last";
 const CLOSE_BEHAVIOR_VALUE_HIDE = "hide";
 const CLOSE_BEHAVIOR_VALUE_DESTROY = "destroy";
 const AUTO_SHOW_SETTING_ID = "Xz3r0.XDataHub.AutoShow";
@@ -78,7 +79,7 @@ const COMFY_LOCALE_KEY = "Comfy.Locale";
 const LOCALE_WATCH_INTERVAL_MS = 1000;
 const DEFAULT_HOST_BEHAVIOR_SETTINGS = Object.freeze({
     hotkey_spec: DEFAULT_HOTKEY_SPEC,
-    default_open_layout: OPEN_LAYOUT_VALUE_CENTER,
+    default_open_layout: OPEN_LAYOUT_VALUE_LAST,
     close_behavior: CLOSE_BEHAVIOR_VALUE_HIDE,
     auto_show_on_startup: false,
 });
@@ -134,7 +135,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260508-1";
+const XDATAHUB_ASSET_VER = "20260508-2";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -703,6 +704,9 @@ function normalizeDefaultOpenLayout(value) {
         )
     ) {
         return OPEN_LAYOUT_VALUE_MAXIMIZED;
+    }
+    if (equalsSettingOption(value, OPEN_LAYOUT_VALUE_LAST, ["last"])) {
+        return OPEN_LAYOUT_VALUE_LAST;
     }
     return OPEN_LAYOUT_VALUE_CENTER;
 }
@@ -1676,6 +1680,9 @@ const XDataHub = {
                 height,
                 dockSide,
                 isMaximized: parsed.isMaximized === true,
+                layout: typeof parsed.layout === "string"
+                    ? parsed.layout
+                    : "",
             };
         } catch {
             return null;
@@ -1702,6 +1709,7 @@ const XDataHub = {
                     ? state.dockSide
                     : null,
                 isMaximized: state.isMaximized === true,
+                layout: defaultOpenLayout,
             };
             if (
                 !Number.isFinite(payload.left)
@@ -1819,7 +1827,7 @@ const XDataHub = {
             });
         };
 
-        if (persistedState) {
+        if (defaultOpenLayout === "last" && persistedState) {
             initialDockSide = persistedState.dockSide;
             initialMaximized = persistedState.isMaximized === true;
             if (initialMaximized) {
@@ -2520,6 +2528,9 @@ const XDataHub = {
          * 应用默认打开布局（居中 75% / 左靠边 / 右靠边）
          */
         const applyDefaultOpenLayout = () => {
+            if (defaultOpenLayout === "last") {
+                return;
+            }
             if (defaultOpenLayout === "left" || defaultOpenLayout === "right") {
                 dockWindowTo(defaultOpenLayout);
                 return;

@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20260406h";
-import { openMaskEditorSession } from "./session.js?v=20260406h";
-import { saveMaskArtifacts } from "./upload.js?v=20260406h";
+import { XMaskEditorController } from "./controller.js?v=20260412b";
+import { openMaskEditorSession } from "./session.js?v=20260412a";
+import { saveMaskArtifacts } from "./upload.js?v=20260412a";
 
 const THEME_MODE_VALUES = new Set(["dark", "light"]);
 const TEXT_EDITABLE_INPUT_TYPES = new Set([
@@ -191,6 +191,7 @@ export async function openXMaskEditor(options = {}) {
         onStateChange: ({
             zoom,
             tool,
+            selectedTool,
             brushSize,
             brushSizeMax,
             brushSizeMin,
@@ -204,6 +205,9 @@ export async function openXMaskEditor(options = {}) {
             imageSize,
             canUndo,
             canRedo,
+            threshold,
+            erasePaintEnabled,
+            eraseMaskEnabled,
         }) => {
             ui.zoomInput.value = `${Math.round(zoom * 100)}%`;
             ui.imageSizeValue.textContent = `${imageSize.width}x${imageSize.height}`;
@@ -224,6 +228,7 @@ export async function openXMaskEditor(options = {}) {
             ui.maskOpacityRange.value = String(maskOpacity);
             syncInputValue(ui.maskOpacityInput, `${maskOpacity}%`);
             ui.brushBtn.classList.toggle("is-active", tool === "paint");
+            ui.fillBtn.classList.toggle("is-active", selectedTool === "fill");
             ui.maskBrushBtn.classList.toggle("is-active", tool === "mask");
             ui.eraseBtn.classList.toggle("is-active", tool === "erase");
             ui.panBtn.classList.toggle("is-active", tool === "pan");
@@ -253,12 +258,23 @@ export async function openXMaskEditor(options = {}) {
             );
             ui.undoBtn.disabled = !canUndo;
             ui.redoBtn.disabled = !canRedo;
+            ui.fillThresholdRange.value = String(threshold);
+            syncInputValue(ui.fillThresholdInput, String(threshold));
+            ui.erasePaintLock.checked = erasePaintEnabled;
+            ui.eraseMaskLock.checked = eraseMaskEnabled;
         },
     });
     session.bind(ui.brushBtn, "click", () => controller.setTool("paint"));
+    session.bind(ui.fillBtn, "click", () => controller.setTool("fill"));
     session.bind(ui.maskBrushBtn, "click", () => controller.setTool("mask"));
     session.bind(ui.eraseBtn, "click", () => controller.setTool("erase"));
     session.bind(ui.panBtn, "click", () => controller.setTool("pan"));
+    session.bind(ui.erasePaintLock, "change", () => {
+        controller.setErasePaintEnabled(ui.erasePaintLock.checked);
+    });
+    session.bind(ui.eraseMaskLock, "change", () => {
+        controller.setEraseMaskEnabled(ui.eraseMaskLock.checked);
+    });
     session.bind(ui.colorInput, "input", () => {
         controller.setPaintColor(ui.colorInput.value);
     });
@@ -323,6 +339,13 @@ export async function openXMaskEditor(options = {}) {
         }
     });
     session.bind(ui.clearPaintBtn, "click", () => controller.clearPaintLayer());
+    session.bind(ui.fillThresholdRange, "input", () => {
+        controller.setThreshold(Number(ui.fillThresholdRange.value));
+    });
+    bindRangeWheel(ui.fillThresholdRange);
+    bindCommitNumberInput(ui.fillThresholdInput, () => {
+        controller.setThreshold(parseUnitInput(ui.fillThresholdInput, "32"));
+    });
     session.bind(ui.clearMaskBtn, "click", () => controller.clearMaskLayer());
     session.bind(ui.undoBtn, "click", () => controller.undo());
     session.bind(ui.redoBtn, "click", () => controller.redo());
@@ -460,6 +483,7 @@ export async function openXMaskEditor(options = {}) {
         controller.setHardness(ui.hardnessRange.value);
         controller.setPaintOpacity(ui.paintOpacityRange.value);
         controller.setMaskOpacity(ui.maskOpacityRange.value);
+        controller.setThreshold(Number(ui.fillThresholdRange.value));
         session.setStatus("");
         focusHotkeySink();
     } catch (error) {

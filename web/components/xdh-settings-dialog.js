@@ -5,7 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260426-1";
+import { t } from "../core/i18n.js?v=20260428-1";
 
 const DEFAULT_HOTKEY_SPEC = "Alt + X";
 const HOST_CONTROLLED_SETTING_KEYS = new Set([
@@ -15,6 +15,7 @@ const HOST_CONTROLLED_SETTING_KEYS = new Set([
     "edge_peek",
 ]);
 const OPEN_LAYOUT_OPTIONS = [
+    ["last", "settings.default_open_layout.last"],
     ["center", "settings.default_open_layout.center"],
     ["left", "settings.default_open_layout.left"],
     ["right", "settings.default_open_layout.right"],
@@ -123,12 +124,17 @@ export class XdhSettingsDialog extends BaseElement {
         this._open = false;
         this._settings = {};
         this._loraDbConflict = null;
+        this._thumbClearConfirm = false;
         this._onOpen = () => this._show();
         this._onKeydown = (e) => {
             if (e.key !== "Escape" || !this._open) {
                 return;
             }
             if (this._loraDbConflict?.busy) {
+                return;
+            }
+            if (this._thumbClearConfirm) {
+                this._closeThumbClearConfirmDialog();
                 return;
             }
             if (this._loraDbConflict) {
@@ -155,6 +161,7 @@ export class XdhSettingsDialog extends BaseElement {
         if (this._open) return;
         this._open = true;
         this._loraDbConflict = null;
+        this._thumbClearConfirm = false;
         this._ffmpegAvailable = false;
         this._settings = {
             ...appStore.state.xdatahubSettings,
@@ -329,6 +336,67 @@ export class XdhSettingsDialog extends BaseElement {
         }
     }
 
+    _openThumbClearConfirmDialog() {
+        this._thumbClearConfirm = true;
+        this.renderRoot();
+    }
+
+    _closeThumbClearConfirmDialog() {
+        this._thumbClearConfirm = false;
+        this.renderRoot();
+    }
+
+    async _handleThumbClear() {
+        this._thumbClearConfirm = false;
+        this.renderRoot();
+        try {
+            const res = await fetch("/xz3r0/xdatahub/thumbs/clear", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload.message || `HTTP ${res.status}`);
+            }
+            const count = payload.deleted ?? 0;
+            banner.success(
+                t("settings.clear_thumb_cache_cleared", { count })
+            );
+        } catch (err) {
+            banner.error(t("settings.clear_thumb_cache_failed"));
+        }
+    }
+
+    _renderThumbClearConfirmDialog() {
+        if (!this._thumbClearConfirm) {
+            return "";
+        }
+        return `
+            <div class="confirm-overlay">
+                <div class="confirm-dialog" role="dialog" aria-modal="true"
+                     aria-label="${t("settings.clear_thumb_cache_confirm_title")}">
+                    <div class="confirm-title">
+                        ${t("settings.clear_thumb_cache_confirm_title")}
+                    </div>
+                    <div class="confirm-message">
+                        ${t("settings.clear_thumb_cache_confirm_msg")}
+                    </div>
+                    <div class="confirm-actions">
+                        <button class="confirm-btn" type="button"
+                                data-action="cancel">
+                            ${t("common.cancel")}
+                        </button>
+                        <button class="confirm-btn confirm-btn-danger"
+                                type="button" data-action="confirm-clear">
+                            ${t("common.clear")}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     _renderLoraDbConflictDialog() {
         if (!this._loraDbConflict) {
             return "";
@@ -479,12 +547,17 @@ export class XdhSettingsDialog extends BaseElement {
                 ])}
                 ${this._renderSection("settings.sect.thumb_cache", [
                     this._renderRow(
-                        "settings.enable_ffmpeg_thumb_cache",
+                        "settings.enable_image_thumb_cache",
+                        this._renderToggle("enable_image_thumb_cache", false),
+                        "settings.enable_image_thumb_cache_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.enable_video_thumb_cache",
                         this._ffmpegAvailable
-                            ? this._renderToggle("enable_ffmpeg_thumb_cache", false)
-                            : this._renderDisabledToggle("enable_ffmpeg_thumb_cache", false),
+                            ? this._renderToggle("enable_video_thumb_cache", false)
+                            : this._renderDisabledToggle("enable_video_thumb_cache", false),
                         this._ffmpegAvailable
-                            ? "settings.enable_ffmpeg_thumb_cache_tooltip"
+                            ? "settings.enable_video_thumb_cache_tooltip"
                             : ""
                     ),
                     `<div class="row ffmpeg-status ${this._ffmpegAvailable ? "is-available" : "is-missing"}">
@@ -492,6 +565,19 @@ export class XdhSettingsDialog extends BaseElement {
                             <span class="ffmpeg-status-text">${this._ffmpegAvailable
                                 ? t("settings.ffmpeg_found")
                                 : t("settings.ffmpeg_not_found")}</span>
+                        </span>
+                    </div>`,
+                    `<div class="row">
+                        <span class="row-label">
+                            <span class="row-label-text xdh-tooltip xdh-tooltip-down"
+                                  data-tooltip="${t("settings.clear_thumb_cache_btn_tooltip")}">
+                                ${t("settings.clear_thumb_cache_btn")}
+                            </span>
+                        </span>
+                        <span class="row-ctrl">
+                            <button class="clear-thumb-btn js-clear-thumb" type="button">
+                                ${t("common.clear")}
+                            </button>
                         </span>
                     </div>`,
                 ])}
@@ -813,6 +899,25 @@ export class XdhSettingsDialog extends BaseElement {
                     color: var(--xdh-clr-primary);
                 }
 
+                .clear-thumb-btn {
+                    flex-shrink: 0;
+                    background: var(--xdh-color-surface-2);
+                    border: 1px solid var(--xdh-color-border);
+                    color: var(--xdh-clr-error);
+                    border-radius: var(--xdh-radius-sm);
+                    padding: var(--xdh-space-xs) var(--xdh-space-md);
+                    font: var(--xdh-font-micro-label);
+                    cursor: pointer;
+                    transition: background 0.13s, border-color 0.13s;
+                    white-space: nowrap;
+                }
+                .clear-thumb-btn:hover {
+                    background: color-mix(
+                        in srgb, var(--xdh-clr-error) 12%, transparent
+                    );
+                    border-color: var(--xdh-clr-error);
+                }
+
                 .confirm-overlay {
                     position: fixed;
                     inset: 0;
@@ -962,6 +1067,7 @@ export class XdhSettingsDialog extends BaseElement {
                 </div>
             </div>
             ${this._renderLoraDbConflictDialog()}
+            ${this._renderThumbClearConfirmDialog()}
         `;
     }
 
@@ -973,7 +1079,11 @@ export class XdhSettingsDialog extends BaseElement {
         this.$(".js-close")?.addEventListener("click", () => this._close());
         this.$(".confirm-overlay")?.addEventListener("click", (e) => {
             if (e.target === e.currentTarget) {
-                this._closeLoraDbConflictDialog();
+                if (this._thumbClearConfirm) {
+                    this._closeThumbClearConfirmDialog();
+                } else if (this._loraDbConflict) {
+                    this._closeLoraDbConflictDialog();
+                }
             }
         });
         this.shadowRoot?.querySelectorAll(".confirm-btn[data-action]")
@@ -981,7 +1091,11 @@ export class XdhSettingsDialog extends BaseElement {
                 el.addEventListener("click", () => {
                     const action = el.dataset.action;
                     if (action === "cancel") {
-                        this._closeLoraDbConflictDialog();
+                        if (this._thumbClearConfirm) {
+                            this._closeThumbClearConfirmDialog();
+                        } else {
+                            this._closeLoraDbConflictDialog();
+                        }
                         return;
                     }
                     if (action === "use-existing") {
@@ -991,8 +1105,15 @@ export class XdhSettingsDialog extends BaseElement {
                     if (action === "replace") {
                         this._resolveLoraDbConflict("replace");
                     }
+                    if (action === "confirm-clear") {
+                        this._handleThumbClear();
+                    }
                 });
             });
+        // 清除缩略图按钮
+        this.$(".js-clear-thumb")?.addEventListener("click", () => {
+            this._openThumbClearConfirmDialog();
+        });
         this._refreshFolderDOM();
         if (Object.keys(this._settings).length > 0) {
             this._bindFormEvents();

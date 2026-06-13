@@ -4,7 +4,8 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-16";
+import { t } from "../core/i18n.js?v=20260427-2";
+import { toggleMediaFavorite } from "../core/api.js?v=20260530-1";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -150,6 +151,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: false,
             showSummary: false,
             label: "",
+            tooltip: "",
             iconName: "eye-off",
             tone: "muted",
             reason: "none",
@@ -163,6 +165,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: true,
             showSummary: false,
             label: t("grid.badge.unsupported_format"),
+            tooltip: t("grid.badge.load_failed_tooltip"),
             iconName: "triangle-alert",
             tone: "warning",
             reason: "load_failed",
@@ -175,6 +178,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: true,
             showSummary: false,
             label: t("grid.badge.no_preview"),
+            tooltip: t("grid.badge.no_preview_tooltip"),
             iconName: "eye-off",
             tone: "muted",
             reason: "preview_disabled",
@@ -187,6 +191,7 @@ function getCardPreviewState(item, failedThumbIds) {
             showBadge: true,
             showSummary: false,
             label: t("grid.badge.unsupported_format"),
+            tooltip: t("grid.badge.unsupported_format_tooltip"),
             iconName: "eye-off",
             tone: "warning",
             reason: "unsupported_preview",
@@ -198,6 +203,7 @@ function getCardPreviewState(item, failedThumbIds) {
         showBadge: false,
         showSummary: false,
         label: "",
+        tooltip: "",
         iconName: "eye-off",
         tone: "muted",
         reason: "ok",
@@ -212,9 +218,11 @@ function renderCardStatusBadge(previewState) {
     const toneClass = previewState.tone === "warning"
         ? "is-warning"
         : "is-muted";
+    const tooltip = previewState.tooltip || previewState.label || "";
 
     return `
-        <div class="card-status-badge ${toneClass}">
+        <div class="card-status-badge ${toneClass} xdh-tooltip xdh-tooltip-down"
+             data-tooltip="${escapeAttr(tooltip)}">
             ${icon(previewState.iconName, 12)}
             <span>${escapeHtml(previewState.label)}</span>
         </div>`;
@@ -243,8 +251,12 @@ function syncCardPreviewUi(card, previewState) {
             }
             badge.className = [
                 "card-status-badge",
+                "xdh-tooltip",
+                "xdh-tooltip-down",
                 previewState.tone === "warning" ? "is-warning" : "is-muted",
             ].join(" ");
+            const tooltip = previewState.tooltip || previewState.label || "";
+            badge.setAttribute("data-tooltip", tooltip);
             badge.innerHTML = `${icon(previewState.iconName, 12)}<span>${escapeHtml(previewState.label)}</span>`;
         } else {
             badge?.remove();
@@ -289,7 +301,8 @@ function renderLoraMeta(item) {
 
     if (meta.hasStrength) {
         badges.push(`
-            <span class="lora-badge is-active">
+            <span class="lora-badge is-active xdh-tooltip xdh-tooltip-up"
+                  data-tooltip="${escapeAttr(meta.strengthTooltip)}">
                 ${icon("settings", 10)}
                 <span>${t("lora.badge.strength")}</span>
             </span>`);
@@ -297,7 +310,8 @@ function renderLoraMeta(item) {
 
     if (meta.hasNote) {
         badges.push(`
-            <span class="lora-badge is-active">
+            <span class="lora-badge is-active xdh-tooltip xdh-tooltip-up"
+                  data-tooltip="${escapeAttr(meta.note)}">
                 ${icon("file", 10)}
                 <span>${t("lora.label.note")}</span>
             </span>`);
@@ -305,7 +319,8 @@ function renderLoraMeta(item) {
 
     if (meta.hasTriggerWords) {
         badges.push(`
-            <span class="lora-badge is-active">
+            <span class="lora-badge is-active xdh-tooltip xdh-tooltip-up"
+                  data-tooltip="${escapeAttr(meta.triggerWords.join("，"))}">
                 ${icon("wand-sparkles", 10)}
                 <span>${t("lora.badge.trigger")}</span>
             </span>`);
@@ -377,13 +392,31 @@ function getLoraMetaState(item) {
     const clipStrength = normalizeNumber(
         extra.strength_clip ?? raw.strength_clip
     );
+    const hasStrength = (
+        (modelStrength !== null && Math.abs(modelStrength - 1) > 1e-6)
+        || (clipStrength !== null && Math.abs(clipStrength - 1) > 1e-6)
+    );
+    // Build tooltip strings
+    let strengthTooltip = "";
+    if (hasStrength) {
+        const parts = [];
+        if (modelStrength !== null) {
+            parts.push(`${t("lora.label.model_strength")}: ${modelStrength.toFixed(2)}`);
+        }
+        if (clipStrength !== null) {
+            parts.push(`${t("lora.label.clip_strength")}: ${clipStrength.toFixed(2)}`);
+        }
+        strengthTooltip = parts.join(", ");
+    }
     return {
         hasTriggerWords: triggerWords.length > 0,
         hasNote: note.length > 0,
-        hasStrength: (
-            (modelStrength !== null && Math.abs(modelStrength - 1) > 1e-6)
-            || (clipStrength !== null && Math.abs(clipStrength - 1) > 1e-6)
-        ),
+        hasStrength,
+        modelStrength,
+        clipStrength,
+        note,
+        triggerWords,
+        strengthTooltip,
     };
 }
 
@@ -555,6 +588,7 @@ export class XdhMediaGrid extends BaseElement {
             || key === "locale"
             || key === "searchQuery"
             || key === "loadError"
+            || key === "favoriteIdSet"
         ) {
             // Full re-render needed (order or dataset changed)
             if (key === "mediaList") {
@@ -604,15 +638,8 @@ export class XdhMediaGrid extends BaseElement {
 
     _filteredItems() {
         const sortOrder = appStore.state.sortOrder || "date-desc";
-        const searchQ = String(appStore.state.searchQuery || "")
-            .toLowerCase()
-            .trim();
-        const sortedItems = applySort(this.items, sortOrder);
-        return searchQ
-            ? sortedItems.filter((item) =>
-                String(item.name || "").toLowerCase().includes(searchQ)
-            )
-            : sortedItems;
+        // 搜索已由后端处理，前端仅排序
+        return applySort(this.items, sortOrder);
     }
 
     _previewItems() {
@@ -635,6 +662,7 @@ export class XdhMediaGrid extends BaseElement {
             url: item.fullUrl || item.thumbUrl,
             type: item.type || "image",
             iconHtml: icon("audio-lines", 56),
+            raw: item.raw || {},
         };
     }
 
@@ -702,6 +730,7 @@ export class XdhMediaGrid extends BaseElement {
                 }
 
                 // Card click (selection / folder nav)
+                if (e.target.closest(".fav-btn")) return;
                 const card = e.target.closest(".media-card");
                 if (!card) return;
                 if (Date.now() < this._suppressCardClickUntil) {
@@ -746,7 +775,10 @@ export class XdhMediaGrid extends BaseElement {
                     e.preventDefault(); return;
                 }
                 const extra    = item.raw?.extra || {};
-                const mediaRef = String(extra.media_ref || item.raw?.media_ref || item.raw?.ref || "");
+                const mediaRef = String(
+                    extra.media_ref || item.raw?.media_ref
+                    || item.raw?.public_ref || item.raw?.ref || ""
+                );
                 const mediaType = String(item.type || "image").toLowerCase();
                 const payload  = {
                     source: "xdatahub",
@@ -754,9 +786,21 @@ export class XdhMediaGrid extends BaseElement {
                     title: String(item.title || item.name || ""),
                 };
                 if (mediaType === "lora") {
-                    payload.thumb_url = String(extra.thumb_url || "");
-                    if (extra.strength_model != null) payload.strength_model = Number(extra.strength_model);
-                    if (extra.strength_clip  != null) payload.strength_clip  = Number(extra.strength_clip);
+                    const rawExtra = item.raw?.extra || {};
+                    const raw = item.raw || {};
+                    payload.thumb_url = String(
+                        rawExtra.thumb_url || raw.thumb_url || ""
+                    );
+                    const strengthModel = rawExtra.strength_model
+                        ?? raw.strength_model;
+                    const strengthClip = rawExtra.strength_clip
+                        ?? raw.strength_clip;
+                    if (strengthModel != null) {
+                        payload.strength_model = Number(strengthModel);
+                    }
+                    if (strengthClip != null) {
+                        payload.strength_clip = Number(strengthClip);
+                    }
                 }
                 e.dataTransfer.setData("application/x-xdatahub-media+json", JSON.stringify(payload));
                 card.style.opacity = "0.5";
@@ -776,14 +820,33 @@ export class XdhMediaGrid extends BaseElement {
                     const titleEl = e.target.closest(".card-title");
                     if (!titleEl) return;
                     const card = titleEl.closest(".media-card");
-                    if (!card || card.classList.contains("is-folder")) return;
+                    if (!card) return;
+                    const isFolder = card.classList.contains("is-folder");
                     const mtime  = card.dataset.mtime;
                     const size   = card.dataset.size;
                     const isLora = card.dataset.type === "lora";
-                    const metaParts = isLora ? [] : [
-                        formatDateFull(parseFloat(mtime)),
-                        formatSize(parseInt(size, 10)),
-                    ].filter(Boolean);
+                    let metaParts = [];
+                    if (isFolder) {
+                        const fileCount = parseInt(card.dataset.fileCount, 10);
+                        const folderSize = formatSize(parseInt(size, 10));
+                        if (folderSize && fileCount > 0) {
+                            metaParts = [
+                                folderSize,
+                                t("grid.folder_file_count", { count: fileCount }),
+                            ];
+                        } else if (folderSize) {
+                            metaParts = [folderSize];
+                        } else if (fileCount > 0) {
+                            metaParts = [
+                                t("grid.folder_file_count", { count: fileCount }),
+                            ];
+                        }
+                    } else if (!isLora) {
+                        metaParts = [
+                            formatDateFull(parseFloat(mtime)),
+                            formatSize(parseInt(size, 10)),
+                        ].filter(Boolean);
+                    }
                     const titleLine = document.createElement("span");
                     titleLine.className = "filename-tooltip-title";
                     titleLine.textContent = String(titleEl.textContent || "");
@@ -819,6 +882,32 @@ export class XdhMediaGrid extends BaseElement {
                 if (!card) return;
                 this._markThumbFailed(card.dataset.id);
             }, true /* capture */);
+
+            // 收藏按钮委托（独立监听器）
+            grid.addEventListener("click", (e) => {
+                const btn = e.target.closest(".fav-btn");
+                if (!btn) return;
+                e.stopPropagation();
+                const ref = btn.dataset.favRef;
+                if (!ref) return;
+                toggleMediaFavorite({
+                    public_ref: ref,
+                    media_type: btn.dataset.favType || "",
+                    filename: btn.dataset.favName || "",
+                    rel_path: btn.dataset.favPath || "",
+                    file_ext: btn.dataset.favExt || "",
+                }).then((result) => {
+                    if (!result) return;
+                    const set = [...(appStore.state.favoriteIdSet || [])];
+                    if (result.favorited) {
+                        if (!set.includes(ref)) set.push(ref);
+                    } else {
+                        const idx = set.indexOf(ref);
+                        if (idx !== -1) set.splice(idx, 1);
+                    }
+                    appStore.state.favoriteIdSet = set;
+                });
+            });
         }
 
         // 每次 DOM 更新后重建 id→item 查找表（O(n) 一次，替代 O(n²) find）
@@ -867,26 +956,54 @@ export class XdhMediaGrid extends BaseElement {
             const safeMtime = escapeAttr(String(
                 item.type === "lora" ? "" : item.raw?.extra?.mtime || ""
             ));
+            const safeFileCount = escapeAttr(String(
+                item.isFolder ? (item.raw?.extra?.file_count || "") : ""
+            ));
             const summaryLabels = getCardSummaryLabels(item, this.failedThumbIds);
             const hasThumbFailure = this.failedThumbIds.has(String(item.id));
-            const previewBtn = item.previewable && !previewState.blocked
-                ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${safeId}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
+            const itemExists = item.raw?.extra?.exists !== false;
+            const favoriteIdSet = appStore.state.favoriteIdSet || [];
+            const favRef = String(
+                item.raw?.extra?.media_ref || item.raw?.media_ref
+                || item.raw?.public_ref || item.raw?.ref || item.id || ""
+            );
+            const isFav = favoriteIdSet.includes(favRef);
+            const favIconName = isFav ? "star-filled" : "star";
+            const favTooltip = isFav ? t("grid.btn.unfavorite") : t("grid.btn.favorite");
+            const safeFavRef = escapeAttr(favRef);
+            const safeFavPath = escapeAttr(String(item.raw?.rel_path || item.raw?.extra?.rel_path || ""));
+            const safeFavExt = escapeAttr(String(item.raw?.file_ext || item.raw?.extra?.file_ext || ""));
+            const favBtn = !item.isFolder && item.type !== "record"
+                ? `<button class="fav-btn xdh-tooltip xdh-tooltip-down" data-fav-ref="${safeFavRef}" data-fav-type="${safeType}" data-fav-name="${safeNameAttr}" data-fav-path="${safeFavPath}" data-fav-ext="${safeFavExt}" data-fav-active="${isFav ? 'true' : 'false'}" data-tooltip="${favTooltip}">${icon(favIconName, 14)}</button>`
                 : "";
-            const editBtn = item.type === "lora"
+            const previewBtn = !itemExists
+                ? ""
+                : item.previewable && !previewState.blocked
+                    ? `<button class="preview-btn xdh-tooltip xdh-tooltip-down" data-preview="${safeId}" data-tooltip="${t("grid.btn.preview")}">${icon("eye", 14)}</button>`
+                    : "";
+            const editBtn = itemExists && item.type === "lora"
                 ? `<button class="edit-lora-btn xdh-tooltip xdh-tooltip-down" data-loraref="${safeLoraRef}" data-tooltip="${t("grid.btn.edit_lora")}">${icon("settings", 14)}</button>`
                 : "";
-            return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""} ${previewState.blocked ? "preview-unavailable" : ""}"
-                 draggable="${item.isFolder || item.type === "record" ? "false" : "true"}"
+            const goneBadge = !itemExists
+                ? `<div class="gone-badge">${t("grid.badge.file_gone")}</div>`
+                : "";
+            return `<div class="media-card ${isSelected ? "selected" : ""} ${item.isFolder ? "is-folder" : ""} ${hasThumbFailure ? "thumb-failed" : ""} ${previewState.blocked ? "preview-unavailable" : ""} ${!itemExists ? "is-gone" : ""}"
+                 draggable="${itemExists && !item.isFolder && item.type !== "record" ? "true" : "false"}"
                  data-id="${safeId}"
                  data-name="${safeNameAttr}"
                  data-url="${safeUrl}"
                  data-type="${safeType}"
                  data-size="${safeSize}"
-                 data-mtime="${safeMtime}">
-                <div class="card-actions">${editBtn}${previewBtn}</div>
-                ${thumbFor(item, previewState)}
+                 data-mtime="${safeMtime}"
+                 data-file-count="${safeFileCount}">
+                <div class="card-actions">${favBtn}${editBtn}${previewBtn}</div>
+                ${itemExists ? thumbFor(item, previewState) : `<div class="thumb-placeholder">${icon("image-off", 32)}</div>`}
+                ${goneBadge}
                 <div class="card-text">
-                    <div class="card-title">${safeName}</div>
+                    <div class="card-title-row">
+                        ${isFav ? `<span class="fav-indicator"><svg width="14" height="14" viewBox="0 0 24 24" style="display:block"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor"/></svg></span>` : ""}
+                        <div class="card-title">${safeName}</div>
+                    </div>
                     ${summaryLabels.length > 0
                         ? `<div class="card-summary">${summaryLabels.join(" · ")}</div>`
                         : ""}
@@ -959,7 +1076,7 @@ export class XdhMediaGrid extends BaseElement {
                     pointer-events: auto;
                 }
 
-                .preview-btn, .edit-lora-btn {
+                .preview-btn, .edit-lora-btn, .fav-btn {
                     width: 26px;
                     height: 26px;
                     border-radius: 8px;
@@ -974,9 +1091,19 @@ export class XdhMediaGrid extends BaseElement {
                     flex-shrink: 0;
                     padding: 0;
                 }
-                .preview-btn:hover, .edit-lora-btn:hover {
+                .preview-btn:hover, .edit-lora-btn:hover, .fav-btn:hover {
                     background: var(--xdh-clr-surface-soft);
                     transform: scale(1.08);
+                }
+                .fav-btn[data-fav-active="true"] {
+                    color: var(--xdh-color-primary);
+                }
+
+                /* ── 已收藏指示器（左上角，hover 时隐藏）── */
+                .fav-indicator {
+                    color: var(--xdh-color-primary);
+                    pointer-events: none;
+                    flex-shrink: 0;
                 }
 
                 /* ── Thumbnail container ── */
@@ -1079,7 +1206,7 @@ export class XdhMediaGrid extends BaseElement {
                 .lora-meta-overlay {
                     justify-content: flex-start;
                     align-items: center;
-                    gap: var(--xdh-space-sm);
+                    gap: 3px;
                     flex-wrap: wrap;
                     padding: 0 var(--xdh-space-sm) var(--xdh-space-sm);
                     background: linear-gradient(
@@ -1095,14 +1222,15 @@ export class XdhMediaGrid extends BaseElement {
                     display: inline-flex;
                     align-items: center;
                     gap: var(--xdh-space-xs);
-                    min-height: 22px;
-                    padding: 0 7px;
+                    min-height: 18px;
+                    padding: 0 6px;
                     border-radius: var(--xdh-radius-full);
                     border: 1px solid var(--xdh-color-border);
                     background: var(--xdh-color-surface-2);
                     color: var(--xdh-color-text-secondary);
                     font: 600 var(--xdh-font-uppercase-tag);
                     letter-spacing: 0.02em;
+                    pointer-events: auto;
                 }
                 .lora-badge.is-active {
                     border-color: var(--xdh-brand-pink);
@@ -1135,7 +1263,7 @@ export class XdhMediaGrid extends BaseElement {
                     color: var(--xdh-color-text-primary);
                     font: 600 var(--xdh-font-uppercase-tag);
                     letter-spacing: 0.02em;
-                    pointer-events: none;
+                    pointer-events: auto;
                 }
                 .card-status-badge span {
                     overflow: hidden;
@@ -1182,6 +1310,13 @@ export class XdhMediaGrid extends BaseElement {
                     gap: var(--xdh-space-xxs);
                     padding: var(--xdh-space-xs) var(--xdh-space-sm) var(--xdh-space-sm);
                 }
+                .card-title-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 4px;
+                    min-width: 0;
+                }
                 .card-title {
                     font: var(--xdh-font-micro-label);
                     color: var(--xdh-color-text-secondary);
@@ -1189,6 +1324,7 @@ export class XdhMediaGrid extends BaseElement {
                     overflow: hidden;
                     white-space: nowrap;
                     text-align: center;
+                    min-width: 0;
                 }
                 .card-summary {
                     min-height: 14px;
