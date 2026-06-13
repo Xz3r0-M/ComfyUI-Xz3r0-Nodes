@@ -52,7 +52,6 @@
 `♾️ Xz3r0/XDataHub`
 - 修复输入框无法正常响应鼠标滚轮滚动的问题
 
-
 ---
 
 > [!WARNING]
@@ -103,8 +102,9 @@
 `♾️ Xz3r0/XDataHub`
 - Fixed an issue where the input field did not properly respond to mouse wheel scrolling
 
-
 </details>
+
+---
 
 ## 🎉 v2.3.0
 
