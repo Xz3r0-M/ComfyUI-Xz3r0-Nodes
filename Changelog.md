@@ -10,6 +10,14 @@
 > - 推荐先备份工作流文件和记录之前保存的 Lora 信息，然后在新版本 v2.4.0 中使用 完全重建索引（或手动删除旧的数据库文件）从新开始
 > - 如果不出意外，从这个版本开始，数据库采用新的 完全固定的文件唯一性哈希值 以后应该不会再有改动了
 
+> [!WARNING]
+> - For backward compatibility with older versions, v2.4.0 will automatically modify and migrate some old data (randomly generated file uniqueness hash values) in the XDataHub database to new data (static file uniqueness hash values) after ComfyUI fully starts up.
+> - Previously, randomly generated file uniqueness hash values (the uniqueness hash can be understood as the file's ID card used to locate files) were saved in the database. If the user deleted the database file or used the "Rebuild Index" function to create a new database, XDataHub would generate a new random hash value for all files again, causing related features or `X*Get` nodes in workflows to lose track of previously referenced files (hash values no longer match). This update changes from random to static hash values precisely to solve this legacy issue.
+> - The automatic modification and migration is a backward-compatible feature for older database versions. Any action that rebuilds the database will break this compatibility (since the new database no longer contains the old randomly generated hash values), but rebuilding allows the database to start fresh and fully use static file uniqueness hash values.
+> - The cost of rebuilding the database is directly reflected as: `X*Get` nodes in older workflow files will show that file data is lost (the previously saved random hash values were stored in the nodes), and favorited files and Lora custom data will be lost (same situation as the nodes). Users will need to reload files for `X*Get` nodes in their workflows, re-favorite files, and re-edit/save Lora custom information.
+> - It is recommended to back up workflow files and record previously saved Lora information, then use "Rebuild Index" (or manually delete the old database files) in the new version v2.4.0 to start fresh.
+> - Barring unforeseen issues, starting from this version, once the database adopts the new static file uniqueness hash values, there should be no further changes.
+
 <details>
 
 ### 1. 🛠️ 增强 `XMaskEditor` 遮罩编辑器
@@ -53,14 +61,6 @@
 - 修复输入框无法正常响应鼠标滚轮滚动的问题
 
 ---
-
-> [!WARNING]
-> - For backward compatibility with older versions, v2.4.0 will automatically modify and migrate some old data (randomly generated file uniqueness hash values) in the XDataHub database to new data (static file uniqueness hash values) after ComfyUI fully starts up.
-> - Previously, randomly generated file uniqueness hash values (the uniqueness hash can be understood as the file's ID card used to locate files) were saved in the database. If the user deleted the database file or used the "Rebuild Index" function to create a new database, XDataHub would generate a new random hash value for all files again, causing related features or `X*Get` nodes in workflows to lose track of previously referenced files (hash values no longer match). This update changes from random to static hash values precisely to solve this legacy issue.
-> - The automatic modification and migration is a backward-compatible feature for older database versions. Any action that rebuilds the database will break this compatibility (since the new database no longer contains the old randomly generated hash values), but rebuilding allows the database to start fresh and fully use static file uniqueness hash values.
-> - The cost of rebuilding the database is directly reflected as: `X*Get` nodes in older workflow files will show that file data is lost (the previously saved random hash values were stored in the nodes), and favorited files and Lora custom data will be lost (same situation as the nodes). Users will need to reload files for `X*Get` nodes in their workflows, re-favorite files, and re-edit/save Lora custom information.
-> - It is recommended to back up workflow files and record previously saved Lora information, then use "Rebuild Index" (or manually delete the old database files) in the new version v2.4.0 to start fresh.
-> - Barring unforeseen issues, starting from this version, once the database adopts the new static file uniqueness hash values, there should be no further changes.
 
 ### 1. 🛠️ Enhanced `XMaskEditor` Mask Editor
 `♾️ Xz3r0/XDataHub - XImageGet`
