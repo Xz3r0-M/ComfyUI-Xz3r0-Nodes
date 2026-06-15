@@ -159,5 +159,7 @@
   "xdatahub.ui.node.ximagecompare.curve_sine_tip": "Smooth sine wave crossfade between A and B",
   "xdatahub.ui.node.ximagecompare.curve_eased_tip": "Eased transitions with smoother start and end",
   "xdatahub.ui.node.ximagecompare.curve_hold_tip": "Holds at A and B, with quick transitions between them",
-  "xdatahub.ui.node.ximagecompare.curve_long_tip": "Extended holds at A and B with shorter transitions"
+  "xdatahub.ui.node.ximagecompare.curve_long_tip": "Extended holds at A and B with shorter transitions",
+  "xdatahub.ui.node.ximagecompare.live_preview": "Live Preview",
+  "xdatahub.ui.node.ximagecompare.live_preview_tip": "Show real-time preview from upstream sampler while running. Requires ComfyUI real-time preview to be enabled."
 }

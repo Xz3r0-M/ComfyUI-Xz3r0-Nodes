@@ -159,5 +159,7 @@
   "xdatahub.ui.node.ximagecompare.curve_sine_tip": "正弦波平滑过渡 A/B",
   "xdatahub.ui.node.ximagecompare.curve_eased_tip": "缓动过渡，起始和结束更平滑",
   "xdatahub.ui.node.ximagecompare.curve_hold_tip": "在 A/B 两端保持，中间快速过渡",
-  "xdatahub.ui.node.ximagecompare.curve_long_tip": "在 A/B 两端长保持，过渡时间更短"
+  "xdatahub.ui.node.ximagecompare.curve_long_tip": "在 A/B 两端长保持，过渡时间更短",
+  "xdatahub.ui.node.ximagecompare.live_preview": "实时预览",
+  "xdatahub.ui.node.ximagecompare.live_preview_tip": "运行时显示节点流程前方的采样器节点的图像生成实时预览。需要开启 ComfyUI 的实时预览功能，否则无效。"
 }
