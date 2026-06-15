@@ -208,6 +208,7 @@ export async function openXMaskEditor(options = {}) {
             threshold,
             erasePaintEnabled,
             eraseMaskEnabled,
+            maskDisplayInverted,
         }) => {
             ui.zoomInput.value = `${Math.round(zoom * 100)}%`;
             ui.imageSizeValue.textContent = `${imageSize.width}x${imageSize.height}`;
@@ -262,6 +263,10 @@ export async function openXMaskEditor(options = {}) {
             syncInputValue(ui.fillThresholdInput, String(threshold));
             ui.erasePaintLock.checked = erasePaintEnabled;
             ui.eraseMaskLock.checked = eraseMaskEnabled;
+            ui.invertDisplayBtn.classList.toggle(
+                "is-active",
+                maskDisplayInverted
+            );
         },
     });
     session.bind(ui.brushBtn, "click", () => controller.setTool("paint"));
@@ -306,6 +311,9 @@ export async function openXMaskEditor(options = {}) {
     });
     session.bind(ui.invertColorBtn, "click", () => {
         controller.invertMaskPixels();
+    });
+    session.bind(ui.invertDisplayBtn, "click", () => {
+        controller.toggleMaskDisplayInvert();
     });
     session.bind(ui.brushRange, "input", () => {
         controller.setBrushSize(ui.brushRange.value);

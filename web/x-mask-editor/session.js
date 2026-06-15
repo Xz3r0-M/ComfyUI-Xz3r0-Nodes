@@ -68,6 +68,7 @@ export function openMaskEditorSession(texts = {}) {
         ui.maskOpacityRange.disabled = disabled;
         ui.maskOpacityInput.disabled = disabled;
         ui.invertColorBtn.disabled = disabled;
+        ui.invertDisplayBtn.disabled = disabled;
         ui.brushInput.disabled = disabled;
         ui.hardnessRange.disabled = disabled;
         ui.hardnessInput.disabled = disabled;

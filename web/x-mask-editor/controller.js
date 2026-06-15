@@ -76,6 +76,7 @@ export class XMaskEditorController {
         this.maskBrushColor = "black";
         this.maskDisplayOpacity = 0.75;
         this.maskOpacity = 1;
+        this.maskDisplayInverted = false;
         this.threshold = 32;
         this.erasePaintEnabled = true;
         this.eraseMaskEnabled = true;
@@ -95,6 +96,8 @@ export class XMaskEditorController {
         this.pointerId = null;
         this.history = [];
         this.historyIndex = -1;
+        this._whiteMaskCanvas = null;
+        this._whiteMaskCtx = null;
         this.applyTransformState(transformState);
 
         this.handlePointerDown = this.handlePointerDown.bind(this);
@@ -550,6 +553,12 @@ export class XMaskEditorController {
         );
     }
 
+    toggleMaskDisplayInvert() {
+        this.maskDisplayInverted = !this.maskDisplayInverted;
+        this.render();
+        this.emitStateChange();
+    }
+
     setZoom(value) {
         this.zoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
         this.updateZoomStyles();
@@ -1000,6 +1009,7 @@ export class XMaskEditorController {
             threshold: this.threshold,
             erasePaintEnabled: this.erasePaintEnabled,
             eraseMaskEnabled: this.eraseMaskEnabled,
+            maskDisplayInverted: this.maskDisplayInverted,
         });
     }
 
@@ -1341,7 +1351,29 @@ export class XMaskEditorController {
             drawTransformedLayer(this.paintCanvas, this.paintOpacity);
         }
         if (this.maskVisible) {
-            drawTransformedLayer(this.maskCanvas, this.maskDisplayOpacity);
+            if (this.maskDisplayInverted) {
+                // Build a white-mask: white everywhere mask is non-transparent,
+                // so both black and white mask areas invert the base image.
+                if (!this._whiteMaskCanvas) {
+                    this._whiteMaskCanvas = document.createElement("canvas");
+                    this._whiteMaskCtx = this._whiteMaskCanvas.getContext("2d");
+                }
+                const wm = this._whiteMaskCanvas;
+                wm.width = this.maskCanvas.width;
+                wm.height = this.maskCanvas.height;
+                this._whiteMaskCtx.fillStyle = "#ffffff";
+                this._whiteMaskCtx.fillRect(0, 0, wm.width, wm.height);
+                this._whiteMaskCtx.globalCompositeOperation = "destination-in";
+                this._whiteMaskCtx.drawImage(this.maskCanvas, 0, 0);
+                this._whiteMaskCtx.globalCompositeOperation = "source-over";
+
+                this.ctx.save();
+                this.ctx.globalCompositeOperation = "difference";
+                drawTransformedLayer(wm, 1);
+                this.ctx.restore();
+            } else {
+                drawTransformedLayer(this.maskCanvas, this.maskDisplayOpacity);
+            }
         }
 
         if (

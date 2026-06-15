@@ -1382,6 +1382,11 @@ function getMaskEditorTexts() {
             key("invert_color_tip"),
             "Swap black and white"
         ),
+        invertDisplay: t(key("invert_display"), "Invert Disp"),
+        invertDisplayTip: t(
+            key("invert_display_tip"),
+            "Invert image colors in masked areas (visual only)"
+        ),
         paintOpacity: t(key("paint_opacity"), "Color Opacity"),
         maskOpacity: t(key("mask_opacity"), "Mask Opacity"),
         hardness: t(key("hardness"), "Edge Hardness"),

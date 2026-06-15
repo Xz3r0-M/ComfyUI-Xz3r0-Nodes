@@ -279,6 +279,22 @@ export function ensureMaskEditorStyles() {
             );
             color: var(--ximageget-mask-editor-text);
         }
+        .ximageget-mask-editor-tool:hover:not(:disabled),
+        .ximageget-mask-editor-action:hover:not(:disabled),
+        .ximageget-mask-editor-zoom:hover:not(:disabled) {
+            background: color-mix(
+                in srgb,
+                var(--ximageget-mask-editor-text) 12%,
+                var(--ximageget-mask-editor-surface)
+            );
+        }
+        .ximageget-mask-editor-action.is-active {
+            background: var(--ximageget-mask-editor-accent);
+            color: #ffffff;
+        }
+        .ximageget-mask-editor-action.is-active .ximageget-mask-editor-icon {
+            filter: brightness(0) saturate(100%) invert(100%);
+        }
         .ximageget-mask-editor-header-close {
             margin-left: auto;
             min-width: 32px;
@@ -806,11 +822,21 @@ export function createMaskEditorUi(texts = {}) {
         invertColorBtn,
         texts.invertColorTip || "Swap black and white"
     );
+    const invertDisplayBtn = createButton(
+        "ximageget-mask-editor-action",
+        texts.invertDisplay || "Invert Disp",
+        "contrast.svg"
+    );
+    setButtonTooltip(
+        invertDisplayBtn,
+        texts.invertDisplayTip || "Invert image colors in masked areas (visual only)"
+    );
     maskGroup.appendChild(maskBrushBtn);
     maskGroup.appendChild(maskColorLabel);
     maskGroup.appendChild(maskBlackBtn);
     maskGroup.appendChild(maskWhiteBtn);
     maskGroup.appendChild(invertColorBtn);
+    maskGroup.appendChild(invertDisplayBtn);
     secondRow.appendChild(maskGroup);
 
     const secondRowSpacer = document.createElement("div");
@@ -1131,6 +1157,7 @@ export function createMaskEditorUi(texts = {}) {
         maskOpacityRange,
         maskOpacityInput,
         invertColorBtn,
+        invertDisplayBtn,
         brushRange,
         brushInput,
         hardnessRange,
