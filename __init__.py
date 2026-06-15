@@ -79,9 +79,11 @@ def _register_api_modules() -> None:
     2) 作为脚本顶层导入（pytest 某些收集模式）
     """
     if __package__:
+        __import__(f"{__package__}.api.xmemorycleanup_api", fromlist=["*"])
         __import__(f"{__package__}.api.xdatahub_api", fromlist=["*"])
         __import__(f"{__package__}.api.xworkflowsave_api", fromlist=["*"])
         return
+    __import__("api.xmemorycleanup_api")
     __import__("api.xdatahub_api")
     __import__("api.xworkflowsave_api")
 

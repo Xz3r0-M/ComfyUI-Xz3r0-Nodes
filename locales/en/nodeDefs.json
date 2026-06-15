@@ -323,23 +323,23 @@
   },
   "XMemoryCleanup": {
     "display_name": "XMemoryCleanup",
-    "description": "Manual cleanup node for optional Python memory cleanup, model/node usage cleanup, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
+    "description": "Manual cleanup node for optional Python memory cleanup, unloading models and cleaning model usage, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
     "inputs": {
       "anything": {
         "name": "Anything",
         "tooltip": "Optional pass-through input. Output type automatically matches the connected input type."
       },
       "cleanup_memory": {
-        "name": "Cleanup Memory",
-        "tooltip": "Run Python garbage collection (gc.collect). Disabled by default."
+        "name": "Cleanup Python Memory",
+        "tooltip": "Run Python garbage collection (gc.collect) to release reclaimable Python-side objects. Disabled by default."
       },
       "cleanup_node_usage": {
-        "name": "Cleanup Node Usage",
-        "tooltip": "Unload currently loaded models and run model cleanup checks. Disabled by default."
+        "name": "Unload Models and Clean Model Usage",
+        "tooltip": "Unload currently loaded models, then clean the related model memory and VRAM usage. Disabled by default."
       },
       "cleanup_vram": {
-        "name": "Cleanup VRAM",
-        "tooltip": "Run VRAM/device cache cleanup (soft_empty_cache). Disabled by default."
+        "name": "Cleanup VRAM Cache",
+        "tooltip": "Run VRAM cache cleanup (soft_empty_cache) without unloading currently loaded models. Disabled by default."
       }
     },
     "outputs": {

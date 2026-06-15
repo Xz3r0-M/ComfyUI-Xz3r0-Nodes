@@ -47,6 +47,16 @@ var WHEEL_CTRL_FB = "Image Area Scroll";
 var WHEEL_CTRL_TIP_KEY = LOCALE_PREFIX + ".wheel_ctrl_tip";
 var WHEEL_CTRL_TIP_FB = "When enabled, scrolling on the canvas adjusts the slider parameter for the current mode.";
 
+// 实时预览开关
+var LIVE_PREVIEW_KEY = LOCALE_PREFIX + ".live_preview";
+var LIVE_PREVIEW_FB = "Live Preview";
+var LIVE_PREVIEW_ENABLED_KEY = LOCALE_PREFIX + ".live_preview_enabled";
+var LIVE_PREVIEW_ENABLED_FB = "Live Preview: Enabled";
+var LIVE_PREVIEW_DISABLED_KEY = LOCALE_PREFIX + ".live_preview_disabled";
+var LIVE_PREVIEW_DISABLED_FB = "Live Preview: Disabled";
+var LIVE_PREVIEW_TIP_KEY = LOCALE_PREFIX + ".live_preview_tip";
+var LIVE_PREVIEW_TIP_FB = "Show real-time preview from upstream sampler while running. Requires ComfyUI real-time preview to be enabled.";
+
 // 滑块控制标签
 var LABEL_SPLIT_KEY = LOCALE_PREFIX + ".label_split";
 var LABEL_SPLIT_FB = "Split";
@@ -638,6 +648,10 @@ function createCompareState(node) {
         animStart: 0,
         loaded: false,
         loadToken: 0,
+        _previewBlobUrl: null, // 上游实时预览 blob URL
+        _previewOverlay: null,  // 预览覆盖层 DOM 元素
+        _previewDone: false,    // 该节点已完成执行，不再接收预览
+        livePreviewEnabled: false, // 实时预览开关（默认关闭）
     };
 }
 
@@ -1082,10 +1096,25 @@ function createCompareUI(node) {
     var toolbar = document.createElement("div");
     toolbar.className = "xcompare-toolbar";
 
-    // 第1行：模式按钮（居中）+ 滚轮控制开关（靠右）
+    // 第1行：实时预览开关（最左）+ 模式按钮（居中）+ 滚轮控制开关（靠右）
     var row1 = document.createElement("div");
     row1.className = "xcompare-toolbar-row xcompare-buttons-row";
     row1.style.position = "relative";
+
+    // 实时预览开关按钮（最左侧，绝对定位）
+    var livePreviewBtn = document.createElement("button");
+    livePreviewBtn.className = "xcompare-live-preview-btn";
+    livePreviewBtn.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
+    livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
+    livePreviewBtn.style.cssText =
+        "position:absolute;left:6px;top:50%;transform:translateY(-50%);" +
+        "padding:3px 6px;font:var(--xdh-font-micro-label, 11px sans-serif);";
+    livePreviewBtn.addEventListener("click", function () {
+        toggleLivePreview(state);
+    });
+    row1.appendChild(livePreviewBtn);
+    state.livePreviewBtn = livePreviewBtn;
+
     var modeNames = [
         t(MODE_SLIDE_KEY, MODE_SLIDE_FB),
         t(MODE_SPOTLIGHT_KEY, MODE_SPOTLIGHT_FB),
@@ -1229,6 +1258,20 @@ function createCompareUI(node) {
     state.canvas = canvas;
     state.ctx = canvas.getContext("2d");
 
+    // --- 实时预览覆盖层（透传鼠标事件，不影响原有交互） ---
+    var previewOverlay = document.createElement("img");
+    previewOverlay.className = "xcompare-preview-overlay";
+    previewOverlay.style.cssText =
+        "position:absolute;top:0;left:0;" +
+        "width:100%;height:100%;" +
+        "object-fit:contain;" +
+        "pointer-events:none;" +
+        "z-index:10;" +
+        "display:none;" +
+        "background:var(--xdh-clr-surface-canvas, #0d0d0d);";
+    canvasWrap.appendChild(previewOverlay);
+    state._previewOverlay = previewOverlay;
+
     wrap.appendChild(canvasWrap);
 
     // --- 注册 DOM widget ---
@@ -1305,6 +1348,7 @@ function createCompareUI(node) {
 
     // --- 初始状态 ---
     updateModeButtons(state);
+    updateLivePreviewBtn(state);
     updateSlideDirBtn(state);
     updateSlider(state);
     render(state);
@@ -1373,6 +1417,25 @@ function updateWheelToggle(state) {
         state.wheelToggle.classList.add("active");
     } else {
         state.wheelToggle.classList.remove("active");
+    }
+}
+
+/** 切换实时预览开关 */
+function toggleLivePreview(state) {
+    state.livePreviewEnabled = !state.livePreviewEnabled;
+    updateLivePreviewBtn(state);
+    saveState(state);
+    if (!state.livePreviewEnabled && state._previewOverlay) {
+        state._previewOverlay.style.display = "none";
+    }
+}
+
+function updateLivePreviewBtn(state) {
+    if (!state.livePreviewBtn) return;
+    if (state.livePreviewEnabled) {
+        state.livePreviewBtn.classList.add("active");
+    } else {
+        state.livePreviewBtn.classList.remove("active");
     }
 }
 
@@ -1760,6 +1823,16 @@ function handleNodeExecuted(node, output) {
     var state = node.__xcompareState;
     if (!state) return;
 
+    // 清理上游实时预览覆盖层 + 标记该节点已完成
+    state._previewDone = true;
+    if (state._previewBlobUrl) {
+        URL.revokeObjectURL(state._previewBlobUrl);
+        state._previewBlobUrl = null;
+    }
+    if (state._previewOverlay) {
+        state._previewOverlay.style.display = "none";
+    }
+
     var images = (output && output.images) ? output.images : [];
     // images[0]=A, images[1]=B（无 filename 表示空占位）
     var imgA = (images.length >= 1 && images[0] && images[0].filename) ? images[0] : null;
@@ -1808,6 +1881,9 @@ function saveState(state) {
 
     var dirW = ensureHiddenWidget(node, "__compare_slide_dir", DEFAULT_SLIDE_DIR);
     if (dirW) dirW.value = state.slideDirection;
+
+    var liveW = ensureHiddenWidget(node, "__live_preview", "0");
+    if (liveW) liveW.value = state.livePreviewEnabled ? "1" : "0";
 }
 
 function restoreState(state) {
@@ -1865,8 +1941,15 @@ function restoreState(state) {
         state.wheelControlEnabled = String(wheelW.value) === "1";
     }
 
+    // 恢复实时预览开关
+    var liveW = ensureHiddenWidget(node, "__live_preview", "0");
+    if (liveW && liveW.value != null && liveW.value !== "") {
+        state.livePreviewEnabled = String(liveW.value) !== "0";
+    }
+
     updateModeButtons(state);
     updateWheelToggle(state);
+    updateLivePreviewBtn(state);
     updateCurveButtons(state);
     updateSlideDirBtn(state);
     updateSlider(state);
@@ -1997,5 +2080,92 @@ app.registerExtension({
         injectStyles();
         await applyUiLocale();
         installLocaleSync();
+
+        // === 实时预览：执行中 → 所有 XImageCompare 显示预览；执行结束 → 隐藏 ===
+        var _api = app.api;
+
+        if (!_api) {
+            console.warn("[XImageCompare] app.api not available — "
+                + "live preview disabled");
+            return;
+        }
+
+        var _previewActive = false;
+
+        // ---- 收集所有 XImageCompare state（避免每次遍历） ----
+        function _getAllStates() {
+            var graph = app.graph;
+            if (!graph || !graph._nodes) return [];
+            var result = [];
+            var nodes = graph._nodes;
+            for (var i = 0; i < nodes.length; i++) {
+                var node = nodes[i];
+                if (String(node.comfyClass || node.type || "") !== NODE_CLASS) {
+                    continue;
+                }
+                var state = node.__xcompareState;
+                if (state && state._previewOverlay) {
+                    result.push(state);
+                }
+            }
+            return result;
+        }
+
+        // ---- executing：执行开始/结束控制预览开关 ----
+        _api.addEventListener("executing", function (event) {
+            if (event.detail == null) {
+                // 全部执行结束 → 关闭预览 + 重置完成标记
+                _previewActive = false;
+                _getAllStates().forEach(function (s) {
+                    s._previewDone = false;
+                    if (s._previewBlobUrl) {
+                        URL.revokeObjectURL(s._previewBlobUrl);
+                        s._previewBlobUrl = null;
+                    }
+                    if (s._previewOverlay) {
+                        s._previewOverlay.style.display = "none";
+                    }
+                });
+            } else {
+                // 执行开始 → 开启预览模式（不重置 _previewDone）
+                _previewActive = true;
+            }
+        });
+
+        // ---- b_preview：执行中每帧推送（跳过已完成的节点） ----
+        _api.addEventListener("b_preview", function (event) {
+            if (!_previewActive) return;
+            var blob = event.detail;
+            if (!blob) return;
+
+            _getAllStates().forEach(function (state) {
+                if (state._previewDone || !state.livePreviewEnabled) return;
+                var blobUrl = URL.createObjectURL(blob);
+                if (state._previewBlobUrl) {
+                    URL.revokeObjectURL(state._previewBlobUrl);
+                }
+                state._previewBlobUrl = blobUrl;
+                state._previewOverlay.src = blobUrl;
+                state._previewOverlay.style.display = "";
+            });
+        });
+
+        // ---- b_preview_with_metadata：同上（Type 4 兜底） ----
+        _api.addEventListener("b_preview_with_metadata", function (event) {
+            if (!_previewActive) return;
+            var blob = event.detail && event.detail.blob;
+            if (!blob) return;
+
+            _getAllStates().forEach(function (state) {
+                if (state._previewDone || !state.livePreviewEnabled) return;
+                var blobUrl = URL.createObjectURL(blob);
+                if (state._previewBlobUrl) {
+                    URL.revokeObjectURL(state._previewBlobUrl);
+                }
+                state._previewBlobUrl = blobUrl;
+                state._previewOverlay.src = blobUrl;
+                state._previewOverlay.style.display = "";
+            });
+        });
     },
 });

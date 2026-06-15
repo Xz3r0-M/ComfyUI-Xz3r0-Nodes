@@ -55,7 +55,10 @@ class XMemoryCleanup(io.ComfyNode):
                     default=False,
                     label_on="Enabled",
                     label_off="Disabled",
-                    tooltip="Run Python garbage collection (gc.collect)",
+                    tooltip=(
+                        "Run Python garbage collection (gc.collect) to "
+                        "release reclaimable Python-side memory"
+                    ),
                 ),
                 io.Boolean.Input(
                     "cleanup_node_usage",
@@ -63,8 +66,8 @@ class XMemoryCleanup(io.ComfyNode):
                     label_on="Enabled",
                     label_off="Disabled",
                     tooltip=(
-                        "Unload currently loaded models and run model "
-                        "cleanup checks"
+                        "Unload currently loaded models and clean up model "
+                        "memory usage"
                     ),
                 ),
                 io.Boolean.Input(
@@ -73,7 +76,8 @@ class XMemoryCleanup(io.ComfyNode):
                     label_on="Enabled",
                     label_off="Disabled",
                     tooltip=(
-                        "Clear device cache via ComfyUI model management"
+                        "Clear VRAM cache via ComfyUI model management "
+                        "without unloading currently loaded models"
                     ),
                 ),
             ],
@@ -100,7 +104,7 @@ class XMemoryCleanup(io.ComfyNode):
         Args:
             anything: 任意输入数据（可选）
             cleanup_memory: 是否执行 Python 垃圾回收
-            cleanup_node_usage: 是否卸载模型并清理节点占用
+            cleanup_node_usage: 是否卸载模型并清理模型占用
             cleanup_vram: 是否清理显存缓存
 
         Returns:
@@ -132,7 +136,7 @@ class XMemoryCleanup(io.ComfyNode):
 
     @classmethod
     def _run_node_cleanup(cls) -> None:
-        """执行模型卸载和节点占用清理。"""
+        """执行模型卸载和模型占用清理。"""
         model_management = cls._get_model_management()
         model_management.unload_all_models()
         model_management.cleanup_models_gc()

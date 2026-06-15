@@ -135,7 +135,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260508-2";
+const XDATAHUB_ASSET_VER = "20260618-1";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -912,6 +912,7 @@ function applyDefaultOpenLayoutToOpenWindow() {
  * 窗口启用状态
  */
 let windowEnabled = true;
+let showMenuButton = true;
 let windowUnderComfySidebar = false;
 
 const WINDOW_Z_INDEX_DEFAULT = 10000;
@@ -939,8 +940,20 @@ function applyWindowZIndexToOpenWindow() {
 function updateMenuButtonVisibility() {
     if (!menuButton) return;
     applyMenuButtonIcon();
-    menuButton.element.style.display = windowEnabled ? "" : "none";
-    if (!windowEnabled) {
+    menuButton.element.style.display = showMenuButton ? "" : "none";
+}
+
+function applyWindowEnabledState() {
+    if (windowEnabled) {
+        return;
+    }
+    if (XDataHub.instance) {
+        if (closeBehavior === "destroy") {
+            XDataHub.instance.destroy();
+        } else {
+            XDataHub.instance.hide();
+        }
+    } else {
         const windowEl = document.querySelector(".xz3r0-datahub-window");
         if (windowEl) {
             windowEl.style.display = "none";
@@ -960,17 +973,31 @@ app.registerExtension({
      */
     settings: [
         {
-            id: "Xz3r0.XDataHub.Enabled",
-            name: "Enable XDataHub (Button)",
+            id: "Xz3r0.XDataHub.ShowButton",
+            name: "Show XDataHub Entry Button",
             type: "boolean",
             defaultValue: true,
-            tooltip: "Show XDataHub button in the top-menu bar",
+            tooltip: "Show floating window button [♾️] in the top-menu bar",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
+            category: ["♾️ Xz3r0", "XDataHub", "ShowButton"],
+            onChange: (value) => {
+                if (showMenuButton === value) return;
+                showMenuButton = value;
+                updateMenuButtonVisibility();
+            }
+        },
+        {
+            id: "Xz3r0.XDataHub.Enabled",
+            name: "Enable XDataHub",
+            type: "boolean",
+            defaultValue: true,
+            tooltip: "Enable the XDataHub window, hotkey, and related actions",
             // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XDataHub", "Enabled"],
             onChange: (value) => {
                 if (windowEnabled === value) return;
                 windowEnabled = value;
-                updateMenuButtonVisibility();
+                applyWindowEnabledState();
             }
         },
         {
@@ -1618,7 +1645,6 @@ app.registerExtension({
                 });
                 app.menu.settingsGroup.append(menuButton);
                 applyMenuButtonIcon();
-                // 根据设置显示/隐藏按钮
                 updateMenuButtonVisibility();
             } catch (e) {
                 console.warn("[Xz3r0-Nodes] Failed to create menu button:", e);
@@ -1749,6 +1775,9 @@ const XDataHub = {
      * 如果窗口未创建则先创建
      */
     show() {
+        if (!windowEnabled) {
+            return;
+        }
         if (!this.instance) {
             this.instance = this.create();
         }
