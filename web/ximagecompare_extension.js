@@ -471,14 +471,15 @@ function injectStyles() {
         "  top: 0; left: 0; right: 0; bottom: 0;",
         "  display: flex; flex-direction: column;",
         "  box-sizing: border-box;",
-        "  border: 1px solid var(--xdh-clr-hairline, #333);",
+        "  background: transparent;",
+        "  color: inherit;",
         "  overflow: hidden;",
         "}",
         ".xcompare-toolbar {",
         "  display: flex; flex-direction: column; gap: 2px;",
         "  padding: 4px 0 2px 0;",
-        "  background: var(--xdh-clr-surface-strong, #1e1e1e);",
-        "  border-bottom: 1px solid var(--xdh-clr-hairline, #333);",
+        "  background: transparent;",
+        "  border-bottom: none;",
         "  flex-shrink: 0; box-sizing: border-box;",
         "}",
         ".xcompare-toolbar-row {",
@@ -499,8 +500,8 @@ function injectStyles() {
         "  padding: 3px 8px;",
         "  border: 1px solid var(--xdh-clr-hairline, #555);",
         "  border-radius: var(--xdh-radius-sm, 3px); cursor: pointer;",
-        "  background: var(--xdh-clr-surface-strong, #2a2a2a);",
-        "  color: var(--xdh-color-text-primary, #ccc);",
+        "  background: transparent;",
+        "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  white-space: nowrap;",
         "  transition: border-color 120ms ease, background-color 120ms ease;",
@@ -515,46 +516,93 @@ function injectStyles() {
         "  border-color: var(--xdh-clr-primary, #ff385c);",
         "}",
         ".xcompare-toolbar input[type=\"range\"] {",
-        "  flex: 1; min-width: 60px; height: 4px; cursor: pointer;",
+        "  --xcompare-slider-pct: 50%;",
+        "  flex: 1; min-width: 60px; height: 18px; cursor: pointer;",
         "  margin: 0; -webkit-appearance: none; appearance: none;",
         "  background: transparent; outline: none;",
+        "  accent-color: var(--xdh-clr-primary, #ff385c);",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-webkit-slider-runnable-track {",
-        "  height: 2px; border-radius: 1px;",
-        "  background: var(--xdh-clr-hairline, #555);",
+        "  height: 6px; border-radius: 999px;",
+        "  background: linear-gradient(90deg,",
+        "    var(--xdh-clr-primary, #ff385c) 0%,",
+        "    var(--xdh-clr-primary, #ff385c) var(--xcompare-slider-pct),",
+        "    rgba(255, 255, 255, 0.16) var(--xcompare-slider-pct),",
+        "    rgba(255, 255, 255, 0.16) 100%);",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-moz-range-track {",
-        "  height: 2px; border-radius: 1px;",
-        "  background: var(--xdh-clr-hairline, #555); border: none;",
+        "  height: 6px; border-radius: 999px;",
+        "  background: rgba(255, 255, 255, 0.16); border: none;",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]::-moz-range-progress {",
+        "  height: 6px; border-radius: 999px;",
+        "  background: var(--xdh-clr-primary, #ff385c); border: none;",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-webkit-slider-thumb {",
         "  -webkit-appearance: none; appearance: none;",
-        "  width: 12px; height: 12px; border-radius: 50%;",
-        "  margin-top: -5px;",
-        "  background: var(--xdh-clr-primary, #ff385c);",
-        "  border: 2px solid var(--xdh-clr-surface-strong, #1e1e1e);",
+        "  width: 14px; height: 14px; border-radius: 50%;",
+        "  margin-top: -4px;",
+        "  background: color-mix(in srgb, var(--xdh-clr-primary, #ff385c) 88%, white 12%);",
+        "  border: 1px solid rgba(255, 255, 255, 0.55);",
+        "  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);",
+        "  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;",
         "  cursor: pointer;",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-moz-range-thumb {",
-        "  width: 12px; height: 12px; border-radius: 50%;",
-        "  background: var(--xdh-clr-primary, #ff385c);",
-        "  border: 2px solid var(--xdh-clr-surface-strong, #1e1e1e);",
+        "  width: 14px; height: 14px; border-radius: 50%;",
+        "  background: color-mix(in srgb, var(--xdh-clr-primary, #ff385c) 88%, white 12%);",
+        "  border: 1px solid rgba(255, 255, 255, 0.55);",
+        "  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);",
+        "  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;",
         "  cursor: pointer;",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-webkit-slider-runnable-track {",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-moz-range-track {",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-webkit-slider-thumb {",
+        "  transform: scale(1.08);",
+        "  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-moz-range-thumb {",
+        "  transform: scale(1.08);",
+        "  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:active::-webkit-slider-thumb {",
+        "  transform: scale(1.12);",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.15), 0 2px 8px rgba(0, 0, 0, 0.34);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:active::-moz-range-thumb {",
+        "  transform: scale(1.12);",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.15), 0 2px 8px rgba(0, 0, 0, 0.34);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:focus-visible::-webkit-slider-thumb {",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.18), 0 2px 8px rgba(0, 0, 0, 0.34);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:focus-visible::-moz-range-thumb {",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.18), 0 2px 8px rgba(0, 0, 0, 0.34);",
         "}",
         ".xcompare-toolbar-label {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #999);",
+        "  color: inherit;",
+        "  opacity: 0.78;",
         "  white-space: nowrap; text-align: center;",
         "  position: absolute; left: 50%; transform: translateX(-50%);",
         "}",
         ".xcompare-toolbar-res-a {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #777);",
+        "  color: inherit;",
+        "  opacity: 0.72;",
         "  white-space: nowrap;",
         "}",
         ".xcompare-toolbar-res-b {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #777);",
+        "  color: inherit;",
+        "  opacity: 0.72;",
         "  white-space: nowrap;",
         "}",
         ".xcompare-res-group {",
@@ -573,8 +621,8 @@ function injectStyles() {
         "  border: 1px solid var(--xdh-clr-hairline, #555);",
         "  border-radius: var(--xdh-radius-sm, 3px);",
         "  cursor: pointer;",
-        "  background: var(--xdh-clr-surface-strong, #2a2a2a);",
-        "  color: var(--xdh-color-text-secondary, #888);",
+        "  background: transparent;",
+        "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  white-space: nowrap;",
         "  opacity: 0.7;",
@@ -585,7 +633,8 @@ function injectStyles() {
         "}",
         ".xcompare-curve-label {",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #666);",
+        "  color: inherit;",
+        "  opacity: 0.72;",
         "  white-space: nowrap;",
         "  margin-right: 4px;",
         "}",
@@ -597,7 +646,7 @@ function injectStyles() {
         "}",
         ".xcompare-canvas-wrap {",
         "  position: relative; overflow: hidden;",
-        "  background: var(--xdh-clr-surface-card, #1a1a1a);",
+        "  background: transparent;",
         "  cursor: crosshair;",
         "  flex: 1 1 0;",
         "  box-sizing: border-box;",
@@ -612,7 +661,8 @@ function injectStyles() {
         "  position: absolute; inset: 0;",
         "  display: flex; align-items: center; justify-content: center;",
         "  font: var(--xdh-font-caption-sm, 13px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #666);",
+        "  color: inherit;",
+        "  opacity: 0.6;",
         "  pointer-events: none; z-index: 1;",
         "}",
     ].join("\n");
@@ -747,11 +797,6 @@ function render(state) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, bw, bh);
 
-    // 跟随主题的背景色
-    var bgColor = getCanvasBg(state);
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, bw, bh);
-
     if (!state.imageA && !state.imageB) {
         return;
     }
@@ -766,10 +811,6 @@ function render(state) {
 
     var iw = state.imgW;
     var ih = state.imgH;
-
-    // 统一空间中填充与画布相同的背景色
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, iw, ih);
 
     if (!hasBoth) {
         // 仅显示单张图片
@@ -1268,7 +1309,7 @@ function createCompareUI(node) {
         "pointer-events:none;" +
         "z-index:10;" +
         "display:none;" +
-        "background:var(--xdh-clr-surface-canvas, #0d0d0d);";
+        "background:transparent;";
     canvasWrap.appendChild(previewOverlay);
     state._previewOverlay = previewOverlay;
 
@@ -1482,6 +1523,21 @@ function updateSlideDirBtn(state) {
     // 保留作为 hook 供后续状态相关更新使用
 }
 
+function updateSliderVisual(state) {
+    if (!state || !state.slider) return;
+    var min = Number(state.slider.min);
+    var max = Number(state.slider.max);
+    var val = Number(state.slider.value);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+        state.slider.style.setProperty("--xcompare-slider-pct", "50%");
+        return;
+    }
+    if (!Number.isFinite(val)) val = min;
+    var pct = ((val - min) / (max - min)) * 100;
+    pct = Math.max(0, Math.min(100, pct));
+    state.slider.style.setProperty("--xcompare-slider-pct", pct + "%");
+}
+
 function updateSlider(state) {
     var cfg = getSliderConfig(state.mode, state);
     state.slider.min = String(cfg.min);
@@ -1493,9 +1549,10 @@ function updateSlider(state) {
     case MODE.SPOTLIGHT: val = state.spotRadius; break;
     case MODE.BLEND: val = state.blendOpacity; break;
     case MODE.PINGPONG: val = state.pingPongSpeed; break;
-    default: val = 50;
+        default: val = 50;
     }
     state.slider.value = String(val);
+    updateSliderVisual(state);
     updateCtrlLabel(state);
 }
 
@@ -1540,6 +1597,7 @@ function onSliderChange(state, value) {
         state.pingPongSpeed = value;
         break;
     }
+    updateSliderVisual(state);
     updateCtrlLabel(state);
     render(state);
     saveState(state);
@@ -1612,6 +1670,7 @@ function onMouseDown(state, e) {
         var pos = state.slideDirection === SLIDE_DIR_H ? imgPt.x : imgPt.y;
         state.slidePos = Math.max(0, Math.min(100, (pos / maxDim) * 100));
         state.slider.value = String(Math.round(state.slidePos));
+        updateSliderVisual(state);
         updateCtrlLabel(state);
         state.dragging = true;
         render(state);
@@ -1630,6 +1689,7 @@ function onMouseMove(state, e) {
         var pos = state.slideDirection === SLIDE_DIR_H ? imgPt.x : imgPt.y;
         state.slidePos = Math.max(0, Math.min(100, (pos / maxDim) * 100));
         state.slider.value = String(Math.round(state.slidePos));
+        updateSliderVisual(state);
         updateCtrlLabel(state);
         render(state);
         return;
@@ -1660,6 +1720,7 @@ function onWindowMouseMove(state, e) {
     var pos = state.slideDirection === SLIDE_DIR_H ? imgPt.x : imgPt.y;
     state.slidePos = Math.max(0, Math.min(100, (pos / maxDim) * 100));
     state.slider.value = String(Math.round(state.slidePos));
+    updateSliderVisual(state);
     updateCtrlLabel(state);
     render(state);
 }
