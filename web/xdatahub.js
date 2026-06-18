@@ -159,6 +159,7 @@ const XDATAHUB_THEME_VAR_KEYS = Object.freeze([
     "--xdh-clr-hairline-soft",
     "--xdh-clr-border-strong",
     "--xdh-clr-scrim",
+    "--xdh-window-header-bg",
 ]);
 const XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS = new Set([
     "--xdh-clr-primary",
@@ -229,6 +230,10 @@ const XDATAHUB_COMFY_THEME_VAR_CANDIDATES = Object.freeze({
         "--p-content-border-color",
     ],
     "--xdh-clr-scrim": [
+        "--comfy-menu-bg",
+        "--bg-color",
+    ],
+    "--xdh-window-header-bg": [
         "--comfy-menu-bg",
         "--bg-color",
     ],
@@ -1418,7 +1423,7 @@ app.registerExtension({
                 align-items: center;
                 gap: 6px;
                 font-weight: 600;
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 font-size: 14px;
             }
             .xz3r0-datahub-window-title-text {
@@ -1541,11 +1546,11 @@ app.registerExtension({
                 align-items: center;
                 justify-content: center;
                 background: transparent;
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 transition: all 0.2s;
             }
             .xz3r0-datahub-window-btn:hover {
-                background: var(--hover-accent-bg);
+                background: var(--xdh-clr-surface-soft);
             }
             .xz3r0-datahub-window-btn.active {
                 color: var(--p-button-primary-background, #6366f1);
@@ -1700,9 +1705,9 @@ app.registerExtension({
                 }
             }
             .xz3r0-datahub-window-host-tab:not(.active):hover {
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 border-color: var(--border-standard);
-                background: var(--hover-accent-bg);
+                background: var(--xdh-clr-surface-soft);
                 box-shadow: none;
                 animation: xz3r0TabBorderBreath 1.15s ease-in-out infinite;
             }
@@ -1880,7 +1885,7 @@ app.registerExtension({
             .xz3r0-opacity-popup-label {
                 font-size: 11px;
                 font-weight: 700;
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 letter-spacing: 0.06em;
                 text-transform: uppercase;
                 display: flex;

@@ -161,7 +161,7 @@ function ensureStyles() {
         "  background: var(--comfy-menu-secondary-bg, #2a2a2a);",
         "  color: var(--input-text, #ddd);",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
-        "  text-align: left;",
+        "  text-align: center;",
         "  white-space: nowrap;",
         "  overflow: hidden;",
         "  text-overflow: ellipsis;",
