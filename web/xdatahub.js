@@ -135,18 +135,148 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260618-1";
+const XDATAHUB_ASSET_VER = "20260618-6";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
     + `?v=${XDATAHUB_ASSET_VER}`;
-const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light"]);
+const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
+const XDATAHUB_EFFECTIVE_THEME_VALUES = new Set(["dark", "light"]);
+const XDATAHUB_THEME_CONTEXT_EVENT = "xdatahub:theme-context-applied";
+const XDATAHUB_THEME_VAR_KEYS = Object.freeze([
+    "--xdh-clr-primary",
+    "--xdh-clr-primary-active",
+    "--xdh-clr-on-primary",
+    "--xdh-clr-canvas",
+    "--xdh-clr-surface-soft",
+    "--xdh-clr-surface-card",
+    "--xdh-clr-surface-strong",
+    "--xdh-clr-ink",
+    "--xdh-clr-body",
+    "--xdh-clr-muted",
+    "--xdh-clr-muted-soft",
+    "--xdh-clr-hairline",
+    "--xdh-clr-hairline-soft",
+    "--xdh-clr-border-strong",
+    "--xdh-clr-scrim",
+]);
+const XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS = new Set([
+    "--xdh-clr-primary",
+    "--xdh-clr-primary-active",
+    "--xdh-clr-on-primary",
+]);
+const XDATAHUB_COMFY_THEME_VAR_CANDIDATES = Object.freeze({
+    "--xdh-clr-canvas": [
+        "--comfy-menu-bg",
+        "--p-surface-900",
+        "--panel-bg",
+        "--bg-color",
+    ],
+    "--xdh-clr-surface-soft": [
+        "--comfy-menu-secondary-bg",
+        "--comfy-input-bg",
+        "--p-surface-800",
+        "--content-bg",
+    ],
+    "--xdh-clr-surface-card": [
+        "--comfy-input-bg",
+        "--comfy-menu-secondary-bg",
+        "--p-surface-800",
+        "--content-bg",
+    ],
+    "--xdh-clr-surface-strong": [
+        "--comfy-menu-secondary-bg",
+        "--p-surface-700",
+        "--content-bg",
+    ],
+    "--xdh-clr-ink": [
+        "--input-text",
+        "--fg-color",
+        "--text-color",
+        "--p-text-color",
+    ],
+    "--xdh-clr-body": [
+        "--input-text",
+        "--fg-color",
+        "--text-color-secondary",
+        "--p-text-muted-color",
+    ],
+    "--xdh-clr-muted": [
+        "--descrip-text",
+        "--fg-color",
+        "--text-color-secondary",
+        "--p-text-muted-color",
+    ],
+    "--xdh-clr-muted-soft": [
+        "--descrip-text",
+        "--text-color-secondary",
+        "--p-text-muted-color",
+    ],
+    "--xdh-clr-hairline": [
+        "--border-color",
+        "--comfy-menu-border",
+        "--p-content-border-color",
+        "--tr-even-bg-color",
+    ],
+    "--xdh-clr-hairline-soft": [
+        "--border-color",
+        "--comfy-menu-border",
+        "--p-content-border-color",
+    ],
+    "--xdh-clr-border-strong": [
+        "--border-color",
+        "--comfy-menu-border",
+        "--p-content-border-color",
+    ],
+    "--xdh-clr-scrim": [
+        "--comfy-menu-bg",
+        "--bg-color",
+    ],
+});
 let currentThemeMode = "dark";
+let currentEffectiveThemeMode = "dark";
+let currentThemeVars = {};
 let lockEventBridgeInstalled = false;
 
 function normalizeThemeMode(value) {
     const mode = String(value || "").trim().toLowerCase();
     return XDATAHUB_THEME_MODE_VALUES.has(mode) ? mode : "dark";
+}
+
+function normalizeEffectiveThemeMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    return XDATAHUB_EFFECTIVE_THEME_VALUES.has(mode) ? mode : "dark";
+}
+
+function getThemeSourceMode(themeMode) {
+    return normalizeThemeMode(themeMode) === "comfyui"
+        ? "comfyui"
+        : "xdatahub";
+}
+
+function buildThemeContext() {
+    return {
+        theme_mode: currentThemeMode,
+        effective_mode: currentEffectiveThemeMode,
+        vars: { ...currentThemeVars },
+    };
+}
+
+function resolveThemeContextForMode(mode) {
+    const normalized = normalizeThemeMode(mode);
+    if (normalized === "comfyui") {
+        const comfyTheme = buildComfyThemeVars();
+        return {
+            theme_mode: normalized,
+            effective_mode: comfyTheme.effectiveMode,
+            vars: comfyTheme.vars,
+        };
+    }
+    return {
+        theme_mode: normalized,
+        effective_mode: normalizeEffectiveThemeMode(normalized),
+        vars: {},
+    };
 }
 
 function normalizeMessageOrigin(value) {
@@ -191,13 +321,210 @@ function ensureColorTokensStylesheet() {
     document.head.appendChild(link);
 }
 
-function applyThemeMode(mode) {
-    const normalized = normalizeThemeMode(mode);
-    if (normalized === currentThemeMode) {
+function readCssVarValue(style, name) {
+    return String(style?.getPropertyValue?.(name) || "").trim();
+}
+
+function resolveComputedCssValue(property, value) {
+    const probe = document.createElement("div");
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style[property] = value;
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe)[property] || "";
+    probe.remove();
+    return String(resolved || "").trim();
+}
+
+function getDefaultThemeTokenValue(themeMode, tokenName) {
+    const root = document.documentElement;
+    const body = document.body;
+    const previousTheme = root.getAttribute("data-xdh-default-theme");
+    const previousRootInline = root.style.getPropertyValue(tokenName);
+    const previousBodyInline = body?.style?.getPropertyValue(tokenName) || "";
+    root.setAttribute("data-xdh-default-theme", themeMode);
+    root.style.removeProperty(tokenName);
+    body?.style?.removeProperty(tokenName);
+    const resolved = readCssVarValue(getComputedStyle(root), tokenName)
+        || resolveComputedCssValue("color", `var(${tokenName})`);
+    if (previousRootInline) {
+        root.style.setProperty(tokenName, previousRootInline);
+    } else {
+        root.style.removeProperty(tokenName);
+    }
+    if (body) {
+        if (previousBodyInline) {
+            body.style.setProperty(tokenName, previousBodyInline);
+        } else {
+            body.style.removeProperty(tokenName);
+        }
+    }
+    if (previousTheme) {
+        root.setAttribute("data-xdh-default-theme", previousTheme);
+    } else {
+        root.removeAttribute("data-xdh-default-theme");
+    }
+    return resolved;
+}
+
+function inferEffectiveThemeModeFromComfy() {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const canvas = resolveComputedCssValue(
+        "backgroundColor",
+        `var(${XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-canvas"][0]})`
+    ) || readCssVarValue(rootStyle, "--comfy-menu-bg");
+    const probe = document.createElement("div");
+    probe.style.color = canvas;
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    const match = resolved.match(/\d+(?:\.\d+)?/g);
+    if (!match || match.length < 3) {
+        return "dark";
+    }
+    const [r, g, b] = match.slice(0, 3).map(Number);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance >= 0.6 ? "light" : "dark";
+}
+
+function buildComfyThemeVars() {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const effective = inferEffectiveThemeModeFromComfy();
+    const vars = {};
+    for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
+        if (XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS.has(tokenName)) {
+            const preserved = getDefaultThemeTokenValue(effective, tokenName);
+            if (preserved) {
+                vars[tokenName] = preserved;
+            }
+            continue;
+        }
+        const candidates = XDATAHUB_COMFY_THEME_VAR_CANDIDATES[tokenName] || [];
+        let resolved = "";
+        for (const candidate of candidates) {
+            resolved = resolveComputedCssValue("color", `var(${candidate})`);
+            if (resolved) {
+                break;
+            }
+            resolved = readCssVarValue(rootStyle, candidate);
+            if (resolved) {
+                resolved = resolveComputedCssValue("color", resolved) || resolved;
+                break;
+            }
+        }
+        if (!resolved) {
+            resolved = getDefaultThemeTokenValue(effective, tokenName);
+        }
+        if (!resolved) {
+            continue;
+        }
+        if (tokenName === "--xdh-clr-scrim") {
+            vars[tokenName] = effective === "light"
+                ? "rgba(0, 0, 0, 0.50)"
+                : "rgba(0, 0, 0, 0.70)";
+            continue;
+        }
+        vars[tokenName] = resolved;
+    }
+    return { effectiveMode: effective, vars };
+}
+
+function clearThemeVars(target) {
+    if (!(target instanceof HTMLElement)) {
         return;
     }
+    for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
+        target.style.removeProperty(tokenName);
+    }
+}
+
+function applyThemeVarsToElement(target, vars) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    clearThemeVars(target);
+    for (const [tokenName, tokenValue] of Object.entries(vars || {})) {
+        if (typeof tokenValue === "string" && tokenValue.trim()) {
+            target.style.setProperty(tokenName, tokenValue);
+        }
+    }
+}
+
+function applyThemeContextToHostWindow(context) {
+    if (!xdataHubRef?.instance?.windowEl) {
+        return;
+    }
+    const windowEl = xdataHubRef.instance.windowEl;
+    windowEl.setAttribute("data-theme", context.effective_mode);
+    windowEl.setAttribute(
+        "data-theme-source",
+        getThemeSourceMode(context.theme_mode)
+    );
+    applyThemeVarsToElement(windowEl, context.vars);
+}
+
+function applyThemeContextToDocument(context) {
+    const effective = normalizeEffectiveThemeMode(context?.effective_mode);
+    const themeSource = getThemeSourceMode(context?.theme_mode);
+    document.documentElement.dataset.themeSource = themeSource;
+    document.body.dataset.theme = effective;
+    document.body.dataset.themeSource = themeSource;
+    applyThemeVarsToElement(document.documentElement, context?.vars || {});
+    applyThemeVarsToElement(document.body, context?.vars || {});
+    document.dispatchEvent(
+        new CustomEvent(XDATAHUB_THEME_CONTEXT_EVENT, {
+            detail: context,
+        })
+    );
+}
+
+function applyThemeMode(mode) {
+    const normalized = normalizeThemeMode(mode);
     currentThemeMode = normalized;
-    xdataHubRef?.instance?.applyThemeMode?.(currentThemeMode);
+    const nextContext = resolveThemeContextForMode(normalized);
+    currentEffectiveThemeMode = nextContext.effective_mode;
+    currentThemeVars = nextContext.vars;
+    applyThemeContextToDocument(nextContext);
+    xdataHubRef?.instance?.applyThemeMode?.(nextContext);
+}
+
+function reapplyCurrentThemeContext() {
+    applyThemeMode(currentThemeMode);
+}
+
+function installComfyThemeObserver() {
+    const refresh = () => {
+        if (currentThemeMode === "comfyui") {
+            reapplyCurrentThemeContext();
+        }
+    };
+    try {
+        const observer = new MutationObserver((mutations) => {
+            if (
+                mutations.some((mutation) =>
+                    mutation.attributeName === "data-theme"
+                    || mutation.attributeName === "class"
+                )
+            ) {
+                refresh();
+            }
+        });
+        observer.observe(document.body, {
+            attributes: true,
+            attributeFilter: ["class"],
+        });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["data-theme", "class"],
+        });
+    } catch {
+        // Ignore observer install failures.
+    }
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
 }
 
 async function syncThemeModeFromSettings() {
@@ -1939,13 +2266,10 @@ const XDataHub = {
         const opacityBtn = document.createElement("button");
         opacityBtn.className = "xz3r0-datahub-window-btn";
         opacityBtn.title = t("opacityLabel", "Opacity");
-        opacityBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-            viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-            class="xz3r0-icon" style="filter:none;opacity:1">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 2a10 10 0 0 1 0 20z"/>
-        </svg>`;
+        opacityBtn.innerHTML = iconHtml(
+            "contrast",
+            t("opacityLabel", "Opacity")
+        );
 
         const opacityPopup = document.createElement("div");
         opacityPopup.className = "xz3r0-opacity-popup";
@@ -2020,11 +2344,11 @@ const XDataHub = {
                 getDataFrameTargetOrigin(dataFrame)
             );
         };
-        const postThemeModeToDataFrame = () => {
+        const postThemeContextToDataFrame = () => {
             postToDataFrame(
                 {
-                    type: "xdatahub:theme-mode",
-                    theme_mode: currentThemeMode,
+                    type: "xdatahub:theme-context",
+                    context: buildThemeContext(),
                 },
             );
         };
@@ -2054,7 +2378,7 @@ const XDataHub = {
             );
         };
         const postSharedStateToDataFrame = () => {
-            postThemeModeToDataFrame();
+            postThemeContextToDataFrame();
             postUiLocaleToDataFrame(currentUiLocale);
         };
         const postCloseFacetToDataFrame = () => {
@@ -2112,7 +2436,7 @@ const XDataHub = {
         shell.appendChild(content);
         windowEl.appendChild(shell);
         document.body.appendChild(windowEl);
-        windowEl.setAttribute("data-theme", currentThemeMode);
+        applyThemeContextToHostWindow(buildThemeContext());
         dataFrame.addEventListener("load", () => {
             postSharedStateToDataFrame();
             postLockEventToDataFrame("frame_loaded");
@@ -3186,11 +3510,16 @@ const XDataHub = {
             async applyUiLocale(locale) {
                 await applyHostUiLocale(locale);
             },
-            applyThemeMode(mode) {
-                const normalized = normalizeThemeMode(mode);
-                windowEl.setAttribute("data-theme", normalized);
-                document.body.dataset.theme = normalized;
-                postThemeModeToDataFrame();
+            windowEl,
+            dataFrame,
+            applyThemeMode(contextOrMode) {
+                const context = contextOrMode
+                    && typeof contextOrMode === "object"
+                    && contextOrMode.effective_mode
+                    ? contextOrMode
+                    : resolveThemeContextForMode(contextOrMode);
+                applyThemeContextToHostWindow(context);
+                postThemeContextToDataFrame();
             },
             postInterruptRequestedToDataFrame() {
                 postInterruptRequestedToDataFrame();
@@ -3310,6 +3639,7 @@ const XDataHub = {
 xdataHubRef = XDataHub;
 installInterruptObserver();
 installLockEventBridge();
+installComfyThemeObserver();
 
 window.addEventListener("message", (event) => {
     const isFrameMessage = isTrustedDataFrameMessage(event);
@@ -3434,6 +3764,19 @@ window.addEventListener("message", (event) => {
                 "default_open_layout"
             ),
         });
+        return;
+    }
+    if (payload.type === "xdatahub:theme-context") {
+        const context = payload.context;
+        if (context && typeof context === "object") {
+            currentThemeMode = normalizeThemeMode(context.theme_mode);
+            currentEffectiveThemeMode = normalizeEffectiveThemeMode(
+                context.effective_mode
+            );
+            currentThemeVars = { ...(context.vars || {}) };
+            applyThemeContextToDocument(buildThemeContext());
+            xdataHubRef?.instance?.applyThemeMode?.(buildThemeContext());
+        }
         return;
     }
     if (payload.type === "xdatahub:theme-mode") {

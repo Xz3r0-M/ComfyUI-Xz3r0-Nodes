@@ -1921,6 +1921,44 @@ export class XdhLightbox extends BaseElement {
                     z-index: 1;
                 }
 
+                .fs-stage[data-media-type="image"] .fs-media,
+                .fs-stage[data-media-type="lora"] .fs-media {
+                    background:
+                        linear-gradient(
+                            45deg,
+                            color-mix(
+                                in srgb,
+                                var(--lb-surface) 92%,
+                                transparent
+                            ) 25%,
+                            transparent 25%,
+                            transparent 75%,
+                            color-mix(
+                                in srgb,
+                                var(--lb-surface) 92%,
+                                transparent
+                            ) 75%
+                        ),
+                        linear-gradient(
+                            45deg,
+                            color-mix(
+                                in srgb,
+                                var(--lb-surface) 92%,
+                                transparent
+                            ) 25%,
+                            transparent 25%,
+                            transparent 75%,
+                            color-mix(
+                                in srgb,
+                                var(--lb-surface) 92%,
+                                transparent
+                            ) 75%
+                        );
+                    background-position: 0 0, 12px 12px;
+                    background-size: 24px 24px;
+                    border-radius: 14px;
+                }
+
                 /* ============================================
                    Top Right Actions - Close & Open buttons
                    ============================================ */
@@ -2097,7 +2135,6 @@ export class XdhLightbox extends BaseElement {
 
                 .fs-video {
                     background: var(--lb-surface);
-                    border-radius: 8px;
                     box-shadow: var(--lb-shadow-card);
                 }
 

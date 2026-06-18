@@ -8,12 +8,15 @@
     <script>
     (function() {
         var saved = localStorage.getItem('XDataHub.V2.Theme');
-        if (saved === 'light' || saved === 'dark') {
-            document.body.dataset.theme = saved;
+        if (saved === 'light' || saved === 'dark' || saved === 'comfyui') {
+            document.body.dataset.theme = saved === 'light' ? 'light' : 'dark';
+            document.body.dataset.themeSource = saved === 'comfyui'
+                ? 'comfyui'
+                : 'xdatahub';
         }
     })();
     </script>
-    <link rel="stylesheet" href="xdatahub-color-tokens.css?v=20260523-1">
+    <link rel="stylesheet" href="xdatahub-color-tokens.css?v=20260618-2">
     <style>
         body {
             margin: 0;
@@ -111,6 +114,6 @@
     <xdh-settings-dialog></xdh-settings-dialog>
 
     <!-- ES Module Entry -->
-    <script type="module" src="xdatahub_app_v2.js?v=20260523-4"></script>
+    <script type="module" src="xdatahub_app_v2.js?v=20260618-7"></script>
 </body>
 </html>

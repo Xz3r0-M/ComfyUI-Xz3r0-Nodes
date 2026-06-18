@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260412b";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260618-1";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";

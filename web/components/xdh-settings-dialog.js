@@ -111,11 +111,56 @@ function escapeHtml(value) {
 }
 
 function syncStoreSettings(settings, ffmpegAvailable) {
-    appStore.state.xdatahubSettings = {
-        ...appStore.state.xdatahubSettings,
+    const current = appStore.state.xdatahubSettings || {};
+    const next = {
+        ...current,
         ...(settings || {}),
-        ...(ffmpegAvailable !== undefined ? { ffmpeg_available: ffmpegAvailable } : {}),
+        ...(ffmpegAvailable !== undefined
+            ? { ffmpeg_available: ffmpegAvailable }
+            : {}),
     };
+    const currentKeys = Object.keys(current);
+    const nextKeys = Object.keys(next);
+    if (currentKeys.length === nextKeys.length) {
+        let changed = false;
+        for (const key of nextKeys) {
+            const prevValue = current[key];
+            const nextValue = next[key];
+            if (Array.isArray(prevValue) || Array.isArray(nextValue)) {
+                if (
+                    !Array.isArray(prevValue)
+                    || !Array.isArray(nextValue)
+                    || prevValue.length !== nextValue.length
+                    || prevValue.some((item, index) => item !== nextValue[index])
+                ) {
+                    changed = true;
+                    break;
+                }
+                continue;
+            }
+            if (
+                prevValue
+                && nextValue
+                && typeof prevValue === "object"
+                && typeof nextValue === "object"
+            ) {
+                if (JSON.stringify(prevValue) !== JSON.stringify(nextValue)) {
+                    changed = true;
+                    break;
+                }
+                continue;
+            }
+            if (prevValue !== nextValue) {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) {
+            return false;
+        }
+    }
+    appStore.state.xdatahubSettings = next;
+    return true;
 }
 
 export class XdhSettingsDialog extends BaseElement {
@@ -481,6 +526,7 @@ export class XdhSettingsDialog extends BaseElement {
                             [
                                 ["dark", "settings.theme_dark"],
                                 ["light", "settings.theme_light"],
+                                ["comfyui", "settings.theme_comfyui"],
                             ],
                             themeMode
                         )
@@ -1206,7 +1252,10 @@ export class XdhSettingsDialog extends BaseElement {
                     try {
                         const updated = await saveSettings({ [key]: val });
                         this._applyUpdatedSettings(updated);
-                        if (HOST_CONTROLLED_SETTING_KEYS.has(key)) {
+                        if (
+                            key === "theme_mode"
+                            || HOST_CONTROLLED_SETTING_KEYS.has(key)
+                        ) {
                             postHostSettingsUpdate({
                                 [key]: updated[key],
                             });

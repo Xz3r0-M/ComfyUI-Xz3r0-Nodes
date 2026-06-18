@@ -578,10 +578,7 @@ export class XdhContentNav extends BaseElement {
                     flex-shrink: 0;
                     gap: var(--xdh-space-xs);
                     padding: var(--xdh-space-xs) 3px 6px;
-                    background:
-                        linear-gradient(180deg,
-                            color-mix(in srgb, var(--xdh-color-surface-2) 42%, transparent),
-                            transparent 90%);
+                    background: var(--xdh-color-surface-1);
                     box-shadow:
                         inset 0 1px 0 color-mix(in srgb, var(--xdh-color-text-primary) 6%, transparent),
                         inset -1px 0 0 color-mix(in srgb, var(--xdh-color-surface-4) 22%, transparent);
@@ -591,10 +588,7 @@ export class XdhContentNav extends BaseElement {
                 }
                 .status-panel:hover,
                 .status-wrap.open .status-panel {
-                    background:
-                        linear-gradient(180deg,
-                            color-mix(in srgb, var(--xdh-color-surface-2) 56%, transparent),
-                            color-mix(in srgb, var(--xdh-color-surface-2) 16%, transparent));
+                    background: var(--xdh-color-surface-2);
                 }
                 .status-panel:focus-visible {
                     box-shadow:
@@ -869,13 +863,55 @@ export class XdhContentNav extends BaseElement {
                 .drawer-item {
                     padding: 9px 14px; font-size: 13px;
                     color: var(--xdh-color-text-primary);
-                    cursor: pointer; white-space: nowrap; transition: background 0.12s;
+                    cursor: pointer; white-space: nowrap;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    border-radius: calc(var(--xdh-radius-sm) - 2px);
+                    margin: 0 var(--xdh-space-xs);
+                    outline: none;
+                    transition:
+                        background-color 0.12s ease,
+                        color 0.12s ease,
+                        box-shadow 0.12s ease;
                 }
-                .drawer-item:hover { background: var(--xdh-color-hover); }
-                .drawer-item:active { background: var(--xdh-color-surface-4); }
+                .drawer-item:hover,
+                .drawer-item:focus-visible {
+                    background: color-mix(
+                        in srgb, var(--xdh-color-text-primary) 10%,
+                        var(--xdh-color-surface-2) 90%
+                    );
+                    color: var(--xdh-color-text-primary);
+                    box-shadow:
+                        inset 0 0 0 1px color-mix(
+                            in srgb, var(--xdh-color-text-primary) 16%,
+                            transparent
+                        );
+                }
+                .drawer-item:active {
+                    background: color-mix(
+                        in srgb, var(--xdh-color-text-primary) 14%,
+                        var(--xdh-color-surface-2) 86%
+                    );
+                    box-shadow:
+                        inset 0 0 0 1px color-mix(
+                            in srgb, var(--xdh-color-text-primary) 20%,
+                            transparent
+                        );
+                }
                 .drawer-sep { height: 1px; background: var(--xdh-color-border); margin: 3px 0; }
                 .drawer-item.danger { color: #e06060; }
-                .drawer-item.danger:hover { background: rgba(200,60,60,0.15); }
+                .drawer-item.danger:hover,
+                .drawer-item.danger:focus-visible {
+                    background: color-mix(
+                        in srgb, var(--xdh-clr-error) 16%, transparent
+                    );
+                    box-shadow:
+                        inset 0 0 0 1px color-mix(
+                            in srgb, var(--xdh-clr-error) 24%,
+                            transparent
+                        );
+                }
 
                 @container nav (max-width: 360px) { .label { display: none; } }
                 @container nav (max-width: 280px) { .size-cycle-btn { display: none; } }

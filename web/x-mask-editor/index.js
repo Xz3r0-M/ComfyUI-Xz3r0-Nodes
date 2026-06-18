@@ -2,7 +2,8 @@ import { XMaskEditorController } from "./controller.js?v=20260412b";
 import { openMaskEditorSession } from "./session.js?v=20260412a";
 import { saveMaskArtifacts } from "./upload.js?v=20260412a";
 
-const THEME_MODE_VALUES = new Set(["dark", "light"]);
+const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
+const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
 const TEXT_EDITABLE_INPUT_TYPES = new Set([
     "email",
     "number",
@@ -19,6 +20,11 @@ function normalizeThemeMode(value) {
     return THEME_MODE_VALUES.has(mode) ? mode : "dark";
 }
 
+function normalizeEffectiveThemeMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    return EFFECTIVE_THEME_MODE_VALUES.has(mode) ? mode : "dark";
+}
+
 async function resolveMaskEditorThemeMode() {
     try {
         const response = await fetch("/xz3r0/xdatahub/settings", {
@@ -26,7 +32,13 @@ async function resolveMaskEditorThemeMode() {
         });
         const payload = await response.json();
         if (response.ok && payload?.status === "success") {
-            return normalizeThemeMode(payload?.settings?.theme_mode);
+            const themeMode = normalizeThemeMode(payload?.settings?.theme_mode);
+            if (themeMode === "comfyui") {
+                return normalizeEffectiveThemeMode(
+                    document.body?.dataset?.theme
+                );
+            }
+            return normalizeEffectiveThemeMode(themeMode);
         }
     } catch {
         // Ignore request failures and keep the dark default.
@@ -34,7 +46,10 @@ async function resolveMaskEditorThemeMode() {
     const themedWindow = document.querySelector(
         ".xz3r0-datahub-window[data-theme]"
     );
-    return normalizeThemeMode(themedWindow?.getAttribute?.("data-theme"));
+    return normalizeEffectiveThemeMode(
+        themedWindow?.getAttribute?.("data-theme")
+            || document.body?.dataset?.theme
+    );
 }
 
 function isTextEditableTarget(target) {
@@ -110,7 +125,10 @@ export async function openXMaskEditor(options = {}) {
         ui.hotkeySink.focus({ preventScroll: true });
     };
     const applyThemeMode = (mode) => {
-        ui.overlay.dataset.theme = normalizeThemeMode(mode);
+        ui.overlay.dataset.theme = normalizeEffectiveThemeMode(mode);
+    };
+    const applyThemeContext = (context) => {
+        applyThemeMode(context?.effective_mode ?? context?.theme_mode);
     };
     applyThemeMode("dark");
     resolveMaskEditorThemeMode().then((mode) => {
@@ -473,13 +491,22 @@ export async function openXMaskEditor(options = {}) {
     });
     session.bind(window, "message", (event) => {
         const payload = event?.data;
-        if (!payload || payload.type !== "xdatahub:theme-mode") {
+        if (!payload) {
             return;
         }
         if (event.origin && event.origin !== window.location.origin) {
             return;
         }
-        applyThemeMode(payload.theme_mode);
+        if (payload.type === "xdatahub:theme-context") {
+            applyThemeContext(payload.context);
+            return;
+        }
+        if (payload.type === "xdatahub:theme-mode") {
+            applyThemeMode(payload.theme_mode);
+        }
+    });
+    session.bind(document, "xdatahub:theme-context-applied", (event) => {
+        applyThemeContext(event?.detail);
     });
 
     try {
