@@ -472,7 +472,7 @@ function injectStyles() {
         "  display: flex; flex-direction: column;",
         "  box-sizing: border-box;",
         "  background: transparent;",
-        "  color: inherit;",
+        "  color: var(--input-text, inherit);",
         "  overflow: hidden;",
         "}",
         ".xcompare-toolbar {",
@@ -498,9 +498,9 @@ function injectStyles() {
         "}",
         ".xcompare-toolbar button {",
         "  padding: 3px 8px;",
-        "  border: 1px solid var(--xdh-clr-hairline, #555);",
+        "  border: 1px solid var(--border-color, #555);",
         "  border-radius: var(--xdh-radius-sm, 3px); cursor: pointer;",
-        "  background: var(--secondary-background);",
+        "  background: transparent;",
         "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  white-space: nowrap;",
@@ -509,7 +509,6 @@ function injectStyles() {
         "}",
         ".xcompare-toolbar button:hover {",
         "  border-color: var(--xdh-clr-primary, #ff385c);",
-        "  background: var(--secondary-background-hover, var(--secondary-background));",
         "}",
         ".xcompare-toolbar button.active {",
         "  background: var(--xdh-clr-primary, #ff385c);",
@@ -619,10 +618,10 @@ function injectStyles() {
         "}",
         ".xcompare-curve-btn {",
         "  padding: 3px 6px;",
-        "  border: 1px solid var(--xdh-clr-hairline, #555);",
+        "  border: 1px solid var(--border-color, #555);",
         "  border-radius: var(--xdh-radius-sm, 3px);",
         "  cursor: pointer;",
-        "  background: var(--secondary-background);",
+        "  background: transparent;",
         "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  white-space: nowrap;",
@@ -630,7 +629,6 @@ function injectStyles() {
         "}",
         ".xcompare-curve-btn:hover {",
         "  border-color: var(--xdh-clr-primary, #ff385c);",
-        "  background: var(--secondary-background-hover, var(--secondary-background));",
         "}",
         ".xcompare-curve-label {",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
@@ -715,7 +713,7 @@ function createCompareState(node) {
 function getCanvasBg(state) {
     if (!state.wrap) return "#1a1a1a";
     var cs = getComputedStyle(state.wrap);
-    var bg = cs.getPropertyValue("--xdh-clr-surface-card").trim();
+    var bg = cs.getPropertyValue("--comfy-menu-bg").trim();
     return bg || "#1a1a1a";
 }
 
