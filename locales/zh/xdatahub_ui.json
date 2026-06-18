@@ -179,5 +179,17 @@
   "xdatahub.ui.node.xmemorycleanup.status.request_failed": "清理请求失败",
   "xdatahub.ui.node.xmemorycleanup.status.models_done": "已清理 {models} 个已加载模型。",
   "xdatahub.ui.node.xmemorycleanup.status.execution_cache_done": "已清理 {entries} 个工作流节点结果缓存。",
-  "xdatahub.ui.node.xmemorycleanup.status.models_and_execution_cache_done": "已清理 {models} 个已加载模型和 {entries} 个工作流节点结果缓存。"
+  "xdatahub.ui.node.xmemorycleanup.status.models_and_execution_cache_done": "已清理 {models} 个已加载模型和 {entries} 个工作流节点结果缓存。",
+  "xdatahub.ui.node.xcontrolpanel.title": "控制面板",
+  "xdatahub.ui.node.xcontrolpanel.subtitle": "用于手动执行即时控制操作，不会运行工作流。",
+  "xdatahub.ui.node.xcontrolpanel.btn.restart": "重启 ComfyUI",
+  "xdatahub.ui.node.xcontrolpanel.btn.restart_busy": "正在重启 ComfyUI...",
+  "xdatahub.ui.node.xcontrolpanel.tip.restart": "重启 ComfyUI 服务进程。恢复后请刷新浏览器页面。",
+  "xdatahub.ui.node.xcontrolpanel.confirm.title": "重启 ComfyUI",
+  "xdatahub.ui.node.xcontrolpanel.confirm.restart": "现在重启 ComfyUI？正在运行的任务可能会中断。",
+  "xdatahub.ui.node.xcontrolpanel.status.idle": "空闲",
+  "xdatahub.ui.node.xcontrolpanel.status.restarting": "已发送重启请求...",
+  "xdatahub.ui.node.xcontrolpanel.status.restart_scheduled": "已安排重启。ComfyUI 恢复后请刷新浏览器页面。",
+  "xdatahub.ui.node.xcontrolpanel.status.request_failed": "重启请求失败"
 }
+

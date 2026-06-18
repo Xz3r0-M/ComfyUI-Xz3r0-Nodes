@@ -163,6 +163,12 @@
       }
     }
   },
+  "XControlPanel": {
+    "display_name": "XControlPanel",
+    "description": "Panel-only control node for immediate ComfyUI actions. Currently provides a manual restart button.",
+    "inputs": {},
+    "outputs": {}
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
@@ -1194,9 +1200,4 @@
     }
   }
 }
-
-
-
-
-
 

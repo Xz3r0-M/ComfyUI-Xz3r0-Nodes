@@ -179,5 +179,17 @@
   "xdatahub.ui.node.xmemorycleanup.status.request_failed": "Cleanup request failed",
   "xdatahub.ui.node.xmemorycleanup.status.models_done": "Cleared {models} loaded models.",
   "xdatahub.ui.node.xmemorycleanup.status.execution_cache_done": "Cleared {entries} workflow node result cache entries.",
-  "xdatahub.ui.node.xmemorycleanup.status.models_and_execution_cache_done": "Cleared {models} loaded models and {entries} workflow node result cache entries."
+  "xdatahub.ui.node.xmemorycleanup.status.models_and_execution_cache_done": "Cleared {models} loaded models and {entries} workflow node result cache entries.",
+  "xdatahub.ui.node.xcontrolpanel.title": "Control Panel",
+  "xdatahub.ui.node.xcontrolpanel.subtitle": "Run immediate control actions without queueing the workflow.",
+  "xdatahub.ui.node.xcontrolpanel.btn.restart": "Restart ComfyUI",
+  "xdatahub.ui.node.xcontrolpanel.btn.restart_busy": "Restarting ComfyUI...",
+  "xdatahub.ui.node.xcontrolpanel.tip.restart": "Restart the ComfyUI server process. Refresh the browser after it comes back.",
+  "xdatahub.ui.node.xcontrolpanel.confirm.title": "Restart ComfyUI",
+  "xdatahub.ui.node.xcontrolpanel.confirm.restart": "Restart ComfyUI now? Running work may be interrupted.",
+  "xdatahub.ui.node.xcontrolpanel.status.idle": "Idle",
+  "xdatahub.ui.node.xcontrolpanel.status.restarting": "Restart request sent...",
+  "xdatahub.ui.node.xcontrolpanel.status.restart_scheduled": "Restart scheduled. Refresh the browser after ComfyUI is back.",
+  "xdatahub.ui.node.xcontrolpanel.status.request_failed": "Restart request failed"
 }
+

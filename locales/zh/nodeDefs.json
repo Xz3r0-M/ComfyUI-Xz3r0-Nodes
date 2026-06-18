@@ -163,6 +163,12 @@
       }
     }
   },
+  "XControlPanel": {
+    "display_name": "XControlPanel",
+    "description": "纯面板控制节点，用于手动执行 ComfyUI 即时控制操作。目前提供重启 ComfyUI 按钮。",
+    "inputs": {},
+    "outputs": {}
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "日期时间字符串节点，生成包含日期时间标识符的格式化字符串，用于链接给本身不支持日期标识符的节点。",
@@ -1194,9 +1200,4 @@
     }
   }
 }
-
-
-
-
-
 
