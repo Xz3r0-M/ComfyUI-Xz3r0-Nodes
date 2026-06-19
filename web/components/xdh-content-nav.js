@@ -661,7 +661,7 @@ export class XdhContentNav extends BaseElement {
                     transition: background 0.14s, color 0.14s;
                     flex-shrink: 0;
                 }
-                button:hover { background: var(--xdh-color-hover); color: var(--xdh-color-text-primary); }
+                button:hover { background: var(--xdh-clr-btn-hover, var(--xdh-color-hover)); color: var(--xdh-color-text-primary); }
                 button:disabled { opacity: 0.3; cursor: not-allowed; }
                 button.active {
                     background-color: var(--xdh-color-primary-muted);

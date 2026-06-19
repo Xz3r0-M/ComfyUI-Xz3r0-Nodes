@@ -1884,6 +1884,23 @@ export class XdhLightbox extends BaseElement {
                     --lb-audio-gradient-end: rgba(60, 90, 160, 0.15);
                 }
 
+                /* Follow-ComfyUI theme: remap the lightbox's structural
+                   tokens onto the ComfyUI-derived --xdh-clr-* set. Applies
+                   ONLY in this theme (body[data-theme-source="comfyui"]);
+                   placed after the light block so it wins on equal
+                   specificity. The dark/light --lb-* blocks above are left
+                   untouched and remain the fallback for the built-in themes. */
+                :host-context(body[data-theme-source="comfyui"]) {
+                    --lb-bg: var(--xdh-clr-scrim);
+                    --lb-surface: var(--xdh-clr-surface-card);
+                    --lb-surface-elevated: var(--xdh-clr-surface-strong);
+                    --lb-text-primary: var(--xdh-clr-ink);
+                    --lb-text-secondary: var(--xdh-clr-body);
+                    --lb-text-tertiary: var(--xdh-clr-muted);
+                    --lb-border: var(--xdh-clr-hairline);
+                    --lb-border-light: var(--xdh-clr-hairline-soft);
+                }
+
                 /* ============================================
                    Base Stage
                    ============================================ */

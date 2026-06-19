@@ -135,7 +135,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260618-6";
+const XDATAHUB_ASSET_VER = "20260619-3";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -151,6 +151,7 @@ const XDATAHUB_THEME_VAR_KEYS = Object.freeze([
     "--xdh-clr-surface-soft",
     "--xdh-clr-surface-card",
     "--xdh-clr-surface-strong",
+    "--xdh-clr-btn-hover",
     "--xdh-clr-ink",
     "--xdh-clr-body",
     "--xdh-clr-muted",
@@ -191,8 +192,8 @@ const XDATAHUB_COMFY_THEME_VAR_CANDIDATES = Object.freeze({
         "--content-bg",
     ],
     "--xdh-clr-ink": [
-        "--input-text",
         "--fg-color",
+        "--input-text",
         "--text-color",
         "--p-text-color",
     ],
@@ -233,11 +234,64 @@ const XDATAHUB_COMFY_THEME_VAR_CANDIDATES = Object.freeze({
         "--comfy-menu-bg",
         "--bg-color",
     ],
+    // Ordinary-button hover, ComfyUI-only. Maps to ComfyUI's semantic,
+    // theme-aware secondary-surface hover (dark #313235 / light #d9d9d9).
+    // Consumed by buttons via var(--xdh-clr-btn-hover, <original>) so the
+    // built-in dark/light themes fall back untouched.
+    "--xdh-clr-btn-hover": [
+        "--secondary-background-hover",
+        "--comfy-menu-secondary-bg",
+    ],
     "--xdh-window-header-bg": [
         "--comfy-menu-bg",
         "--bg-color",
     ],
 });
+// Surface tokens need mode-aware mapping: ComfyUI's surface variables do not
+// keep a consistent lightness order across its dark/light palettes (e.g.
+// --comfy-menu-bg is the darkest surface in dark themes but the lightest in
+// light themes), so a single candidate list would invert the elevation
+// hierarchy on one side. These per-mode lists keep canvas → soft = card →
+// strong monotonic in both directions (lighter-is-higher in dark,
+// darker-is-higher in light).
+const XDATAHUB_COMFY_SURFACE_CANDIDATES = Object.freeze({
+    dark: {
+        "--xdh-clr-canvas": ["--comfy-menu-bg", "--bg-color"],
+        "--xdh-clr-surface-soft": [
+            "--comfy-input-bg",
+            "--comfy-menu-secondary-bg",
+        ],
+        "--xdh-clr-surface-card": [
+            "--comfy-input-bg",
+            "--comfy-menu-secondary-bg",
+        ],
+        "--xdh-clr-surface-strong": [
+            "--comfy-menu-secondary-bg",
+            "--content-bg",
+        ],
+    },
+    light: {
+        "--xdh-clr-canvas": ["--comfy-menu-bg", "--bg-color"],
+        "--xdh-clr-surface-soft": [
+            "--comfy-menu-secondary-bg",
+            "--comfy-input-bg",
+        ],
+        "--xdh-clr-surface-card": [
+            "--comfy-menu-secondary-bg",
+            "--comfy-input-bg",
+        ],
+        "--xdh-clr-surface-strong": ["--bg-color", "--comfy-input-bg"],
+    },
+});
+// Tokens whose value is derived (via color-mix) from a resolved base color
+// rather than mapped directly, so the soft/strong tiers keep their relative
+// hierarchy instead of all collapsing onto one opaque ComfyUI variable.
+const XDATAHUB_COMFY_DERIVED_THEME_VAR_KEYS = new Set([
+    "--xdh-clr-hairline",
+    "--xdh-clr-hairline-soft",
+    "--xdh-clr-border-strong",
+    "--xdh-clr-muted-soft",
+]);
 let currentThemeMode = "dark";
 let currentEffectiveThemeMode = "dark";
 let currentThemeVars = {};
@@ -395,10 +449,33 @@ function inferEffectiveThemeModeFromComfy() {
     return luminance >= 0.6 ? "light" : "dark";
 }
 
+function resolveComfyVarValue(rootStyle, candidates) {
+    for (const candidate of candidates || []) {
+        let resolved = resolveComputedCssValue("color", `var(${candidate})`);
+        if (resolved) {
+            return resolved;
+        }
+        resolved = readCssVarValue(rootStyle, candidate);
+        if (resolved) {
+            return resolveComputedCssValue("color", resolved) || resolved;
+        }
+    }
+    return "";
+}
+
+function mixToTransparent(color, percent) {
+    return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
 function buildComfyThemeVars() {
     const rootStyle = getComputedStyle(document.documentElement);
     const effective = inferEffectiveThemeModeFromComfy();
+    const surfaceCandidates = XDATAHUB_COMFY_SURFACE_CANDIDATES[effective]
+        || XDATAHUB_COMFY_SURFACE_CANDIDATES.dark;
     const vars = {};
+    const resolveTokenValue = (tokenName, candidates) =>
+        resolveComfyVarValue(rootStyle, candidates)
+            || getDefaultThemeTokenValue(effective, tokenName);
     for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
         if (XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS.has(tokenName)) {
             const preserved = getDefaultThemeTokenValue(effective, tokenName);
@@ -407,32 +484,45 @@ function buildComfyThemeVars() {
             }
             continue;
         }
-        const candidates = XDATAHUB_COMFY_THEME_VAR_CANDIDATES[tokenName] || [];
-        let resolved = "";
-        for (const candidate of candidates) {
-            resolved = resolveComputedCssValue("color", `var(${candidate})`);
-            if (resolved) {
-                break;
-            }
-            resolved = readCssVarValue(rootStyle, candidate);
-            if (resolved) {
-                resolved = resolveComputedCssValue("color", resolved) || resolved;
-                break;
-            }
-        }
-        if (!resolved) {
-            resolved = getDefaultThemeTokenValue(effective, tokenName);
-        }
-        if (!resolved) {
-            continue;
-        }
         if (tokenName === "--xdh-clr-scrim") {
             vars[tokenName] = effective === "light"
                 ? "rgba(0, 0, 0, 0.50)"
                 : "rgba(0, 0, 0, 0.70)";
             continue;
         }
-        vars[tokenName] = resolved;
+        // Derived border/text tiers are computed after the loop.
+        if (XDATAHUB_COMFY_DERIVED_THEME_VAR_KEYS.has(tokenName)) {
+            continue;
+        }
+        const candidates = surfaceCandidates[tokenName]
+            || XDATAHUB_COMFY_THEME_VAR_CANDIDATES[tokenName]
+            || [];
+        const resolved = resolveTokenValue(tokenName, candidates);
+        if (resolved) {
+            vars[tokenName] = resolved;
+        }
+    }
+    // Derive the three border tiers from a single ComfyUI border base so the
+    // hairline / hairline-soft / border-strong hierarchy is preserved instead
+    // of collapsing onto one opaque color.
+    const borderBase = resolveTokenValue(
+        "--xdh-clr-hairline",
+        XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-hairline"]
+    );
+    if (borderBase) {
+        vars["--xdh-clr-border-strong"] = borderBase;
+        vars["--xdh-clr-hairline"] = mixToTransparent(borderBase, 55);
+        vars["--xdh-clr-hairline-soft"] = mixToTransparent(borderBase, 26);
+    }
+    // Derive the softer muted text tier from the resolved muted base so
+    // muted-soft reads dimmer than muted instead of being identical.
+    const mutedBase = vars["--xdh-clr-muted"]
+        || resolveTokenValue(
+            "--xdh-clr-muted",
+            XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-muted"]
+        );
+    if (mutedBase) {
+        vars["--xdh-clr-muted-soft"] = mixToTransparent(mutedBase, 65);
     }
     return { effectiveMode: effective, vars };
 }
@@ -640,6 +730,18 @@ function installInterruptObserver() {
 
 function iconHtml(name, label, className = "xz3r0-icon") {
     return `<img class="${className}" src="${iconUrl(name)}" alt="${label}" aria-hidden="true" draggable="false">`;
+}
+
+// Mask-based icon (same technique as the in-iframe `icon()` in core/icon.js):
+// the SVG is a CSS mask and the visible color is `background-color:
+// currentColor`, so the icon color follows the element's `color` token instead
+// of a brittle invert() filter. Used by the window control buttons so they
+// match the in-app buttons (e.g. the settings gear) exactly.
+function maskIconHtml(name, label, className = "xz3r0-mask-icon") {
+    const url = iconUrl(name);
+    return `<span class="${className}" aria-label="${label}" role="img"`
+        + ` style="-webkit-mask-image:url(${url});mask-image:url(${url})">`
+        + "</span>";
 }
 
 function applyMenuButtonIcon() {
@@ -1546,26 +1648,27 @@ app.registerExtension({
                 align-items: center;
                 justify-content: center;
                 background: transparent;
-                color: var(--xdh-clr-ink);
+                color: var(--xdh-clr-body);
                 transition: all 0.2s;
             }
             .xz3r0-datahub-window-btn:hover {
-                background: var(--xdh-clr-surface-soft);
+                background: var(--xdh-clr-btn-hover, var(--xdh-clr-surface-soft));
+                color: var(--xdh-clr-ink);
             }
             .xz3r0-datahub-window-btn.active {
-                color: var(--p-button-primary-background, #6366f1);
+                color: var(--xdh-clr-primary);
             }
-            .xz3r0-datahub-window-btn.active .xz3r0-icon {
-                filter: var(--icon-color-filter-active);
-            }
-            .xz3r0-datahub-window-btn .xz3r0-icon {
+            .xz3r0-datahub-window-btn .xz3r0-mask-icon {
                 width: 18px;
                 height: 18px;
                 display: block;
-                filter: var(--icon-color-filter);
-            }
-            .xz3r0-datahub-window-btn:hover .xz3r0-icon {
-                filter: var(--icon-color-filter-active);
+                background-color: currentColor;
+                -webkit-mask-repeat: no-repeat;
+                mask-repeat: no-repeat;
+                -webkit-mask-position: center;
+                mask-position: center;
+                -webkit-mask-size: contain;
+                mask-size: contain;
             }
             .xz3r0-datahub-window-content {
                 flex: 1;
@@ -2250,7 +2353,7 @@ const XDataHub = {
 
         const dockLeftBtn = document.createElement("button");
         dockLeftBtn.className = "xz3r0-datahub-window-btn";
-        dockLeftBtn.innerHTML = iconHtml(
+        dockLeftBtn.innerHTML = maskIconHtml(
             "panel-left-close",
             t("dockLeftBtn", "Dock Left")
         );
@@ -2258,7 +2361,7 @@ const XDataHub = {
 
         const dockRightBtn = document.createElement("button");
         dockRightBtn.className = "xz3r0-datahub-window-btn";
-        dockRightBtn.innerHTML = iconHtml(
+        dockRightBtn.innerHTML = maskIconHtml(
             "panel-right-close",
             t("dockRightBtn", "Dock Right")
         );
@@ -2271,7 +2374,7 @@ const XDataHub = {
         const opacityBtn = document.createElement("button");
         opacityBtn.className = "xz3r0-datahub-window-btn";
         opacityBtn.title = t("opacityLabel", "Opacity");
-        opacityBtn.innerHTML = iconHtml(
+        opacityBtn.innerHTML = maskIconHtml(
             "contrast",
             t("opacityLabel", "Opacity")
         );
@@ -2302,12 +2405,12 @@ const XDataHub = {
 
         const maxBtn = document.createElement("button");
         maxBtn.className = "xz3r0-datahub-window-btn";
-        maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+        maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
         maxBtn.title = t("maxBtn", "Maximize");
 
         const closeBtn = document.createElement("button");
         closeBtn.className = "xz3r0-datahub-window-btn";
-        closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
+        closeBtn.innerHTML = maskIconHtml("x", t("closeBtn", "Close"));
         closeBtn.title = t("closeBtn", "Close");
 
         controls.appendChild(dockLeftBtn);
@@ -2410,23 +2513,23 @@ const XDataHub = {
             `;
             opacityLabelText.textContent = t("opacityLabel", "Opacity");
             opacityBtn.title = t("opacityLabel", "Opacity");
-            dockLeftBtn.innerHTML = iconHtml(
+            dockLeftBtn.innerHTML = maskIconHtml(
                 "panel-left-close",
                 t("dockLeftBtn", "Dock Left")
             );
             dockLeftBtn.title = t("dockLeftBtn", "Dock Left");
-            dockRightBtn.innerHTML = iconHtml(
+            dockRightBtn.innerHTML = maskIconHtml(
                 "panel-right-close",
                 t("dockRightBtn", "Dock Right")
             );
             dockRightBtn.title = t("dockRightBtn", "Dock Right");
-            closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
+            closeBtn.innerHTML = maskIconHtml("x", t("closeBtn", "Close"));
             closeBtn.title = t("closeBtn", "Close");
             if (isMaximized) {
-                maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+                maxBtn.innerHTML = maskIconHtml("minimize-2", t("restoreBtn", "Restore"));
                 maxBtn.title = t("restoreBtn", "Restore");
             } else {
-                maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+                maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
                 maxBtn.title = t("maxBtn", "Maximize");
             }
             updateDockButtonVisual();
@@ -2788,7 +2891,7 @@ const XDataHub = {
 
             isMaximized = true;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+            maxBtn.innerHTML = maskIconHtml("minimize-2", t("restoreBtn", "Restore"));
             maxBtn.title = t("restoreBtn", "Restore");
             maxBtn.classList.add('maximized');
             updateHostTabCompactMode();
@@ -2814,7 +2917,7 @@ const XDataHub = {
             isMaximized = false;
             preMaximizeState = null;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
             maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove('maximized');
             updateHostTabCompactMode();
@@ -2849,7 +2952,7 @@ const XDataHub = {
             resetInteractionState(false);
             isMaximized = false;
             preMaximizeState = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
             maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove("maximized");
 
@@ -2877,7 +2980,7 @@ const XDataHub = {
             }
         };
         if (isMaximized) {
-            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+            maxBtn.innerHTML = maskIconHtml("minimize-2", t("restoreBtn", "Restore"));
             maxBtn.title = t("restoreBtn", "Restore");
             maxBtn.classList.add("maximized");
         }
@@ -2903,7 +3006,7 @@ const XDataHub = {
             isMaximized = false;
             preMaximizeState = null;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
             maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove("maximized");
 
