@@ -37,6 +37,7 @@ from .xnode.ximagecompare import XImageCompare
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
+from .xnode.xpipe import XPipe
 from .xnode.xresolution import XResolution
 from .xnode.xseed import XSeed
 from .xnode.xstringgroup import XStringGroup
@@ -105,6 +106,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XKleinRefConditioning,
     XMath,
     XMemoryCleanup,
+    XPipe,
     XResolution,
     XSeed,
     XStringGroup,

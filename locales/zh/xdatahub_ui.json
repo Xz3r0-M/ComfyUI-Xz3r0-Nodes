@@ -180,6 +180,8 @@
   "xdatahub.ui.node.xmemorycleanup.status.models_done": "已清理 {models} 个已加载模型。",
   "xdatahub.ui.node.xmemorycleanup.status.execution_cache_done": "已清理 {entries} 个工作流节点结果缓存。",
   "xdatahub.ui.node.xmemorycleanup.status.models_and_execution_cache_done": "已清理 {models} 个已加载模型和 {entries} 个工作流节点结果缓存。",
+  "xdatahub.ui.node.xpipe.hide_bundle_links": "隐藏 XPipe 管道连接线",
+  "xdatahub.ui.node.xpipe.show_bundle_links": "显示 XPipe 管道连接线",
   "xdatahub.ui.node.xcontrolpanel.title": "控制面板",
   "xdatahub.ui.node.xcontrolpanel.subtitle": "用于手动执行即时控制操作，不会运行工作流。",
   "xdatahub.ui.node.xcontrolpanel.btn.restart": "重启 ComfyUI",

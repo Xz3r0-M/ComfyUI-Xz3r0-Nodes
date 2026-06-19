@@ -355,6 +355,186 @@
       }
     }
   },
+  "XPipe": {
+    "display_name": "XPipe",
+    "description": "Pipe bundle node: route up to 20 any-type data groups through one bundle wire while keeping 20 matching input/output ports. Per-slot inputs override the bundle; port names are customizable and travel with the bundle.",
+    "inputs": {
+      "inp": {
+        "name": "In",
+        "tooltip": "Data bundle from an upstream XPipe. Per-slot inputs override the same slot from the bundle."
+      },
+      "value_1": {
+        "name": "Value 1",
+        "tooltip": "Slot 1 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_2": {
+        "name": "Value 2",
+        "tooltip": "Slot 2 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_3": {
+        "name": "Value 3",
+        "tooltip": "Slot 3 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_4": {
+        "name": "Value 4",
+        "tooltip": "Slot 4 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_5": {
+        "name": "Value 5",
+        "tooltip": "Slot 5 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_6": {
+        "name": "Value 6",
+        "tooltip": "Slot 6 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_7": {
+        "name": "Value 7",
+        "tooltip": "Slot 7 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_8": {
+        "name": "Value 8",
+        "tooltip": "Slot 8 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_9": {
+        "name": "Value 9",
+        "tooltip": "Slot 9 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_10": {
+        "name": "Value 10",
+        "tooltip": "Slot 10 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_11": {
+        "name": "Value 11",
+        "tooltip": "Slot 11 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_12": {
+        "name": "Value 12",
+        "tooltip": "Slot 12 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_13": {
+        "name": "Value 13",
+        "tooltip": "Slot 13 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_14": {
+        "name": "Value 14",
+        "tooltip": "Slot 14 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_15": {
+        "name": "Value 15",
+        "tooltip": "Slot 15 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_16": {
+        "name": "Value 16",
+        "tooltip": "Slot 16 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_17": {
+        "name": "Value 17",
+        "tooltip": "Slot 17 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_18": {
+        "name": "Value 18",
+        "tooltip": "Slot 18 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_19": {
+        "name": "Value 19",
+        "tooltip": "Slot 19 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_20": {
+        "name": "Value 20",
+        "tooltip": "Slot 20 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "port_names": {
+        "name": "Port Names",
+        "tooltip": "Serialized slot names managed by the naming panel. Do not edit by hand."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Out",
+        "tooltip": "Data bundle carrying all slot values and names for the next XPipe."
+      },
+      "1": {
+        "name": "Value 1",
+        "tooltip": "Slot 1 output (per-slot value, or bundle fallback)."
+      },
+      "2": {
+        "name": "Value 2",
+        "tooltip": "Slot 2 output (per-slot value, or bundle fallback)."
+      },
+      "3": {
+        "name": "Value 3",
+        "tooltip": "Slot 3 output (per-slot value, or bundle fallback)."
+      },
+      "4": {
+        "name": "Value 4",
+        "tooltip": "Slot 4 output (per-slot value, or bundle fallback)."
+      },
+      "5": {
+        "name": "Value 5",
+        "tooltip": "Slot 5 output (per-slot value, or bundle fallback)."
+      },
+      "6": {
+        "name": "Value 6",
+        "tooltip": "Slot 6 output (per-slot value, or bundle fallback)."
+      },
+      "7": {
+        "name": "Value 7",
+        "tooltip": "Slot 7 output (per-slot value, or bundle fallback)."
+      },
+      "8": {
+        "name": "Value 8",
+        "tooltip": "Slot 8 output (per-slot value, or bundle fallback)."
+      },
+      "9": {
+        "name": "Value 9",
+        "tooltip": "Slot 9 output (per-slot value, or bundle fallback)."
+      },
+      "10": {
+        "name": "Value 10",
+        "tooltip": "Slot 10 output (per-slot value, or bundle fallback)."
+      },
+      "11": {
+        "name": "Value 11",
+        "tooltip": "Slot 11 output (per-slot value, or bundle fallback)."
+      },
+      "12": {
+        "name": "Value 12",
+        "tooltip": "Slot 12 output (per-slot value, or bundle fallback)."
+      },
+      "13": {
+        "name": "Value 13",
+        "tooltip": "Slot 13 output (per-slot value, or bundle fallback)."
+      },
+      "14": {
+        "name": "Value 14",
+        "tooltip": "Slot 14 output (per-slot value, or bundle fallback)."
+      },
+      "15": {
+        "name": "Value 15",
+        "tooltip": "Slot 15 output (per-slot value, or bundle fallback)."
+      },
+      "16": {
+        "name": "Value 16",
+        "tooltip": "Slot 16 output (per-slot value, or bundle fallback)."
+      },
+      "17": {
+        "name": "Value 17",
+        "tooltip": "Slot 17 output (per-slot value, or bundle fallback)."
+      },
+      "18": {
+        "name": "Value 18",
+        "tooltip": "Slot 18 output (per-slot value, or bundle fallback)."
+      },
+      "19": {
+        "name": "Value 19",
+        "tooltip": "Slot 19 output (per-slot value, or bundle fallback)."
+      },
+      "20": {
+        "name": "Value 20",
+        "tooltip": "Slot 20 output (per-slot value, or bundle fallback)."
+      }
+    }
+  },
   "XResolution": {
     "display_name": "XResolution",
     "description": "Resolution setting node with standard presets, custom scaling, divisible adjustment, and offset support.",

@@ -180,6 +180,8 @@
   "xdatahub.ui.node.xmemorycleanup.status.models_done": "Cleared {models} loaded models.",
   "xdatahub.ui.node.xmemorycleanup.status.execution_cache_done": "Cleared {entries} workflow node result cache entries.",
   "xdatahub.ui.node.xmemorycleanup.status.models_and_execution_cache_done": "Cleared {models} loaded models and {entries} workflow node result cache entries.",
+  "xdatahub.ui.node.xpipe.hide_bundle_links": "Hide XPipe bundle links",
+  "xdatahub.ui.node.xpipe.show_bundle_links": "Show XPipe bundle links",
   "xdatahub.ui.node.xcontrolpanel.title": "Control Panel",
   "xdatahub.ui.node.xcontrolpanel.subtitle": "Run immediate control actions without queueing the workflow.",
   "xdatahub.ui.node.xcontrolpanel.btn.restart": "Restart ComfyUI",
