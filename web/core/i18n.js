@@ -116,9 +116,11 @@ const Dictionary = {
         // ── nav — more drawer ────────────────────────────────
         'nav.drawer.clean_invalid': '清理无效项',
         'nav.drawer.clean_index':   '完全重建当前索引',
+        'nav.drawer.clean_index_tip': '重新扫描磁盘并重建当前标签页的索引数据库',
         'nav.drawer.clean_data':    '清理全部数据',
             'nav.drawer.clean_data_confirm': '⚠️ 此操作将清理全部索引数据，确认继续？',
             'nav.drawer.open_db_folder': '打开数据库文件夹',
+            'nav.drawer.open_db_folder_tip': '在系统文件管理器中打开数据库所在文件夹',
         'nav.banner.open_db_folder_ok':   '已在文件管理器中打开',
         'nav.banner.open_db_folder_fail': '打开文件夹失败，请重试',
         'nav.banner.open_db_unsupported': '当前平台不支持。',
@@ -418,6 +420,7 @@ const Dictionary = {
         // ── nav — more drawer ────────────────────────────────
         'nav.drawer.clean_invalid': 'Clean invalid entries',
         'nav.drawer.clean_index':   'Fully rebuild current index',
+        'nav.drawer.clean_index_tip': "Rescan disk and rebuild the current tab's index database",
         'nav.drawer.clean_data':    'Clear all data',
         'nav.drawer.clean_data_confirm':
             '⚠️ This will clear all index data. Continue?',
@@ -602,6 +605,7 @@ const Dictionary = {
         'settings.clear_thumb_cache_cleared': 'Cleared {count} thumbnail files',
         'settings.clear_thumb_cache_failed': 'Failed to clear thumbnail cache',
         'nav.drawer.open_db_folder':    'Open Database Folder',
+        'nav.drawer.open_db_folder_tip':    'Open the database folder in the system file manager',
         'nav.banner.open_db_folder_ok':   'Opened in file manager',
         'nav.banner.open_db_folder_fail': 'Failed to open folder, please retry',
         'nav.banner.open_db_unsupported': 'Not supported on this platform.',

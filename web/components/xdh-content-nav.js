@@ -6,7 +6,7 @@ import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-15";
+import { t } from "../core/i18n.js?v=20260619-1";
 
 function getSortOptions() {
     return [
@@ -989,9 +989,9 @@ export class XdhContentNav extends BaseElement {
                     <div class="global-more-wrap">
                         <button class="global-more-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.more")}">${icon('ellipsis-vertical', 14)}</button>
                         <div class="global-drawer">
-                            <div class="drawer-item" data-action="clean-index">${icon('database', 14)} ${t("nav.drawer.clean_index")}</div>
+                            <div class="drawer-item xdh-tooltip xdh-tooltip-left" data-action="clean-index" data-tooltip="${t("nav.drawer.clean_index_tip")}">${icon('database', 14)} ${t("nav.drawer.clean_index")}</div>
                             <div class="drawer-sep"></div>
-                            <div class="drawer-item" data-action="open-db-folder">${icon('folder-open', 14)} ${t("nav.drawer.open_db_folder")}</div>
+                            <div class="drawer-item xdh-tooltip xdh-tooltip-left" data-action="open-db-folder" data-tooltip="${t("nav.drawer.open_db_folder_tip")}">${icon('folder-open', 14)} ${t("nav.drawer.open_db_folder")}</div>
                         </div>
                     </div>
                     <div class="divider" aria-hidden="true"></div>
