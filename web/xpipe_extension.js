@@ -8,6 +8,7 @@ import { app } from "../../scripts/app.js";
 var NODE_CLASS = "XPipe";
 var PIPE_SLOTS = 20;
 var NAMES_WIDGET = "port_names";
+var META_WIDGET = "xpipe_ui_state";
 var NAMES_PROP = "xpipe_names";
 var MANUAL_PROP = "xpipe_manual";
 var TYPES_PROP = "xpipe_types";
@@ -21,6 +22,13 @@ var uiLocalePrimary = null;
 var uiLocaleFallback = null;
 var i18nCache = {};
 var localeSyncInstalled = false;
+var graphIds = new WeakMap();
+var nextGraphId = 1;
+var scopedNodeIds = new WeakMap();
+var scopedNodeIdsRoot = null;
+var subgraphParentNodes = new WeakMap();
+var XPIPE_DEBUG = false;
+var XPIPE_LOG_PREFIX = "[XPipe]";
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -49,6 +57,49 @@ function padArray(arr, size, fill) {
     var out = Array.isArray(arr) ? arr.slice(0, size) : [];
     while (out.length < size) out.push(fill);
     return out;
+}
+function xpipeDebugEnabled() {
+    return XPIPE_DEBUG || !!(window && window.XPIPE_DEBUG === true);
+}
+function compactSlots(values) {
+    if (!xpipeDebugEnabled()) return {};
+    var out = {};
+    if (!Array.isArray(values)) return out;
+    for (var i = 0; i < values.length; i++) {
+        if (values[i]) out[String(i + 1)] = values[i];
+    }
+    return out;
+}
+function debugNode(node) {
+    if (!xpipeDebugEnabled()) return null;
+    if (!node) return null;
+    return {
+        id: node.id,
+        type: String(node.comfyClass || node.type || ""),
+        title: node.title || "",
+        graph: graphKey(node.graph),
+        scoped: getScopedNodeId(node),
+    };
+}
+function debugSlot(slot) {
+    if (!xpipeDebugEnabled()) return null;
+    if (!slot) return null;
+    return {
+        name: slot.name,
+        label: slot.label,
+        type: slot.type,
+        link: slot.link,
+        links: Array.isArray(slot.links) ? slot.links.slice() : slot.links,
+        linkIds: Array.isArray(slot.linkIds) ? slot.linkIds.slice() : slot.linkIds,
+    };
+}
+function xpipeLog(event, data) {
+    if (!xpipeDebugEnabled() || !console) return;
+    try { console.debug(XPIPE_LOG_PREFIX + " " + event, data || ""); } catch (_e) {}
+}
+function xpipeWarn(event, data) {
+    if (!xpipeDebugEnabled() || !console) return;
+    try { console.warn(XPIPE_LOG_PREFIX + " " + event, data || ""); } catch (_e) {}
 }
 function parseNames(raw) {
     var data = [];
@@ -109,11 +160,11 @@ function loadLocaleBundle(locale) {
         });
 }
 function refreshAllToggleTooltips() {
-    for (var nodeId in pipeInputEls) {
-        if (!pipeInputEls.hasOwnProperty(nodeId)) continue;
-        var entry = pipeInputEls[nodeId];
+    for (var key in pipeInputEls) {
+        if (!pipeInputEls.hasOwnProperty(key)) continue;
+        var entry = pipeInputEls[key];
         if (!entry || !entry.toggleBtn) continue;
-        updateToggleBtnTooltip(entry.toggleBtn, !!pipeLinksHidden[nodeId]);
+        updateToggleBtnTooltip(entry.toggleBtn, !!pipeLinksHidden[key]);
     }
 }
 function applyUiLocale(localeOverride) {
@@ -132,6 +183,191 @@ function installLocaleSync() {
         }
     }, LOCALE_SYNC_INTERVAL);
 }
+function activeGraph() {
+    return (app.canvas && app.canvas.getCurrentGraph && app.canvas.getCurrentGraph())
+        || (app.canvas && app.canvas.graph)
+        || app.graph;
+}
+function graphKey(graph) {
+    if (!graph) return "root";
+    if (!graphIds.has(graph)) graphIds.set(graph, String(nextGraphId++));
+    return graphIds.get(graph);
+}
+function nodeKey(node) {
+    var scopedId = getScopedNodeId(node);
+    if (scopedId) return scopedId;
+    return graphKey(node && node.graph) + ":" + String(node && node.id);
+}
+function graphNodes(graph) {
+    return graph ? (graph._nodes || graph.nodes || []) : [];
+}
+function forEachGraphInTree(rootGraph, visitor) {
+    if (!rootGraph || typeof visitor !== "function") return;
+    var visited = new WeakSet();
+    var walk = function (graph) {
+        if (!graph || typeof graph !== "object" || visited.has(graph)) return;
+        visited.add(graph);
+        visitor(graph);
+        var nodes = graphNodes(graph);
+        for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i] && nodes[i].subgraph) walk(nodes[i].subgraph);
+        }
+    };
+    walk(rootGraph);
+}
+function getNodeByIdInGraph(graph, nodeId) {
+    if (!graph || nodeId == null) return null;
+    if (typeof graph.getNodeById === "function") {
+        var found = graph.getNodeById(nodeId);
+        if (found) return found;
+    }
+    var nodes = graphNodes(graph);
+    for (var i = 0; i < nodes.length; i++) {
+        if (String(nodes[i] && nodes[i].id) === String(nodeId)) return nodes[i];
+    }
+    return null;
+}
+function buildScopedNodeId(pathIds, nodeId) {
+    var base = String(nodeId == null ? "" : nodeId).trim();
+    if (!base) return "";
+    if (!Array.isArray(pathIds) || pathIds.length < 1) return base;
+    return pathIds.join(":") + ":" + base;
+}
+function forEachNodeInGraphTree(rootGraph, visitor) {
+    if (!rootGraph || typeof visitor !== "function") return;
+    var visited = new WeakSet();
+    var walk = function (graph, pathIds) {
+        if (!graph || typeof graph !== "object" || visited.has(graph)) return;
+        visited.add(graph);
+        var nodes = graphNodes(graph);
+        for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i];
+            var nodeId = String(node && node.id != null ? node.id : "").trim();
+            if (!nodeId) continue;
+            var scopedId = buildScopedNodeId(pathIds, nodeId);
+            visitor(node, scopedId, graph, pathIds);
+            if (node && node.subgraph && typeof node.subgraph === "object") {
+                walk(node.subgraph, pathIds.concat([nodeId]));
+            }
+        }
+    };
+    walk(rootGraph, []);
+}
+function resetGraphTreeCaches() {
+    scopedNodeIds = new WeakMap();
+    scopedNodeIdsRoot = null;
+    subgraphParentNodes = new WeakMap();
+}
+function rebuildGraphTreeCaches() {
+    scopedNodeIds = new WeakMap();
+    subgraphParentNodes = new WeakMap();
+    scopedNodeIdsRoot = app.graph || null;
+    forEachNodeInGraphTree(scopedNodeIdsRoot, function (node, scopedId) {
+        scopedNodeIds.set(node, scopedId);
+        if (node && node.subgraph) subgraphParentNodes.set(node.subgraph, node);
+    });
+}
+function ensureGraphTreeCaches() {
+    if (scopedNodeIdsRoot !== app.graph) rebuildGraphTreeCaches();
+}
+function getScopedNodeId(node) {
+    if (!node || !app.graph) return "";
+    ensureGraphTreeCaches();
+    if (!scopedNodeIds.has(node)) rebuildGraphTreeCaches();
+    return scopedNodeIds.get(node) || "";
+}
+function findSubgraphNodeForGraph(childGraph) {
+    if (!childGraph) return null;
+    ensureGraphTreeCaches();
+    var found = subgraphParentNodes.get(childGraph);
+    if (found) return found;
+    rebuildGraphTreeCaches();
+    return subgraphParentNodes.get(childGraph) || null;
+}
+function normalizedNodeType(node) {
+    return String(
+        (node && (node.comfyClass || node.type || node.title
+            || (node.constructor && node.constructor.name))) || ""
+    ).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function isSubgraphInputNode(node, graph) {
+    if (!node) return false;
+    if (graph && node === graph.inputNode) return true;
+    return normalizedNodeType(node).indexOf("subgraphinput") >= 0;
+}
+function isSubgraphOutputNode(node, graph) {
+    if (!node) return false;
+    if (graph && node === graph.outputNode) return true;
+    return normalizedNodeType(node).indexOf("subgraphoutput") >= 0;
+}
+function findSubgraphInputNode(graph) {
+    if (!graph) return null;
+    if (graph.inputNode) return graph.inputNode;
+    var nodes = graphNodes(graph);
+    for (var i = 0; i < nodes.length; i++) {
+        if (isSubgraphInputNode(nodes[i], graph)) return nodes[i];
+    }
+    return null;
+}
+function findSubgraphOutputNode(graph) {
+    if (!graph) return null;
+    if (graph.outputNode) return graph.outputNode;
+    var nodes = graphNodes(graph);
+    for (var i = 0; i < nodes.length; i++) {
+        if (isSubgraphOutputNode(nodes[i], graph)) return nodes[i];
+    }
+    return null;
+}
+function findSlotOwner(slot, direction, preferredGraph) {
+    if (!slot) return null;
+    var found = null;
+    var visitGraph = function (graph) {
+        if (found) return;
+        var nodes = graphNodes(graph);
+        for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i], list = direction === "input" ? node.inputs : node.outputs;
+            if (!list) continue;
+            for (var j = 0; j < list.length; j++) {
+                if (list[j] === slot) {
+                    found = { node: node, index: j, slot: slot, graph: graph };
+                    return;
+                }
+            }
+        }
+    };
+    if (preferredGraph) visitGraph(preferredGraph);
+    if (!found) forEachGraphInTree(app.graph, visitGraph);
+    return found;
+}
+function forEachXPipeInGraphTree(rootGraph, visitor) {
+    forEachNodeInGraphTree(rootGraph, function (node) {
+        if (isXPipe(node)) visitor(node);
+    });
+}
+function refreshAllXPipesInGraphTree(rootGraph) {
+    var nodes = [];
+    forEachXPipeInGraphTree(rootGraph || app.graph, function (node) {
+        nodes.push(node);
+        ensureXPipe(node);
+        if (!node.__xpipeState) return;
+        refreshAutoNames(node.__xpipeState);
+        refreshSlotTypes(node.__xpipeState);
+        syncSlots(node.__xpipeState);
+        fitNode(node.__xpipeState);
+    });
+    for (var i = 0; i < nodes.length; i++) {
+        if (isXPipe(nodes[i])) {
+            try { notifyTypesDownstream(nodes[i]); } catch (_e) {}
+        }
+    }
+    if (xpipeDebugEnabled()) {
+        xpipeLog("refreshAllXPipesInGraphTree", {
+            root: graphKey(rootGraph || app.graph),
+            count: nodes.length,
+            nodes: nodes.map(debugNode),
+        });
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -142,17 +378,39 @@ function findNamesWidget(node) {
         if (node.widgets[i] && node.widgets[i].name === NAMES_WIDGET) return node.widgets[i];
     return null;
 }
-function hideNamesWidget(w) {
+function findMetaWidget(node) {
+    if (!node || !node.widgets) return null;
+    for (var i = 0; i < node.widgets.length; i++)
+        if (node.widgets[i] && node.widgets[i].name === META_WIDGET) return node.widgets[i];
+    return null;
+}
+function ensureMetaWidget(node) {
+    if (!node) return null;
+    var widget = findMetaWidget(node);
+    if (!widget && typeof node.addWidget === "function") {
+        var saved = node.properties && typeof node.properties[META_WIDGET] === "string"
+            ? node.properties[META_WIDGET]
+            : "{}";
+        widget = node.addWidget("text", META_WIDGET, saved, function () {});
+    }
+    hideWidget(widget);
+    return widget || null;
+}
+function hideWidget(w) {
     if (!w) return;
     w.hidden = true;
     w.computeSize = function () { return [0, -4]; };
     w.serializeValue = function () { return w.value; };
 }
+function hideNamesWidget(w) {
+    hideWidget(w);
+}
 function removePortNamesSlot(node) {
     if (!node || !Array.isArray(node.inputs)) return;
     var before = node.inputs.length;
     node.inputs = node.inputs.filter(function (input) {
-        return String(input && input.name || "") !== NAMES_WIDGET;
+        var name = String(input && input.name || "");
+        return name !== NAMES_WIDGET && name !== META_WIDGET;
     });
     if (node.inputs.length !== before) node.graph && node.graph.setDirtyCanvas(true, true);
 }
@@ -199,16 +457,122 @@ function addValueOutput(node, state, slot) {
 }
 function loadState(state) {
     var props = state.node.properties || {};
+    var meta = loadMetaState(state.node);
     state.names = Array.isArray(props[NAMES_PROP])
         ? padArray(props[NAMES_PROP].map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "")
-        : (state.namesWidget ? parseNames(state.namesWidget.value) : padArray([], PIPE_SLOTS, ""));
-    state.manual = padArray(Array.isArray(props[MANUAL_PROP]) ? props[MANUAL_PROP].map(Boolean) : [], PIPE_SLOTS, false);
-    state.types = padArray(Array.isArray(props[TYPES_PROP]) ? props[TYPES_PROP].map(cleanType) : [], PIPE_SLOTS, "");
+        : (Array.isArray(meta.names)
+            ? padArray(meta.names.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "")
+            : (state.namesWidget ? parseNames(state.namesWidget.value) : padArray([], PIPE_SLOTS, "")));
+    state.manual = mergeManualState(props[MANUAL_PROP], meta);
+    state.names = mergeManualMetaNames(state.names, meta, state.manual);
+    state.types = mergeMetaTypes(props[TYPES_PROP], meta);
+    xpipeLog("loadState", {
+        node: debugNode(state.node),
+        propNames: compactSlots(props[NAMES_PROP]),
+        propTypes: compactSlots(props[TYPES_PROP]),
+        metaNames: compactSlots(meta.names),
+        metaTypes: compactSlots(meta.types),
+        names: compactSlots(state.names),
+        types: compactSlots(state.types),
+        manual: compactSlots(state.manual),
+    });
+}
+function loadMetaState(node) {
+    var widget = findMetaWidget(node);
+    var raw = widget && typeof widget.value === "string"
+        ? widget.value
+        : "";
+    if ((!raw || raw === "{}") && node && node.properties) {
+        raw = node.properties[META_WIDGET] || raw;
+    }
+    try {
+        var data = JSON.parse(raw || "{}");
+        data = data && typeof data === "object" ? data : {};
+        xpipeLog("loadMetaState", {
+            node: debugNode(node),
+            names: compactSlots(data.names),
+            types: compactSlots(data.types),
+            manual: compactSlots(data.manual),
+        });
+        return data;
+    } catch (_e) {
+        xpipeWarn("loadMetaState.parseFailed", {
+            node: debugNode(node),
+            raw: raw,
+            error: String(_e),
+        });
+        return {};
+    }
+}
+function saveMetaState(state) {
+    if (!state || !state.node) return;
+    var payload = JSON.stringify({
+        names: padArray(state.names, PIPE_SLOTS, ""),
+        manual: padArray(state.manual, PIPE_SLOTS, false),
+        types: padArray(state.types, PIPE_SLOTS, ""),
+    });
+    var p = state.node.properties = state.node.properties || {};
+    p[META_WIDGET] = payload;
+    var widget = ensureMetaWidget(state.node);
+    if (widget) widget.value = payload;
+    xpipeLog("saveMetaState", {
+        node: debugNode(state.node),
+        names: compactSlots(state.names),
+        types: compactSlots(state.types),
+        manual: compactSlots(state.manual),
+    });
+}
+function mergeManualState(savedManual, meta) {
+    var saved = padArray(
+        Array.isArray(savedManual) ? savedManual.map(Boolean) : [],
+        PIPE_SLOTS,
+        false
+    );
+    var metaManual = padArray(
+        Array.isArray(meta && meta.manual) ? meta.manual.map(Boolean) : [],
+        PIPE_SLOTS,
+        false
+    );
+    for (var k = 0; k < PIPE_SLOTS; k++) saved[k] = saved[k] || metaManual[k];
+    return saved;
+}
+function mergeManualMetaNames(names, meta, manual) {
+    var out = padArray(Array.isArray(names) ? names : [], PIPE_SLOTS, "");
+    var metaNames = padArray(
+        Array.isArray(meta && meta.names)
+            ? meta.names.map(function (n) { return n == null ? "" : String(n); })
+            : [],
+        PIPE_SLOTS,
+        ""
+    );
+    for (var k = 0; k < PIPE_SLOTS; k++) {
+        if (manual[k] && !cleanName(out[k]) && cleanName(metaNames[k])) {
+            out[k] = metaNames[k];
+        }
+    }
+    return out;
+}
+function mergeMetaTypes(types, meta) {
+    var out = padArray(
+        Array.isArray(types) ? types.map(cleanType) : [],
+        PIPE_SLOTS,
+        ""
+    );
+    var metaTypes = padArray(
+        Array.isArray(meta && meta.types) ? meta.types.map(cleanType) : [],
+        PIPE_SLOTS,
+        ""
+    );
+    for (var k = 0; k < PIPE_SLOTS; k++) {
+        if (!out[k] && metaTypes[k]) out[k] = metaTypes[k];
+    }
+    return out;
 }
 function persistState(state) {
     saveStateNames(state.node, state.names);
     saveStateManual(state.node, state.manual);
     saveStateTypes(state.node, state.types);
+    saveMetaState(state);
 }
 
 // ---------------------------------------------------------------------------
@@ -311,14 +675,208 @@ function fitNode(state) {
 function getUpstreamBundleMeta(node, seen) {
     var pin = slotIndexOfName(node.inputs, "inp");
     if (pin < 0 || node.inputs[pin].link == null) return null;
-    return getFullBundleMetaFromLink(getLinkInfo(node.inputs[pin].link), seen);
+    return getFullBundleMetaFromLink(
+        getLinkInfo(node.inputs[pin].link, node.graph),
+        seen,
+        node.graph
+    );
 }
-function getLinkInfo(linkId) {
-    if (!app.graph || !app.graph.links || linkId == null) return null;
-    return app.graph.links[linkId] || null;
+function resultResolved(value) {
+    return { state: "resolved", value: value };
+}
+function resultEmpty() {
+    return { state: "empty", value: "" };
+}
+function resultUnresolved() {
+    return { state: "unresolved", value: "" };
+}
+function getUpstreamBundleMetaResult(node, seen) {
+    var pin = slotIndexOfName(node.inputs, "inp");
+    if (pin < 0 || !node.inputs[pin] || node.inputs[pin].link == null) {
+        xpipeLog("upstreamMeta.empty", {
+            node: debugNode(node),
+            pin: pin,
+        });
+        return resultEmpty();
+    }
+    var meta = getFullBundleMetaFromLink(
+        getLinkInfo(node.inputs[pin].link, node.graph),
+        seen,
+        node.graph
+    );
+    xpipeLog("upstreamMeta.result", {
+        node: debugNode(node),
+        link: node.inputs[pin].link,
+        state: meta ? "resolved" : "unresolved",
+        metaNode: debugNode(meta && meta.node),
+        names: compactSlots(meta && meta.names),
+        types: compactSlots(meta && meta.types),
+    });
+    return meta ? resultResolved(meta) : resultUnresolved();
+}
+function getLinkInfo(linkId, graph) {
+    graph = graph || activeGraph();
+    if (!graph || linkId == null) return null;
+    if (typeof graph.getLink === "function") {
+        var graphLink = graph.getLink(linkId);
+        if (graphLink) return graphLink;
+    }
+    if (graph.links && graph.links[linkId]) return graph.links[linkId];
+    if (graph._links instanceof Map) return graph._links.get(linkId) || null;
+    return graph._links && graph._links[linkId] || null;
+}
+function getLinkInfoInGraphTree(linkId, preferredGraph) {
+    var link = getLinkInfo(linkId, preferredGraph);
+    if (link) return { link: link, graph: preferredGraph };
+    var found = null;
+    forEachGraphInTree(app.graph, function (graph) {
+        if (found) return;
+        var item = getLinkInfo(linkId, graph);
+        if (item) found = { link: item, graph: graph };
+    });
+    return found;
+}
+function slotLinkIds(slot) {
+    if (!slot) return [];
+    if (Array.isArray(slot.linkIds)) return slot.linkIds.slice();
+    if (Array.isArray(slot.links)) return slot.links.slice();
+    if (slot.linkId != null) return [slot.linkId];
+    if (slot.link != null) return [slot.link];
+    return [];
+}
+function slotKeyNames(slot) {
+    var out = [];
+    var add = function (value) {
+        var name = cleanName(value);
+        if (name && out.indexOf(name) < 0) out.push(name);
+    };
+    if (!slot) return out;
+    add(slot.name);
+    add(slot.label);
+    add(slot.localized_name);
+    return out;
+}
+function slotAt(slots, index) {
+    if (!slots || index == null || index < 0) return null;
+    return slots[index] || null;
+}
+function slotEntries(slots) {
+    if (!slots) return [];
+    if (Array.isArray(slots)) {
+        return slots.map(function (slot, index) {
+            return { index: index, slot: slot };
+        });
+    }
+    var out = [];
+    for (var key in slots) {
+        if (!slots.hasOwnProperty(key)) continue;
+        var index = parseInt(key, 10);
+        if (!isNaN(index)) out.push({ index: index, slot: slots[key] });
+    }
+    out.sort(function (a, b) { return a.index - b.index; });
+    return out;
+}
+function findMatchingSlotIndex(slots, refSlot, fallbackIndex) {
+    if (!slots) return -1;
+    if (slotAt(slots, fallbackIndex)) return fallbackIndex;
+    var names = slotKeyNames(refSlot);
+    var entries = slotEntries(slots);
+    for (var n = 0; n < names.length; n++) {
+        for (var i = 0; i < entries.length; i++) {
+            if (slotKeyNames(entries[i].slot).indexOf(names[n]) >= 0) {
+                return entries[i].index;
+            }
+        }
+    }
+    return -1;
+}
+function subgraphInputIndexFromNodeOutput(subgraph, inputNode, outputIndex) {
+    var refSlot = slotAt(inputNode && inputNode.outputs, outputIndex);
+    return findMatchingSlotIndex(subgraph && subgraph.inputs, refSlot, outputIndex);
+}
+function subgraphInputNodeOutputIndex(subgraph, inputIndex) {
+    var inputNode = findSubgraphInputNode(subgraph);
+    var refSlot = slotAt(subgraph && subgraph.inputs, inputIndex);
+    return {
+        node: inputNode,
+        index: findMatchingSlotIndex(inputNode && inputNode.outputs, refSlot, inputIndex),
+    };
+}
+function subgraphOutputIndexFromNodeOutput(subgraph, subgraphNode, outputIndex) {
+    var refSlot = slotAt(subgraphNode && subgraphNode.outputs, outputIndex);
+    return findMatchingSlotIndex(subgraph && subgraph.outputs, refSlot, outputIndex);
+}
+function subgraphOutputNodeInputIndex(subgraph, outputIndex) {
+    var outputNode = findSubgraphOutputNode(subgraph);
+    var refSlot = slotAt(subgraph && subgraph.outputs, outputIndex);
+    return {
+        node: outputNode,
+        index: findMatchingSlotIndex(outputNode && outputNode.inputs, refSlot, outputIndex),
+    };
+}
+function resolveLinkInfo(linkInfo, graph) {
+    if (!linkInfo || typeof linkInfo.resolve !== "function") return null;
+    try {
+        var resolved = linkInfo.resolve(graph);
+        xpipeLog("link.resolve", {
+            graph: graphKey(graph),
+            link: linkInfo.id,
+            origin: linkInfo.origin_id + ":" + linkInfo.origin_slot,
+            target: linkInfo.target_id + ":" + linkInfo.target_slot,
+            hasOutput: !!(resolved && resolved.output),
+            hasSubgraphInput: !!(resolved && resolved.subgraphInput),
+            output: debugSlot(resolved && resolved.output),
+            subgraphInput: debugSlot(resolved && resolved.subgraphInput),
+        });
+        return resolved;
+    } catch (_e) {
+        xpipeWarn("link.resolve.failed", {
+            graph: graphKey(graph),
+            link: linkInfo && linkInfo.id,
+            error: String(_e),
+        });
+        return null;
+    }
+}
+function getResolvedSourceSlots(linkInfo, graph) {
+    var resolved = resolveLinkInfo(linkInfo, graph);
+    if (!resolved) return [];
+    var out = [];
+    if (resolved.subgraphInput) out.push(resolved.subgraphInput);
+    if (resolved.output && out.indexOf(resolved.output) < 0) out.push(resolved.output);
+    return out;
+}
+function findLinkToNodeInput(graph, targetNode, targetSlot) {
+    if (!graph || !targetNode) return null;
+    var links = graph.links || graph._links;
+    if (!links) return null;
+    if (links instanceof Map) {
+        var found = null;
+        links.forEach(function (link) {
+            if (!found && link && link.target_id === targetNode.id
+                && link.target_slot === targetSlot) found = link;
+        });
+        return found;
+    }
+    for (var id in links) {
+        if (!links.hasOwnProperty(id)) continue;
+        var link = links[id];
+        if (link && link.target_id === targetNode.id
+            && link.target_slot === targetSlot) return link;
+    }
+    return null;
 }
 function bundleMetaFromState(node, outputIndex) {
     var st = node && node.__xpipeState;
+    if (!st && isXPipe(node)) {
+        ensureXPipe(node);
+        st = node.__xpipeState;
+        if (st) {
+            refreshAutoNames(st);
+            refreshSlotTypes(st);
+            syncSlots(st);
+        }
+    }
     if (!st) return null;
     return {
         node: node,
@@ -327,16 +885,146 @@ function bundleMetaFromState(node, outputIndex) {
         types: st.types || [],
     };
 }
-function getFullBundleMetaFromLink(linkInfo, seen) {
-    if (!linkInfo || !app.graph || !app.graph.getNodeById) return null;
-    var source = app.graph.getNodeById(linkInfo.origin_id);
-    if (!source || !isXPipe(source)) return null;
-    return getFullBundleMetaFromOutput(source, linkInfo.origin_slot, seen);
+function getFullBundleMetaFromResolvedSlot(slot, seen, graph) {
+    if (!slot) return null;
+    var outputOwner = findSlotOwner(slot, "output", graph);
+    if (outputOwner && isXPipe(outputOwner.node)) {
+        return getFullBundleMetaFromOutput(outputOwner.node, outputOwner.index, seen);
+    }
+    var inputOwner = findSlotOwner(slot, "input", graph);
+    if (inputOwner) {
+        var input = inputOwner.slot;
+        if (input && input.link != null) {
+            var upstream = getLinkInfo(input.link, inputOwner.node.graph);
+            return getFullBundleMetaFromLink(upstream, seen, inputOwner.node.graph);
+        }
+    }
+    var ids = slotLinkIds(slot);
+    for (var i = 0; i < ids.length; i++) {
+        var found = getLinkInfoInGraphTree(ids[i], graph);
+        if (!found) continue;
+        var meta = getFullBundleMetaFromLink(found.link, seen, found.graph);
+        if (meta) return meta;
+    }
+    return null;
+}
+function getFullBundleMetaFromResolvedLink(linkInfo, seen, graph) {
+    var slots = getResolvedSourceSlots(linkInfo, graph);
+    for (var i = 0; i < slots.length; i++) {
+        var meta = getFullBundleMetaFromResolvedSlot(slots[i], seen, graph);
+        if (meta) return meta;
+    }
+    return null;
+}
+function getFullBundleMetaFromVirtualSubgraphInput(linkInfo, seen, graph) {
+    if (!graph || !linkInfo || Number(linkInfo.origin_id) >= 0) return null;
+    var subgraphNode = findSubgraphNodeForGraph(graph);
+    if (!subgraphNode || !subgraphNode.graph || !subgraphNode.inputs) {
+        xpipeWarn("virtualSubgraphInput.noParentNode", {
+            graph: graphKey(graph),
+            link: linkInfo && linkInfo.id,
+            originId: linkInfo && linkInfo.origin_id,
+            originSlot: linkInfo && linkInfo.origin_slot,
+        });
+        return null;
+    }
+    var input = slotAt(subgraphNode.inputs, linkInfo.origin_slot);
+    xpipeLog("virtualSubgraphInput.map", {
+        childGraph: graphKey(graph),
+        link: linkInfo.id,
+        originId: linkInfo.origin_id,
+        originSlot: linkInfo.origin_slot,
+        parentNode: debugNode(subgraphNode),
+        parentInput: debugSlot(input),
+    });
+    if (!input || input.link == null) {
+        xpipeWarn("virtualSubgraphInput.noParentInputLink", {
+            parentNode: debugNode(subgraphNode),
+            originSlot: linkInfo.origin_slot,
+            parentInput: debugSlot(input),
+        });
+        return null;
+    }
+    return getFullBundleMetaFromLink(
+        getLinkInfo(input.link, subgraphNode.graph),
+        seen,
+        subgraphNode.graph
+    );
+}
+function getFullBundleMetaFromLink(linkInfo, seen, graph) {
+    graph = graph || activeGraph();
+    if (!linkInfo || !graph) {
+        xpipeWarn("metaFromLink.missingLinkOrGraph", {
+            graph: graphKey(graph),
+            link: linkInfo,
+        });
+        return null;
+    }
+    seen = seen || {};
+    var linkKey = "link:" + graphKey(graph) + ":" + String(linkInfo.id != null ? linkInfo.id : (
+        String(linkInfo.origin_id) + ":" + String(linkInfo.origin_slot)
+            + ">" + String(linkInfo.target_id) + ":" + String(linkInfo.target_slot)
+    ));
+    if (seen[linkKey]) return null;
+    seen[linkKey] = true;
+    var resolvedMeta = getFullBundleMetaFromResolvedLink(linkInfo, seen, graph);
+    if (resolvedMeta) {
+        xpipeLog("metaFromLink.resolvedSlot", {
+            graph: graphKey(graph),
+            link: linkInfo.id,
+            metaNode: debugNode(resolvedMeta.node),
+            outputIndex: resolvedMeta.outputIndex,
+            names: compactSlots(resolvedMeta.names),
+            types: compactSlots(resolvedMeta.types),
+        });
+        return resolvedMeta;
+    }
+    var virtualMeta = getFullBundleMetaFromVirtualSubgraphInput(
+        linkInfo,
+        seen,
+        graph
+    );
+    if (virtualMeta) {
+        xpipeLog("metaFromLink.virtualSubgraphInput", {
+            graph: graphKey(graph),
+            link: linkInfo.id,
+            metaNode: debugNode(virtualMeta.node),
+            outputIndex: virtualMeta.outputIndex,
+            names: compactSlots(virtualMeta.names),
+            types: compactSlots(virtualMeta.types),
+        });
+        return virtualMeta;
+    }
+    var source = getNodeByIdInGraph(graph, linkInfo.origin_id);
+    if (!source) {
+        xpipeWarn("metaFromLink.missingSource", {
+            graph: graphKey(graph),
+            link: linkInfo.id,
+            originId: linkInfo.origin_id,
+        });
+        return null;
+    }
+    var meta = isXPipe(source)
+        ? getFullBundleMetaFromOutput(source, linkInfo.origin_slot, seen)
+        : getFullBundleMetaThroughSubgraphInput(source, linkInfo.origin_slot, seen, graph)
+            || getFullBundleMetaThroughSubgraphOutput(source, linkInfo.origin_slot, seen);
+    xpipeLog("metaFromLink.result", {
+        graph: graphKey(graph),
+        link: linkInfo.id,
+        source: debugNode(source),
+        originSlot: linkInfo.origin_slot,
+        resolved: !!meta,
+        metaNode: debugNode(meta && meta.node),
+        outputIndex: meta && meta.outputIndex,
+        names: compactSlots(meta && meta.names),
+        types: compactSlots(meta && meta.types),
+    });
+    return meta;
 }
 function getFullBundleMetaFromOutput(node, outputIndex, seen) {
     if (!node || !isXPipe(node) || !node.outputs) return null;
     seen = seen || {};
-    var key = "full:" + node.id + ":" + outputIndex;
+    var key = "full:" + nodeKey(node) + ":" + outputIndex;
     if (seen[key]) return null;
     seen[key] = true;
     var output = node.outputs[outputIndex];
@@ -348,27 +1036,27 @@ function getFullBundleMetaFromOutput(node, outputIndex, seen) {
 function getSlotBundleMetaFromNode(node, slot, seen) {
     if (!node || !isXPipe(node)) return null;
     seen = seen || {};
-    var key = "slot:" + node.id + ":" + slot;
+    var key = "slot:" + nodeKey(node) + ":" + slot;
     if (seen[key]) return null;
     seen[key] = true;
 
     var inputIndex = slotIndexOfName(node.inputs, "value_" + slot);
     var input = inputIndex >= 0 && node.inputs ? node.inputs[inputIndex] : null;
     var directMeta = input && input.link != null
-        ? getFullBundleMetaFromLink(getLinkInfo(input.link), seen)
+        ? getFullBundleMetaFromLink(getLinkInfo(input.link, node.graph), seen, node.graph)
         : null;
     if (directMeta) return directMeta;
 
     var pin = slotIndexOfName(node.inputs, "inp");
     var pipeInput = pin >= 0 && node.inputs ? node.inputs[pin] : null;
     if (!pipeInput || pipeInput.link == null) return null;
-    return getSlotBundleMetaFromLink(getLinkInfo(pipeInput.link), slot, seen);
+    return getSlotBundleMetaFromLink(getLinkInfo(pipeInput.link, node.graph), slot, seen, node.graph);
 }
-function getSlotBundleMetaFromLink(linkInfo, slot, seen) {
-    if (!linkInfo || !app.graph || !app.graph.getNodeById) return null;
-    var source = app.graph.getNodeById(linkInfo.origin_id);
-    if (!source || !isXPipe(source)) return null;
-    return getSlotBundleMetaFromOutput(source, linkInfo.origin_slot, slot, seen);
+function getSlotBundleMetaFromLink(linkInfo, slot, seen, graph) {
+    graph = graph || activeGraph();
+    var fullMeta = getFullBundleMetaFromLink(linkInfo, seen, graph);
+    if (!fullMeta) return null;
+    return getSlotBundleMetaFromOutput(fullMeta.node, fullMeta.outputIndex, slot, seen);
 }
 function getSlotBundleMetaFromOutput(node, outputIndex, slot, seen) {
     if (!node || !isXPipe(node) || !node.outputs) return null;
@@ -379,10 +1067,96 @@ function getSlotBundleMetaFromOutput(node, outputIndex, slot, seen) {
     if (!fullMeta) return null;
     return getSlotBundleMetaFromOutput(fullMeta.node, fullMeta.outputIndex, slot, seen);
 }
-function outputTypeFromLink(linkInfo) {
+function getFullBundleMetaThroughSubgraphInput(source, outputIndex, seen, graph) {
+    if (!graph || !isSubgraphInputNode(source, graph)) return null;
+    var subgraphNode = findSubgraphNodeForGraph(graph);
+    if (!subgraphNode || !subgraphNode.graph || !subgraphNode.inputs) {
+        xpipeWarn("subgraphInput.noParentNode", {
+            graph: graphKey(graph),
+            source: debugNode(source),
+            outputIndex: outputIndex,
+        });
+        return null;
+    }
+    var inputIndex = subgraphInputIndexFromNodeOutput(graph, source, outputIndex);
+    var input = slotAt(subgraphNode.inputs, inputIndex);
+    xpipeLog("subgraphInput.map", {
+        childGraph: graphKey(graph),
+        parentNode: debugNode(subgraphNode),
+        source: debugNode(source),
+        sourceOutputIndex: outputIndex,
+        parentInputIndex: inputIndex,
+        parentInput: debugSlot(input),
+    });
+    if (!input || input.link == null) {
+        xpipeWarn("subgraphInput.noParentInputLink", {
+            parentNode: debugNode(subgraphNode),
+            parentInputIndex: inputIndex,
+            parentInput: debugSlot(input),
+        });
+        return null;
+    }
+    return getFullBundleMetaFromLink(
+        getLinkInfo(input.link, subgraphNode.graph),
+        seen,
+        subgraphNode.graph
+    );
+}
+function getFullBundleMetaThroughSubgraphOutput(source, outputIndex, seen) {
+    var subgraph = source && source.subgraph;
+    if (!subgraph) return null;
+    var outputIndexInSubgraph = subgraphOutputIndexFromNodeOutput(
+        subgraph,
+        source,
+        outputIndex
+    );
+    var outputInfo = subgraphOutputNodeInputIndex(subgraph, outputIndexInSubgraph);
+    var outputNode = outputInfo.node;
+    if (!subgraph || !outputNode || outputIndexInSubgraph < 0) {
+        xpipeWarn("subgraphOutput.noOutputNode", {
+            source: debugNode(source),
+            outputIndex: outputIndex,
+            mappedOutputIndex: outputIndexInSubgraph,
+        });
+        return null;
+    }
+    var outputSlot = slotAt(subgraph && subgraph.outputs, outputIndexInSubgraph);
+    xpipeLog("subgraphOutput.map", {
+        parentGraphNode: debugNode(source),
+        subgraph: graphKey(subgraph),
+        parentOutputIndex: outputIndex,
+        subgraphOutputIndex: outputIndexInSubgraph,
+        outputNode: debugNode(outputNode),
+        outputNodeInputIndex: outputInfo.index,
+        outputSlot: debugSlot(outputSlot),
+    });
+    var ids = slotLinkIds(outputSlot);
+    for (var i = 0; i < ids.length; i++) {
+        var found = getLinkInfoInGraphTree(ids[i], subgraph);
+        if (!found) continue;
+        var meta = getFullBundleMetaFromLink(found.link, seen, found.graph);
+        if (meta) return meta;
+    }
+    var innerLink = findLinkToNodeInput(subgraph, outputNode, outputInfo.index);
+    if (!innerLink) {
+        xpipeWarn("subgraphOutput.noInnerLink", {
+            outputNode: debugNode(outputNode),
+            outputNodeInputIndex: outputInfo.index,
+        });
+        return null;
+    }
+    return getFullBundleMetaFromLink(innerLink, seen, subgraph);
+}
+function outputTypeFromLink(linkInfo, graph) {
     if (!linkInfo) return "";
-    if (getFullBundleMetaFromLink(linkInfo, {})) return "xpipe";
-    var source = app.graph && app.graph.getNodeById ? app.graph.getNodeById(linkInfo.origin_id) : null;
+    graph = graph || activeGraph();
+    if (getFullBundleMetaFromLink(linkInfo, {}, graph)) return "xpipe";
+    var resolvedSlots = getResolvedSourceSlots(linkInfo, graph);
+    for (var i = 0; i < resolvedSlots.length; i++) {
+        var resolvedType = cleanType(resolvedSlots[i] && resolvedSlots[i].type);
+        if (resolvedType) return resolvedType;
+    }
+    var source = getNodeByIdInGraph(graph, linkInfo.origin_id);
     var output = source && source.outputs ? source.outputs[linkInfo.origin_slot] : null;
     var outputType = cleanType(output && output.type);
     if (source && isXPipe(source) && output) {
@@ -393,23 +1167,48 @@ function outputTypeFromLink(linkInfo) {
     }
     return cleanType(linkInfo.type) || outputType;
 }
-function directInputType(node, slot, ignoredSlot) {
-    if (slot === ignoredSlot) return "";
+function directInputTypeResult(node, slot, ignoredSlot) {
+    if (slot === ignoredSlot) return resultEmpty();
     var index = slotIndexOfName(node.inputs, "value_" + slot);
-    if (index < 0 || node.inputs[index].link == null) return "";
-    return outputTypeFromLink(getLinkInfo(node.inputs[index].link));
+    if (index < 0 || !node.inputs[index] || node.inputs[index].link == null) {
+        return resultEmpty();
+    }
+    var linkInfo = getLinkInfo(node.inputs[index].link, node.graph);
+    var meta = getFullBundleMetaFromLink(linkInfo, {}, node.graph);
+    if (meta) {
+        var metaType = cleanType(meta.types && meta.types[slot - 1]);
+        xpipeLog("directInputType.meta", {
+            node: debugNode(node),
+            slot: slot,
+            link: node.inputs[index].link,
+            type: metaType,
+            metaNode: debugNode(meta.node),
+        });
+        return resultResolved(metaType);
+    }
+    var type = outputTypeFromLink(linkInfo, node.graph);
+    xpipeLog("directInputType.link", {
+        node: debugNode(node),
+        slot: slot,
+        link: node.inputs[index].link,
+        state: type ? "resolved" : "unresolved",
+        type: type,
+    });
+    return type ? resultResolved(type) : resultUnresolved();
 }
 function updateValueOutputLinks(node, slot, type) {
     var index = slotIndexOfName(node.outputs, "value_" + slot);
     if (index < 0 || !node.outputs[index]) return;
     var links = node.outputs[index].links || [];
     for (var i = 0; i < links.length; i++) {
-        var link = getLinkInfo(links[i]);
+        var link = getLinkInfo(links[i], node.graph);
         if (link) link.type = type;
     }
 }
 function applySlotTypes(state) {
     var node = state.node;
+    var debug = xpipeDebugEnabled();
+    var applied = debug ? [] : null;
     for (var k = 1; k <= PIPE_SLOTS; k++) {
         var outputType = socketType(state.types[k - 1]);
         var inputIndex = slotIndexOfName(node.inputs, "value_" + k);
@@ -417,21 +1216,63 @@ function applySlotTypes(state) {
         if (inputIndex >= 0 && node.inputs[inputIndex]) node.inputs[inputIndex].type = "*";
         if (outputIndex >= 0 && node.outputs[outputIndex]) node.outputs[outputIndex].type = outputType;
         updateValueOutputLinks(node, k, outputType);
+        if (debug && outputType !== "*") {
+            applied.push({ slot: k, outputIndex: outputIndex, type: outputType });
+        }
+    }
+    if (debug) {
+        xpipeLog("applySlotTypes", {
+            node: debugNode(node),
+            applied: applied,
+            allTypes: compactSlots(state.types),
+        });
     }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 function refreshSlotTypes(state, ignoredDirectSlot) {
     var node = state.node;
-    var upstreamMeta = getUpstreamBundleMeta(node, {});
-    var upstreamTypes = upstreamMeta ? upstreamMeta.types : [];
+    var upstreamResult = getUpstreamBundleMetaResult(node, {});
+    var upstreamTypes = upstreamResult.state === "resolved"
+        ? upstreamResult.value.types
+        : [];
     var dirty = false;
+    var debug = xpipeDebugEnabled();
+    var events = debug ? [] : null;
     for (var k = 1; k <= PIPE_SLOTS; k++) {
-        var nextType = directInputType(node, k, ignoredDirectSlot)
-            || cleanType(upstreamTypes[k - 1]);
+        var directResult = directInputTypeResult(node, k, ignoredDirectSlot);
+        if (directResult.state === "unresolved") {
+            if (debug) events.push({ slot: k, action: "keep", reason: "direct unresolved", previous: state.types[k - 1] });
+            continue;
+        }
+        if (directResult.state === "empty" && upstreamResult.state === "unresolved") {
+            if (debug) events.push({ slot: k, action: "keep", reason: "upstream unresolved", previous: state.types[k - 1] });
+            continue;
+        }
+        var nextType = directResult.state === "resolved"
+            ? cleanType(directResult.value)
+            : cleanType(upstreamTypes[k - 1]);
         if (state.types[k - 1] !== nextType) {
+            if (debug) events.push({
+                slot: k,
+                action: "change",
+                from: state.types[k - 1],
+                to: nextType,
+                directState: directResult.state,
+                upstreamState: upstreamResult.state,
+            });
             state.types[k - 1] = nextType;
             dirty = true;
         }
+    }
+    if (debug && events.length) {
+        xpipeLog("refreshSlotTypes", {
+            node: debugNode(node),
+            ignoredDirectSlot: ignoredDirectSlot,
+            upstreamState: upstreamResult.state,
+            dirty: dirty,
+            events: events,
+            finalTypes: compactSlots(state.types),
+        });
     }
     if (dirty) {
         persistState(state);
@@ -446,7 +1287,79 @@ function refreshSlotTypes(state, ignoredDirectSlot) {
 function isXPipe(n) { return !!(n && String(n.comfyClass || n.type || "") === NODE_CLASS); }
 function getBundleOutputLinks(node, outputIndex) {
     var output = node && node.outputs ? node.outputs[outputIndex] : null;
-    return output && output.links ? output.links : [];
+    if (output && output.links) return output.links;
+    var graph = node && node.graph;
+    var links = graph && (graph.links || graph._links);
+    var out = [];
+    if (!links) return out;
+    if (links instanceof Map) {
+        links.forEach(function (link, id) {
+            if (link && link.origin_id === node.id && link.origin_slot === outputIndex) {
+                out.push(link.id != null ? link.id : id);
+            }
+        });
+        return out;
+    }
+    for (var id in links) {
+        if (!links.hasOwnProperty(id)) continue;
+        var link = links[id];
+        if (link && link.origin_id === node.id && link.origin_slot === outputIndex) out.push(id);
+    }
+    return out;
+}
+function forEachSubgraphInputTarget(subgraph, inputIndex, callback, meta, seen) {
+    var inputSlot = slotAt(subgraph && subgraph.inputs, inputIndex);
+    var ids = slotLinkIds(inputSlot);
+    for (var i = 0; i < ids.length; i++) {
+        var found = getLinkInfoInGraphTree(ids[i], subgraph);
+        if (found) visitBundleLinkTarget(found.graph, found.link, callback, meta, seen);
+    }
+    if (ids.length) return;
+    var inputInfo = subgraphInputNodeOutputIndex(subgraph, inputIndex);
+    var inputNode = inputInfo.node;
+    if (!inputNode || inputInfo.index < 0) return;
+    var links = getBundleOutputLinks(inputNode, inputInfo.index);
+    for (var j = 0; j < links.length; j++) {
+        var link = getLinkInfo(links[j], subgraph); if (!link) continue;
+        visitBundleLinkTarget(subgraph, link, callback, meta, seen);
+    }
+}
+function forEachSubgraphOutputTarget(subgraph, outputIndex, callback, meta, seen) {
+    var subgraphNode = findSubgraphNodeForGraph(subgraph);
+    if (!subgraphNode || !subgraphNode.graph) return;
+    var outputIndexInParent = findMatchingSlotIndex(
+        subgraphNode.outputs,
+        slotAt(subgraph && subgraph.outputs, outputIndex),
+        outputIndex
+    );
+    var links = getBundleOutputLinks(subgraphNode, outputIndexInParent);
+    for (var i = 0; i < links.length; i++) {
+        var link = getLinkInfo(links[i], subgraphNode.graph); if (!link) continue;
+        visitBundleLinkTarget(subgraphNode.graph, link, callback, meta, seen);
+    }
+}
+function visitBundleLinkTarget(graph, link, callback, meta, seen) {
+    if (!graph || !link) return;
+    seen = seen || {};
+    var key = graphKey(graph) + ":link:" + String(link.id != null ? link.id : (
+        String(link.origin_id) + ":" + String(link.origin_slot)
+            + ">" + String(link.target_id) + ":" + String(link.target_slot)
+    ));
+    if (seen[key]) return;
+    seen[key] = true;
+    var child = getNodeByIdInGraph(graph, link.target_id);
+    if (!child) return;
+    if (child.subgraph) {
+        forEachSubgraphInputTarget(child.subgraph, link.target_slot, callback, meta, seen);
+        return;
+    }
+    if (isSubgraphOutputNode(child, graph)) {
+        forEachSubgraphOutputTarget(graph, link.target_slot, callback, meta, seen);
+        return;
+    }
+    if (!isXPipe(child)) return;
+    var targetInput = child.inputs && child.inputs[link.target_slot];
+    if (targetInput) callback(child, targetInput, link, meta);
 }
 function forEachBundleTarget(node, callback) {
     if (!node || !node.outputs) return;
@@ -454,35 +1367,29 @@ function forEachBundleTarget(node, callback) {
         var meta = getFullBundleMetaFromOutput(node, outputIndex, {});
         var links = getBundleOutputLinks(node, outputIndex);
         for (var i = 0; i < links.length; i++) {
-            var link = getLinkInfo(links[i]); if (!link) continue;
-            var child = app.graph && app.graph.getNodeById
-                ? app.graph.getNodeById(link.target_id)
-                : null;
-            if (!child || !isXPipe(child)) continue;
-            var targetInput = child.inputs && child.inputs[link.target_slot];
-            if (!targetInput) continue;
-            callback(child, targetInput, link, meta);
+            var link = getLinkInfo(links[i], node.graph); if (!link) continue;
+            visitBundleLinkTarget(node.graph, link, callback, meta, {});
         }
     }
 }
 function getChainStates(node) {
     var states = [], seen = {}, stack = [node];
     while (stack.length) {
-        var n = stack.pop(); if (!n || seen[n.id]) continue; seen[n.id] = true;
+        var n = stack.pop(), nk = nodeKey(n); if (!n || seen[nk]) continue; seen[nk] = true;
         if (n.__xpipeState) states.push(n.__xpipeState);
         if (n.outputs && n.outputs[0]) {
             var olinks = n.outputs[0].links || [];
             for (var i = 0; i < olinks.length; i++) {
-                var ol = app.graph.links[olinks[i]]; if (!ol) continue;
-                var tgt = app.graph.getNodeById(ol.target_id); if (!tgt || !isXPipe(tgt)) continue;
+                var ol = getLinkInfo(olinks[i], n.graph); if (!ol) continue;
+                var tgt = getNodeByIdInGraph(n.graph, ol.target_id); if (!tgt || !isXPipe(tgt)) continue;
                 var ts = tgt.inputs && tgt.inputs[ol.target_slot];
                 if (ts && ts.name === "inp") stack.push(tgt);
             }
         }
         var pin = slotIndexOfName(n.inputs, "inp");
         if (pin >= 0 && n.inputs[pin].link != null) {
-            var il = app.graph.links[n.inputs[pin].link];
-            if (il) { var src = app.graph.getNodeById(il.origin_id); if (isXPipe(src)) stack.push(src); }
+            var il = getLinkInfo(n.inputs[pin].link, n.graph);
+            if (il) { var src = getNodeByIdInGraph(n.graph, il.origin_id); if (isXPipe(src)) stack.push(src); }
         }
     }
     return states;
@@ -494,16 +1401,17 @@ function pushNamesDown(startNode) {
     _pushAllDown(startNode);
 }
 function _pushAllDown(startNode) {
-    var seen = {}; seen[startNode.id] = true;
+    var seen = {}; seen[nodeKey(startNode)] = true;
     var stack = [startNode];
     while (stack.length) {
         var parent = stack.shift();
         forEachBundleTarget(parent, function (child, targetInput, _link, meta) {
-            if (seen[child.id]) return;
+            var childKey = nodeKey(child);
+            if (seen[childKey]) return;
             var pipeInput = targetInput.name === "inp";
             var valueSlot = valueSlotNumber(targetInput.name);
             if (!pipeInput && !valueSlot) return;
-            seen[child.id] = true;
+            seen[childKey] = true;
             if (child.__xpipeState) {
                 var cn = child.__xpipeState.names, cm = child.__xpipeState.manual;
                 var dirty = false;
@@ -525,8 +1433,9 @@ function _pushAllDown(startNode) {
 function notifyTypesDownstream(node, seen) {
     if (!node || !node.outputs) return;
     seen = seen || {};
-    if (seen[node.id]) return;
-    seen[node.id] = true;
+    var key = nodeKey(node);
+    if (seen[key]) return;
+    seen[key] = true;
     forEachBundleTarget(node, function (child, targetInput) {
         if (!child.__xpipeState) return;
         if (targetInput.name !== "inp" && !valueSlotNumber(targetInput.name)) return;
@@ -543,8 +1452,8 @@ function notifyDownstream(node, slot) {
     var nameVal = cleanName(node.__xpipeState ? node.__xpipeState.names[slot - 1] : "");
     var links = node.outputs[0].links || [];
     for (var i = 0; i < links.length; i++) {
-        var link = app.graph.links[links[i]]; if (!link) continue;
-        var child = app.graph.getNodeById(link.target_id);
+        var link = getLinkInfo(links[i], node.graph); if (!link) continue;
+        var child = getNodeByIdInGraph(node.graph, link.target_id);
         if (!child || !isXPipe(child) || !child.__xpipeState) continue;
         var pin = child.inputs && child.inputs[link.target_slot];
         if (!pin || pin.name !== "inp") continue;
@@ -576,14 +1485,14 @@ function shareChain(node, skipSourceRender, ignoredDirectSlot) {
 // ---------------------------------------------------------------------------
 function getXPipeLinkWarning(link, graph) {
     if (!link) return null;
-    graph = graph || app.graph;
-    if (!graph || !graph.getNodeById) return null;
-    var src = graph.getNodeById(link.origin_id);
+    graph = graph || activeGraph();
+    if (!graph) return null;
+    var src = getNodeByIdInGraph(graph, link.origin_id);
     if (!isXPipe(src) || !src.outputs) return null;
     var output = src.outputs[link.origin_slot];
     var pipeSlot = valueSlotNumber(output && output.name);
     if (!pipeSlot) return null;
-    var tgt = graph.getNodeById(link.target_id);
+    var tgt = getNodeByIdInGraph(graph, link.target_id);
     var input = tgt && tgt.inputs ? tgt.inputs[link.target_slot] : null;
     if (!input) return null;
 
@@ -606,7 +1515,7 @@ function outputHasWarning(node, outputIndex) {
     var output = node && node.outputs ? node.outputs[outputIndex] : null;
     if (!output || !output.links) return false;
     for (var i = 0; i < output.links.length; i++) {
-        if (getXPipeLinkWarning(getLinkInfo(output.links[i]))) return true;
+        if (getXPipeLinkWarning(getLinkInfo(output.links[i], node.graph), node.graph)) return true;
     }
     return false;
 }
@@ -637,9 +1546,10 @@ function drawWarningOutputRings(node, ctx) {
 // ---------------------------------------------------------------------------
 // 自动命名
 // ---------------------------------------------------------------------------
-function upstreamOutputLabel(linkInfo) {
+function upstreamOutputLabel(linkInfo, graph) {
     if (!linkInfo) return "";
-    var o = app.graph && app.graph.getNodeById ? app.graph.getNodeById(linkInfo.origin_id) : null;
+    graph = graph || activeGraph();
+    var o = getNodeByIdInGraph(graph, linkInfo.origin_id);
     if (!o || !o.outputs) return "";
     var slot = o.outputs[linkInfo.origin_slot];
     if (!slot) return "";
@@ -653,26 +1563,88 @@ function upstreamOutputLabel(linkInfo) {
     }
     return cleanName(slot.label) || slotName;
 }
-function directInputLabel(node, slot, ignoredSlot) {
-    if (slot === ignoredSlot) return "";
+function valueInputLabelFromLink(linkInfo, graph, slot) {
+    var meta = getFullBundleMetaFromLink(linkInfo, {}, graph);
+    var metaName = meta ? cleanName(meta.names && meta.names[slot - 1]) : "";
+    return metaName || upstreamOutputLabel(linkInfo, graph);
+}
+function directInputLabelResult(node, slot, ignoredSlot) {
+    if (slot === ignoredSlot) return resultEmpty();
     var index = slotIndexOfName(node.inputs, "value_" + slot);
-    if (index < 0 || node.inputs[index].link == null) return "";
-    if (!app.graph || !app.graph.links) return "";
-    return upstreamOutputLabel(app.graph.links[node.inputs[index].link]);
+    if (index < 0 || !node.inputs[index] || node.inputs[index].link == null) {
+        return resultEmpty();
+    }
+    var linkInfo = getLinkInfo(node.inputs[index].link, node.graph);
+    var meta = getFullBundleMetaFromLink(linkInfo, {}, node.graph);
+    if (meta) {
+        var metaName = cleanName(meta.names && meta.names[slot - 1]);
+        xpipeLog("directInputLabel.meta", {
+            node: debugNode(node),
+            slot: slot,
+            link: node.inputs[index].link,
+            name: metaName,
+            metaNode: debugNode(meta.node),
+        });
+        return resultResolved(metaName);
+    }
+    var label = upstreamOutputLabel(linkInfo, node.graph);
+    xpipeLog("directInputLabel.link", {
+        node: debugNode(node),
+        slot: slot,
+        link: node.inputs[index].link,
+        state: label ? "resolved" : "unresolved",
+        label: label,
+    });
+    return label ? resultResolved(label) : resultUnresolved();
 }
 function refreshAutoNames(state, ignoredDirectSlot) {
     var node = state.node;
-    var upstreamMeta = getUpstreamBundleMeta(node, {});
-    var upstreamNames = upstreamMeta ? upstreamMeta.names : [];
+    var upstreamResult = getUpstreamBundleMetaResult(node, {});
+    var upstreamNames = upstreamResult.state === "resolved"
+        ? upstreamResult.value.names
+        : [];
     var dirty = false;
+    var debug = xpipeDebugEnabled();
+    var events = debug ? [] : null;
     for (var k = 1; k <= PIPE_SLOTS; k++) {
-        if (state.manual[k - 1]) continue;
-        var nextName = directInputLabel(node, k, ignoredDirectSlot)
-            || cleanName(upstreamNames[k - 1]);
+        if (state.manual[k - 1]) {
+            if (debug) events.push({ slot: k, action: "keep", reason: "manual", previous: state.names[k - 1] });
+            continue;
+        }
+        var directResult = directInputLabelResult(node, k, ignoredDirectSlot);
+        if (directResult.state === "unresolved") {
+            if (debug) events.push({ slot: k, action: "keep", reason: "direct unresolved", previous: state.names[k - 1] });
+            continue;
+        }
+        if (directResult.state === "empty" && upstreamResult.state === "unresolved") {
+            if (debug) events.push({ slot: k, action: "keep", reason: "upstream unresolved", previous: state.names[k - 1] });
+            continue;
+        }
+        var nextName = directResult.state === "resolved"
+            ? cleanName(directResult.value)
+            : cleanName(upstreamNames[k - 1]);
         if (state.names[k - 1] !== nextName) {
+            if (debug) events.push({
+                slot: k,
+                action: "change",
+                from: state.names[k - 1],
+                to: nextName,
+                directState: directResult.state,
+                upstreamState: upstreamResult.state,
+            });
             state.names[k - 1] = nextName;
             dirty = true;
         }
+    }
+    if (debug && events.length) {
+        xpipeLog("refreshAutoNames", {
+            node: debugNode(node),
+            ignoredDirectSlot: ignoredDirectSlot,
+            upstreamState: upstreamResult.state,
+            dirty: dirty,
+            events: events,
+            finalNames: compactSlots(state.names),
+        });
     }
     if (dirty) persistState(state);
     return dirty;
@@ -708,29 +1680,51 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
     var node = state.node, isInput = type === (window.LiteGraph ? LiteGraph.INPUT : 1);
     var list = isInput ? node.inputs : node.outputs, slot = slotInfo || (list ? list[index] : null);
     var slotName = slot ? slot.name : "";
+    xpipeLog("connectionChange", {
+        node: debugNode(node),
+        type: isInput ? "input" : "output",
+        index: index,
+        connected: connected,
+        slotName: slotName,
+        slot: debugSlot(slot),
+        link: linkInfo ? {
+            id: linkInfo.id,
+            origin: linkInfo.origin_id + ":" + linkInfo.origin_slot,
+            target: linkInfo.target_id + ":" + linkInfo.target_slot,
+            type: linkInfo.type,
+        } : null,
+    });
     if (slotName === "inp") {
+        if (connected) {
+            scheduleGraphTreeRefresh();
+            return;
+        }
         refreshAutoNames(state);
         shareChain(node, false);
         return;
     }
     if (slotName === "out") {
+        if (connected) {
+            scheduleGraphTreeRefresh();
+            return;
+        }
         refreshSlotTypes(state); syncSlots(state); mergeAndShareChain(node); return;
     }
     var k = valueSlotNumber(slotName);
     // 连接：首次连接自动命名
     if (isInput && k && connected && linkInfo && !state.manual[k - 1]) {
-        var label = upstreamOutputLabel(linkInfo);
+        var label = valueInputLabelFromLink(linkInfo, node.graph, k);
         if (label) {
             state.names[k - 1] = label;
             persistState(state); shareChain(node, false); return;
         }
+        scheduleGraphTreeRefresh();
+        return;
     }
-    // 断开：任何端口都重置→从上游管道恢复→推送下游
+    // 断开：保留 last-known-good，只有明确解析为空时才回退为空。
     if (isInput && k && !connected) {
         var disconnectedLinkId = linkInfo && linkInfo.id != null ? linkInfo.id : null;
         if (disconnectedLinkId == null) disconnectedLinkId = valueInputLinkId(node, k);
-        state.names[k - 1] = "";
-        state.manual[k - 1] = false;
         refreshAutoNames(state, k);
         persistState(state); shareChain(node, false, k);
         scheduleValueDisconnectRefresh(state, k, disconnectedLinkId);
@@ -749,11 +1743,38 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
 var pipeInputEls = {};    // nodeId -> { wrap, rows, toggleBtn }
 var pipeLinksHidden = {}; // 管道连线显隐
 var overlayHooked = false;
+var graphTreeRefreshTimer = null;
 
-function isHiddenBundleLink(link) {
+function scheduleGraphTreeRefresh() {
+    if (graphTreeRefreshTimer != null) return;
+    var run = function () {
+        xpipeLog("scheduledGraphTreeRefresh.run", {
+            root: graphKey(app.graph),
+        });
+        try { refreshAllXPipesInGraphTree(app.graph); } catch (_e) {}
+        try { syncAllOverlays(); } catch (_e) {}
+        try { app.canvas && app.canvas.setDirty(true, true); } catch (_e) {}
+    };
+    xpipeLog("scheduledGraphTreeRefresh.queue", {});
+    graphTreeRefreshTimer = setTimeout(function () {
+        graphTreeRefreshTimer = null;
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(function () { setTimeout(run, 0); });
+        } else {
+            setTimeout(run, 16);
+        }
+        setTimeout(run, 80);
+        setTimeout(run, 150);
+    }, 0);
+}
+
+function isHiddenBundleLink(link, graph) {
     if (!link || link.id == null) return false;
-    if (!pipeLinksHidden[link.origin_id] && !pipeLinksHidden[link.target_id]) return false;
-    return !!getFullBundleMetaFromLink(link, {});
+    graph = graph || activeGraph();
+    var src = getNodeByIdInGraph(graph, link.origin_id);
+    var tgt = getNodeByIdInGraph(graph, link.target_id);
+    if (!pipeLinksHidden[nodeKey(src)] && !pipeLinksHidden[nodeKey(tgt)]) return false;
+    return !!getFullBundleMetaFromLink(link, {}, graph);
 }
 
 function installOverlayHook() {
@@ -767,9 +1788,9 @@ function installOverlayHook() {
     // 拦截管道连线渲染
     var origRenderLink = app.canvas.renderLink;
     app.canvas.renderLink = function (ctx, a, b, link) {
-        var graph = this.graph || app.graph;
+        var graph = this.graph || activeGraph();
         var warning = getXPipeLinkWarning(link, graph);
-        if (isHiddenBundleLink(link)) return;
+        if (isHiddenBundleLink(link, graph)) return;
         if (!warning) {
             origRenderLink && origRenderLink.apply(this, arguments);
             return;
@@ -786,9 +1807,17 @@ function installOverlayHook() {
     setTimeout(function () { try { syncAllOverlays(); } catch (_e) {} }, 500);
 }
 
+function isNodeCollapsed(node) {
+    return !!(node && (
+        node.collapsed
+        || (node.flags && node.flags.collapsed)
+    ));
+}
+
 function syncAllOverlays() {
-    if (!app.graph || !app.canvas) return;
-    var nodes = app.graph._nodes || [];
+    var graph = activeGraph();
+    if (!graph || !app.canvas) return;
+    var nodes = graph._nodes || graph.nodes || [];
     var parent = app.canvas.canvas.parentNode || document.body;
     var pr = parent.getBoundingClientRect();
     var ds = app.canvas.ds || { offset: [0, 0], scale: 1 }, s = ds.scale || 1;
@@ -799,9 +1828,24 @@ function syncAllOverlays() {
 
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i], state = node.__xpipeState;
+        if (!state && isXPipe(node)) {
+            ensureXPipe(node);
+            state = node.__xpipeState;
+            if (state) {
+                refreshAutoNames(state);
+                refreshSlotTypes(state);
+                syncSlots(state);
+                fitNode(state);
+            }
+        }
         if (!state) continue;
-        aliveIds[node.id] = true;
-        var entry = pipeInputEls[node.id];
+        var key = nodeKey(node);
+        aliveIds[key] = true;
+        var entry = pipeInputEls[key];
+        if (isNodeCollapsed(node)) {
+            if (entry) entry.wrap.style.display = "none";
+            continue;
+        }
         if (!lodV) { if (entry) entry.wrap.style.display = "none"; continue; }
         if (!entry) {
             var wrap = document.createElement("div");
@@ -809,7 +1853,7 @@ function syncAllOverlays() {
             attachCanvasPassThrough(wrap);
             parent.appendChild(wrap);
             entry = { wrap: wrap, rows: {} };
-            pipeInputEls[node.id] = entry;
+            pipeInputEls[key] = entry;
         }
         entry.wrap.style.display = "";
         var npos = node.pos || [0, 0], nw = node.size ? node.size[0] : 200;
@@ -852,6 +1896,7 @@ function updateToggleBtnTooltip(btn, hidden) {
 
 // ---- 切换按钮 ----
 function syncToggleBtn(node, entry, s, nw) {
+    var key = nodeKey(node);
     if (!entry.toggleBtn) {
         var btn = document.createElement("button");
         btn.innerHTML = toggleBtnIcon(false);
@@ -872,23 +1917,23 @@ function syncToggleBtn(node, entry, s, nw) {
             btn.style.background = "transparent";
             btn.style.color = "var(--input-text,#888)";
         });
-        (function (nid) {
+        (function (toggleKey) {
             btn.addEventListener("click", function (e) {
                 e.stopPropagation();
-                pipeLinksHidden[nid] = !pipeLinksHidden[nid];
-                btn.innerHTML = toggleBtnIcon(pipeLinksHidden[nid]);
-                updateToggleBtnTooltip(btn, pipeLinksHidden[nid]);
-                btn.style.opacity = pipeLinksHidden[nid] ? "0.4" : "1";
+                pipeLinksHidden[toggleKey] = !pipeLinksHidden[toggleKey];
+                btn.innerHTML = toggleBtnIcon(pipeLinksHidden[toggleKey]);
+                updateToggleBtnTooltip(btn, pipeLinksHidden[toggleKey]);
+                btn.style.opacity = pipeLinksHidden[toggleKey] ? "0.4" : "1";
                 app.canvas && app.canvas.setDirty(true, true);
             });
             btn.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
-        })(node.id);
+        })(key);
         attachCanvasPassThrough(btn);
         entry.wrap.appendChild(btn);
         entry.toggleBtn = btn;
     }
     var btn = entry.toggleBtn;
-    var hidden = pipeLinksHidden[node.id];
+    var hidden = pipeLinksHidden[key];
     updateToggleBtnTooltip(btn, hidden);
     btn.style.opacity = hidden ? "0.4" : "1";
     btn.style.left = ((nw - 23) * s) + "px";
@@ -984,11 +2029,19 @@ function createState(node) {
     if (node.__xpipeState) {
         if (!node.__xpipeState.slotDefs) node.__xpipeState.slotDefs = captureSlotDefs(node);
         if (!node.__xpipeState.types) node.__xpipeState.types = loadStateTypes(node);
+        if (!node.__xpipeState.metaWidget) node.__xpipeState.metaWidget = ensureMetaWidget(node);
+        xpipeLog("createState.reuse", {
+            node: debugNode(node),
+            names: compactSlots(node.__xpipeState.names),
+            types: compactSlots(node.__xpipeState.types),
+            manual: compactSlots(node.__xpipeState.manual),
+        });
         return node.__xpipeState;
     }
     var st = {
         node: node,
         namesWidget: findNamesWidget(node),
+        metaWidget: ensureMetaWidget(node),
         slotDefs: captureSlotDefs(node),
         visibleCount: PIPE_SLOTS,
     };
@@ -999,23 +2052,44 @@ function createState(node) {
     hideNamesWidget(st.namesWidget);
     removePortNamesSlot(node);
     hidePortLabels(node);
+    xpipeLog("createState.new", {
+        node: debugNode(node),
+        names: compactSlots(st.names),
+        types: compactSlots(st.types),
+        manual: compactSlots(st.manual),
+        hasNamesWidget: !!st.namesWidget,
+        hasMetaWidget: !!st.metaWidget,
+    });
     return st;
 }
 function loadStateNames(node) {
     var props = node.properties || {};
+    var meta = loadMetaState(node);
     var saved = props[NAMES_PROP];
-    if (Array.isArray(saved)) return padArray(saved.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "");
+    var manual = mergeManualState(props[MANUAL_PROP], meta);
+    if (Array.isArray(saved)) {
+        return mergeManualMetaNames(
+            padArray(saved.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, ""),
+            meta,
+            manual
+        );
+    }
+    if (Array.isArray(meta.names)) {
+        return padArray(meta.names.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "");
+    }
     var w = findNamesWidget(node);
     if (w) { try { var d = JSON.parse(w.value || "[]"); if (Array.isArray(d)) return padArray(d.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, ""); } catch (_e) {} }
     return padArray([], PIPE_SLOTS, "");
 }
 function loadStateManual(node) {
     var m = (node.properties || {})[MANUAL_PROP];
-    return padArray(Array.isArray(m) ? m.map(Boolean) : [], PIPE_SLOTS, false);
+    var meta = loadMetaState(node);
+    return mergeManualState(m, meta);
 }
 function loadStateTypes(node) {
     var t = (node.properties || {})[TYPES_PROP];
-    return padArray(Array.isArray(t) ? t.map(cleanType) : [], PIPE_SLOTS, "");
+    var meta = loadMetaState(node);
+    return mergeMetaTypes(t, meta);
 }
 function saveStateNames(node, names) {
     var p = node.properties = node.properties || {};
@@ -1039,15 +2113,25 @@ function reconcile(state) {
         state.node.setSize([Math.max(cs[0], MIN_NODE_W), cs[1]]);
     }
     state.node.setDirtyCanvas && state.node.setDirtyCanvas(true, true);
+    xpipeLog("reconcile", {
+        node: debugNode(state.node),
+        names: compactSlots(state.names),
+        types: compactSlots(state.types),
+        manual: compactSlots(state.manual),
+    });
     // syncSlots 推迟到连线加载完成后（loadedGraphNode 或首次连接事件）
 }
 function ensureXPipe(node) {
     if (!node) return;
     reconcile(createState(node));
 }
-function refreshAllXPipes() {
-    if (!app.graph || !app.graph._nodes) return;
-    var nodes = app.graph._nodes || [];
+function refreshAllXPipes(graph) {
+    if (graph === app.graph || !graph) {
+        refreshAllXPipesInGraphTree(app.graph);
+        return;
+    }
+    if (!graph || (!graph._nodes && !graph.nodes)) return;
+    var nodes = graphNodes(graph);
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         if (!isXPipe(node)) continue;
@@ -1064,12 +2148,37 @@ function refreshAllXPipes() {
 }
 function hydrateFromInfo(node, info) {
     var st = createState(node), props = (info && info.properties) || node.properties || {};
+    var meta = loadMetaState(node);
     var saved = props[NAMES_PROP];
+    st.manual = mergeManualState(props[MANUAL_PROP], meta);
     st.names = Array.isArray(saved)
-        ? padArray(saved.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "")
-        : (st.namesWidget ? parseNames(st.namesWidget.value) : padArray([], PIPE_SLOTS, ""));
-    st.manual = padArray(Array.isArray(props[MANUAL_PROP]) ? props[MANUAL_PROP].map(Boolean) : [], PIPE_SLOTS, false);
-    st.types = padArray(Array.isArray(props[TYPES_PROP]) ? props[TYPES_PROP].map(cleanType) : [], PIPE_SLOTS, "");
+        ? mergeManualMetaNames(
+            padArray(saved.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, ""),
+            meta,
+            st.manual
+        )
+        : (Array.isArray(meta.names)
+            ? padArray(meta.names.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "")
+            : (st.namesWidget ? parseNames(st.namesWidget.value) : padArray([], PIPE_SLOTS, "")));
+    st.types = mergeMetaTypes(props[TYPES_PROP], meta);
+    xpipeLog("hydrateFromInfo", {
+        node: debugNode(node),
+        infoProps: {
+            names: compactSlots(props[NAMES_PROP]),
+            manual: compactSlots(props[MANUAL_PROP]),
+            types: compactSlots(props[TYPES_PROP]),
+        },
+        meta: {
+            names: compactSlots(meta.names),
+            manual: compactSlots(meta.manual),
+            types: compactSlots(meta.types),
+        },
+        state: {
+            names: compactSlots(st.names),
+            manual: compactSlots(st.manual),
+            types: compactSlots(st.types),
+        },
+    });
     reconcile(st);
 }
 
@@ -1077,20 +2186,37 @@ app.registerExtension({
     name: "ComfyUI.Xz3r0.XPipe",
 
     async setup() {
+        xpipeLog("setup.debugEnabled", {
+            debug: xpipeDebugEnabled(),
+            hint: "Filter console by [XPipe]. Set window.XPIPE_DEBUG=false to silence.",
+        });
         installOverlayHook();
         installLocaleSync();
         applyUiLocale().catch(function () {});
     },
 
     async afterConfigureGraph() {
-        try { refreshAllXPipes(); } catch (_e) { /* ignore */ }
+        resetGraphTreeCaches();
+        xpipeLog("afterConfigureGraph", { root: graphKey(app.graph) });
+        try { refreshAllXPipesInGraphTree(app.graph); } catch (_e) { /* ignore */ }
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
+        if (!nodeType.prototype.__xpipeGraphTreeRefreshHooked) {
+            nodeType.prototype.__xpipeGraphTreeRefreshHooked = true;
+            var origAnyOnConnections = nodeType.prototype.onConnectionsChange;
+            nodeType.prototype.onConnectionsChange = function () {
+                var result = origAnyOnConnections
+                    && origAnyOnConnections.apply(this, arguments);
+                try { scheduleGraphTreeRefresh(); } catch (_e) {}
+                return result;
+            };
+        }
         if (String(nodeData.name) !== NODE_CLASS) return;
         var origOnCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             origOnCreated && origOnCreated.apply(this, arguments);
+            xpipeLog("onNodeCreated", { node: debugNode(this) });
             ensureXPipe(this);
             if (this.__xpipeState) {
                 refreshSlotTypes(this.__xpipeState);
@@ -1105,6 +2231,10 @@ app.registerExtension({
         var origOnConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (info) {
             origOnConfigure && origOnConfigure.apply(this, arguments);
+            xpipeLog("onConfigure", {
+                node: debugNode(this),
+                infoProperties: info && info.properties,
+            });
             try { hydrateFromInfo(this, info); } catch (_e) { /* ignore */ }
         };
         var origOnConnections = nodeType.prototype.onConnectionsChange;
@@ -1122,6 +2252,7 @@ app.registerExtension({
 
     async loadedGraphNode(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
+        xpipeLog("loadedGraphNode", { node: debugNode(node) });
         ensureXPipe(node);
         // 连线已全部恢复，此时同步端口 + 隐藏标签
         if (node.__xpipeState) {
@@ -1137,7 +2268,10 @@ app.registerExtension({
 
     async nodeRemoved(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
-        var entry = pipeInputEls[node.id];
-        if (entry) { if (entry.wrap.parentNode) entry.wrap.parentNode.removeChild(entry.wrap); delete pipeInputEls[node.id]; }
+        var key = nodeKey(node);
+        resetGraphTreeCaches();
+        var entry = pipeInputEls[key];
+        if (entry) { if (entry.wrap.parentNode) entry.wrap.parentNode.removeChild(entry.wrap); delete pipeInputEls[key]; }
+        delete pipeLinksHidden[key];
     },
 });
