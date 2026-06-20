@@ -11,6 +11,7 @@ var HIDE_INPUT = 1;   // bit 0
 var HIDE_OUTPUT = 2;  // bit 1
 var HIDE_BOTH = 3;    // bits 0+1
 var PIPE_SLOTS = 20;
+var HIDE_STATE_PROP = "xpipe_hide_links_state";
 var NAMES_WIDGET = "port_names";
 var META_WIDGET = "xpipe_ui_state";
 var NAMES_PROP = "xpipe_names";
@@ -25,6 +26,8 @@ var TITLE_BUTTON_FONT_SIZE = 14;
 var TITLE_BUTTON_HEIGHT = 22;
 var TITLE_BUTTON_Y_OFFSET = 1;
 var HIDE_BUTTON_X_OFFSET = -8;
+var NAME_INPUT_FONT_SIZE = 12;
+var NAME_INPUT_FONT_FAMILY = "Inter, sans-serif";
 var graphIds = new WeakMap();
 var nextGraphId = 1;
 var scopedNodeIds = new WeakMap();
@@ -127,6 +130,29 @@ function nodeKey(node) {
 }
 function graphNodes(graph) {
     return graph ? (graph._nodes || graph.nodes || []) : [];
+}
+function markCanvasDirty() {
+    if (!app.canvas) return;
+    if (typeof app.canvas.setDirtyCanvas === "function") {
+        app.canvas.setDirtyCanvas(true, true);
+    } else if (typeof app.canvas.setDirty === "function") {
+        app.canvas.setDirty(true, true);
+    }
+}
+function bringXPipeNodeToFront(node) {
+    if (!node || !app.canvas) return;
+    try {
+        if (typeof app.canvas.selectNode === "function") {
+            app.canvas.selectNode(node);
+        }
+        if (typeof app.canvas.bringToFront === "function") {
+            app.canvas.bringToFront(node);
+        }
+        markCanvasDirty();
+        requestAnimationFrame(function () {
+            try { syncAllOverlays(); } catch (_e) {}
+        });
+    } catch (_e) {}
 }
 function forEachGraphInTree(rootGraph, visitor) {
     if (!rootGraph || typeof visitor !== "function") return;
@@ -1321,7 +1347,7 @@ function getChainStates(node) {
     }
     return states;
 }
-// 向下游逐级传播名字（rgthree 模式：只通知直连子节点，子节点再通知孙子）
+// 向下游逐级传播名字
 function pushNamesDown(startNode) {
     if (!startNode || !startNode.outputs || !startNode.outputs[0]) return;
     // 先填充所有后代（管道连接时一次性同步全量），然后改用按需通知
@@ -1667,19 +1693,42 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
 // ---------------------------------------------------------------------------
 // Canvas 浮层输入框
 // ---------------------------------------------------------------------------
-var pipeInputEls = {};    // nodeId -> { wrap, rows }
+var pipeInputEls = {};    // legacy DOM overlays, cleaned up by syncAllOverlays()
+var activeNameEditor = null;
 var pipeLinksHidden = {}; // nodeKey -> state (0-3)
 var overlayHooked = false;
 var graphTreeRefreshTimer = null;
 
 function hiddenState(node) {
-    var state = pipeLinksHidden[nodeKey(node)];
+    var key = nodeKey(node);
+    var state = pipeLinksHidden[key];
+    if (state == null && node && node.properties) {
+        state = node.properties[HIDE_STATE_PROP];
+        if (state != null) pipeLinksHidden[key] = state;
+    }
     if (state === true) return HIDE_BOTH;
-    return state || HIDE_NONE;
+    state = Number(state) || HIDE_NONE;
+    return Math.max(HIDE_NONE, Math.min(HIDE_BOTH, state));
 }
 
 function nextHideState(state) {
     return (state + 1) % 4;
+}
+
+function setHiddenState(node, state) {
+    var key = nodeKey(node);
+    var normalized = Math.max(HIDE_NONE, Math.min(HIDE_BOTH, Number(state) || HIDE_NONE));
+    node.properties = node.properties || {};
+    if (normalized === HIDE_NONE) {
+        delete pipeLinksHidden[key];
+        delete node.properties[HIDE_STATE_PROP];
+    } else {
+        pipeLinksHidden[key] = normalized;
+        node.properties[HIDE_STATE_PROP] = normalized;
+    }
+    if (node.graph && typeof node.graph.change === "function") {
+        node.graph.change();
+    }
 }
 
 function scheduleGraphTreeRefresh() {
@@ -1745,10 +1794,8 @@ function ensureTitleButtons(node) {
     var originalOnTitleButtonClick = node.onTitleButtonClick;
     node.onTitleButtonClick = function (button, canvas) {
         if (button && button.name === BUTTON_HIDE) {
-            var key = nodeKey(this);
             var next = nextHideState(hiddenState(this));
-            if (next === HIDE_NONE) delete pipeLinksHidden[key];
-            else pipeLinksHidden[key] = next;
+            setHiddenState(this, next);
             updateTitleButtons(this);
             canvas && canvas.setDirty && canvas.setDirty(true, true);
             return;
@@ -1762,6 +1809,28 @@ function ensureTitleButtons(node) {
 function installOverlayHook() {
     if (overlayHooked || !app.canvas) { if (!app.canvas) setTimeout(installOverlayHook, 200); return; }
     overlayHooked = true;
+    var origOnMouse = app.canvas.onMouse;
+    app.canvas.onMouse = function (event) {
+        if (event && event.button === 0 && activeGraph()) {
+            var graph = activeGraph();
+            var node = graph && typeof graph.getNodeOnPos === "function"
+                ? graph.getNodeOnPos(event.canvasX, event.canvasY, this.visible_nodes)
+                : null;
+            if (isXPipe(node) && node.__xpipeState) {
+                var slot = hitNameInputSlot(
+                    node,
+                    [event.canvasX - node.pos[0], event.canvasY - node.pos[1]]
+                );
+                if (slot) {
+                    event.preventDefault && event.preventDefault();
+                    event.stopPropagation && event.stopPropagation();
+                    openNameEditor(node, slot);
+                    return true;
+                }
+            }
+        }
+        return origOnMouse && origOnMouse.apply(this, arguments);
+    };
     var origDraw = app.canvas.draw;
     app.canvas.draw = function (force) {
         origDraw && origDraw.apply(this, arguments);
@@ -1797,144 +1866,184 @@ function isNodeCollapsed(node) {
 }
 
 function syncAllOverlays() {
-    var graph = activeGraph();
-    if (!graph || !app.canvas) return;
-    var nodes = graph._nodes || graph.nodes || [];
-    var parent = app.canvas.canvas.parentNode || document.body;
-    var pr = parent.getBoundingClientRect();
-    var ds = app.canvas.ds || { offset: [0, 0], scale: 1 }, s = ds.scale || 1;
-    // LOD
-    var lodV = s >= 0.35;
-    try { var v = app.ui && app.ui.settings && app.ui.settings.getSettingValue("Comfy.LodScale"); if (typeof v === "number") lodV = s >= v; } catch (_e) {}
-    var aliveIds = {};
-
-    for (var i = 0; i < nodes.length; i++) {
-        var node = nodes[i], state = node.__xpipeState;
-        if (!state && isXPipe(node)) {
-            ensureXPipe(node);
-            state = node.__xpipeState;
-            if (state) {
-                refreshAutoNames(state);
-                refreshSlotTypes(state);
-                syncSlots(state);
-                fitNode(state);
-            }
-        }
-        if (!state) continue;
-        var key = nodeKey(node);
-        aliveIds[key] = true;
-        var entry = pipeInputEls[key];
-        if (isNodeCollapsed(node)) {
-            if (entry) entry.wrap.style.display = "none";
-            continue;
-        }
-        if (!lodV) { if (entry) entry.wrap.style.display = "none"; continue; }
-        if (!entry) {
-            var wrap = document.createElement("div");
-            wrap.style.cssText = "position:absolute;pointer-events:none;z-index:5;";
-            attachCanvasPassThrough(wrap);
-            parent.appendChild(wrap);
-            entry = { wrap: wrap, rows: {} };
-            pipeInputEls[key] = entry;
-        }
-        entry.wrap.style.display = "";
-        var npos = node.pos || [0, 0], nw = node.size ? node.size[0] : 200;
-        var nx = pr.left + (npos[0] + ds.offset[0]) * s;
-        var ny = pr.top  + (npos[1] + ds.offset[1]) * s;
-        entry.wrap.style.left = (nx - pr.left) + "px";
-        entry.wrap.style.top  = (ny - pr.top) + "px";
-
-        // 名字输入框
-        syncNameInputs(state, node, entry, s, nw);
-    }
-    // 清理
+    updateActiveNameEditorPosition();
     for (var nid in pipeInputEls) {
         if (!pipeInputEls.hasOwnProperty(nid)) continue;
-        if (!aliveIds[nid]) {
-            if (pipeInputEls[nid].wrap.parentNode) pipeInputEls[nid].wrap.parentNode.removeChild(pipeInputEls[nid].wrap);
-            delete pipeInputEls[nid];
+        if (pipeInputEls[nid].wrap && pipeInputEls[nid].wrap.parentNode) {
+            pipeInputEls[nid].wrap.parentNode.removeChild(pipeInputEls[nid].wrap);
         }
+        delete pipeInputEls[nid];
     }
 }
 
 // ---- 名字输入框 ----
-function syncNameInputs(state, node, entry, s, nw) {
-    var names = state.names, manual = state.manual;
+function getNameInputLayout(node, slot) {
     var i1 = slotIndexOfName(node.inputs, "value_1");
     if (i1 < 0) i1 = slotIndexOfName(node.outputs, "value_1");
     var baseY = (i1 >= 0 && (node.inputs[i1] || node.outputs[i1]) && (node.inputs[i1] || node.outputs[i1]).pos)
         ? (node.inputs[i1] || node.outputs[i1]).pos[1] : 35;
-    var spacing = 20, ih = 14 * s;
-
+    var nw = node.size ? node.size[0] : 200;
+    var dy = baseY + (slot - 1) * 20;
+    var ml = 21, mr = 20;
+    return {
+        x: ml,
+        y: dy - 8,
+        w: Math.max(60, nw - ml - mr),
+        h: 14,
+    };
+}
+function hitNameInputSlot(node, pos) {
+    if (!node || !pos) return 0;
     for (var k = 1; k <= PIPE_SLOTS; k++) {
-        var key = "v" + k, el = entry.rows[key];
-        if (!el) {
-            el = document.createElement("input");
-            el.type = "text";
-            el.style.cssText = [
-                "position:absolute;pointer-events:auto;text-align:center;",
-                "box-sizing:border-box;font-family:'Inter',sans-serif;",
-                "border:1px solid var(--border-color,#555);border-radius:2px;",
-                "background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);",
-                "outline:none;",
-            ].join("");
-            (function (st, slot, inputEl) {
-                inputEl.addEventListener("input", function () {
-                    if (inputEl._busy) return;
-                    var v = inputEl.value.trim();
-                    st.names[slot - 1] = v; st.manual[slot - 1] = v.length > 0;
-                    inputEl.style.borderColor = st.manual[slot - 1] ? "var(--primary-color, #ff385c)" : "var(--border-color,#555)";
-                    hidePortLabels(st.node);
-                    persistState(st);
-                });
-                // 失焦：空→回退；有内容→保存+推送下游
-                inputEl.addEventListener("blur", function () {
-                    var v = inputEl.value.trim();
-                    if (v.length) {
-                        st.names[slot - 1] = v;
-                        st.manual[slot - 1] = true;
-                    } else {
-                        // 清空手动名后，恢复直接输入名或上游管道名。
-                        st.names[slot - 1] = ""; st.manual[slot - 1] = false;
-                        refreshAutoNames(st);
-                    }
-                    inputEl.value = st.names[slot - 1] || "";
-                    inputEl.style.borderColor = st.manual[slot - 1] ? "var(--primary-color, #ff385c)" : "var(--border-color,#555)";
-                    hidePortLabels(st.node);
-                    persistState(st);
-                    try { notifyDownstream(st.node, slot); } catch (_e) {}
-                });
-            })(state, k, el);
-            attachCanvasPassThrough(el);
-            entry.wrap.appendChild(el);
-            entry.rows[key] = el;
-        }
-        var name = names[k - 1];
-        if (el.value !== (name || "") && document.activeElement !== el) {
-            el._busy = true; el.value = name || ""; setTimeout(function () { el._busy = false; }, 0);
-        }
-        el.readOnly = false;
-        el.style.opacity = "1";
-        el.style.borderColor = manual[k - 1] ? "var(--primary-color, #ff385c)" : "var(--border-color,#555)";
-        if (name) el.title = name; else el.removeAttribute("title");
-        var dy = baseY + (k - 1) * spacing;
-        var ml = 21, mr = 20, boxW = Math.max(60, (nw - ml - mr) * s);
-        el.style.left = (ml * s) + "px";
-        el.style.top = ((dy - 8) * s) + "px";
-        el.style.width = boxW + "px";
-        el.style.fontSize = (12 * s) + "px";
-        el.style.height = ih + "px";
-        el.style.lineHeight = ih + "px";
+        var r = getNameInputLayout(node, k);
+        if (pos[0] >= r.x && pos[0] <= r.x + r.w
+            && pos[1] >= r.y && pos[1] <= r.y + r.h) return k;
     }
-    // 清理异常超出 20 槽位的旧 input
-    for (var rk in entry.rows) {
-        if (!entry.rows.hasOwnProperty(rk)) continue;
-        var sn = parseInt(rk.substring(1), 10);
-        if (sn > PIPE_SLOTS) {
-            if (entry.rows[rk].parentNode) entry.rows[rk].parentNode.removeChild(entry.rows[rk]);
-            delete entry.rows[rk];
+    return 0;
+}
+function canvasCssColor(name, fallback) {
+    try {
+        var value = getComputedStyle(document.body).getPropertyValue(name).trim();
+        return value || fallback;
+    } catch (_e) {
+        return fallback;
+    }
+}
+function nameInputFontFamily() {
+    try {
+        var font = getComputedStyle(document.body).fontFamily;
+        return font || NAME_INPUT_FONT_FAMILY;
+    } catch (_e) {
+        return NAME_INPUT_FONT_FAMILY;
+    }
+}
+function nameInputCanvasFont() {
+    return NAME_INPUT_FONT_SIZE + "px " + nameInputFontFamily();
+}
+function centeredTextY(ctx, rect) {
+    return rect.y + rect.h / 2 + 5;
+}
+function drawNameInputs(node, ctx) {
+    var st = node && node.__xpipeState;
+    if (!st || !ctx || isNodeCollapsed(node)) return;
+    var scale = app.canvas && app.canvas.ds ? app.canvas.ds.scale || 1 : 1;
+    var lodV = scale >= 0.35;
+    try {
+        var v = app.ui && app.ui.settings && app.ui.settings.getSettingValue("Comfy.LodScale");
+        if (typeof v === "number") lodV = scale >= v;
+    } catch (_e) {}
+    if (!lodV) return;
+
+    var bg = canvasCssColor("--comfy-input-bg", "#222");
+    var text = canvasCssColor("--input-text", "#ddd");
+    var border = canvasCssColor("--border-color", "#555");
+    var primary = canvasCssColor("--primary-color", "#ff385c");
+    ctx.save();
+    ctx.font = nameInputCanvasFont();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.lineWidth = Math.max(1, 1 / scale);
+    for (var k = 1; k <= PIPE_SLOTS; k++) {
+        var r = getNameInputLayout(node, k);
+        var name = st.names[k - 1] || "";
+        ctx.fillStyle = bg;
+        ctx.strokeStyle = st.manual[k - 1] ? primary : border;
+        ctx.beginPath();
+        ctx.rect(r.x, r.y, r.w, r.h);
+        ctx.fill();
+        ctx.stroke();
+        if (name) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(r.x + 2, r.y, r.w - 4, r.h);
+            ctx.clip();
+            ctx.fillStyle = text;
+            ctx.fillText(name, r.x + r.w / 2, centeredTextY(ctx, r));
+            ctx.restore();
         }
     }
+    ctx.restore();
+}
+function commitNameEditor(cancelled) {
+    var editor = activeNameEditor;
+    if (!editor) return;
+    var st = editor.state, slot = editor.slot, inputEl = editor.input;
+    if (!cancelled && st && slot) {
+        var v = inputEl.value.trim();
+        if (v.length) {
+            st.names[slot - 1] = v;
+            st.manual[slot - 1] = true;
+        } else {
+            st.names[slot - 1] = "";
+            st.manual[slot - 1] = false;
+            refreshAutoNames(st);
+        }
+        hidePortLabels(st.node);
+        persistState(st);
+        try { notifyDownstream(st.node, slot); } catch (_e) {}
+        markCanvasDirty();
+    }
+    if (inputEl && inputEl.parentNode) inputEl.parentNode.removeChild(inputEl);
+    activeNameEditor = null;
+}
+function updateActiveNameEditorPosition() {
+    var editor = activeNameEditor;
+    if (!editor || !editor.input || !editor.node || !app.canvas) return;
+    if (isNodeCollapsed(editor.node) || editor.node.graph !== activeGraph()) {
+        commitNameEditor(false);
+        return;
+    }
+    var parent = app.canvas.canvas.parentNode || document.body;
+    var pr = parent.getBoundingClientRect();
+    var ds = app.canvas.ds || { offset: [0, 0], scale: 1 };
+    var s = ds.scale || 1;
+    var r = getNameInputLayout(editor.node, editor.slot);
+    editor.input.style.left = ((editor.node.pos[0] + r.x + ds.offset[0]) * s) + "px";
+    editor.input.style.top = ((editor.node.pos[1] + r.y + ds.offset[1]) * s) + "px";
+    editor.input.style.width = (r.w * s) + "px";
+    editor.input.style.height = (r.h * s) + "px";
+    editor.input.style.fontSize = (NAME_INPUT_FONT_SIZE * s) + "px";
+    editor.input.style.lineHeight = (r.h * s) + "px";
+    if (editor.input.parentNode === parent) return;
+    editor.input.style.left = (parseFloat(editor.input.style.left) - pr.left) + "px";
+    editor.input.style.top = (parseFloat(editor.input.style.top) - pr.top) + "px";
+}
+function openNameEditor(node, slot) {
+    if (!node || !node.__xpipeState || !slot) return;
+    commitNameEditor(false);
+    bringXPipeNodeToFront(node);
+    var parent = app.canvas && app.canvas.canvas
+        ? app.canvas.canvas.parentNode || document.body
+        : document.body;
+    var inputEl = document.createElement("input");
+    inputEl.type = "text";
+    inputEl.value = node.__xpipeState.names[slot - 1] || "";
+    inputEl.className = "xpipe-name-editor";
+    inputEl.style.cssText = [
+        "position:absolute;z-index:0;pointer-events:auto;text-align:center;",
+        "box-sizing:border-box;font-family:" + nameInputFontFamily() + ";",
+        "border:1px solid var(--primary-color,#ff385c);border-radius:2px;",
+        "background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);",
+        "outline:none;padding:0;",
+    ].join("");
+    inputEl.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            commitNameEditor(false);
+        } else if (event.key === "Escape") {
+            event.preventDefault();
+            commitNameEditor(true);
+        }
+    });
+    inputEl.addEventListener("blur", function () {
+        commitNameEditor(false);
+    });
+    attachCanvasPassThrough(inputEl);
+    parent.appendChild(inputEl);
+    activeNameEditor = { node: node, state: node.__xpipeState, slot: slot, input: inputEl };
+    updateActiveNameEditorPosition();
+    inputEl.focus();
+    inputEl.select();
 }
 
 // ---------------------------------------------------------------------------
@@ -2161,7 +2270,20 @@ app.registerExtension({
         var origOnDrawForeground = nodeType.prototype.onDrawForeground;
         nodeType.prototype.onDrawForeground = function (ctx) {
             origOnDrawForeground && origOnDrawForeground.apply(this, arguments);
+            try { drawNameInputs(this, ctx); } catch (_e) { /* ignore */ }
             try { drawWarningOutputRings(this, ctx); } catch (_e) { /* ignore */ }
+        };
+        var origOnMouseDown = nodeType.prototype.onMouseDown;
+        nodeType.prototype.onMouseDown = function (event, pos, canvas) {
+            if (event && event.button === 0) {
+                var slot = hitNameInputSlot(this, pos);
+                if (slot) {
+                    openNameEditor(this, slot);
+                    canvas && canvas.setDirty && canvas.setDirty(true, true);
+                    return true;
+                }
+            }
+            return origOnMouseDown && origOnMouseDown.apply(this, arguments);
         };
     },
 
@@ -2193,6 +2315,7 @@ app.registerExtension({
         resetGraphTreeCaches();
         var entry = pipeInputEls[key];
         if (entry) { if (entry.wrap.parentNode) entry.wrap.parentNode.removeChild(entry.wrap); delete pipeInputEls[key]; }
+        if (activeNameEditor && activeNameEditor.node === node) commitNameEditor(false);
         delete pipeLinksHidden[key];
     },
 });

@@ -10,6 +10,7 @@ var HIDE_NONE = 0;
 var HIDE_INPUT = 1;   // bit 0
 var HIDE_OUTPUT = 2;  // bit 1
 var HIDE_BOTH = 3;    // bits 0+1
+var HIDE_STATE_PROP = "xlinker_hide_links_state";
 var linkerLinksHidden = {};      // nodeKey -> state (0-3)
 var linkerLinksHighlighted = {}; // nodeKey -> bool
 var canvasHooked = false;
@@ -35,6 +36,34 @@ function nodeKey(node) {
     return String(node && node.id);
 }
 
+function hiddenState(node) {
+    var key = nodeKey(node);
+    var state = linkerLinksHidden[key];
+    if (state == null && node && node.properties) {
+        state = node.properties[HIDE_STATE_PROP];
+        if (state != null) linkerLinksHidden[key] = state;
+    }
+    if (state === true) return HIDE_BOTH;
+    state = Number(state) || HIDE_NONE;
+    return Math.max(HIDE_NONE, Math.min(HIDE_BOTH, state));
+}
+
+function setHiddenState(node, state) {
+    var key = nodeKey(node);
+    var normalized = Math.max(HIDE_NONE, Math.min(HIDE_BOTH, Number(state) || HIDE_NONE));
+    node.properties = node.properties || {};
+    if (normalized === HIDE_NONE) {
+        delete linkerLinksHidden[key];
+        delete node.properties[HIDE_STATE_PROP];
+    } else {
+        linkerLinksHidden[key] = normalized;
+        node.properties[HIDE_STATE_PROP] = normalized;
+    }
+    if (node.graph && typeof node.graph.change === "function") {
+        node.graph.change();
+    }
+}
+
 function nextState(state) {
     return (state + 1) % 4;
 }
@@ -42,7 +71,7 @@ function nextState(state) {
 function updateTitleButtons(node) {
     if (!node || !node.title_buttons) return;
     var key = nodeKey(node);
-    var hideState = linkerLinksHidden[key] || HIDE_NONE;
+    var hideState = hiddenState(node);
     var highlightOn = !!linkerLinksHighlighted[key];
 
     for (var i = 0; i < node.title_buttons.length; i++) {
@@ -62,7 +91,7 @@ function ensureTitleButtons(node) {
     if (typeof node.addTitleButton === "function") {
         node.addTitleButton({
             name: BUTTON_HIDE,
-            text: HIDE_BUTTON_TEXTS[linkerLinksHidden[nodeKey(node)] || HIDE_NONE],
+            text: HIDE_BUTTON_TEXTS[hiddenState(node)],
             fontSize: TITLE_BUTTON_FONT_SIZE,
             height: TITLE_BUTTON_HEIGHT,
             xOffset: HIDE_BUTTON_X_OFFSET,
@@ -82,7 +111,7 @@ function ensureTitleButtons(node) {
     node.onTitleButtonClick = function (button, canvas) {
         var key = nodeKey(this);
         if (button && button.name === BUTTON_HIDE) {
-            linkerLinksHidden[key] = nextState(linkerLinksHidden[key] || HIDE_NONE);
+            setHiddenState(this, nextState(hiddenState(this)));
             updateTitleButtons(this);
             canvas && canvas.setDirty && canvas.setDirty(true, true);
             return;
@@ -113,12 +142,12 @@ function isLinkerHiddenLink(link, graph) {
     }
     // 检查源节点（输出侧）：state & HIDE_OUTPUT → 隐藏
     if (src && src.comfyClass === NODE_CLASS) {
-        var s = linkerLinksHidden[nodeKey(src)] || 0;
+        var s = hiddenState(src);
         if (s & HIDE_OUTPUT) return true;
     }
     // 检查目标节点（输入侧）：state & HIDE_INPUT → 隐藏
     if (tgt && tgt.comfyClass === NODE_CLASS) {
-        var s2 = linkerLinksHidden[nodeKey(tgt)] || 0;
+        var s2 = hiddenState(tgt);
         if (s2 & HIDE_INPUT) return true;
     }
     return false;
