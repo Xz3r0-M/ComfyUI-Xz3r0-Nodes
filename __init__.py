@@ -35,6 +35,7 @@ from .xnode.xcontrolpanel import XControlPanel
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
+from .xnode.xlinker import XLinker
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xpipe import XPipe
@@ -104,6 +105,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XDateTimeString,
     XImageCompare,
     XKleinRefConditioning,
+    XLinker,
     XMath,
     XMemoryCleanup,
     XPipe,

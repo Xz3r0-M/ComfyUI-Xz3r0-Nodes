@@ -269,6 +269,26 @@
       }
     }
   },
+  "XLinker": {
+    "display_name": "XLinker",
+    "description": "Passthrough node with a note text area. One any-type input passes directly to one any-type output. A title bar button toggles link visibility: show all, hide input links only, hide output links only, or hide both.",
+    "inputs": {
+      "value": {
+        "name": "Value",
+        "tooltip": "Input value (optional, any type). Passed through to the output unchanged."
+      },
+      "note_text": {
+        "name": "Note Text",
+        "tooltip": "Freeform note text. Use this to annotate the workflow — the value is ignored during execution."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Value",
+        "tooltip": "Passthrough output (same data type as input)."
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
