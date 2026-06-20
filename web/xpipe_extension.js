@@ -6,6 +6,10 @@ import { app } from "../../scripts/app.js";
 // 固定 20 槽位、管道连线显隐切换。
 
 var NODE_CLASS = "XPipe";
+var HIDE_NONE = 0;
+var HIDE_INPUT = 1;   // bit 0
+var HIDE_OUTPUT = 2;  // bit 1
+var HIDE_BOTH = 3;    // bits 0+1
 var PIPE_SLOTS = 20;
 var NAMES_WIDGET = "port_names";
 var META_WIDGET = "xpipe_ui_state";
@@ -15,13 +19,12 @@ var TYPES_PROP = "xpipe_types";
 var MIN_NODE_W = 210;
 var WARNING_COLOR = "#ff6a3d";
 var WARNING_GLOW = "rgba(255, 106, 61, 0.7)";
-var LOCALE_PREFIX = "xdatahub.ui.node.xpipe";
-var COMFY_LOCALE_KEY = "Comfy.Locale";
-var LOCALE_SYNC_INTERVAL = 1000;
-var uiLocalePrimary = null;
-var uiLocaleFallback = null;
-var i18nCache = {};
-var localeSyncInstalled = false;
+var BUTTON_HIDE = "xpipe-hide";
+var HIDE_BUTTON_TEXTS = ["◀▶", "◁▶", "◀▷", "◁▷"];
+var TITLE_BUTTON_FONT_SIZE = 14;
+var TITLE_BUTTON_HEIGHT = 22;
+var TITLE_BUTTON_Y_OFFSET = 1;
+var HIDE_BUTTON_X_OFFSET = -8;
 var graphIds = new WeakMap();
 var nextGraphId = 1;
 var scopedNodeIds = new WeakMap();
@@ -106,82 +109,6 @@ function parseNames(raw) {
     try { data = JSON.parse(raw || "[]"); } catch (_e) { data = []; }
     if (!Array.isArray(data)) data = [];
     return padArray(data.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "");
-}
-function t(key, fallback) {
-    if (uiLocalePrimary && uiLocalePrimary[key] !== undefined
-        && String(uiLocalePrimary[key]).length > 0) {
-        return uiLocalePrimary[key];
-    }
-    if (uiLocaleFallback && uiLocaleFallback[key] !== undefined
-        && String(uiLocaleFallback[key]).length > 0) {
-        return uiLocaleFallback[key];
-    }
-    return fallback || key;
-}
-function tk(suffix, fallback) {
-    return t(LOCALE_PREFIX + "." + suffix, fallback);
-}
-function fetchI18n(locale) {
-    if (i18nCache[locale]) return Promise.resolve(i18nCache[locale]);
-    return fetch("/xz3r0/xdatahub/i18n/ui?locale=" + encodeURIComponent(locale))
-        .then(function (response) { return response.ok ? response.json() : {}; })
-        .then(function (data) {
-            i18nCache[locale] = data && data.dict ? data.dict : {};
-            return i18nCache[locale];
-        })
-        .catch(function () { return {}; });
-}
-function resolveComfyLocale() {
-    try {
-        var value = app.extensionManager
-            && app.extensionManager.setting
-            && app.extensionManager.setting.get
-            && app.extensionManager.setting.get(COMFY_LOCALE_KEY);
-        if (value) return value;
-    } catch (_e) { /* fall through */ }
-    try {
-        var stored = localStorage.getItem(COMFY_LOCALE_KEY);
-        if (stored) return stored;
-    } catch (_e) { /* fall through */ }
-    if (document.documentElement && document.documentElement.lang) {
-        return document.documentElement.lang;
-    }
-    return navigator.language || "en";
-}
-function loadLocaleBundle(locale) {
-    var normalized = (
-        locale === "zh" || locale === "zh-CN" || locale === "zh-TW"
-    ) ? "zh" : "en";
-    return Promise.all([fetchI18n("en"), fetchI18n(normalized)])
-        .then(function (results) {
-            uiLocaleFallback = results[0];
-            uiLocalePrimary = normalized === "en" ? results[0] : results[1];
-            return normalized;
-        });
-}
-function refreshAllToggleTooltips() {
-    for (var key in pipeInputEls) {
-        if (!pipeInputEls.hasOwnProperty(key)) continue;
-        var entry = pipeInputEls[key];
-        if (!entry || !entry.toggleBtn) continue;
-        updateToggleBtnTooltip(entry.toggleBtn, !!pipeLinksHidden[key]);
-    }
-}
-function applyUiLocale(localeOverride) {
-    return loadLocaleBundle(localeOverride || resolveComfyLocale())
-        .then(function () { refreshAllToggleTooltips(); });
-}
-function installLocaleSync() {
-    if (localeSyncInstalled) return;
-    localeSyncInstalled = true;
-    var lastLocale = null;
-    setInterval(function () {
-        var nextLocale = resolveComfyLocale();
-        if (nextLocale && nextLocale !== lastLocale) {
-            lastLocale = nextLocale;
-            applyUiLocale(nextLocale).catch(function () {});
-        }
-    }, LOCALE_SYNC_INTERVAL);
 }
 function activeGraph() {
     return (app.canvas && app.canvas.getCurrentGraph && app.canvas.getCurrentGraph())
@@ -1740,10 +1667,20 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
 // ---------------------------------------------------------------------------
 // Canvas 浮层输入框
 // ---------------------------------------------------------------------------
-var pipeInputEls = {};    // nodeId -> { wrap, rows, toggleBtn }
-var pipeLinksHidden = {}; // 管道连线显隐
+var pipeInputEls = {};    // nodeId -> { wrap, rows }
+var pipeLinksHidden = {}; // nodeKey -> state (0-3)
 var overlayHooked = false;
 var graphTreeRefreshTimer = null;
+
+function hiddenState(node) {
+    var state = pipeLinksHidden[nodeKey(node)];
+    if (state === true) return HIDE_BOTH;
+    return state || HIDE_NONE;
+}
+
+function nextHideState(state) {
+    return (state + 1) % 4;
+}
 
 function scheduleGraphTreeRefresh() {
     if (graphTreeRefreshTimer != null) return;
@@ -1773,8 +1710,53 @@ function isHiddenBundleLink(link, graph) {
     graph = graph || activeGraph();
     var src = getNodeByIdInGraph(graph, link.origin_id);
     var tgt = getNodeByIdInGraph(graph, link.target_id);
-    if (!pipeLinksHidden[nodeKey(src)] && !pipeLinksHidden[nodeKey(tgt)]) return false;
+    var hideFromOutput = isXPipe(src) && (hiddenState(src) & HIDE_OUTPUT);
+    var hideToInput = isXPipe(tgt) && (hiddenState(tgt) & HIDE_INPUT);
+    if (!hideFromOutput && !hideToInput) return false;
     return !!getFullBundleMetaFromLink(link, {}, graph);
+}
+
+function updateTitleButtons(node) {
+    if (!node || !node.title_buttons) return;
+    var state = hiddenState(node);
+    for (var i = 0; i < node.title_buttons.length; i++) {
+        var button = node.title_buttons[i];
+        if (button.name === BUTTON_HIDE) {
+            button.text = HIDE_BUTTON_TEXTS[state];
+        }
+    }
+}
+
+function ensureTitleButtons(node) {
+    if (!node || node.__xpipeTitleButtonsReady) return;
+    node.__xpipeTitleButtonsReady = true;
+
+    if (typeof node.addTitleButton === "function") {
+        node.addTitleButton({
+            name: BUTTON_HIDE,
+            text: HIDE_BUTTON_TEXTS[hiddenState(node)],
+            fontSize: TITLE_BUTTON_FONT_SIZE,
+            height: TITLE_BUTTON_HEIGHT,
+            xOffset: HIDE_BUTTON_X_OFFSET,
+            yOffset: TITLE_BUTTON_Y_OFFSET,
+        });
+    }
+
+    var originalOnTitleButtonClick = node.onTitleButtonClick;
+    node.onTitleButtonClick = function (button, canvas) {
+        if (button && button.name === BUTTON_HIDE) {
+            var key = nodeKey(this);
+            var next = nextHideState(hiddenState(this));
+            if (next === HIDE_NONE) delete pipeLinksHidden[key];
+            else pipeLinksHidden[key] = next;
+            updateTitleButtons(this);
+            canvas && canvas.setDirty && canvas.setDirty(true, true);
+            return;
+        }
+        if (originalOnTitleButtonClick) {
+            return originalOnTitleButtonClick.apply(this, arguments);
+        }
+    };
 }
 
 function installOverlayHook() {
@@ -1862,9 +1844,6 @@ function syncAllOverlays() {
         entry.wrap.style.left = (nx - pr.left) + "px";
         entry.wrap.style.top  = (ny - pr.top) + "px";
 
-        // 切换按钮 (右上角)
-        syncToggleBtn(node, entry, s, nw);
-
         // 名字输入框
         syncNameInputs(state, node, entry, s, nw);
     }
@@ -1876,70 +1855,6 @@ function syncAllOverlays() {
             delete pipeInputEls[nid];
         }
     }
-}
-
-// ---- 眼睛图标 SVG ----
-var EYE_ON = '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
-var EYE_OFF = '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
-
-function toggleBtnIcon(hidden) { return hidden ? EYE_OFF : EYE_ON; }
-function toggleBtnTooltip(hidden) {
-    return hidden
-        ? tk("show_bundle_links", "Show XPipe bundle links")
-        : tk("hide_bundle_links", "Hide XPipe bundle links");
-}
-function updateToggleBtnTooltip(btn, hidden) {
-    var label = toggleBtnTooltip(hidden);
-    btn.title = label;
-    btn.setAttribute("aria-label", label);
-}
-
-// ---- 切换按钮 ----
-function syncToggleBtn(node, entry, s, nw) {
-    var key = nodeKey(node);
-    if (!entry.toggleBtn) {
-        var btn = document.createElement("button");
-        btn.innerHTML = toggleBtnIcon(false);
-        btn.type = "button";
-        updateToggleBtnTooltip(btn, false);
-        btn.style.cssText = [
-            "position:absolute;pointer-events:auto;z-index:6;",
-            "width:16px;height:16px;padding:0;border:none;",
-            "background:transparent;cursor:pointer;",
-            "color:var(--input-text,#888);line-height:0;",
-            "border-radius:3px;transition:background .15s,color .15s;",
-        ].join("");
-        btn.addEventListener("mouseenter", function () {
-            btn.style.background = "var(--comfy-input-bg,#333)";
-            btn.style.color = "var(--primary-color,#ff385c)";
-        });
-        btn.addEventListener("mouseleave", function () {
-            btn.style.background = "transparent";
-            btn.style.color = "var(--input-text,#888)";
-        });
-        (function (toggleKey) {
-            btn.addEventListener("click", function (e) {
-                e.stopPropagation();
-                pipeLinksHidden[toggleKey] = !pipeLinksHidden[toggleKey];
-                btn.innerHTML = toggleBtnIcon(pipeLinksHidden[toggleKey]);
-                updateToggleBtnTooltip(btn, pipeLinksHidden[toggleKey]);
-                btn.style.opacity = pipeLinksHidden[toggleKey] ? "0.4" : "1";
-                app.canvas && app.canvas.setDirty(true, true);
-            });
-            btn.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
-        })(key);
-        attachCanvasPassThrough(btn);
-        entry.wrap.appendChild(btn);
-        entry.toggleBtn = btn;
-    }
-    var btn = entry.toggleBtn;
-    var hidden = pipeLinksHidden[key];
-    updateToggleBtnTooltip(btn, hidden);
-    btn.style.opacity = hidden ? "0.4" : "1";
-    btn.style.left = ((nw - 23) * s) + "px";
-    btn.style.top = (-23 * s) + "px";
-    btn.style.width = (16 * s) + "px";
-    btn.style.height = (16 * s) + "px";
 }
 
 // ---- 名字输入框 ----
@@ -2123,6 +2038,8 @@ function reconcile(state) {
 }
 function ensureXPipe(node) {
     if (!node) return;
+    ensureTitleButtons(node);
+    updateTitleButtons(node);
     reconcile(createState(node));
 }
 function refreshAllXPipes(graph) {
@@ -2191,8 +2108,6 @@ app.registerExtension({
             hint: "Filter console by [XPipe]. Set window.XPIPE_DEBUG=false to silence.",
         });
         installOverlayHook();
-        installLocaleSync();
-        applyUiLocale().catch(function () {});
     },
 
     async afterConfigureGraph() {
@@ -2264,6 +2179,12 @@ app.registerExtension({
                 node.setSize([Math.max(cs[0], MIN_NODE_W), cs[1]]);
             }
         }
+    },
+
+    nodeCreated(node) {
+        if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
+        ensureTitleButtons(node);
+        updateTitleButtons(node);
     },
 
     async nodeRemoved(node) {

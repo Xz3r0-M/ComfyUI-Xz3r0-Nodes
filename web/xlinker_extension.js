@@ -13,24 +13,15 @@ var HIDE_BOTH = 3;    // bits 0+1
 var linkerLinksHidden = {};      // nodeKey -> state (0-3)
 var linkerLinksHighlighted = {}; // nodeKey -> bool
 var canvasHooked = false;
-var tooltipHooked = false;
 var BUTTON_HIDE = "xlinker-hide";
 var BUTTON_HIGHLIGHT = "xlinker-highlight";
-var HIDE_BUTTON_TEXTS = ["◎", "◐", "◑", "○"];
+var HIDE_BUTTON_TEXTS = ["◀▶", "◁▶", "◀▷", "◁▷"];
 var HIGHLIGHT_BUTTON_TEXTS = ["☆", "★"];
 var TITLE_BUTTON_FONT_SIZE = 14;
 var TITLE_BUTTON_HEIGHT = 22;
 var TITLE_BUTTON_Y_OFFSET = 1;
 var HIDE_BUTTON_X_OFFSET = -8;
 var HIGHLIGHT_BUTTON_X_OFFSET = -14;
-var TOOLTIP_ID = "xlinker-title-tooltip";
-var TOOLTIP_STYLE_ID = "xlinker-title-tooltip-style";
-var TOOLTIP_ACTIVE_CLASS = "xlinker-title-tooltip-active";
-var LOCALE_PREFIX = "xdatahub.ui.node.xlinker";
-var COMFY_LOCALE_KEY = "Comfy.Locale";
-var uiLocalePrimary = null;
-var uiLocaleFallback = null;
-var i18nCache = {};
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -44,90 +35,8 @@ function nodeKey(node) {
     return String(node && node.id);
 }
 
-function t(key, fallback) {
-    if (uiLocalePrimary && uiLocalePrimary[key] !== undefined
-        && String(uiLocalePrimary[key]).length > 0) {
-        return uiLocalePrimary[key];
-    }
-    if (uiLocaleFallback && uiLocaleFallback[key] !== undefined
-        && String(uiLocaleFallback[key]).length > 0) {
-        return uiLocaleFallback[key];
-    }
-    return fallback || key;
-}
-
-function tk(suffix, fallback) {
-    return t(LOCALE_PREFIX + "." + suffix, fallback);
-}
-
-function fetchI18n(locale) {
-    if (i18nCache[locale]) return Promise.resolve(i18nCache[locale]);
-    return fetch("/xz3r0/xdatahub/i18n/ui?locale=" + encodeURIComponent(locale))
-        .then(function (response) { return response.ok ? response.json() : {}; })
-        .then(function (data) {
-            i18nCache[locale] = data && data.dict ? data.dict : {};
-            return i18nCache[locale];
-        })
-        .catch(function () { return {}; });
-}
-
-function resolveComfyLocale() {
-    try {
-        var value = app.extensionManager
-            && app.extensionManager.setting
-            && app.extensionManager.setting.get
-            && app.extensionManager.setting.get(COMFY_LOCALE_KEY);
-        if (value) return value;
-    } catch (_e) { /* fall through */ }
-    try {
-        var stored = localStorage.getItem(COMFY_LOCALE_KEY);
-        if (stored) return stored;
-    } catch (_e) { /* fall through */ }
-    if (document.documentElement && document.documentElement.lang) {
-        return document.documentElement.lang;
-    }
-    return navigator.language || "en";
-}
-
-function loadLocaleBundle(locale) {
-    var normalized = (
-        locale === "zh" || locale === "zh-CN" || locale === "zh-TW"
-    ) ? "zh" : "en";
-    return Promise.all([fetchI18n("en"), fetchI18n(normalized)])
-        .then(function (results) {
-            uiLocaleFallback = results[0];
-            uiLocalePrimary = normalized === "en" ? results[0] : results[1];
-            return normalized;
-        });
-}
-
 function nextState(state) {
     return (state + 1) % 4;
-}
-
-function hideButtonTooltip(state) {
-    var next = nextState(state || HIDE_NONE);
-    if (next === HIDE_INPUT) return tk("hide_input_links", "Hide input links");
-    if (next === HIDE_OUTPUT) return tk("hide_output_links", "Hide output links");
-    if (next === HIDE_BOTH) return tk("hide_all_links", "Hide all links");
-    return tk("show_all_links", "Show all links");
-}
-
-function highlightButtonTooltip(highlightOn) {
-    return highlightOn
-        ? tk("stop_highlighting_links", "Stop highlighting links")
-        : tk("highlight_links", "Highlight links");
-}
-
-function buttonTooltip(button, node) {
-    var key = nodeKey(node);
-    if (button && button.name === BUTTON_HIDE) {
-        return hideButtonTooltip(linkerLinksHidden[key] || HIDE_NONE);
-    }
-    if (button && button.name === BUTTON_HIGHLIGHT) {
-        return highlightButtonTooltip(!!linkerLinksHighlighted[key]);
-    }
-    return "";
 }
 
 function updateTitleButtons(node) {
@@ -175,14 +84,12 @@ function ensureTitleButtons(node) {
         if (button && button.name === BUTTON_HIDE) {
             linkerLinksHidden[key] = nextState(linkerLinksHidden[key] || HIDE_NONE);
             updateTitleButtons(this);
-            hideTitleTooltip();
             canvas && canvas.setDirty && canvas.setDirty(true, true);
             return;
         }
         if (button && button.name === BUTTON_HIGHLIGHT) {
             linkerLinksHighlighted[key] = !linkerLinksHighlighted[key];
             updateTitleButtons(this);
-            hideTitleTooltip();
             canvas && canvas.setDirty && canvas.setDirty(true, true);
             return;
         }
@@ -232,148 +139,6 @@ function isLinkerHighlightedLink(link, graph) {
 }
 
 // ---------------------------------------------------------------------------
-// 标题栏按钮 tooltip
-// ---------------------------------------------------------------------------
-function ensureTooltipElement() {
-    var style = document.getElementById(TOOLTIP_STYLE_ID);
-    if (!style) {
-        style = document.createElement("style");
-        style.id = TOOLTIP_STYLE_ID;
-        style.textContent = ""
-            + "#" + TOOLTIP_ID + " {"
-            + "position: fixed;"
-            + "z-index: 100000;"
-            + "max-width: 220px;"
-            + "padding: 4px 8px;"
-            + "border-radius: 4px;"
-            + "background: rgba(20, 20, 24, 0.96);"
-            + "color: #f4f4f5;"
-            + "font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;"
-            + "box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);"
-            + "pointer-events: none;"
-            + "opacity: 0;"
-            + "white-space: nowrap;"
-            + "transition: opacity 80ms ease;"
-            + "}"
-            + "#" + TOOLTIP_ID + ".is-visible { opacity: 1; }"
-            + "body." + TOOLTIP_ACTIVE_CLASS + " .node-tooltip {"
-            + "display: none !important;"
-            + "}";
-        document.head.appendChild(style);
-    }
-
-    var tooltip = document.getElementById(TOOLTIP_ID);
-    if (!tooltip) {
-        tooltip = document.createElement("div");
-        tooltip.id = TOOLTIP_ID;
-        tooltip.setAttribute("role", "tooltip");
-        document.body.appendChild(tooltip);
-    }
-    return tooltip;
-}
-
-function hideTitleTooltip() {
-    var tooltip = document.getElementById(TOOLTIP_ID);
-    if (tooltip) tooltip.classList.remove("is-visible");
-    if (document.body) document.body.classList.remove(TOOLTIP_ACTIVE_CLASS);
-}
-
-function showTitleTooltip(text, event) {
-    if (!text || !event) {
-        hideTitleTooltip();
-        return;
-    }
-
-    var tooltip = ensureTooltipElement();
-    tooltip.textContent = text;
-    tooltip.classList.add("is-visible");
-    if (document.body) document.body.classList.add(TOOLTIP_ACTIVE_CLASS);
-
-    var width = tooltip.offsetWidth || 0;
-    var height = tooltip.offsetHeight || 0;
-    var x = event.clientX + 12;
-    var y = event.clientY - height - 10;
-    var maxX = window.innerWidth - width - 8;
-    if (x > maxX) x = Math.max(8, event.clientX - width - 12);
-    if (y < 8) y = event.clientY + 14;
-
-    tooltip.style.left = Math.max(8, x) + "px";
-    tooltip.style.top = Math.max(8, y) + "px";
-}
-
-function mouseEventToCanvasEvent(canvas, event) {
-    if (!canvas || !canvas.canvas || !canvas.ds || !event) return event;
-    var rect = canvas.canvas.getBoundingClientRect();
-    var x = event.clientX - rect.left;
-    var y = event.clientY - rect.top;
-    return {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        canvasX: x / canvas.ds.scale - canvas.ds.offset[0],
-        canvasY: y / canvas.ds.scale - canvas.ds.offset[1],
-    };
-}
-
-function titleButtonAt(canvas, event) {
-    if (!canvas || !event || event.canvasX == null || event.canvasY == null) {
-        return null;
-    }
-
-    var graph = canvas.graph || activeGraph();
-    var nodes = (canvas.visible_nodes && canvas.visible_nodes.length)
-        ? canvas.visible_nodes
-        : ((graph && (graph._nodes || graph.nodes)) || []);
-
-    for (var i = nodes.length - 1; i >= 0; i--) {
-        var node = nodes[i];
-        if (String(node.comfyClass || node.type || "") !== NODE_CLASS) continue;
-        if (node.flags && node.flags.collapsed) continue;
-        if (!node.title_buttons || !node.pos) continue;
-
-        var nodeRelativeX = event.canvasX - node.pos[0];
-        var nodeRelativeY = event.canvasY - node.pos[1];
-        for (var j = 0; j < node.title_buttons.length; j++) {
-            var button = node.title_buttons[j];
-            if (button.visible === false || !button.isPointInside) continue;
-            if (button.isPointInside(nodeRelativeX, nodeRelativeY)) {
-                return { node: node, button: button };
-            }
-        }
-    }
-    return null;
-}
-
-function updateTitleTooltip(canvas, event) {
-    try {
-        var hit = titleButtonAt(canvas, event);
-        if (!hit) {
-            hideTitleTooltip();
-            return;
-        }
-        showTitleTooltip(buttonTooltip(hit.button, hit.node), event);
-    } catch (_e) {
-        hideTitleTooltip();
-    }
-}
-
-function installTooltipHooks() {
-    if (tooltipHooked) return;
-    if (!app.canvas || !app.canvas.canvas) {
-        setTimeout(installTooltipHooks, 200);
-        return;
-    }
-    tooltipHooked = true;
-
-    var canvas = app.canvas;
-    var domCanvas = canvas.canvas;
-    domCanvas.addEventListener("mousemove", function (event) {
-        updateTitleTooltip(canvas, mouseEventToCanvasEvent(canvas, event));
-    }, { passive: true });
-    ["mouseleave", "mousedown", "wheel", "contextmenu"].forEach(function (type) {
-        domCanvas.addEventListener(type, hideTitleTooltip, { passive: true });
-    });
-}
-// ---------------------------------------------------------------------------
 // Canvas hooks
 // ---------------------------------------------------------------------------
 function installCanvasHooks() {
@@ -382,7 +147,6 @@ function installCanvasHooks() {
         return;
     }
     canvasHooked = true;
-    installTooltipHooks();
 
     // 拦截连线渲染
     var origRenderLink = app.canvas.renderLink;
@@ -413,7 +177,6 @@ app.registerExtension({
     name: "ComfyUI.Xz3r0.XLinker",
 
     async setup() {
-        loadLocaleBundle(resolveComfyLocale());
         installCanvasHooks();
     },
 
@@ -449,6 +212,5 @@ app.registerExtension({
         var key = nodeKey(node);
         delete linkerLinksHidden[key];
         delete linkerLinksHighlighted[key];
-        hideTitleTooltip();
     },
 });
