@@ -2,8 +2,8 @@ import { app } from "../../scripts/app.js";
 
 // XPipe 管道束节点前端扩展
 // ============================
-// Canvas 浮层输入框贴在端口旁，支持编辑、自动命名、向下传递、
-// 固定 20 槽位、管道连线显隐切换。
+// Widget 区名称输入和连线显隐按钮，支持编辑、自动命名、向下传递、
+// Autogrow 输入、同步可见输出、管道连线显隐切换。
 
 var NODE_CLASS = "XPipe";
 var HIDE_NONE = 0;
@@ -12,22 +12,21 @@ var HIDE_OUTPUT = 2;  // bit 1
 var HIDE_BOTH = 3;    // bits 0+1
 var PIPE_SLOTS = 20;
 var HIDE_STATE_PROP = "xpipe_hide_links_state";
+var VALUE_HIDE_STATE_PROP = "xpipe_hide_value_links_state";
 var NAMES_WIDGET = "port_names";
 var META_WIDGET = "xpipe_ui_state";
 var NAMES_PROP = "xpipe_names";
 var MANUAL_PROP = "xpipe_manual";
 var TYPES_PROP = "xpipe_types";
-var MIN_NODE_W = 210;
 var WARNING_COLOR = "#ff6a3d";
 var WARNING_GLOW = "rgba(255, 106, 61, 0.7)";
-var BUTTON_HIDE = "xpipe-hide";
 var HIDE_BUTTON_TEXTS = ["◀▶", "◁▶", "◀▷", "◁▷"];
-var TITLE_BUTTON_FONT_SIZE = 14;
-var TITLE_BUTTON_HEIGHT = 22;
-var TITLE_BUTTON_Y_OFFSET = 1;
-var HIDE_BUTTON_X_OFFSET = -8;
-var NAME_INPUT_FONT_SIZE = 12;
-var NAME_INPUT_FONT_FAMILY = "Inter, sans-serif";
+var HIDE_WIDGET_NAME = "xpipe_link_visibility";
+var VALUE_HIDE_WIDGET_NAME = "xpipe_value_link_visibility";
+var TITLE_BUTTON_PANEL_HEIGHT = 20;
+var TITLE_BUTTON_STYLE_ID = "xpipe-title-button-style";
+var BUNDLE_INPUT_NAME = "xpipe_in";
+var BUNDLE_OUTPUT_NAME = "xpipe_out";
 var graphIds = new WeakMap();
 var nextGraphId = 1;
 var scopedNodeIds = new WeakMap();
@@ -35,6 +34,9 @@ var scopedNodeIdsRoot = null;
 var subgraphParentNodes = new WeakMap();
 var XPIPE_DEBUG = false;
 var XPIPE_LOG_PREFIX = "[XPipe]";
+var uiLocalePrimary = null;
+var uiLocaleFallback = null;
+var i18nCache = {};
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -42,10 +44,17 @@ var XPIPE_LOG_PREFIX = "[XPipe]";
 function slotIndexOfName(list, name) {
     if (!list) return -1;
     for (var i = 0; i < list.length; i++) if (list[i] && list[i].name === name) return i;
+    var match = /^value_(\d+)$/.exec(name || "");
+    if (match) {
+        var autogrowName = "values." + name;
+        for (var j = 0; j < list.length; j++) {
+            if (list[j] && list[j].name === autogrowName) return j;
+        }
+    }
     return -1;
 }
 function valueSlotNumber(name) {
-    var m = /^value_(\d+)$/.exec(name || "");
+    var m = /(?:^|\.)value_(\d+)$/.exec(name || "");
     return m ? parseInt(m[1], 10) : 0;
 }
 function cleanName(value) {
@@ -113,6 +122,77 @@ function parseNames(raw) {
     if (!Array.isArray(data)) data = [];
     return padArray(data.map(function (n) { return n == null ? "" : String(n); }), PIPE_SLOTS, "");
 }
+function t(key, fallback) {
+    if (uiLocalePrimary && uiLocalePrimary[key] !== undefined
+        && String(uiLocalePrimary[key]).length > 0) {
+        return uiLocalePrimary[key];
+    }
+    if (uiLocaleFallback && uiLocaleFallback[key] !== undefined
+        && String(uiLocaleFallback[key]).length > 0) {
+        return uiLocaleFallback[key];
+    }
+    return fallback || key;
+}
+function tx(suffix, fallback) {
+    return t("xdatahub.ui.node.xpipe." + suffix, fallback);
+}
+function formatLocaleText(template, vars) {
+    return String(template || "").replace(/\{(\w+)\}/g, function (_m, key) {
+        if (!vars || vars[key] == null) return "";
+        return String(vars[key]);
+    });
+}
+function txf(suffix, fallback, vars) {
+    return formatLocaleText(tx(suffix, fallback), vars);
+}
+function resolveComfyLocale() {
+    try {
+        var value = app.extensionManager
+            && app.extensionManager.setting
+            && app.extensionManager.setting.get
+            && app.extensionManager.setting.get("Comfy.Locale");
+        if (value) return value;
+    } catch (_error) { /* fall through */ }
+    try {
+        var stored = localStorage.getItem("Comfy.Locale");
+        if (stored) return stored;
+    } catch (_error) { /* fall through */ }
+    if (document.documentElement && document.documentElement.lang) {
+        return document.documentElement.lang;
+    }
+    return navigator.language || "en";
+}
+function fetchI18n(locale) {
+    if (i18nCache[locale]) return Promise.resolve(i18nCache[locale]);
+    return fetch("/xz3r0/xdatahub/i18n/ui?locale=" + encodeURIComponent(locale))
+        .then(function (response) {
+            return response.ok ? response.json() : {};
+        })
+        .then(function (data) {
+            i18nCache[locale] = data && data.dict ? data.dict : {};
+            return i18nCache[locale];
+        })
+        .catch(function () {
+            return {};
+        });
+}
+function applyUiLocale() {
+    var locale = resolveComfyLocale();
+    var normalized = (
+        locale === "zh" || locale === "zh-CN" || locale === "zh-TW"
+    ) ? "zh" : "en";
+    return Promise.all([fetchI18n("en"), fetchI18n(normalized)])
+        .then(function (results) {
+            uiLocaleFallback = results[0];
+            uiLocalePrimary = normalized === "en" ? results[0] : results[1];
+            try {
+                forEachXPipeInGraphTree(app.graph, function (node) {
+                    updateTitleButtons(node);
+                    if (node.__xpipeState) syncNameWidgets(node.__xpipeState);
+                });
+            } catch (_e) { /* ignore */ }
+        });
+}
 function activeGraph() {
     return (app.canvas && app.canvas.getCurrentGraph && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
@@ -138,21 +218,6 @@ function markCanvasDirty() {
     } else if (typeof app.canvas.setDirty === "function") {
         app.canvas.setDirty(true, true);
     }
-}
-function bringXPipeNodeToFront(node) {
-    if (!node || !app.canvas) return;
-    try {
-        if (typeof app.canvas.selectNode === "function") {
-            app.canvas.selectNode(node);
-        }
-        if (typeof app.canvas.bringToFront === "function") {
-            app.canvas.bringToFront(node);
-        }
-        markCanvasDirty();
-        requestAnimationFrame(function () {
-            try { syncAllOverlays(); } catch (_e) {}
-        });
-    } catch (_e) {}
 }
 function forEachGraphInTree(rootGraph, visitor) {
     if (!rootGraph || typeof visitor !== "function") return;
@@ -380,6 +445,16 @@ function cloneSlotDef(slot) {
     }
     return out;
 }
+function createValueInputDef(state, slot) {
+    var def = cloneSlotDef(state.slotDefs.inputs[slot]);
+    def.name = "values.value_" + slot;
+    def.display_name = String(slot);
+    def.label = formatInputPortLabel(slot, state.names && state.names[slot - 1]);
+    def.localized_name = def.label;
+    def.type = "*";
+    if (def.link == null) def.link = null;
+    return def;
+}
 function captureSlotDefs(node) {
     var defs = { inputs: {}, outputs: {} };
     for (var k = 1; k <= PIPE_SLOTS; k++) {
@@ -394,14 +469,6 @@ function captureSlotDefs(node) {
     }
     return defs;
 }
-function addValueInput(node, state, slot) {
-    var def = cloneSlotDef(state.slotDefs.inputs[slot]);
-    def.name = "value_" + slot;
-    def.type = "*";
-    node.addInput(def.name, def.type);
-    var index = slotIndexOfName(node.inputs, def.name);
-    if (index >= 0) Object.assign(node.inputs[index], def);
-}
 function addValueOutput(node, state, slot) {
     var def = cloneSlotDef(state.slotDefs.outputs[slot]);
     def.name = "value_" + slot;
@@ -409,6 +476,73 @@ function addValueOutput(node, state, slot) {
     node.addOutput(def.name, def.type);
     var index = slotIndexOfName(node.outputs, def.name);
     if (index >= 0) Object.assign(node.outputs[index], def);
+}
+function addValueInput(node, state, slot) {
+    if (!node || typeof node.addInput !== "function") return;
+    var def = createValueInputDef(state, slot);
+    node.addInput(def.name, def.type);
+    var index = slotIndexOfName(node.inputs, "value_" + slot);
+    if (index >= 0) node.inputs[index] = Object.assign({}, node.inputs[index], def);
+}
+function removeValueOutput(node, slot) {
+    if (!node || !Array.isArray(node.outputs)) return;
+    var index = slotIndexOfName(node.outputs, "value_" + slot);
+    if (index < 0) return;
+    if (typeof node.removeOutput === "function") {
+        node.removeOutput(index);
+    } else {
+        node.outputs.splice(index, 1);
+    }
+    node.setDirtyCanvas && node.setDirtyCanvas(true, true);
+}
+function refreshNodeLayout(node) {
+    if (!node) return;
+    try {
+        if (typeof node._setConcreteSlots === "function") node._setConcreteSlots();
+        if (typeof node.arrange === "function") node.arrange();
+    } catch (_e) {}
+    node.setDirtyCanvas && node.setDirtyCanvas(true, true);
+    if (app.canvas && typeof app.canvas.setDirty === "function") {
+        app.canvas.setDirty(true, true);
+    }
+}
+function resolveInitialNodeSize(node) {
+    if (!node) return null;
+    var width = 0;
+    var height = 0;
+    if (typeof node.computeSize === "function") {
+        var computed = node.computeSize();
+        if (Array.isArray(computed) && computed.length >= 2) {
+            width = Math.max(width, Number(computed[0]) || 0);
+            height = Math.max(height, Number(computed[1]) || 0);
+        }
+    }
+    if (Array.isArray(node.size) && node.size.length >= 2) {
+        width = Math.max(width, Number(node.size[0]) || 0);
+        height = Math.max(height, Number(node.size[1]) || 0);
+    }
+    width = Math.max(1, Math.round(width || 1));
+    // Keep the current default load height exactly as tuned:
+    // 2.0 uses the two-step shrink below, and 1.0 applies one extra third.
+    // Do not change this path unless the user explicitly asks to retune load size.
+    height = Math.max(1, Math.round((height || 1) / 2));
+    height = Math.max(1, Math.round(height * 2 / 3));
+    if (!(window.LiteGraph && LiteGraph.vueNodesMode)) {
+        height = Math.max(1, Math.round(height * 2 / 3));
+    }
+    return [width, height];
+}
+function applyInitialNodeSize(node) {
+    if (!node || node.__xpipeInitialSizeApplied) return;
+    var size = resolveInitialNodeSize(node);
+    if (!size) return;
+    node.min_size = size.slice();
+    if (typeof node.setSize === "function") {
+        node.setSize(size.slice());
+    } else {
+        node.size = size.slice();
+    }
+    node.__xpipeInitialSizeApplied = true;
 }
 function loadState(state) {
     var props = state.node.properties || {};
@@ -465,6 +599,16 @@ function saveMetaState(state) {
         names: padArray(state.names, PIPE_SLOTS, ""),
         manual: padArray(state.manual, PIPE_SLOTS, false),
         types: padArray(state.types, PIPE_SLOTS, ""),
+        hideLinksState: hiddenState(state.node),
+        hideValueLinksState: valueHiddenState(state.node),
+        visibleCount: Math.max(
+            1,
+            Math.min(
+                PIPE_SLOTS,
+                Number(state.visibleCount || visibleValueSlotCount(state.node))
+                    || 1
+            )
+        ),
     });
     var p = state.node.properties = state.node.properties || {};
     p[META_WIDGET] = payload;
@@ -591,44 +735,203 @@ function attachCanvasPassThrough(element) {
 }
 
 // ---------------------------------------------------------------------------
-// 端口标签隐藏
+// 端口标签
 // ---------------------------------------------------------------------------
-function hidePortLabels(node) {
+function formatInputPortLabel(slot, name) {
+    var clean = cleanName(name);
+    return clean ? ("[" + slot + "] " + clean) : ("[" + slot + "]");
+}
+function replaceSlotLabel(list, index, label) {
+    if (!list || index < 0 || !list[index]) return;
+    var slot = list[index];
+    var next = {};
+    for (var key in slot) {
+        if (Object.prototype.hasOwnProperty.call(slot, key)) {
+            next[key] = slot[key];
+        }
+    }
+    next.label = label;
+    next.localized_name = label;
+    list[index] = next;
+}
+function syncPortLabels(state) {
+    var node = state && state.node;
+    if (!node) return;
     for (var k = 1; k <= PIPE_SLOTS; k++) {
         var ii = slotIndexOfName(node.inputs, "value_" + k);
-        if (ii >= 0) node.inputs[ii].label = " ";
+        if (ii >= 0) {
+            replaceSlotLabel(
+                node.inputs,
+                ii,
+                formatInputPortLabel(k, state.names && state.names[k - 1])
+            );
+        }
         var oi = slotIndexOfName(node.outputs, "value_" + k);
-        if (oi >= 0) node.outputs[oi].label = " ";
+        if (oi >= 0) replaceSlotLabel(node.outputs, oi, " ");
     }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
+function hidePortLabels(node) {
+    syncPortLabels(node && node.__xpipeState
+        ? node.__xpipeState
+        : { node: node, names: [] });
+}
+
+function normalizeAutogrowValueInputs(node) {
+    if (!node || !Array.isArray(node.inputs)) return;
+    for (var i = 0; i < node.inputs.length; i++) {
+        var input = node.inputs[i];
+        var slot = valueSlotNumber(input && input.name);
+        if (!slot || String(input.name).indexOf(".") >= 0) continue;
+        input.name = "values.value_" + slot;
+        input.display_name = String(slot);
+    }
+}
+function refreshInputLinkTargets(node) {
+    if (!node || !node.graph || !Array.isArray(node.inputs)) return;
+    for (var i = 0; i < node.inputs.length; i++) {
+        var input = node.inputs[i];
+        var linkIds = slotLinkIds(input);
+        for (var j = 0; j < linkIds.length; j++) {
+            var link = getLinkInfo(linkIds[j], node.graph);
+            if (link) link.target_slot = i;
+        }
+    }
+}
+function ensureInputOrder(node) {
+    if (!node || !Array.isArray(node.inputs)) return;
+    var xpipeIndex = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
+    if (xpipeIndex <= 0) return;
+    var xpipeInput = node.inputs.splice(xpipeIndex, 1)[0];
+    node.inputs.unshift(xpipeInput);
+    refreshInputLinkTargets(node);
+    node.setDirtyCanvas && node.setDirtyCanvas(true, true);
+}
+function visibleValueSlots(node) {
+    var slots = {};
+    if (!node || !Array.isArray(node.inputs)) return slots;
+    for (var i = 0; i < node.inputs.length; i++) {
+        var slot = valueSlotNumber(node.inputs[i] && node.inputs[i].name);
+        if (slot >= 1 && slot <= PIPE_SLOTS) slots[slot] = true;
+    }
+    return slots;
+}
+function visibleValueSlotCount(node) {
+    var slots = visibleValueSlots(node);
+    var maxSlot = 0;
+    for (var key in slots) {
+        if (!Object.prototype.hasOwnProperty.call(slots, key)) continue;
+        maxSlot = Math.max(maxSlot, parseInt(key, 10) || 0);
+    }
+    return Math.max(1, Math.min(PIPE_SLOTS, maxSlot));
+}
+function highestConnectedValueSlot(node) {
+    var maxSlot = 0;
+    if (!node || !Array.isArray(node.inputs)) return maxSlot;
+    for (var i = 0; i < node.inputs.length; i++) {
+        var input = node.inputs[i];
+        var slot = valueSlotNumber(input && input.name);
+        if (!slot || slotLinkIds(input).length < 1) continue;
+        maxSlot = Math.max(maxSlot, slot);
+    }
+    return Math.max(0, Math.min(PIPE_SLOTS, maxSlot));
+}
+function desiredDirectVisibleCount(node) {
+    var highest = highestConnectedValueSlot(node);
+    if (!highest) return 1;
+    return Math.min(PIPE_SLOTS, highest + (highest < PIPE_SLOTS ? 1 : 0));
+}
+function requiredVisibleCountFromMeta(meta) {
+    var rawCount = meta && meta.visibleCount;
+    if (rawCount != null && rawCount !== "") {
+        return Math.max(
+            0,
+            Math.min(PIPE_SLOTS, Number(rawCount) || 0)
+        );
+    }
+    var count = 0;
+    var names = meta && Array.isArray(meta.names) ? meta.names : [];
+    var types = meta && Array.isArray(meta.types) ? meta.types : [];
+    for (var i = 0; i < PIPE_SLOTS; i++) {
+        if (cleanName(names[i]) || cleanType(types[i])) count = Math.max(count, i + 1);
+    }
+    return Math.max(0, Math.min(PIPE_SLOTS, count));
+}
+function requiredVisibleCountFromUpstream(state) {
+    var result = getUpstreamBundleMetaResult(state.node, {});
+    return result.state === "resolved"
+        ? requiredVisibleCountFromMeta(result.value)
+        : 0;
+}
+function ensureVisibleValueInputs(state, requiredCount) {
+    var node = state.node;
+    var count = Math.max(1, Math.min(PIPE_SLOTS, requiredCount || 0));
+    for (var slot = 1; slot <= count; slot++) {
+        if (slotIndexOfName(node.inputs, "value_" + slot) < 0) {
+            addValueInput(node, state, slot);
+        }
+    }
+    normalizeAutogrowValueInputs(node);
+}
+function trimUnusedValueInputs(state, minCount) {
+    var node = state && state.node;
+    if (!node || !Array.isArray(node.inputs)) return;
+    var keepCount = Math.max(1, Math.min(PIPE_SLOTS, minCount || 0));
+    for (var slot = PIPE_SLOTS; slot > keepCount; slot--) {
+        var index = slotIndexOfName(node.inputs, "value_" + slot);
+        if (index < 0) continue;
+        var input = node.inputs[index];
+        if (slotLinkIds(input).length > 0) continue;
+        if (typeof node.removeInput === "function") {
+            node.removeInput(index);
+        } else {
+            node.inputs.splice(index, 1);
+            refreshInputLinkTargets(node);
+        }
+    }
+    normalizeAutogrowValueInputs(node);
+}
+function syncValueOutputsToInputs(state) {
+    var node = state.node;
+    var upstreamCount = requiredVisibleCountFromUpstream(state);
+    var directVisibleCount = desiredDirectVisibleCount(node);
+    var visibleCount = Math.max(directVisibleCount, upstreamCount);
+    ensureVisibleValueInputs(state, visibleCount);
+    trimUnusedValueInputs(state, visibleCount);
+    visibleCount = Math.max(desiredDirectVisibleCount(node), upstreamCount);
+    for (var slot = 1; slot <= PIPE_SLOTS; slot++) {
+        var hasOutput = slotIndexOfName(node.outputs, "value_" + slot) >= 0;
+        if (slot <= visibleCount) {
+            if (!hasOutput) addValueOutput(node, state, slot);
+        } else if (hasOutput) {
+            removeValueOutput(node, slot);
+        }
+    }
+    state.visibleCount = visibleCount;
+}
 
 // ---------------------------------------------------------------------------
-// 固定槽位 + 尺寸
+// 动态可见槽位 + 尺寸
 // ---------------------------------------------------------------------------
 function syncSlots(state) {
-    var node = state.node, k;
-    for (k = 1; k <= PIPE_SLOTS; k++) {
-        if (slotIndexOfName(node.inputs, "value_" + k) < 0) addValueInput(node, state, k);
-        if (slotIndexOfName(node.outputs, "value_" + k) < 0) addValueOutput(node, state, k);
-    }
+    var node = state.node;
+    normalizeAutogrowValueInputs(node);
+    ensureInputOrder(node);
+    syncValueOutputsToInputs(state);
     applySlotTypes(state);
     hidePortLabels(node);
     removePortNamesSlot(node);
-    state.visibleCount = PIPE_SLOTS;
+    syncNameWidgets(state);
+    refreshNodeLayout(node);
 }
 function fitNode(state) {
     var n = state.node;
     if (!n) return;
-    if (typeof n.setSize === "function" && typeof n.computeSize === "function") {
-        var cs = n.computeSize();
-        n.setSize([Math.max(cs[0], MIN_NODE_W), cs[1]]);
-    }
-    n.setDirtyCanvas && n.setDirtyCanvas(true, true);
+    refreshNodeLayout(n);
 }
 
 function getUpstreamBundleMeta(node, seen) {
-    var pin = slotIndexOfName(node.inputs, "inp");
+    var pin = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
     if (pin < 0 || node.inputs[pin].link == null) return null;
     return getFullBundleMetaFromLink(
         getLinkInfo(node.inputs[pin].link, node.graph),
@@ -646,7 +949,7 @@ function resultUnresolved() {
     return { state: "unresolved", value: "" };
 }
 function getUpstreamBundleMetaResult(node, seen) {
-    var pin = slotIndexOfName(node.inputs, "inp");
+    var pin = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
     if (pin < 0 || !node.inputs[pin] || node.inputs[pin].link == null) {
         xpipeLog("upstreamMeta.empty", {
             node: debugNode(node),
@@ -838,6 +1141,7 @@ function bundleMetaFromState(node, outputIndex) {
         outputIndex: outputIndex,
         names: st.names || [],
         types: st.types || [],
+        visibleCount: st.visibleCount || visibleValueSlotCount(node),
     };
 }
 function getFullBundleMetaFromResolvedSlot(slot, seen, graph) {
@@ -870,6 +1174,88 @@ function getFullBundleMetaFromResolvedLink(linkInfo, seen, graph) {
         if (meta) return meta;
     }
     return null;
+}
+function slotKeysOverlap(a, b) {
+    var aKeys = slotKeyNames(a);
+    var bKeys = slotKeyNames(b);
+    for (var i = 0; i < aKeys.length; i++) {
+        if (bKeys.indexOf(aKeys[i]) >= 0) return true;
+    }
+    return false;
+}
+function passthroughSlotTypesMatch(output, input) {
+    var outputType = cleanType(output && output.type);
+    var inputType = cleanType(input && input.type);
+    if (!outputType || !inputType) return true;
+    return outputType === inputType;
+}
+function findPassthroughInputIndex(node, outputIndex) {
+    if (!node || !Array.isArray(node.inputs) || !Array.isArray(node.outputs)) {
+        return -1;
+    }
+    var output = slotAt(node.outputs, outputIndex);
+    if (!output) return -1;
+    var nodeData = node.constructor && node.constructor.nodeData;
+    var outputSpec = slotAt(nodeData && nodeData.outputs, outputIndex);
+    var outputName = cleanName(outputSpec && outputSpec.name)
+        || cleanName(output && output.name);
+    for (var j = 0; j < node.inputs.length; j++) {
+        var candidate = node.inputs[j];
+        if (!candidate || candidate.link == null) continue;
+        if (!passthroughSlotTypesMatch(output, candidate)) continue;
+        if (outputName && cleanName(candidate.name) === outputName) return j;
+    }
+    if (!outputName && node.inputs.length === 1 && node.inputs[0]
+        && node.inputs[0].link != null) {
+        return 0;
+    }
+    return -1;
+}
+function getPassthroughOutputIndexes(node, inputIndex) {
+    var out = [];
+    if (!node || !Array.isArray(node.outputs) || inputIndex < 0) return out;
+    for (var i = 0; i < node.outputs.length; i++) {
+        if (findPassthroughInputIndex(node, i) === inputIndex) out.push(i);
+    }
+    return out;
+}
+function getFullBundleMetaThroughPassthroughNode(source, outputIndex, seen) {
+    if (!source || !source.graph) return null;
+    var inputIndex = findPassthroughInputIndex(source, outputIndex);
+    if (inputIndex < 0) return null;
+    var input = slotAt(source.inputs, inputIndex);
+    if (!input || input.link == null) return null;
+    var upstream = getLinkInfo(input.link, source.graph);
+    if (!upstream) return null;
+    var meta = getFullBundleMetaFromLink(upstream, seen, source.graph);
+    xpipeLog("passthrough.meta", {
+        source: debugNode(source),
+        outputIndex: outputIndex,
+        inputIndex: inputIndex,
+        input: debugSlot(input),
+        resolved: !!meta,
+        metaNode: debugNode(meta && meta.node),
+        metaOutputIndex: meta && meta.outputIndex,
+        names: compactSlots(meta && meta.names),
+        types: compactSlots(meta && meta.types),
+    });
+    return meta;
+}
+function visitPassthroughTargets(node, inputIndex, callback, meta, seen) {
+    if (!node || !node.graph || typeof callback !== "function") return false;
+    var outputIndexes = getPassthroughOutputIndexes(node, inputIndex);
+    if (!outputIndexes.length) return false;
+    var traversed = false;
+    for (var i = 0; i < outputIndexes.length; i++) {
+        var links = getBundleOutputLinks(node, outputIndexes[i]);
+        for (var j = 0; j < links.length; j++) {
+            var link = getLinkInfo(links[j], node.graph);
+            if (!link) continue;
+            traversed = true;
+            visitBundleLinkTarget(node.graph, link, callback, meta, seen);
+        }
+    }
+    return traversed || true;
 }
 function getFullBundleMetaFromVirtualSubgraphInput(linkInfo, seen, graph) {
     if (!graph || !linkInfo || Number(linkInfo.origin_id) >= 0) return null;
@@ -962,7 +1348,8 @@ function getFullBundleMetaFromLink(linkInfo, seen, graph) {
     var meta = isXPipe(source)
         ? getFullBundleMetaFromOutput(source, linkInfo.origin_slot, seen)
         : getFullBundleMetaThroughSubgraphInput(source, linkInfo.origin_slot, seen, graph)
-            || getFullBundleMetaThroughSubgraphOutput(source, linkInfo.origin_slot, seen);
+            || getFullBundleMetaThroughSubgraphOutput(source, linkInfo.origin_slot, seen)
+            || getFullBundleMetaThroughPassthroughNode(source, linkInfo.origin_slot, seen);
     xpipeLog("metaFromLink.result", {
         graph: graphKey(graph),
         link: linkInfo.id,
@@ -984,7 +1371,7 @@ function getFullBundleMetaFromOutput(node, outputIndex, seen) {
     seen[key] = true;
     var output = node.outputs[outputIndex];
     if (!output) return null;
-    if (output.name === "out") return bundleMetaFromState(node, outputIndex);
+    if (output.name === BUNDLE_OUTPUT_NAME) return bundleMetaFromState(node, outputIndex);
     var slot = valueSlotNumber(output.name);
     return slot ? getSlotBundleMetaFromNode(node, slot, seen) : null;
 }
@@ -1002,7 +1389,7 @@ function getSlotBundleMetaFromNode(node, slot, seen) {
         : null;
     if (directMeta) return directMeta;
 
-    var pin = slotIndexOfName(node.inputs, "inp");
+    var pin = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
     var pipeInput = pin >= 0 && node.inputs ? node.inputs[pin] : null;
     if (!pipeInput || pipeInput.link == null) return null;
     return getSlotBundleMetaFromLink(getLinkInfo(pipeInput.link, node.graph), slot, seen, node.graph);
@@ -1017,7 +1404,7 @@ function getSlotBundleMetaFromOutput(node, outputIndex, slot, seen) {
     if (!node || !isXPipe(node) || !node.outputs) return null;
     var output = node.outputs[outputIndex];
     if (!output) return null;
-    if (output.name === "out") return getSlotBundleMetaFromNode(node, slot, seen);
+    if (output.name === BUNDLE_OUTPUT_NAME) return getSlotBundleMetaFromNode(node, slot, seen);
     var fullMeta = getFullBundleMetaFromOutput(node, outputIndex, seen);
     if (!fullMeta) return null;
     return getSlotBundleMetaFromOutput(fullMeta.node, fullMeta.outputIndex, slot, seen);
@@ -1312,6 +1699,9 @@ function visitBundleLinkTarget(graph, link, callback, meta, seen) {
         forEachSubgraphOutputTarget(graph, link.target_slot, callback, meta, seen);
         return;
     }
+    if (visitPassthroughTargets(child, link.target_slot, callback, meta, seen)) {
+        return;
+    }
     if (!isXPipe(child)) return;
     var targetInput = child.inputs && child.inputs[link.target_slot];
     if (targetInput) callback(child, targetInput, link, meta);
@@ -1338,10 +1728,10 @@ function getChainStates(node) {
                 var ol = getLinkInfo(olinks[i], n.graph); if (!ol) continue;
                 var tgt = getNodeByIdInGraph(n.graph, ol.target_id); if (!tgt || !isXPipe(tgt)) continue;
                 var ts = tgt.inputs && tgt.inputs[ol.target_slot];
-                if (ts && ts.name === "inp") stack.push(tgt);
+                if (ts && ts.name === BUNDLE_INPUT_NAME) stack.push(tgt);
             }
         }
-        var pin = slotIndexOfName(n.inputs, "inp");
+        var pin = slotIndexOfName(n.inputs, BUNDLE_INPUT_NAME);
         if (pin >= 0 && n.inputs[pin].link != null) {
             var il = getLinkInfo(n.inputs[pin].link, n.graph);
             if (il) { var src = getNodeByIdInGraph(n.graph, il.origin_id); if (isXPipe(src)) stack.push(src); }
@@ -1363,7 +1753,7 @@ function _pushAllDown(startNode) {
         forEachBundleTarget(parent, function (child, targetInput, _link, meta) {
             var childKey = nodeKey(child);
             if (seen[childKey]) return;
-            var pipeInput = targetInput.name === "inp";
+            var pipeInput = targetInput.name === BUNDLE_INPUT_NAME;
             var valueSlot = valueSlotNumber(targetInput.name);
             if (!pipeInput && !valueSlot) return;
             seen[childKey] = true;
@@ -1393,7 +1783,7 @@ function notifyTypesDownstream(node, seen) {
     seen[key] = true;
     forEachBundleTarget(node, function (child, targetInput) {
         if (!child.__xpipeState) return;
-        if (targetInput.name !== "inp" && !valueSlotNumber(targetInput.name)) return;
+        if (targetInput.name !== BUNDLE_INPUT_NAME && !valueSlotNumber(targetInput.name)) return;
         if (refreshSlotTypes(child.__xpipeState)) {
             syncSlots(child.__xpipeState);
         }
@@ -1404,22 +1794,23 @@ function notifyTypesDownstream(node, seen) {
 function notifyDownstream(node, slot) {
     try { pushNamesDown(node); } catch (_e) {}
     if (!node || !node.outputs || !node.outputs[0]) return;
-    var nameVal = cleanName(node.__xpipeState ? node.__xpipeState.names[slot - 1] : "");
-    var links = node.outputs[0].links || [];
-    for (var i = 0; i < links.length; i++) {
-        var link = getLinkInfo(links[i], node.graph); if (!link) continue;
-        var child = getNodeByIdInGraph(node.graph, link.target_id);
-        if (!child || !isXPipe(child) || !child.__xpipeState) continue;
-        var pin = child.inputs && child.inputs[link.target_slot];
-        if (!pin || pin.name !== "inp") continue;
-        var cn = child.__xpipeState.names, cm = child.__xpipeState.manual;
-        if (!cm[slot - 1] && cn[slot - 1] !== nameVal) {
-            cn[slot - 1] = nameVal;
-            persistState(child.__xpipeState); syncSlots(child.__xpipeState);
-            // 链式反应：子节点继续通知它的子节点
+    var visited = {};
+    forEachBundleTarget(node, function (child, targetInput, _link, meta) {
+        if (!child || !child.__xpipeState) return;
+        if (targetInput.name !== BUNDLE_INPUT_NAME) return;
+        var childKey = nodeKey(child);
+        if (visited[childKey]) return;
+        visited[childKey] = true;
+        var nextName = cleanName(meta && meta.names && meta.names[slot - 1]);
+        var cn = child.__xpipeState.names;
+        var cm = child.__xpipeState.manual;
+        if (!cm[slot - 1] && cn[slot - 1] !== nextName) {
+            cn[slot - 1] = nextName;
+            persistState(child.__xpipeState);
+            syncSlots(child.__xpipeState);
             notifyDownstream(child, slot);
         }
-    }
+    });
 }
 // shareChain → 改为只推送下游，不再双向合并
 function mergeAndShareChain(node) {
@@ -1486,7 +1877,7 @@ function drawWarningOutputRings(node, ctx) {
             ? node.getConnectionPos(false, i)
             : null;
         if (pos && node.pos) pos = [pos[0] - node.pos[0], pos[1] - node.pos[1]];
-        else pos = output.pos || [node.size ? node.size[0] : MIN_NODE_W, 35 + i * 20];
+        else pos = output.pos || [node.size ? node.size[0] : 0, 35 + i * 20];
         ctx.save();
         ctx.strokeStyle = WARNING_COLOR;
         ctx.lineWidth = lineWidth;
@@ -1631,6 +2022,21 @@ function scheduleValueDisconnectRefresh(state, slot, disconnectedLinkId) {
     }
     setTimeout(run, 120);
 }
+function scheduleSlotSync(state) {
+    var run = function () {
+        if (!state || !state.node || state.node.__xpipeState !== state) return;
+        try {
+            refreshSlotTypes(state);
+            syncSlots(state);
+            fitNode(state);
+        } catch (_e) {}
+    };
+    setTimeout(run, 0);
+    if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(function () { setTimeout(run, 0); });
+    }
+    setTimeout(run, 120);
+}
 function handleConnectionChange(state, type, index, connected, linkInfo, slotInfo) {
     var node = state.node, isInput = type === (window.LiteGraph ? LiteGraph.INPUT : 1);
     var list = isInput ? node.inputs : node.outputs, slot = slotInfo || (list ? list[index] : null);
@@ -1649,16 +2055,23 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
             type: linkInfo.type,
         } : null,
     });
-    if (slotName === "inp") {
+    if (slotName === BUNDLE_INPUT_NAME) {
         if (connected) {
+            refreshAutoNames(state);
+            refreshSlotTypes(state);
+            syncSlots(state);
             scheduleGraphTreeRefresh();
             return;
         }
         refreshAutoNames(state);
-        shareChain(node, false);
+        refreshSlotTypes(state);
+        syncSlots(state);
+        persistState(state);
+        fitNode(state);
+        shareChain(node, true);
         return;
     }
-    if (slotName === "out") {
+    if (slotName === BUNDLE_OUTPUT_NAME) {
         if (connected) {
             scheduleGraphTreeRefresh();
             return;
@@ -1666,12 +2079,18 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
         refreshSlotTypes(state); syncSlots(state); mergeAndShareChain(node); return;
     }
     var k = valueSlotNumber(slotName);
+    if (isInput && k) scheduleSlotSync(state);
     // 连接：首次连接自动命名
     if (isInput && k && connected && linkInfo && !state.manual[k - 1]) {
         var label = valueInputLabelFromLink(linkInfo, node.graph, k);
         if (label) {
             state.names[k - 1] = label;
-            persistState(state); shareChain(node, false); return;
+            persistState(state);
+            syncNameWidgets(state);
+            syncPortLabels(state);
+            refreshNodeLayout(node);
+            shareChain(node, false);
+            return;
         }
         scheduleGraphTreeRefresh();
         return;
@@ -1693,12 +2112,10 @@ function handleConnectionChange(state, type, index, connected, linkInfo, slotInf
 }
 
 // ---------------------------------------------------------------------------
-// Canvas 浮层输入框
+// Widget 区控件
 // ---------------------------------------------------------------------------
-var pipeInputEls = {};    // legacy DOM overlays, cleaned up by syncAllOverlays()
-var activeNameEditor = null;
 var pipeLinksHidden = {}; // nodeKey -> state (0-3)
-var overlayHooked = false;
+var canvasHooked = false;
 var graphTreeRefreshTimer = null;
 
 function hiddenState(node) {
@@ -1707,6 +2124,18 @@ function hiddenState(node) {
     if (state == null && node && node.properties) {
         state = node.properties[HIDE_STATE_PROP];
         if (state != null) pipeLinksHidden[key] = state;
+    }
+    if (state === true) return HIDE_BOTH;
+    state = Number(state) || HIDE_NONE;
+    return Math.max(HIDE_NONE, Math.min(HIDE_BOTH, state));
+}
+
+function valueHiddenState(node) {
+    var key = nodeKey(node);
+    var state = node && node.__xpipeValueLinksHidden;
+    if (state == null && node && node.properties) {
+        state = node.properties[VALUE_HIDE_STATE_PROP];
+        if (state != null) node.__xpipeValueLinksHidden = state;
     }
     if (state === true) return HIDE_BOTH;
     state = Number(state) || HIDE_NONE;
@@ -1733,6 +2162,21 @@ function setHiddenState(node, state) {
     }
 }
 
+function setValueHiddenState(node, state) {
+    var normalized = Math.max(HIDE_NONE, Math.min(HIDE_BOTH, Number(state) || HIDE_NONE));
+    node.properties = node.properties || {};
+    if (normalized === HIDE_NONE) {
+        delete node.__xpipeValueLinksHidden;
+        delete node.properties[VALUE_HIDE_STATE_PROP];
+    } else {
+        node.__xpipeValueLinksHidden = normalized;
+        node.properties[VALUE_HIDE_STATE_PROP] = normalized;
+    }
+    if (node.graph && typeof node.graph.change === "function") {
+        node.graph.change();
+    }
+}
+
 function scheduleGraphTreeRefresh() {
     if (graphTreeRefreshTimer != null) return;
     var run = function () {
@@ -1740,7 +2184,6 @@ function scheduleGraphTreeRefresh() {
             root: graphKey(app.graph),
         });
         try { refreshAllXPipesInGraphTree(app.graph); } catch (_e) {}
-        try { syncAllOverlays(); } catch (_e) {}
         try { app.canvas && app.canvas.setDirty(true, true); } catch (_e) {}
     };
     xpipeLog("scheduledGraphTreeRefresh.queue", {});
@@ -1761,89 +2204,362 @@ function isHiddenBundleLink(link, graph) {
     graph = graph || activeGraph();
     var src = getNodeByIdInGraph(graph, link.origin_id);
     var tgt = getNodeByIdInGraph(graph, link.target_id);
-    var hideFromOutput = isXPipe(src) && (hiddenState(src) & HIDE_OUTPUT);
-    var hideToInput = isXPipe(tgt) && (hiddenState(tgt) & HIDE_INPUT);
-    if (!hideFromOutput && !hideToInput) return false;
-    return !!getFullBundleMetaFromLink(link, {}, graph);
+    var srcOutput = src && src.outputs ? src.outputs[link.origin_slot] : null;
+    var tgtInput = tgt && tgt.inputs ? tgt.inputs[link.target_slot] : null;
+
+    // 只处理 XPipe bundle 输出端口 xpipe_out 的连线显隐
+    if (isXPipe(src) && srcOutput && srcOutput.name === BUNDLE_OUTPUT_NAME
+        && (hiddenState(src) & HIDE_OUTPUT)) {
+        return true;
+    }
+
+    // 只处理 XPipe bundle 输入端口 xpipe_in 的连线显隐
+    if (isXPipe(tgt) && tgtInput && tgtInput.name === BUNDLE_INPUT_NAME
+        && (hiddenState(tgt) & HIDE_INPUT)) {
+        return true;
+    }
+
+    return false;
+}
+
+function isHiddenValueLink(link, graph) {
+    if (!link || link.id == null) return false;
+    graph = graph || activeGraph();
+    var src = getNodeByIdInGraph(graph, link.origin_id);
+    var tgt = getNodeByIdInGraph(graph, link.target_id);
+    var srcOutput = src && src.outputs ? src.outputs[link.origin_slot] : null;
+    var tgtInput = tgt && tgt.inputs ? tgt.inputs[link.target_slot] : null;
+    var srcValueSlot = valueSlotNumber(srcOutput && srcOutput.name);
+    var tgtValueSlot = valueSlotNumber(tgtInput && tgtInput.name);
+
+    if (isXPipe(src) && srcValueSlot > 0
+        && (valueHiddenState(src) & HIDE_OUTPUT)) {
+        return true;
+    }
+
+    if (isXPipe(tgt) && tgtValueSlot > 0
+        && (valueHiddenState(tgt) & HIDE_INPUT)) {
+        return true;
+    }
+
+    return false;
+}
+
+function ensureTitleButtonStyles() {
+    if (typeof document === "undefined") return;
+    if (document.getElementById(TITLE_BUTTON_STYLE_ID)) return;
+    var style = document.createElement("style");
+    style.id = TITLE_BUTTON_STYLE_ID;
+    style.textContent = [
+        ".xpipe-title-button-wrap {",
+        "  box-sizing: border-box;",
+        "  width: 100%;",
+        "  padding: 0 15px;",
+        "  color: var(--input-text, #ddd);",
+        "  background: transparent;",
+        "}",
+        ".xpipe-title-button-row {",
+        "  display: flex;",
+        "  align-items: stretch;",
+        "  gap: 4px;",
+        "  width: 100%;",
+        "}",
+        ".xpipe-title-button {",
+        "  display: flex;",
+        "  align-items: center;",
+        "  justify-content: center;",
+        "  flex: 1 1 0;",
+        "  width: 100%;",
+        "  min-width: 0;",
+        "  height: " + TITLE_BUTTON_PANEL_HEIGHT + "px;",
+        "  min-height: " + TITLE_BUTTON_PANEL_HEIGHT + "px;",
+        "  padding: 0 8px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 4px;",
+        "  background: transparent;",
+        "  color: var(--input-text, #ddd);",
+        "  font: 12px sans-serif;",
+        "  line-height: 1;",
+        "  letter-spacing: 0;",
+        "  text-align: center;",
+        "  white-space: nowrap;",
+        "  cursor: pointer;",
+        "  transition: border-color 120ms ease, color 120ms ease;",
+        "  appearance: none;",
+        "}",
+        ".xpipe-title-button:hover {",
+        "  border-color: var(--xdh-brand-pink, #ff385c);",
+        "}",
+        ".xpipe-title-button.active {",
+        "  color: var(--xdh-brand-pink, #ff385c);",
+        "}",
+    ].join("\n");
+    (document.head || document.documentElement).append(style);
+}
+
+function forwardTitlePanelWheel(panel) {
+    panel.addEventListener("wheel", function (e) {
+        var gc = app.canvas && app.canvas.canvas;
+        if (gc) {
+            gc.dispatchEvent(new WheelEvent("wheel", {
+                deltaX: e.deltaX,
+                deltaY: e.deltaY,
+                deltaZ: e.deltaZ,
+                clientX: e.clientX,
+                clientY: e.clientY,
+                screenX: e.screenX,
+                screenY: e.screenY,
+                ctrlKey: e.ctrlKey,
+                altKey: e.altKey,
+                shiftKey: e.shiftKey,
+                metaKey: e.metaKey,
+                bubbles: true,
+                cancelable: true,
+            }));
+        }
+    });
+}
+
+function forwardTitlePanelMiddleButton(panel) {
+    panel.addEventListener("pointerdown", function (e) {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        var cvs = app.canvas;
+        if (!cvs || typeof cvs.processMouseDown !== "function") return;
+        cvs.processMouseDown(e);
+    });
+    panel.addEventListener("pointermove", function (e) {
+        if ((e.buttons & 4) !== 4) return;
+        var cvs = app.canvas;
+        if (!cvs || typeof cvs.processMouseMove !== "function") return;
+        cvs.processMouseMove(e);
+    });
+    panel.addEventListener("pointerup", function (e) {
+        if (e.button !== 1) return;
+        var cvs = app.canvas;
+        if (!cvs || typeof cvs.processMouseUp !== "function") return;
+        cvs.processMouseUp(e);
+    });
 }
 
 function updateTitleButtons(node) {
-    if (!node || !node.title_buttons) return;
+    var panel = ensureTitleButtons(node);
+    if (!panel) return;
     var state = hiddenState(node);
-    for (var i = 0; i < node.title_buttons.length; i++) {
-        var button = node.title_buttons[i];
-        if (button.name === BUTTON_HIDE) {
-            button.text = HIDE_BUTTON_TEXTS[state];
-        }
+    var valueState = valueHiddenState(node);
+    panel.bundleButton.textContent = bundleButtonLabel() + " " + HIDE_BUTTON_TEXTS[state];
+    panel.bundleButton.title = bundleButtonTooltip(state);
+    panel.bundleButton.setAttribute("aria-label", panel.bundleButton.title);
+    panel.bundleButton.classList.toggle("active", state !== HIDE_NONE);
+
+    panel.valueButton.textContent = valueButtonLabel() + " " + HIDE_BUTTON_TEXTS[valueState];
+    panel.valueButton.title = valueButtonTooltip(valueState);
+    panel.valueButton.setAttribute("aria-label", panel.valueButton.title);
+    panel.valueButton.classList.toggle("active", valueState !== HIDE_NONE);
+}
+function bundleButtonLabel() {
+    return tx("button_links", "Links");
+}
+function valueButtonLabel() {
+    return tx("button_ports", "Ports");
+}
+function bundleButtonTooltip(state) {
+    if (state === HIDE_INPUT) {
+        return tx("hide_input_bundle_links", "Hide incoming XPipe bundle links");
     }
+    if (state === HIDE_OUTPUT) {
+        return tx("hide_output_bundle_links", "Hide outgoing XPipe bundle links");
+    }
+    if (state === HIDE_BOTH) {
+        return tx("hide_all_bundle_links", "Hide all XPipe bundle links");
+    }
+    return tx("show_all_bundle_links", "Show all XPipe bundle links");
+}
+function valueButtonTooltip(state) {
+    if (state === HIDE_INPUT) {
+        return tx("hide_input_port_links", "Hide input port links");
+    }
+    if (state === HIDE_OUTPUT) {
+        return tx("hide_output_port_links", "Hide output port links");
+    }
+    if (state === HIDE_BOTH) {
+        return tx("hide_all_port_links", "Hide all port links");
+    }
+    return tx("show_all_port_links", "Show all port links");
+}
+function nameWidgetLabel(slot) {
+    return txf("name_label", "Name {slot}", { slot: slot });
+}
+function nameWidgetTooltip(slot) {
+    return txf("name_tooltip", "Slot {slot} name", { slot: slot });
 }
 
 function ensureTitleButtons(node) {
-    if (!node || node.__xpipeTitleButtonsReady) return;
-    node.__xpipeTitleButtonsReady = true;
-
-    if (typeof node.addTitleButton === "function") {
-        node.addTitleButton({
-            name: BUTTON_HIDE,
-            text: HIDE_BUTTON_TEXTS[hiddenState(node)],
-            fontSize: TITLE_BUTTON_FONT_SIZE,
-            height: TITLE_BUTTON_HEIGHT,
-            xOffset: HIDE_BUTTON_X_OFFSET,
-            yOffset: TITLE_BUTTON_Y_OFFSET,
-        });
+    if (!node) return null;
+    if (node.__xpipeTitleButtonPanel) return node.__xpipeTitleButtonPanel;
+    if (typeof document === "undefined" || typeof node.addDOMWidget !== "function") {
+        return null;
     }
+    ensureTitleButtonStyles();
 
-    var originalOnTitleButtonClick = node.onTitleButtonClick;
-    node.onTitleButtonClick = function (button, canvas) {
-        if (button && button.name === BUTTON_HIDE) {
-            var next = nextHideState(hiddenState(this));
-            setHiddenState(this, next);
-            updateTitleButtons(this);
-            canvas && canvas.setDirty && canvas.setDirty(true, true);
-            return;
-        }
-        if (originalOnTitleButtonClick) {
-            return originalOnTitleButtonClick.apply(this, arguments);
-        }
+    var wrap = document.createElement("div");
+    wrap.className = "xpipe-title-button-wrap";
+
+    var row = document.createElement("div");
+    row.className = "xpipe-title-button-row";
+
+    var bundleButton = document.createElement("button");
+    bundleButton.type = "button";
+    bundleButton.className = "xpipe-title-button";
+    bundleButton.textContent = bundleButtonLabel() + " " + HIDE_BUTTON_TEXTS[hiddenState(node)];
+    bundleButton.title = bundleButtonTooltip(hiddenState(node));
+    bundleButton.setAttribute("aria-label", bundleButton.title);
+    bundleButton.addEventListener("click", function () {
+            var next = nextHideState(hiddenState(node));
+            setHiddenState(node, next);
+            updateTitleButtons(node);
+            markCanvasDirty();
+        });
+
+    var valueButton = document.createElement("button");
+    valueButton.type = "button";
+    valueButton.className = "xpipe-title-button";
+    valueButton.textContent = valueButtonLabel() + " " + HIDE_BUTTON_TEXTS[valueHiddenState(node)];
+    valueButton.title = valueButtonTooltip(valueHiddenState(node));
+    valueButton.setAttribute("aria-label", valueButton.title);
+    valueButton.addEventListener("click", function () {
+            var next = nextHideState(valueHiddenState(node));
+            setValueHiddenState(node, next);
+            updateTitleButtons(node);
+            markCanvasDirty();
+        });
+
+    row.appendChild(bundleButton);
+    row.appendChild(valueButton);
+    wrap.appendChild(row);
+    forwardTitlePanelWheel(wrap);
+    forwardTitlePanelMiddleButton(wrap);
+
+    node.addDOMWidget(HIDE_WIDGET_NAME, "custom", wrap, {
+        serialize: false,
+        getMinHeight: function () {
+            return TITLE_BUTTON_PANEL_HEIGHT;
+        },
+        margin: 0,
+    });
+
+    node.__xpipeTitleButtonPanel = {
+        wrap: wrap,
+        row: row,
+        bundleButton: bundleButton,
+        valueButton: valueButton,
     };
+    updateTitleButtons(node);
+    return node.__xpipeTitleButtonPanel;
 }
 
-function installOverlayHook() {
-    if (overlayHooked || !app.canvas) { if (!app.canvas) setTimeout(installOverlayHook, 200); return; }
-    overlayHooked = true;
-    var origOnMouse = app.canvas.onMouse;
-    app.canvas.onMouse = function (event) {
-        if (event && event.button === 0 && activeGraph()) {
-            var graph = activeGraph();
-            var node = graph && typeof graph.getNodeOnPos === "function"
-                ? graph.getNodeOnPos(event.canvasX, event.canvasY, this.visible_nodes)
-                : null;
-            if (isXPipe(node) && node.__xpipeState) {
-                var slot = hitNameInputSlot(
-                    node,
-                    [event.canvasX - node.pos[0], event.canvasY - node.pos[1]]
-                );
-                if (slot) {
-                    event.preventDefault && event.preventDefault();
-                    event.stopPropagation && event.stopPropagation();
-                    openNameEditor(node, slot);
-                    return true;
-                }
-            }
+function findNameWidget(node, slot) {
+    if (!node || !node.widgets) return null;
+    for (var i = 0; i < node.widgets.length; i++) {
+        if (node.widgets[i] && node.widgets[i].__xpipeNameSlot === slot) {
+            return node.widgets[i];
         }
-        return origOnMouse && origOnMouse.apply(this, arguments);
-    };
-    var origDraw = app.canvas.draw;
-    app.canvas.draw = function (force) {
-        origDraw && origDraw.apply(this, arguments);
-        try { syncAllOverlays(); } catch (_e) {}
-    };
-    // 拦截管道连线渲染
+    }
+    return null;
+}
+
+function ensureNameWidget(state, slot) {
+    var node = state && state.node;
+    if (!node || typeof node.addWidget !== "function") return null;
+    var widget = findNameWidget(node, slot);
+    var label = nameWidgetLabel(slot);
+    if (!widget) {
+        widget = node.addWidget(
+            "text",
+            label,
+            state.names[slot - 1] || "",
+            function () {
+                var value = cleanName(widget.value);
+                if (value) {
+                    state.names[slot - 1] = value;
+                    state.manual[slot - 1] = true;
+                } else {
+                    state.names[slot - 1] = "";
+                    state.manual[slot - 1] = false;
+                    refreshAutoNames(state);
+                }
+                persistState(state);
+                syncNameWidgets(state);
+                syncPortLabels(state);
+                try { notifyDownstream(node, slot); } catch (_e) {}
+                markCanvasDirty();
+            }
+        );
+        widget.__xpipeNameSlot = slot;
+        widget.serialize = false;
+        widget.options = widget.options || {};
+        widget.options.serialize = false;
+    }
+    widget.options = widget.options || {};
+    widget.name = label;
+    widget.label = label;
+    widget.options.tooltip = nameWidgetTooltip(slot);
+    return widget;
+}
+
+function setWidgetHidden(widget, hidden) {
+    if (!widget) return;
+    widget.hidden = hidden;
+    widget.options = widget.options || {};
+    widget.options.hidden = hidden;
+    if (hidden) {
+        widget.computeSize = function () { return [0, -4]; };
+    } else if (widget.computeSize) {
+        delete widget.computeSize;
+    }
+}
+function removeNameWidget(node, widget) {
+    if (!node || !node.widgets || !widget) return;
+    for (var i = node.widgets.length - 1; i >= 0; i--) {
+        if (node.widgets[i] !== widget) continue;
+        node.widgets.splice(i, 1);
+        try { widget.onRemove && widget.onRemove(); } catch (_e) {}
+    }
+}
+
+function syncNameWidgets(state) {
+    if (!state || !state.node) return;
+    var node = state.node;
+    var visible = visibleValueSlots(node);
+    var hasVisible = Object.keys(visible).length > 0;
+    if (node.widgets) {
+        for (var i = node.widgets.length - 1; i >= 0; i--) {
+            var existing = node.widgets[i];
+            var existingSlot = existing && existing.__xpipeNameSlot;
+            if (!existingSlot) continue;
+            var keep = !!visible[existingSlot] || (!hasVisible && existingSlot === 1);
+            if (!keep) removeNameWidget(node, existing);
+        }
+    }
+    for (var slot = 1; slot <= PIPE_SLOTS; slot++) {
+        var shouldShow = !!visible[slot] || (!hasVisible && slot === 1);
+        if (!shouldShow) continue;
+        var widget = ensureNameWidget(state, slot);
+        if (!widget) continue;
+        widget.value = state.names[slot - 1] || "";
+        setWidgetHidden(widget, false);
+    }
+}
+
+function installCanvasHooks() {
+    if (canvasHooked || !app.canvas) { if (!app.canvas) setTimeout(installCanvasHooks, 200); return; }
+    canvasHooked = true;
     var origRenderLink = app.canvas.renderLink;
     app.canvas.renderLink = function (ctx, a, b, link) {
         var graph = this.graph || activeGraph();
         var warning = getXPipeLinkWarning(link, graph);
         if (isHiddenBundleLink(link, graph)) return;
+        if (isHiddenValueLink(link, graph)) return;
         if (!warning) {
             origRenderLink && origRenderLink.apply(this, arguments);
             return;
@@ -1857,195 +2573,6 @@ function installOverlayHook() {
         origRenderLink && origRenderLink.apply(this, args);
         ctx.restore();
     };
-    setTimeout(function () { try { syncAllOverlays(); } catch (_e) {} }, 500);
-}
-
-function isNodeCollapsed(node) {
-    return !!(node && (
-        node.collapsed
-        || (node.flags && node.flags.collapsed)
-    ));
-}
-
-function syncAllOverlays() {
-    updateActiveNameEditorPosition();
-    for (var nid in pipeInputEls) {
-        if (!pipeInputEls.hasOwnProperty(nid)) continue;
-        if (pipeInputEls[nid].wrap && pipeInputEls[nid].wrap.parentNode) {
-            pipeInputEls[nid].wrap.parentNode.removeChild(pipeInputEls[nid].wrap);
-        }
-        delete pipeInputEls[nid];
-    }
-}
-
-// ---- 名字输入框 ----
-function getNameInputLayout(node, slot) {
-    var i1 = slotIndexOfName(node.inputs, "value_1");
-    if (i1 < 0) i1 = slotIndexOfName(node.outputs, "value_1");
-    var baseY = (i1 >= 0 && (node.inputs[i1] || node.outputs[i1]) && (node.inputs[i1] || node.outputs[i1]).pos)
-        ? (node.inputs[i1] || node.outputs[i1]).pos[1] : 35;
-    var nw = node.size ? node.size[0] : 200;
-    var dy = baseY + (slot - 1) * 20;
-    var ml = 21, mr = 20;
-    return {
-        x: ml,
-        y: dy - 8,
-        w: Math.max(60, nw - ml - mr),
-        h: 14,
-    };
-}
-function hitNameInputSlot(node, pos) {
-    if (!node || !pos) return 0;
-    for (var k = 1; k <= PIPE_SLOTS; k++) {
-        var r = getNameInputLayout(node, k);
-        if (pos[0] >= r.x && pos[0] <= r.x + r.w
-            && pos[1] >= r.y && pos[1] <= r.y + r.h) return k;
-    }
-    return 0;
-}
-function canvasCssColor(name, fallback) {
-    try {
-        var value = getComputedStyle(document.body).getPropertyValue(name).trim();
-        return value || fallback;
-    } catch (_e) {
-        return fallback;
-    }
-}
-function nameInputFontFamily() {
-    try {
-        var font = getComputedStyle(document.body).fontFamily;
-        return font || NAME_INPUT_FONT_FAMILY;
-    } catch (_e) {
-        return NAME_INPUT_FONT_FAMILY;
-    }
-}
-function nameInputCanvasFont() {
-    return NAME_INPUT_FONT_SIZE + "px " + nameInputFontFamily();
-}
-function centeredTextY(ctx, rect) {
-    return rect.y + rect.h / 2 + 5;
-}
-function drawNameInputs(node, ctx) {
-    var st = node && node.__xpipeState;
-    if (!st || !ctx || isNodeCollapsed(node)) return;
-    var scale = app.canvas && app.canvas.ds ? app.canvas.ds.scale || 1 : 1;
-    var lodV = scale >= 0.35;
-    try {
-        var v = app.ui && app.ui.settings && app.ui.settings.getSettingValue("Comfy.LodScale");
-        if (typeof v === "number") lodV = scale >= v;
-    } catch (_e) {}
-    if (!lodV) return;
-
-    var bg = canvasCssColor("--comfy-input-bg", "#222");
-    var text = canvasCssColor("--input-text", "#ddd");
-    var border = canvasCssColor("--border-color", "#555");
-    var primary = canvasCssColor("--primary-color", "#ff385c");
-    ctx.save();
-    ctx.font = nameInputCanvasFont();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.lineWidth = Math.max(1, 1 / scale);
-    for (var k = 1; k <= PIPE_SLOTS; k++) {
-        var r = getNameInputLayout(node, k);
-        var name = st.names[k - 1] || "";
-        ctx.fillStyle = bg;
-        ctx.strokeStyle = st.manual[k - 1] ? primary : border;
-        ctx.beginPath();
-        ctx.rect(r.x, r.y, r.w, r.h);
-        ctx.fill();
-        ctx.stroke();
-        if (name) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(r.x + 2, r.y, r.w - 4, r.h);
-            ctx.clip();
-            ctx.fillStyle = text;
-            ctx.fillText(name, r.x + r.w / 2, centeredTextY(ctx, r));
-            ctx.restore();
-        }
-    }
-    ctx.restore();
-}
-function commitNameEditor(cancelled) {
-    var editor = activeNameEditor;
-    if (!editor) return;
-    var st = editor.state, slot = editor.slot, inputEl = editor.input;
-    if (!cancelled && st && slot) {
-        var v = inputEl.value.trim();
-        if (v.length) {
-            st.names[slot - 1] = v;
-            st.manual[slot - 1] = true;
-        } else {
-            st.names[slot - 1] = "";
-            st.manual[slot - 1] = false;
-            refreshAutoNames(st);
-        }
-        hidePortLabels(st.node);
-        persistState(st);
-        try { notifyDownstream(st.node, slot); } catch (_e) {}
-        markCanvasDirty();
-    }
-    if (inputEl && inputEl.parentNode) inputEl.parentNode.removeChild(inputEl);
-    activeNameEditor = null;
-}
-function updateActiveNameEditorPosition() {
-    var editor = activeNameEditor;
-    if (!editor || !editor.input || !editor.node || !app.canvas) return;
-    if (isNodeCollapsed(editor.node) || editor.node.graph !== activeGraph()) {
-        commitNameEditor(false);
-        return;
-    }
-    var parent = app.canvas.canvas.parentNode || document.body;
-    var pr = parent.getBoundingClientRect();
-    var ds = app.canvas.ds || { offset: [0, 0], scale: 1 };
-    var s = ds.scale || 1;
-    var r = getNameInputLayout(editor.node, editor.slot);
-    editor.input.style.left = ((editor.node.pos[0] + r.x + ds.offset[0]) * s) + "px";
-    editor.input.style.top = ((editor.node.pos[1] + r.y + ds.offset[1]) * s) + "px";
-    editor.input.style.width = (r.w * s) + "px";
-    editor.input.style.height = (r.h * s) + "px";
-    editor.input.style.fontSize = (NAME_INPUT_FONT_SIZE * s) + "px";
-    editor.input.style.lineHeight = (r.h * s) + "px";
-    if (editor.input.parentNode === parent) return;
-    editor.input.style.left = (parseFloat(editor.input.style.left) - pr.left) + "px";
-    editor.input.style.top = (parseFloat(editor.input.style.top) - pr.top) + "px";
-}
-function openNameEditor(node, slot) {
-    if (!node || !node.__xpipeState || !slot) return;
-    commitNameEditor(false);
-    bringXPipeNodeToFront(node);
-    var parent = app.canvas && app.canvas.canvas
-        ? app.canvas.canvas.parentNode || document.body
-        : document.body;
-    var inputEl = document.createElement("input");
-    inputEl.type = "text";
-    inputEl.value = node.__xpipeState.names[slot - 1] || "";
-    inputEl.className = "xpipe-name-editor";
-    inputEl.style.cssText = [
-        "position:absolute;z-index:0;pointer-events:auto;text-align:center;",
-        "box-sizing:border-box;font-family:" + nameInputFontFamily() + ";",
-        "border:1px solid var(--primary-color,#ff385c);border-radius:2px;",
-        "background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);",
-        "outline:none;padding:0;",
-    ].join("");
-    inputEl.addEventListener("keydown", function (event) {
-        if (event.key === "Enter") {
-            event.preventDefault();
-            commitNameEditor(false);
-        } else if (event.key === "Escape") {
-            event.preventDefault();
-            commitNameEditor(true);
-        }
-    });
-    inputEl.addEventListener("blur", function () {
-        commitNameEditor(false);
-    });
-    attachCanvasPassThrough(inputEl);
-    parent.appendChild(inputEl);
-    activeNameEditor = { node: node, state: node.__xpipeState, slot: slot, input: inputEl };
-    updateActiveNameEditorPosition();
-    inputEl.focus();
-    inputEl.select();
 }
 
 // ---------------------------------------------------------------------------
@@ -2069,7 +2596,7 @@ function createState(node) {
         namesWidget: findNamesWidget(node),
         metaWidget: ensureMetaWidget(node),
         slotDefs: captureSlotDefs(node),
-        visibleCount: PIPE_SLOTS,
+        visibleCount: 1,
     };
     st.names = loadStateNames(node);
     st.manual = loadStateManual(node);
@@ -2133,12 +2660,8 @@ function saveStateTypes(node, types) {
 }
 function reconcile(state) {
     persistState(state);
-    state.node.min_size = [MIN_NODE_W, 35];
-    if (typeof state.node.setSize === "function") {
-        var cs = state.node.computeSize();
-        state.node.setSize([Math.max(cs[0], MIN_NODE_W), cs[1]]);
-    }
-    state.node.setDirtyCanvas && state.node.setDirtyCanvas(true, true);
+    applyInitialNodeSize(state.node);
+    refreshNodeLayout(state.node);
     xpipeLog("reconcile", {
         node: debugNode(state.node),
         names: compactSlots(state.names),
@@ -2177,6 +2700,12 @@ function refreshAllXPipes(graph) {
 function hydrateFromInfo(node, info) {
     var st = createState(node), props = (info && info.properties) || node.properties || {};
     var meta = loadMetaState(node);
+    var hideLinks = props[HIDE_STATE_PROP];
+    if (hideLinks == null) hideLinks = meta.hideLinksState;
+    if (hideLinks != null) setHiddenState(node, hideLinks);
+    var hideValueLinks = props[VALUE_HIDE_STATE_PROP];
+    if (hideValueLinks == null) hideValueLinks = meta.hideValueLinksState;
+    if (hideValueLinks != null) setValueHiddenState(node, hideValueLinks);
     var saved = props[NAMES_PROP];
     st.manual = mergeManualState(props[MANUAL_PROP], meta);
     st.names = Array.isArray(saved)
@@ -2214,11 +2743,12 @@ app.registerExtension({
     name: "ComfyUI.Xz3r0.XPipe",
 
     async setup() {
+        applyUiLocale();
         xpipeLog("setup.debugEnabled", {
             debug: xpipeDebugEnabled(),
             hint: "Filter console by [XPipe]. Set window.XPIPE_DEBUG=false to silence.",
         });
-        installOverlayHook();
+        installCanvasHooks();
     },
 
     async afterConfigureGraph() {
@@ -2248,10 +2778,7 @@ app.registerExtension({
                 refreshSlotTypes(this.__xpipeState);
                 syncSlots(this.__xpipeState);
                 hidePortLabels(this); removePortNamesSlot(this);
-                if (typeof this.setSize === "function") {
-                    var cs = this.computeSize();
-                    this.setSize([Math.max(cs[0], MIN_NODE_W), cs[1]]);
-                }
+                refreshNodeLayout(this);
             }
         };
         var origOnConfigure = nodeType.prototype.onConfigure;
@@ -2272,20 +2799,7 @@ app.registerExtension({
         var origOnDrawForeground = nodeType.prototype.onDrawForeground;
         nodeType.prototype.onDrawForeground = function (ctx) {
             origOnDrawForeground && origOnDrawForeground.apply(this, arguments);
-            try { drawNameInputs(this, ctx); } catch (_e) { /* ignore */ }
             try { drawWarningOutputRings(this, ctx); } catch (_e) { /* ignore */ }
-        };
-        var origOnMouseDown = nodeType.prototype.onMouseDown;
-        nodeType.prototype.onMouseDown = function (event, pos, canvas) {
-            if (event && event.button === 0) {
-                var slot = hitNameInputSlot(this, pos);
-                if (slot) {
-                    openNameEditor(this, slot);
-                    canvas && canvas.setDirty && canvas.setDirty(true, true);
-                    return true;
-                }
-            }
-            return origOnMouseDown && origOnMouseDown.apply(this, arguments);
         };
     },
 
@@ -2298,10 +2812,7 @@ app.registerExtension({
             refreshSlotTypes(node.__xpipeState);
             syncSlots(node.__xpipeState);
             hidePortLabels(node); removePortNamesSlot(node);
-            if (typeof node.setSize === "function") {
-                var cs = node.computeSize();
-                node.setSize([Math.max(cs[0], MIN_NODE_W), cs[1]]);
-            }
+            refreshNodeLayout(node);
         }
     },
 
@@ -2313,11 +2824,8 @@ app.registerExtension({
 
     async nodeRemoved(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
-        var key = nodeKey(node);
         resetGraphTreeCaches();
-        var entry = pipeInputEls[key];
-        if (entry) { if (entry.wrap.parentNode) entry.wrap.parentNode.removeChild(entry.wrap); delete pipeInputEls[key]; }
-        if (activeNameEditor && activeNameEditor.node === node) commitNameEditor(false);
-        delete pipeLinksHidden[key];
+        delete pipeLinksHidden[nodeKey(node)];
+        delete node.__xpipeTitleButtonPanel;
     },
 });

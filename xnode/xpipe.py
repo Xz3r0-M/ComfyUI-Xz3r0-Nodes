@@ -3,11 +3,11 @@
 ==============
 
 这个模块提供 XPipe 管道束节点：把多路任意类型数据收束成一根线传输，
-同时保留 20 路独立的 MatchType 输入/输出端口。
+同时保留 20 路独立输出端口；输入端口由官方 Autogrow 动态增长。
 
 设计要点：
-    1. 1 路数据束（pipe_in / pipe_out）在管道束节点之间传输全部数据组
-    2. 20 路相互对应的 MatchType 输入/输出端口（类型自动跟随）
+    1. 1 路数据束（xpipe_out -> xpipe_in）在管道束节点之间传输全部数据组
+    2. 最多 20 路 Autogrow 输入端口与对应输出端口
     3. 合并语义为「单独输入覆盖束」：某槽位连了单独输入就用它，
        否则回退到数据束里的同槽位值
     4. port_names 为序列化的 JSON 名称表，由前端命名面板管理，
@@ -34,8 +34,8 @@ class XPipe(io.ComfyNode):
     """
     管道束节点
 
-    通过一根数据束在节点间传输全部数据组，同时提供 20 路独立的
-    任意类型输入/输出端口。端口名称由前端自定义面板维护，可自动读取
+    通过一根数据束在节点间传输全部数据组，同时提供最多 20 路
+    任意类型输入端口和对应输出端口。端口名称由前端面板维护，可自动读取
     上游端口名、手动改名，并随数据束继续向下游传递。
     """
 
@@ -49,33 +49,45 @@ class XPipe(io.ComfyNode):
             )
             for index in range(1, PIPE_SLOTS + 1)
         ]
+        value_template = io.Autogrow.TemplateNames(
+            input=io.AnyType.Input(
+                "value",
+                optional=True,
+                tooltip=(
+                    "Slot input (optional, accepts any data). Overrides "
+                    "the same slot from the bundle when present."
+                ),
+            ),
+            names=[f"value_{index}" for index in range(1, PIPE_SLOTS + 1)],
+            min=0,
+        )
 
         inputs: list[Any] = [
             XPipeBundle.Input(
-                "inp",
+                "xpipe_in",
                 optional=True,
                 tooltip=(
-                    "Data bundle input from an upstream XPipe. Carries all "
-                    "slot values and names; per-slot inputs override it."
+                    "Connect an upstream XPipe bundle here to receive the "
+                    "whole group of datas and names at once. A connected "
+                    "slot input still overrides the same position."
+                ),
+            ),
+            io.Autogrow.Input(
+                "values",
+                template=value_template,
+                optional=True,
+                tooltip=(
+                    "Autogrowing data inputs. Each connected slot "
+                    "overrides the same slot from the bundle."
                 ),
             ),
         ]
-        for index, template in enumerate(templates, start=1):
-            inputs.append(
-                io.MatchType.Input(
-                    f"value_{index}",
-                    template=template,
-                    optional=True,
-                    tooltip=(
-                        f"Slot {index} input (optional, accepts any data). "
-                        "Overrides the same slot from the bundle when present."
-                    ),
-                )
-            )
         inputs.append(
             io.String.Input(
                 "port_names",
                 default="[]",
+                socketless=True,
+                extra_dict={"hidden": True},
                 tooltip=(
                     "Serialized JSON list of slot names, managed by the "
                     "XPipe naming panel. Do not edit by hand."
@@ -85,10 +97,11 @@ class XPipe(io.ComfyNode):
 
         outputs: list[Any] = [
             XPipeBundle.Output(
-                display_name="out",
+                "xpipe_out",
+                display_name="xpipe_out",
                 tooltip=(
-                    "Data bundle output carrying all slot values and names "
-                    "for the next XPipe."
+                    "Send the current grouped values and names onward as a "
+                    "single XPipe bundle connection."
                 ),
             ),
         ]
@@ -106,8 +119,9 @@ class XPipe(io.ComfyNode):
             display_name="XPipe",
             description=(
                 "Pipe bundle node: route up to 20 any-type data groups "
-                "through a single bundle wire while keeping 20 matching "
-                "input/output ports. Per-slot inputs override the bundle; "
+                "through a single bundle wire while keeping autogrowing "
+                "inputs and matching visible outputs. Per-slot inputs "
+                "override the bundle; "
                 "port names are customizable and travel with the bundle."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
@@ -165,69 +179,55 @@ class XPipe(io.ComfyNode):
         return names
 
     @classmethod
+    def _extract_autogrow_values(
+        cls,
+        values: Any,
+        legacy_values: dict[str, Any],
+    ) -> list[Any]:
+        """
+        归一化 Autogrow 或旧式 value_N 输入，始终返回 20 个槽位。
+
+        Autogrow 运行时会把 `values.value_1` 这类前端槽位折叠为
+        `values={"value_1": ...}`；旧测试或旧 prompt 可能仍传入
+        `value_1=...`，这里一并兼容。
+        """
+        normalized = [None] * PIPE_SLOTS
+        if isinstance(values, dict):
+            for index in range(PIPE_SLOTS):
+                key = f"value_{index + 1}"
+                if key in values:
+                    normalized[index] = values[key]
+        for index in range(PIPE_SLOTS):
+            key = f"value_{index + 1}"
+            if key in legacy_values and legacy_values[key] is not None:
+                normalized[index] = legacy_values[key]
+        return normalized
+
+    @classmethod
     def execute(
         cls,
-        inp: Any = None,
-        value_1: Any = None,
-        value_2: Any = None,
-        value_3: Any = None,
-        value_4: Any = None,
-        value_5: Any = None,
-        value_6: Any = None,
-        value_7: Any = None,
-        value_8: Any = None,
-        value_9: Any = None,
-        value_10: Any = None,
-        value_11: Any = None,
-        value_12: Any = None,
-        value_13: Any = None,
-        value_14: Any = None,
-        value_15: Any = None,
-        value_16: Any = None,
-        value_17: Any = None,
-        value_18: Any = None,
-        value_19: Any = None,
-        value_20: Any = None,
+        xpipe_in: Any = None,
+        values: Any = None,
         port_names: str = "[]",
+        **legacy_values: Any,
     ) -> io.NodeOutput:
         """
         执行管道束合并与透传。
 
         工作流程：
-            1. 解析名称表与数据束回退值
+            1. 解析名称表与 xpipe_in 数据束回退值
             2. 逐槽合并：单独输入非 None 则覆盖，否则取数据束同槽位值
             3. 打包新的数据束（values + names）
             4. 返回数据束 + 20 路个体输出
         """
         local_names = cls._parse_port_names(port_names)
-        base_names = cls._extract_base_names(inp)
+        base_names = cls._extract_base_names(xpipe_in)
         names = [
             local_names[index] or base_names[index]
             for index in range(PIPE_SLOTS)
         ]
-        base = cls._extract_base_values(inp)
-        values_in = [
-            value_1,
-            value_2,
-            value_3,
-            value_4,
-            value_5,
-            value_6,
-            value_7,
-            value_8,
-            value_9,
-            value_10,
-            value_11,
-            value_12,
-            value_13,
-            value_14,
-            value_15,
-            value_16,
-            value_17,
-            value_18,
-            value_19,
-            value_20,
-        ]
+        base = cls._extract_base_values(xpipe_in)
+        values_in = cls._extract_autogrow_values(values, legacy_values)
         outs = [
             values_in[index] if values_in[index] is not None else base[index]
             for index in range(PIPE_SLOTS)
