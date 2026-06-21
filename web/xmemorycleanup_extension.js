@@ -9,6 +9,7 @@ var COMFY_LOCALE_KEY = "Comfy.Locale";
 var LOCALE_SYNC_INTERVAL = 1000;
 var MIN_NODE_W = 380;
 var MIN_NODE_H = 360;
+var PANEL_WIDGET_H = 312;
 var STYLE_ID = "xmemorycleanup-styles";
 var ACTION_MODELS = "models";
 var ACTION_EXECUTION_CACHE = "execution_cache";
@@ -125,8 +126,8 @@ function ensureStyles() {
     style.id = STYLE_ID;
     style.textContent = [
         ".xmemorycleanup-wrap {",
-        "  position: absolute;",
-        "  top: 0; left: 0; right: 0; bottom: 0;",
+        "  position: relative;",
+        "  width: 100%; height: 100%;",
         "  display: flex;",
         "  flex-direction: column;",
         "  gap: 8px;",
@@ -435,16 +436,26 @@ function bindCanvasForwarding(panel) {
 function clampNodeSize(node) {
     if (!node) return;
 
-    node.min_size = [MIN_NODE_W, MIN_NODE_H];
+    var minWidth = MIN_NODE_W;
+    var minHeight = MIN_NODE_H;
+    if (typeof node.computeSize === "function") {
+        var computed = node.computeSize();
+        if (Array.isArray(computed) && computed.length >= 2) {
+            minWidth = Math.max(minWidth, computed[0] || 0);
+            minHeight = Math.max(minHeight, computed[1] || 0);
+        }
+    }
+
+    node.min_size = [minWidth, minHeight];
     if (typeof node.setSize === "function") {
-        var width = Math.max((node.size && node.size[0]) || 0, MIN_NODE_W);
-        var height = Math.max((node.size && node.size[1]) || 0, MIN_NODE_H);
+        var width = Math.max((node.size && node.size[0]) || 0, minWidth);
+        var height = Math.max((node.size && node.size[1]) || 0, minHeight);
         node.setSize([width, height]);
     } else if (!node.size || node.size.length < 2) {
-        node.size = [MIN_NODE_W, MIN_NODE_H];
+        node.size = [minWidth, minHeight];
     } else {
-        node.size[0] = Math.max(node.size[0], MIN_NODE_W);
-        node.size[1] = Math.max(node.size[1], MIN_NODE_H);
+        node.size[0] = Math.max(node.size[0], minWidth);
+        node.size[1] = Math.max(node.size[1], minHeight);
     }
 
     if (node.__xmemorycleanup_resize_guard) return;
@@ -452,10 +463,19 @@ function clampNodeSize(node) {
 
     var origOnResize = node.onResize;
     node.onResize = function (size) {
-        this.min_size = [MIN_NODE_W, MIN_NODE_H];
+        var resizeMinWidth = MIN_NODE_W;
+        var resizeMinHeight = MIN_NODE_H;
+        if (typeof this.computeSize === "function") {
+            var resizeComputed = this.computeSize();
+            if (Array.isArray(resizeComputed) && resizeComputed.length >= 2) {
+                resizeMinWidth = Math.max(resizeMinWidth, resizeComputed[0] || 0);
+                resizeMinHeight = Math.max(resizeMinHeight, resizeComputed[1] || 0);
+            }
+        }
+        this.min_size = [resizeMinWidth, resizeMinHeight];
         var srcSize = Array.isArray(size) ? size : this.size;
-        var nextWidth = Math.max((srcSize && srcSize[0]) || 0, MIN_NODE_W);
-        var nextHeight = Math.max((srcSize && srcSize[1]) || 0, MIN_NODE_H);
+        var nextWidth = Math.max((srcSize && srcSize[0]) || 0, resizeMinWidth);
+        var nextHeight = Math.max((srcSize && srcSize[1]) || 0, resizeMinHeight);
         this.size = [nextWidth, nextHeight];
         this.setDirtyCanvas && this.setDirtyCanvas(true, true);
         if (typeof origOnResize === "function") {
@@ -528,6 +548,10 @@ function createCleanupUI(node) {
 
     if (typeof node.addDOMWidget === "function") {
         node.addDOMWidget(WIDGET_NAME, "custom", wrap, {
+            getMinHeight: function () {
+                return PANEL_WIDGET_H;
+            },
+            margin: 0,
             serialize: false,
         });
     }

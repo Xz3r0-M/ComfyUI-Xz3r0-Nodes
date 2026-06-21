@@ -3039,6 +3039,8 @@ function ensureHiddenWidget(node, widgetName, onChange = null) {
     }
     if (widget) {
         widget.hidden = true;
+        widget.options = widget.options || {};
+        widget.options.hidden = true;
         widget.serializeValue = () => widget.value;
     }
     return widget || null;

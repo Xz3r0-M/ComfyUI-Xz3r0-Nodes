@@ -352,6 +352,8 @@ function ensureMetaWidget(node) {
 function hideWidget(w) {
     if (!w) return;
     w.hidden = true;
+    w.options = w.options || {};
+    w.options.hidden = true;
     w.computeSize = function () { return [0, -4]; };
     w.serializeValue = function () { return w.value; };
 }

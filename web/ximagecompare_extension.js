@@ -150,6 +150,7 @@ var DEFAULT_CH = 480;
 
 // 工具栏高度（3行：按钮行 + 标签行 + 滑块行）
 var TOOLBAR_H = 70;
+var PANEL_WIDGET_H = DEFAULT_CH + TOOLBAR_H;
 
 // 不设独立的 canvas min-height——canvas 跟随节点窗口，
 // 由 node.min_size 保证最小可用空间。
@@ -428,6 +429,8 @@ function ensureHiddenWidget(node, name, defaultValue) {
     }
     if (widget) {
         widget.hidden = true;
+        widget.options = widget.options || {};
+        widget.options.hidden = true;
         widget.serializeValue = function () {
             return this.value;
         };
@@ -467,8 +470,8 @@ function injectStyles() {
     style.id = "xcompare-styles";
     style.textContent = [
         ".xcompare-wrap {",
-        "  position: absolute;",
-        "  top: 0; left: 0; right: 0; bottom: 0;",
+        "  position: relative;",
+        "  width: 100%; height: 100%;",
         "  display: flex; flex-direction: column;",
         "  box-sizing: border-box;",
         "  background: transparent;",
@@ -1316,6 +1319,10 @@ function createCompareUI(node) {
     // --- 注册 DOM widget ---
     if (typeof node.addDOMWidget === "function") {
         node.addDOMWidget(WIDGET_NAME, "custom", wrap, {
+            getMinHeight: function () {
+                return PANEL_WIDGET_H;
+            },
+            margin: 0,
             serialize: false,
         });
     }
@@ -2041,12 +2048,22 @@ function restoreState(state) {
 function clampNodeSize(node) {
     if (!node) return;
 
-    node.min_size = [MIN_NODE_W, MIN_NODE_H];
+    var minWidth = MIN_NODE_W;
+    var minHeight = MIN_NODE_H;
+    if (typeof node.computeSize === "function") {
+        var computed = node.computeSize();
+        if (Array.isArray(computed) && computed.length >= 2) {
+            minWidth = Math.max(minWidth, computed[0] || 0);
+            minHeight = Math.max(minHeight, computed[1] || 0);
+        }
+    }
+
+    node.min_size = [minWidth, minHeight];
 
     // 强制当前尺寸不低于最小值
     if (typeof node.setSize === "function") {
-        var w = Math.max((node.size && node.size[0]) || 0, MIN_NODE_W);
-        var h = Math.max((node.size && node.size[1]) || 0, MIN_NODE_H);
+        var w = Math.max((node.size && node.size[0]) || 0, minWidth);
+        var h = Math.max((node.size && node.size[1]) || 0, minHeight);
         node.setSize([w, h]);
     }
 
@@ -2057,12 +2074,21 @@ function clampNodeSize(node) {
     var origOnResize = node.onResize;
     node.onResize = function (size) {
         // 动态更新 min_size
-        this.min_size = [MIN_NODE_W, MIN_NODE_H];
+        var resizeMinWidth = MIN_NODE_W;
+        var resizeMinHeight = MIN_NODE_H;
+        if (typeof this.computeSize === "function") {
+            var resizeComputed = this.computeSize();
+            if (Array.isArray(resizeComputed) && resizeComputed.length >= 2) {
+                resizeMinWidth = Math.max(resizeMinWidth, resizeComputed[0] || 0);
+                resizeMinHeight = Math.max(resizeMinHeight, resizeComputed[1] || 0);
+            }
+        }
+        this.min_size = [resizeMinWidth, resizeMinHeight];
 
         // 取实际尺寸并 clamp，直接设 this.size 避免 setSize 递归
         var srcSize = Array.isArray(size) ? size : this.size;
-        var nw = Math.max((srcSize && srcSize[0]) || 0, MIN_NODE_W);
-        var nh = Math.max((srcSize && srcSize[1]) || 0, MIN_NODE_H);
+        var nw = Math.max((srcSize && srcSize[0]) || 0, resizeMinWidth);
+        var nh = Math.max((srcSize && srcSize[1]) || 0, resizeMinHeight);
         this.size = [nw, nh];
 
         this.setDirtyCanvas && this.setDirtyCanvas(true, true);
