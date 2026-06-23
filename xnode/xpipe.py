@@ -68,7 +68,7 @@ class XPipe(io.ComfyNode):
                 optional=True,
                 tooltip=(
                     "Connect an upstream XPipe bundle here to receive the "
-                    "whole group of datas and names at once. A connected "
+                    "whole group of data and names at once. A connected "
                     "slot input still overrides the same position."
                 ),
             ),
@@ -100,7 +100,7 @@ class XPipe(io.ComfyNode):
                 "xpipe_out",
                 display_name="xpipe_out",
                 tooltip=(
-                    "Send the current grouped values and names onward as a "
+                    "Send the current grouped data and names onward as a "
                     "single XPipe bundle connection."
                 ),
             ),
@@ -110,7 +110,7 @@ class XPipe(io.ComfyNode):
                 io.MatchType.Output(
                     template=template,
                     display_name=f"value_{index}",
-                    tooltip=f"Slot {index} output (value or bundle fallback)",
+                    tooltip=f"Slot {index} output (data or bundle fallback)",
                 )
             )
 
@@ -150,12 +150,28 @@ class XPipe(io.ComfyNode):
         return names
 
     @classmethod
+    def _is_xpipe_bundle(cls, data: Any) -> bool:
+        """
+        验证是否为 XPipe 管道束格式。
+
+        格式：{
+            "__xpipe_bundle__": True,
+            "__xpipe_version__": 1,
+            "values": [...],
+            "names": [...]
+        }
+        """
+        if not isinstance(data, dict):
+            return False
+        return data.get("__xpipe_bundle__") is True
+
+    @classmethod
     def _extract_base_values(cls, pipe_in: Any) -> list[Any]:
         """
         从数据束取出 20 个槽位的回退值，缺失补 None。
         """
         values: list[Any] = []
-        if isinstance(pipe_in, dict):
+        if cls._is_xpipe_bundle(pipe_in):
             raw = pipe_in.get("values")
             if isinstance(raw, list):
                 values = list(raw[:PIPE_SLOTS])
@@ -168,7 +184,7 @@ class XPipe(io.ComfyNode):
         从数据束取出 20 个槽位的回退名称，缺失补空字符串。
         """
         names: list[str] = []
-        if isinstance(pipe_in, dict):
+        if cls._is_xpipe_bundle(pipe_in):
             raw = pipe_in.get("names")
             if isinstance(raw, list):
                 names = [
@@ -232,5 +248,10 @@ class XPipe(io.ComfyNode):
             values_in[index] if values_in[index] is not None else base[index]
             for index in range(PIPE_SLOTS)
         ]
-        pipe_out = {"values": outs, "names": names}
+        pipe_out = {
+            "__xpipe_bundle__": True,  # XPipe 格式标识
+            "__xpipe_version__": 1,  # 格式版本号
+            "values": outs,
+            "names": names,
+        }
         return io.NodeOutput(pipe_out, *outs)

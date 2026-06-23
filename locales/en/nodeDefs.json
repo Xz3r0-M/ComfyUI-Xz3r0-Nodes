@@ -273,9 +273,9 @@
     "display_name": "XLinker",
     "description": "Passthrough node with a note text area. One any-type input passes directly to one any-type output. Node widget buttons toggle link visibility and link highlighting.",
     "inputs": {
-      "value": {
-        "name": "Value",
-        "tooltip": "Input value (optional, any type). Passed through to the output unchanged."
+      "any_input": {
+        "name": "Any input",
+        "tooltip": "Input (any type). Passed through to the output unchanged."
       },
       "note_text": {
         "name": "Note Text",
@@ -284,7 +284,7 @@
     },
     "outputs": {
       "0": {
-        "name": "Value",
+        "name": "Any output",
         "tooltip": "Passthrough output (same data type as input)."
       }
     }
@@ -381,10 +381,10 @@
     "inputs": {
       "xpipe_in": {
         "name": "XPipe In",
-        "tooltip": "Connect an upstream XPipe bundle to receive the full set of slot datas and names at once. If a direct slot input is also connected, that slot still uses the direct input."
+        "tooltip": "Connect an upstream XPipe bundle to receive the full set of slot data and names at once. If a direct slot input is also connected, that slot still uses the direct input."
       },
       "values": {
-        "name": "Datas",
+        "name": "Data",
         "tooltip": "Autogrowing data inputs. Each connected slot overrides the same slot from the bundle."
       },
       "value_1": {
@@ -475,7 +475,7 @@
     "outputs": {
       "0": {
         "name": "XPipe Out",
-        "tooltip": "Send the current full set of slot datas and names onward as a single XPipe bundle."
+        "tooltip": "Send the current full set of slot data and names onward as a single XPipe bundle."
       },
       "1": {
         "name": "Data 1",

@@ -193,6 +193,10 @@ function applyUiLocale() {
             } catch (_e) { /* ignore */ }
         });
 }
+function isXPipeBundle(data) {
+    // 验证是否为 XPipe 管道束格式
+    return !!(data && typeof data === "object" && data.__xpipe_bundle__ === true);
+}
 function activeGraph() {
     return (app.canvas && app.canvas.getCurrentGraph && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
@@ -1516,6 +1520,23 @@ function directInputTypeResult(node, slot, ignoredSlot) {
         return resultEmpty();
     }
     var linkInfo = getLinkInfo(node.inputs[index].link, node.graph);
+    var source = getNodeByIdInGraph(node.graph, linkInfo.origin_id);
+    var sourceOutput = source && source.outputs ? source.outputs[linkInfo.origin_slot] : null;
+    var sourceOutputName = cleanName(sourceOutput && sourceOutput.name);
+
+    // 如果上游输出端口是 xpipe_out（管道束输出），返回 xpipe 类型
+    if (sourceOutputName === BUNDLE_OUTPUT_NAME) {
+        xpipeLog("directInputType.bundleOutput", {
+            node: debugNode(node),
+            slot: slot,
+            link: node.inputs[index].link,
+            type: "xpipe",
+            sourceNode: debugNode(source),
+        });
+        return resultResolved("xpipe");
+    }
+
+    // 如果上游输出端口是 value_N，尝试从管道束元数据提取对应槽位类型
     var meta = getFullBundleMetaFromLink(linkInfo, {}, node.graph);
     if (meta) {
         var metaType = cleanType(meta.types && meta.types[slot - 1]);
@@ -1910,6 +1931,18 @@ function upstreamOutputLabel(linkInfo, graph) {
     return cleanName(slot.label) || slotName;
 }
 function valueInputLabelFromLink(linkInfo, graph, slot) {
+    if (!linkInfo) return "";
+    graph = graph || activeGraph();
+    var source = getNodeByIdInGraph(graph, linkInfo.origin_id);
+    var sourceOutput = source && source.outputs ? source.outputs[linkInfo.origin_slot] : null;
+    var sourceOutputName = cleanName(sourceOutput && sourceOutput.name);
+
+    // 如果上游输出端口是 xpipe_out（管道束输出），直接返回端口标签，不提取槽位名
+    if (sourceOutputName === BUNDLE_OUTPUT_NAME) {
+        return cleanName(sourceOutput.label) || sourceOutputName;
+    }
+
+    // 如果上游输出端口是 value_N，尝试从管道束元数据提取对应槽位名
     var meta = getFullBundleMetaFromLink(linkInfo, {}, graph);
     var metaName = meta ? cleanName(meta.names && meta.names[slot - 1]) : "";
     return metaName || upstreamOutputLabel(linkInfo, graph);
@@ -1921,6 +1954,24 @@ function directInputLabelResult(node, slot, ignoredSlot) {
         return resultEmpty();
     }
     var linkInfo = getLinkInfo(node.inputs[index].link, node.graph);
+    var source = getNodeByIdInGraph(node.graph, linkInfo.origin_id);
+    var sourceOutput = source && source.outputs ? source.outputs[linkInfo.origin_slot] : null;
+    var sourceOutputName = cleanName(sourceOutput && sourceOutput.name);
+
+    // 如果上游输出端口是 xpipe_out（管道束输出），直接返回端口标签
+    if (sourceOutputName === BUNDLE_OUTPUT_NAME) {
+        var label = cleanName(sourceOutput.label) || sourceOutputName;
+        xpipeLog("directInputLabel.bundleOutput", {
+            node: debugNode(node),
+            slot: slot,
+            link: node.inputs[index].link,
+            sourceNode: debugNode(source),
+            label: label,
+        });
+        return resultResolved(label);
+    }
+
+    // 如果上游输出端口是 value_N，尝试从管道束元数据提取对应槽位名
     var meta = getFullBundleMetaFromLink(linkInfo, {}, node.graph);
     if (meta) {
         var metaName = cleanName(meta.names && meta.names[slot - 1]);
