@@ -2558,10 +2558,6 @@ function ensureTitleButtons(node) {
 
     node.addDOMWidget(HIDE_WIDGET_NAME, "custom", wrap, {
         serialize: false,
-        getMinHeight: function () {
-            return TITLE_BUTTON_PANEL_HEIGHT * 2 + 4;
-        },
-        margin: 0,
     });
 
     node.__xpipeTitleButtonPanel = {

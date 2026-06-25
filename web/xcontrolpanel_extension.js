@@ -9,7 +9,6 @@ var COMFY_LOCALE_KEY = "Comfy.Locale";
 var LOCALE_SYNC_INTERVAL = 1000;
 var MIN_NODE_W = 280;
 var MIN_NODE_H = 178;
-var PANEL_WIDGET_H = 156;
 var STYLE_ID = "xcontrolpanel-styles";
 var uiLocalePrimary = null;
 var uiLocaleFallback = null;
@@ -452,10 +451,6 @@ function createControlPanelUI(node) {
 
     if (typeof node.addDOMWidget === "function") {
         node.addDOMWidget(WIDGET_NAME, "custom", wrap, {
-            getMinHeight: function () {
-                return PANEL_WIDGET_H;
-            },
-            margin: 0,
             serialize: false,
         });
     }

@@ -9,7 +9,6 @@ var COMFY_LOCALE_KEY = "Comfy.Locale";
 var LOCALE_SYNC_INTERVAL = 1000;
 var MIN_NODE_W = 380;
 var MIN_NODE_H = 360;
-var PANEL_WIDGET_H = 312;
 var STYLE_ID = "xmemorycleanup-styles";
 var ACTION_MODELS = "models";
 var ACTION_EXECUTION_CACHE = "execution_cache";
@@ -548,10 +547,6 @@ function createCleanupUI(node) {
 
     if (typeof node.addDOMWidget === "function") {
         node.addDOMWidget(WIDGET_NAME, "custom", wrap, {
-            getMinHeight: function () {
-                return PANEL_WIDGET_H;
-            },
-            margin: 0,
             serialize: false,
         });
     }

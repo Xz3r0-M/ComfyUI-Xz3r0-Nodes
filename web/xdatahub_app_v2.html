@@ -4,18 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub V2</title>
-    <!-- 初始主题检测：在 CSS 渲染前设置 data-theme，防止 FIoT -->
-    <script>
-    (function() {
-        var saved = localStorage.getItem('XDataHub.V2.Theme');
-        if (saved === 'light' || saved === 'dark' || saved === 'comfyui') {
-            document.body.dataset.theme = saved === 'light' ? 'light' : 'dark';
-            document.body.dataset.themeSource = saved === 'comfyui'
-                ? 'comfyui'
-                : 'xdatahub';
-        }
-    })();
-    </script>
     <link rel="stylesheet" href="xdatahub-color-tokens.css?v=20260618-2">
     <style>
         body {
@@ -92,6 +80,18 @@
     </style>
 </head>
 <body>
+    <!-- 初始主题检测：在 CSS 渲染前设置 data-theme，防止 FIoT -->
+    <script>
+    (function() {
+        var saved = localStorage.getItem('XDataHub.V2.Theme');
+        if (saved === 'light' || saved === 'dark' || saved === 'comfyui') {
+            document.body.dataset.theme = saved === 'light' ? 'light' : 'dark';
+            document.body.dataset.themeSource = saved === 'comfyui'
+                ? 'comfyui'
+                : 'xdatahub';
+        }
+    })();
+    </script>
 
     <xdh-content-nav></xdh-content-nav>
     <div id="xdh-content-stage" class="content-stage">
