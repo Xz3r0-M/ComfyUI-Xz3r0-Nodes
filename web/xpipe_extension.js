@@ -1199,6 +1199,17 @@ function findPassthroughInputIndex(node, outputIndex) {
     }
     var output = slotAt(node.outputs, outputIndex);
     if (!output) return -1;
+
+    // XLinker 专用兼容：直接识别 XLinker 节点的透传关系
+    var nodeType = String(node.comfyClass || node.type || "");
+    if (nodeType === "XLinker") {
+        // XLinker 的 any_input (index 0) 透传到 any_output (index 0)
+        if (outputIndex === 0 && node.inputs[0] && node.inputs[0].link != null) {
+            return 0;
+        }
+        return -1;
+    }
+
     var nodeData = node.constructor && node.constructor.nodeData;
     var outputSpec = slotAt(nodeData && nodeData.outputs, outputIndex);
     var outputName = cleanName(outputSpec && outputSpec.name)
@@ -1536,19 +1547,7 @@ function directInputTypeResult(node, slot, ignoredSlot) {
         return resultResolved("xpipe");
     }
 
-    // 如果上游输出端口是 value_N，尝试从管道束元数据提取对应槽位类型
-    var meta = getFullBundleMetaFromLink(linkInfo, {}, node.graph);
-    if (meta) {
-        var metaType = cleanType(meta.types && meta.types[slot - 1]);
-        xpipeLog("directInputType.meta", {
-            node: debugNode(node),
-            slot: slot,
-            link: node.inputs[index].link,
-            type: metaType,
-            metaNode: debugNode(meta.node),
-        });
-        return resultResolved(metaType);
-    }
+    // value_x 直连只做原始透传，不允许按束元数据恢复槽位类型
     var type = outputTypeFromLink(linkInfo, node.graph);
     xpipeLog("directInputType.link", {
         node: debugNode(node),
@@ -1971,19 +1970,7 @@ function directInputLabelResult(node, slot, ignoredSlot) {
         return resultResolved(label);
     }
 
-    // 如果上游输出端口是 value_N，尝试从管道束元数据提取对应槽位名
-    var meta = getFullBundleMetaFromLink(linkInfo, {}, node.graph);
-    if (meta) {
-        var metaName = cleanName(meta.names && meta.names[slot - 1]);
-        xpipeLog("directInputLabel.meta", {
-            node: debugNode(node),
-            slot: slot,
-            link: node.inputs[index].link,
-            name: metaName,
-            metaNode: debugNode(meta.node),
-        });
-        return resultResolved(metaName);
-    }
+    // value_x 直连只显示来源端口名，不允许按束元数据恢复槽位名
     var label = upstreamOutputLabel(linkInfo, node.graph);
     xpipeLog("directInputLabel.link", {
         node: debugNode(node),
@@ -2308,6 +2295,9 @@ function ensureTitleButtonStyles() {
         "  padding: 0 15px;",
         "  color: var(--input-text, #ddd);",
         "  background: transparent;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 4px;",
         "}",
         ".xpipe-title-button-row {",
         "  display: flex;",
@@ -2407,12 +2397,19 @@ function updateTitleButtons(node) {
     panel.valueButton.title = valueButtonTooltip(valueState);
     panel.valueButton.setAttribute("aria-label", panel.valueButton.title);
     panel.valueButton.classList.toggle("active", valueState !== HIDE_NONE);
+
+    panel.refreshButton.textContent = refreshButtonLabel();
+    panel.refreshButton.title = refreshButtonTooltip();
+    panel.refreshButton.setAttribute("aria-label", panel.refreshButton.title);
 }
 function bundleButtonLabel() {
     return tx("button_links", "Links");
 }
 function valueButtonLabel() {
     return tx("button_ports", "Ports");
+}
+function refreshButtonLabel() {
+    return tx("button_refresh", "Refresh");
 }
 function bundleButtonTooltip(state) {
     if (state === HIDE_INPUT) {
@@ -2438,6 +2435,47 @@ function valueButtonTooltip(state) {
     }
     return tx("show_all_port_links", "Show all port links");
 }
+function refreshButtonTooltip() {
+    return tx("refresh_port_status", "Refresh port names and types from connected upstream nodes");
+}
+function refreshPortStatus(node) {
+    if (!node || !isXPipe(node)) return;
+    var state = node.__xpipeState;
+    if (!state) return;
+
+    xpipeLog("refreshPortStatus.triggered", {
+        node: debugNode(node),
+    });
+
+    // 强制刷新所有端口名称和类型
+    refreshAutoNames(state, 0);
+    refreshSlotTypes(state, 0);
+    syncSlots(state);
+    syncNameWidgets(state);
+    syncPortLabels(state);
+    fitNode(state);
+
+    // 通知下游节点更新
+    try {
+        notifyDownstreamAll(node);
+    } catch (_e) {}
+
+    markCanvasDirty();
+
+    xpipeLog("refreshPortStatus.completed", {
+        node: debugNode(node),
+        names: compactSlots(state.names),
+        types: compactSlots(state.types),
+    });
+}
+function notifyDownstreamAll(node) {
+    if (!node) return;
+    for (var slot = 1; slot <= PIPE_SLOTS; slot++) {
+        try {
+            notifyDownstream(node, slot);
+        } catch (_e) {}
+    }
+}
 function nameWidgetLabel(slot) {
     return txf("name_label", "Name {slot}", { slot: slot });
 }
@@ -2456,8 +2494,8 @@ function ensureTitleButtons(node) {
     var wrap = document.createElement("div");
     wrap.className = "xpipe-title-button-wrap";
 
-    var row = document.createElement("div");
-    row.className = "xpipe-title-button-row";
+    var row1 = document.createElement("div");
+    row1.className = "xpipe-title-button-row";
 
     var bundleButton = document.createElement("button");
     bundleButton.type = "button";
@@ -2485,25 +2523,44 @@ function ensureTitleButtons(node) {
             markCanvasDirty();
         });
 
-    row.appendChild(bundleButton);
-    row.appendChild(valueButton);
-    wrap.appendChild(row);
+    row1.appendChild(bundleButton);
+    row1.appendChild(valueButton);
+
+    var row2 = document.createElement("div");
+    row2.className = "xpipe-title-button-row";
+
+    var refreshButton = document.createElement("button");
+    refreshButton.type = "button";
+    refreshButton.className = "xpipe-title-button";
+    refreshButton.textContent = refreshButtonLabel();
+    refreshButton.title = refreshButtonTooltip();
+    refreshButton.setAttribute("aria-label", refreshButton.title);
+    refreshButton.addEventListener("click", function () {
+            refreshPortStatus(node);
+        });
+
+    row2.appendChild(refreshButton);
+
+    wrap.appendChild(row1);
+    wrap.appendChild(row2);
     forwardTitlePanelWheel(wrap);
     forwardTitlePanelMiddleButton(wrap);
 
     node.addDOMWidget(HIDE_WIDGET_NAME, "custom", wrap, {
         serialize: false,
         getMinHeight: function () {
-            return TITLE_BUTTON_PANEL_HEIGHT;
+            return TITLE_BUTTON_PANEL_HEIGHT * 2 + 4;
         },
         margin: 0,
     });
 
     node.__xpipeTitleButtonPanel = {
         wrap: wrap,
-        row: row,
+        row1: row1,
+        row2: row2,
         bundleButton: bundleButton,
         valueButton: valueButton,
+        refreshButton: refreshButton,
     };
     updateTitleButtons(node);
     return node.__xpipeTitleButtonPanel;

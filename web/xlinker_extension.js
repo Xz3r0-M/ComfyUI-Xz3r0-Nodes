@@ -12,8 +12,14 @@ var HIDE_OUTPUT = 2;  // bit 1
 var HIDE_BOTH = 3;    // bits 0+1
 var HIDE_STATE_PROP = "xlinker_hide_links_state";
 var HIDE_STATE_WIDGET = "__xlinker_hide_links_state";
+var TITLE_SYNC_PROP = "xlinker_title_sync_enabled";
+var TITLE_SYNC_WIDGET = "__xlinker_title_sync_enabled";
+var PORT_SYNC_PROP = "xlinker_port_sync_enabled";
+var PORT_SYNC_WIDGET = "__xlinker_port_sync_enabled";
 var linkerLinksHidden = {};      // nodeKey -> state (0-3)
 var linkerLinksHighlighted = {}; // nodeKey -> bool
+var linkerTitleSyncEnabled = {}; // nodeKey -> bool
+var linkerPortSyncEnabled = {};  // nodeKey -> bool
 var canvasHooked = false;
 var HIDE_BUTTON_TEXTS = ["◀▶", "◁▶", "◀▷", "◁▷"];
 var HIGHLIGHT_BUTTON_TEXTS = ["☆", "★"];
@@ -82,6 +88,86 @@ function ensureHiddenStateWidget(node) {
     var widget = ensureHiddenWidget(node, HIDE_STATE_WIDGET, String(HIDE_NONE));
     removeHiddenInputSlot(node, HIDE_STATE_WIDGET);
     return widget;
+}
+
+function ensureTitleSyncWidget(node) {
+    var widget = ensureHiddenWidget(node, TITLE_SYNC_WIDGET, "false");
+    removeHiddenInputSlot(node, TITLE_SYNC_WIDGET);
+    return widget;
+}
+
+function ensurePortSyncWidget(node) {
+    var widget = ensureHiddenWidget(node, PORT_SYNC_WIDGET, "false");
+    removeHiddenInputSlot(node, PORT_SYNC_WIDGET);
+    return widget;
+}
+
+function titleSyncEnabled(node) {
+    var key = nodeKey(node);
+    var enabled = linkerTitleSyncEnabled[key];
+    if (enabled == null && node && node.properties) {
+        enabled = node.properties[TITLE_SYNC_PROP];
+        if (enabled != null) linkerTitleSyncEnabled[key] = enabled;
+    }
+    if (enabled == null) {
+        var widget = findWidget(node, TITLE_SYNC_WIDGET);
+        enabled = widget ? widget.value : null;
+        if (enabled != null && enabled !== "") linkerTitleSyncEnabled[key] = enabled;
+    }
+    return enabled === true || String(enabled) === "true";
+}
+
+function portSyncEnabled(node) {
+    var key = nodeKey(node);
+    var enabled = linkerPortSyncEnabled[key];
+    if (enabled == null && node && node.properties) {
+        enabled = node.properties[PORT_SYNC_PROP];
+        if (enabled != null) linkerPortSyncEnabled[key] = enabled;
+    }
+    if (enabled == null) {
+        var widget = findWidget(node, PORT_SYNC_WIDGET);
+        enabled = widget ? widget.value : null;
+        if (enabled != null && enabled !== "") linkerPortSyncEnabled[key] = enabled;
+    }
+    return enabled === true || String(enabled) === "true";
+}
+
+function setTitleSyncEnabled(node, enabled) {
+    var key = nodeKey(node);
+    var normalized = !!enabled;
+    node.properties = node.properties || {};
+    var widget = ensureTitleSyncWidget(node);
+    if (!normalized) {
+        delete linkerTitleSyncEnabled[key];
+        delete node.properties[TITLE_SYNC_PROP];
+        if (widget) widget.value = "false";
+    } else {
+        linkerTitleSyncEnabled[key] = normalized;
+        node.properties[TITLE_SYNC_PROP] = normalized;
+        if (widget) widget.value = "true";
+    }
+    if (node.graph && typeof node.graph.change === "function") {
+        node.graph.change();
+    }
+}
+
+function setPortSyncEnabled(node, enabled) {
+    var key = nodeKey(node);
+    var normalized = !!enabled;
+    node.properties = node.properties || {};
+    var widget = ensurePortSyncWidget(node);
+    if (!normalized) {
+        delete linkerPortSyncEnabled[key];
+        delete node.properties[PORT_SYNC_PROP];
+        if (widget) widget.value = "false";
+    } else {
+        linkerPortSyncEnabled[key] = normalized;
+        node.properties[PORT_SYNC_PROP] = normalized;
+        if (widget) widget.value = "true";
+    }
+    if (node.graph && typeof node.graph.change === "function") {
+        node.graph.change();
+    }
 }
 
 function t(key, fallback) {
@@ -221,19 +307,136 @@ function clickHighlightButton(node) {
     }
 }
 
+function clickTitleSyncButton(node) {
+    setTitleSyncEnabled(node, !titleSyncEnabled(node));
+    updateTitleButtons(node);
+    if (titleSyncEnabled(node)) {
+        syncTitleFromNoteText(node);
+    }
+    if (app.canvas && typeof app.canvas.setDirty === "function") {
+        app.canvas.setDirty(true, true);
+    }
+}
+
+function clickPortSyncButton(node) {
+    var wasEnabled = portSyncEnabled(node);
+    setPortSyncEnabled(node, !wasEnabled);
+    updateTitleButtons(node);
+    if (!wasEnabled) {
+        // 刚刚开启，同步端口名称
+        syncPortNamesFromNoteText(node);
+    } else {
+        // 刚刚关闭，还原原始端口名称
+        resetPortNames(node);
+    }
+    if (app.canvas && typeof app.canvas.setDirty === "function") {
+        app.canvas.setDirty(true, true);
+    }
+}
+
+function syncTitleFromNoteText(node) {
+    if (!node || !titleSyncEnabled(node)) return;
+    var noteWidget = findWidget(node, "note_text");
+    if (!noteWidget) return;
+    var text = String(noteWidget.value || "").trim();
+    if (text.length > 0) {
+        node.title = text;
+    }
+    if (node.graph && typeof node.graph.setDirtyCanvas === "function") {
+        node.graph.setDirtyCanvas(true, false);
+    }
+}
+
+function syncPortNamesFromNoteText(node) {
+    if (!node || !portSyncEnabled(node)) return;
+    var noteWidget = findWidget(node, "note_text");
+    if (!noteWidget) return;
+    var text = String(noteWidget.value || "").trim();
+
+    if (text.length > 0) {
+        // 同步输入端口名称
+        if (Array.isArray(node.inputs) && node.inputs.length > 0) {
+            var input = node.inputs[0];
+            if (input) {
+                input.label = text;
+            }
+        }
+
+        // 同步输出端口名称
+        if (Array.isArray(node.outputs) && node.outputs.length > 0) {
+            var output = node.outputs[0];
+            if (output) {
+                output.label = text;
+            }
+        }
+    }
+
+    if (node.graph && typeof node.graph.setDirtyCanvas === "function") {
+        node.graph.setDirtyCanvas(true, false);
+    }
+}
+
+function resetPortNames(node) {
+    if (!node) return;
+
+    // 恢复输入端口名称为原始名称
+    if (Array.isArray(node.inputs) && node.inputs.length > 0) {
+        var input = node.inputs[0];
+        if (input) {
+            delete input.label;
+        }
+    }
+
+    // 恢复输出端口名称为原始名称
+    if (Array.isArray(node.outputs) && node.outputs.length > 0) {
+        var output = node.outputs[0];
+        if (output) {
+            delete output.label;
+        }
+    }
+
+    if (node.graph && typeof node.graph.setDirtyCanvas === "function") {
+        node.graph.setDirtyCanvas(true, false);
+    }
+}
+
+function syncPortNamesFromLinks(node) {
+    // 此函数已不再使用，但保留以避免引用错误
+    syncPortNamesFromNoteText(node);
+}
+
 function buttonGroupTooltip(node, role) {
     if (role === "hide") {
         return tk(hideTitleKey(hiddenState(node)), "Show or hide links");
     }
-    return linkerLinksHighlighted[nodeKey(node)]
-        ? tk("stop_highlighting_links", "Stop highlighting links")
-        : tk("highlight_links", "Highlight links");
+    if (role === "highlight") {
+        return linkerLinksHighlighted[nodeKey(node)]
+            ? tk("stop_highlighting_links", "Stop highlighting links")
+            : tk("highlight_links", "Highlight links");
+    }
+    if (role === "title_sync") {
+        return titleSyncEnabled(node)
+            ? tk("title_sync_enabled", "Title sync enabled")
+            : tk("title_sync_disabled", "Title sync disabled");
+    }
+    if (role === "port_sync") {
+        return portSyncEnabled(node)
+            ? tk("port_sync_enabled", "Port sync enabled")
+            : tk("port_sync_disabled", "Port sync disabled");
+    }
+    return "";
 }
 function hideButtonLabel() {
     return tk("button_links", "Links");
 }
 function highlightButtonLabel() {
     return tk("button_highlight", "Highlight");
+}
+function titleSyncButtonLabel() {
+    return tk("button_title_sync", "Title");
+}
+function portSyncButtonLabel() {
+    return tk("button_port_sync", "Port");
 }
 
 function ensureButtonGroupStyles() {
@@ -248,6 +451,9 @@ function ensureButtonGroupStyles() {
         "  padding: 0 " + BUTTON_GROUP_MARGIN + "px;",
         "  color: var(--input-text, #ddd);",
         "  background: transparent;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: " + BUTTON_GROUP_GAP + "px;",
         "}",
         ".xlinker-button-row {",
         "  display: flex;",
@@ -342,13 +548,15 @@ function createButtonGroupPanel(node) {
     if (!node || typeof document === "undefined") return null;
     ensureButtonGroupStyles();
     ensureHiddenStateWidget(node);
+    ensureTitleSyncWidget(node);
+    ensurePortSyncWidget(node);
 
     var wrap = document.createElement("div");
     wrap.className = "xlinker-button-group";
 
-    var row = document.createElement("div");
-    row.className = "xlinker-button-row";
-    wrap.appendChild(row);
+    var row1 = document.createElement("div");
+    row1.className = "xlinker-button-row";
+    wrap.appendChild(row1);
 
     var hideButton = document.createElement("button");
     hideButton.type = "button";
@@ -371,8 +579,35 @@ function createButtonGroupPanel(node) {
         clickHighlightButton(node);
     });
 
-    row.appendChild(hideButton);
-    row.appendChild(highlightButton);
+    row1.appendChild(hideButton);
+    row1.appendChild(highlightButton);
+
+    var row2 = document.createElement("div");
+    row2.className = "xlinker-button-row";
+    wrap.appendChild(row2);
+
+    var titleSyncButton = document.createElement("button");
+    titleSyncButton.type = "button";
+    titleSyncButton.className = "xlinker-button";
+    titleSyncButton.textContent = titleSyncButtonLabel();
+    titleSyncButton.title = buttonGroupTooltip(node, "title_sync");
+    titleSyncButton.setAttribute("aria-label", titleSyncButton.title);
+    titleSyncButton.addEventListener("click", function () {
+        clickTitleSyncButton(node);
+    });
+
+    var portSyncButton = document.createElement("button");
+    portSyncButton.type = "button";
+    portSyncButton.className = "xlinker-button";
+    portSyncButton.textContent = portSyncButtonLabel();
+    portSyncButton.title = buttonGroupTooltip(node, "port_sync");
+    portSyncButton.setAttribute("aria-label", portSyncButton.title);
+    portSyncButton.addEventListener("click", function () {
+        clickPortSyncButton(node);
+    });
+
+    row2.appendChild(titleSyncButton);
+    row2.appendChild(portSyncButton);
 
     forwardPanelWheel(wrap);
     forwardPanelMiddleButton(wrap);
@@ -381,9 +616,9 @@ function createButtonGroupPanel(node) {
         node.addDOMWidget(BUTTON_GROUP, "custom", wrap, {
             serialize: false,
             getMinHeight: function () {
-                return BUTTON_GROUP_HEIGHT;
+                return BUTTON_GROUP_HEIGHT * 2 + BUTTON_GROUP_GAP;
             },
-            margin: 0,
+            margin: 4,
         });
     }
 
@@ -391,6 +626,8 @@ function createButtonGroupPanel(node) {
         wrap: wrap,
         hideButton: hideButton,
         highlightButton: highlightButton,
+        titleSyncButton: titleSyncButton,
+        portSyncButton: portSyncButton,
     };
     return node.__xlinkerButtonPanel;
 }
@@ -409,16 +646,26 @@ function updateButtonGroupWidget(node) {
     var key = nodeKey(node);
     var hideState = hiddenState(node);
     var highlightOn = !!linkerLinksHighlighted[key];
+    var titleSyncOn = titleSyncEnabled(node);
+    var portSyncOn = portSyncEnabled(node);
 
     panel.hideButton.textContent = hideButtonLabel() + " " + HIDE_BUTTON_TEXTS[hideState];
     panel.highlightButton.textContent = highlightButtonLabel() + " "
         + HIGHLIGHT_BUTTON_TEXTS[highlightOn ? 1 : 0];
+    panel.titleSyncButton.textContent = titleSyncButtonLabel();
+    panel.portSyncButton.textContent = portSyncButtonLabel();
     panel.hideButton.title = buttonGroupTooltip(node, "hide");
     panel.highlightButton.title = buttonGroupTooltip(node, "highlight");
+    panel.titleSyncButton.title = buttonGroupTooltip(node, "title_sync");
+    panel.portSyncButton.title = buttonGroupTooltip(node, "port_sync");
     panel.hideButton.setAttribute("aria-label", panel.hideButton.title);
     panel.highlightButton.setAttribute("aria-label", panel.highlightButton.title);
+    panel.titleSyncButton.setAttribute("aria-label", panel.titleSyncButton.title);
+    panel.portSyncButton.setAttribute("aria-label", panel.portSyncButton.title);
     applyButtonVisual(panel.hideButton, hideState !== HIDE_NONE);
     applyButtonVisual(panel.highlightButton, highlightOn);
+    applyButtonVisual(panel.titleSyncButton, titleSyncOn);
+    applyButtonVisual(panel.portSyncButton, portSyncOn);
 }
 
 
@@ -512,8 +759,28 @@ app.registerExtension({
             origOnCreated && origOnCreated.apply(this, arguments);
             if (typeof this.setSize === "function") {
                 var cs = this.computeSize();
-                this.setSize([Math.max(cs[0], 200), Math.max(cs[1], 60)]);
+                this.setSize([Math.max(cs[0], 200), Math.max(cs[1], 80)]);
             }
+            // 监听 note_text widget 的变化
+            var self = this;
+            var noteWidget = findWidget(this, "note_text");
+            if (noteWidget) {
+                var origCallback = noteWidget.callback;
+                noteWidget.callback = function () {
+                    if (origCallback) origCallback.apply(this, arguments);
+                    syncTitleFromNoteText(self);
+                    syncPortNamesFromNoteText(self);
+                };
+            }
+        };
+
+        // 监听连接变化事件
+        var origOnConnectionsChange = nodeType.prototype.onConnectionsChange;
+        nodeType.prototype.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+            if (origOnConnectionsChange) {
+                origOnConnectionsChange.apply(this, arguments);
+            }
+            // 连接变化时不需要特殊处理，端口名称同步基于 note_text
         };
 
     },
@@ -535,6 +802,8 @@ app.registerExtension({
         var key = nodeKey(node);
         delete linkerLinksHidden[key];
         delete linkerLinksHighlighted[key];
+        delete linkerTitleSyncEnabled[key];
+        delete linkerPortSyncEnabled[key];
         delete node.__xlinkerButtonPanel;
     },
 });

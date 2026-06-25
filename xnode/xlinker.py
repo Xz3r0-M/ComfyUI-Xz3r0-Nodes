@@ -77,8 +77,8 @@ class XLinker(io.ComfyNode):
     @classmethod
     def execute(
         cls,
-        value: Any = None,
+        any_input: Any = None,
         note_text: str = "",
     ) -> io.NodeOutput:
         """透传输入值，笔记文本不参与计算。"""
-        return io.NodeOutput(value)
+        return io.NodeOutput(any_input)
