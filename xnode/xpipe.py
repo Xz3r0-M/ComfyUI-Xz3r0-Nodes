@@ -3,11 +3,11 @@
 ==============
 
 这个模块提供 XPipe 管道束节点：把多路任意类型数据收束成一根线传输，
-同时保留 20 路独立输出端口；输入端口由官方 Autogrow 动态增长。
+同时保留 20 路独立输入与对应输出端口。
 
 设计要点：
     1. 1 路数据束（xpipe_out -> xpipe_in）在管道束节点之间传输全部数据组
-    2. 最多 20 路 Autogrow 输入端口与对应输出端口
+    2. 20 路固定 MatchType 输入端口与对应输出端口，类型自动同步
     3. 合并语义为「单独输入覆盖束」：某槽位连了单独输入就用它，
        否则回退到数据束里的同槽位值
     4. port_names 为序列化的 JSON 名称表，由前端命名面板管理，
@@ -49,18 +49,6 @@ class XPipe(io.ComfyNode):
             )
             for index in range(1, PIPE_SLOTS + 1)
         ]
-        value_template = io.Autogrow.TemplateNames(
-            input=io.AnyType.Input(
-                "value",
-                optional=True,
-                tooltip=(
-                    "Slot input (optional, accepts any data). Overrides "
-                    "the same slot from the bundle when present."
-                ),
-            ),
-            names=[f"value_{index}" for index in range(1, PIPE_SLOTS + 1)],
-            min=0,
-        )
 
         inputs: list[Any] = [
             XPipeBundle.Input(
@@ -72,16 +60,21 @@ class XPipe(io.ComfyNode):
                     "slot input still overrides the same position."
                 ),
             ),
-            io.Autogrow.Input(
-                "values",
-                template=value_template,
-                optional=True,
-                tooltip=(
-                    "Autogrowing data inputs. Each connected slot "
-                    "overrides the same slot from the bundle."
-                ),
-            ),
         ]
+        # 20 路固定 MatchType 输入，复用同名 templates 以自动同步输出类型
+        for index, template in enumerate(templates, start=1):
+            inputs.append(
+                io.MatchType.Input(
+                    f"value_{index}",
+                    template=template,
+                    optional=True,
+                    tooltip=(
+                        f"Slot {index} input (optional, accepts any data). "
+                        "Overrides the same slot from the bundle "
+                        "when present."
+                    ),
+                ),
+            )
         inputs.append(
             io.String.Input(
                 "port_names",
@@ -119,10 +112,10 @@ class XPipe(io.ComfyNode):
             display_name="XPipe",
             description=(
                 "Pipe bundle node: route up to 20 any-type data groups "
-                "through a single bundle wire while keeping autogrowing "
-                "inputs and matching visible outputs. Per-slot inputs "
-                "override the bundle; "
-                "port names are customizable and travel with the bundle."
+                "through a single bundle wire. Input/output slot types "
+                "auto-match via MatchType; per-slot inputs override the "
+                "bundle; port names are customizable and travel with "
+                "the bundle."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=inputs,
@@ -195,44 +188,19 @@ class XPipe(io.ComfyNode):
         return names
 
     @classmethod
-    def _extract_autogrow_values(
-        cls,
-        values: Any,
-        legacy_values: dict[str, Any],
-    ) -> list[Any]:
-        """
-        归一化 Autogrow 或旧式 value_N 输入，始终返回 20 个槽位。
-
-        Autogrow 运行时会把 `values.value_1` 这类前端槽位折叠为
-        `values={"value_1": ...}`；旧测试或旧 prompt 可能仍传入
-        `value_1=...`，这里一并兼容。
-        """
-        normalized = [None] * PIPE_SLOTS
-        if isinstance(values, dict):
-            for index in range(PIPE_SLOTS):
-                key = f"value_{index + 1}"
-                if key in values:
-                    normalized[index] = values[key]
-        for index in range(PIPE_SLOTS):
-            key = f"value_{index + 1}"
-            if key in legacy_values and legacy_values[key] is not None:
-                normalized[index] = legacy_values[key]
-        return normalized
-
-    @classmethod
     def execute(
         cls,
         xpipe_in: Any = None,
-        values: Any = None,
         port_names: str = "[]",
-        **legacy_values: Any,
+        **kwargs: Any,
     ) -> io.NodeOutput:
         """
         执行管道束合并与透传。
 
         工作流程：
             1. 解析名称表与 xpipe_in 数据束回退值
-            2. 逐槽合并：单独输入非 None 则覆盖，否则取数据束同槽位值
+            2. 逐槽合并：单独输入（value_1..value_20）非 None 则覆盖，
+               否则取数据束同槽位值
             3. 打包新的数据束（values + names）
             4. 返回数据束 + 20 路个体输出
         """
@@ -243,9 +211,10 @@ class XPipe(io.ComfyNode):
             for index in range(PIPE_SLOTS)
         ]
         base = cls._extract_base_values(xpipe_in)
-        values_in = cls._extract_autogrow_values(values, legacy_values)
         outs = [
-            values_in[index] if values_in[index] is not None else base[index]
+            kwargs.get(f"value_{index + 1}", None)
+            if kwargs.get(f"value_{index + 1}", None) is not None
+            else base[index]
             for index in range(PIPE_SLOTS)
         ]
         pipe_out = {

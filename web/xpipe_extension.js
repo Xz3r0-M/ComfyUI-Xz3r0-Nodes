@@ -18,8 +18,14 @@ var META_WIDGET = "xpipe_ui_state";
 var NAMES_PROP = "xpipe_names";
 var MANUAL_PROP = "xpipe_manual";
 var TYPES_PROP = "xpipe_types";
-var WARNING_COLOR = "#ff6a3d";
-var WARNING_GLOW = "rgba(255, 106, 61, 0.7)";
+var WARNING_COLOR = "#1a1a1a";
+var WARNING_GLOW = "rgba(255, 15, 15, 0.95)";
+var WARNING_BREATH_SPEED = 0.012;
+function warningGlowBlur() {
+    var t = Date.now() * WARNING_BREATH_SPEED;
+    var breath = Math.sin(t) * 0.5 + 0.5;
+    return 3 + breath * 8;
+}
 var HIDE_BUTTON_TEXTS = ["◀▶", "◁▶", "◀▷", "◁▷"];
 var HIDE_WIDGET_NAME = "xpipe_link_visibility";
 var VALUE_HIDE_WIDGET_NAME = "xpipe_value_link_visibility";
@@ -1889,9 +1895,9 @@ function outputHasWarning(node, outputIndex) {
 }
 function drawWarningOutputRings(node, ctx) {
     if (!ctx || !isXPipe(node) || !node.outputs) return;
-    var scale = app.canvas && app.canvas.ds ? app.canvas.ds.scale || 1 : 1;
-    var lineWidth = Math.max(1.5, 2.5 / scale);
-    var radius = Math.max(6, 7 / scale);
+    var lineWidth = 2.5;
+    var radius = 7;
+    var glowBlur = warningGlowBlur();
     for (var i = 0; i < node.outputs.length; i++) {
         var output = node.outputs[i];
         if (!valueSlotNumber(output && output.name) || !outputHasWarning(node, i)) continue;
@@ -1904,10 +1910,12 @@ function drawWarningOutputRings(node, ctx) {
         ctx.strokeStyle = WARNING_COLOR;
         ctx.lineWidth = lineWidth;
         ctx.shadowColor = WARNING_GLOW;
-        ctx.shadowBlur = 5 / scale;
         ctx.beginPath();
         ctx.arc(pos[0], pos[1], radius, 0, Math.PI * 2);
-        ctx.stroke();
+        // 三层叠加叠出厚辉光
+        ctx.shadowBlur = glowBlur * 1.8; ctx.stroke();
+        ctx.shadowBlur = glowBlur;       ctx.stroke();
+        ctx.shadowBlur = glowBlur * 0.4; ctx.stroke();
         ctx.restore();
     }
 }
@@ -2675,11 +2683,18 @@ function installCanvasHooks() {
             return;
         }
         var args = Array.prototype.slice.call(arguments);
-        args[6] = WARNING_COLOR;
+        var baseBlur = warningGlowBlur();
         ctx.save();
         ctx.shadowColor = WARNING_GLOW;
-        ctx.shadowBlur = 6 / (this.ds && this.ds.scale ? this.ds.scale : 1);
+        // 底层：白色实线 + 三层红光辉光，铺满整条线
+        args[6] = "#ffffff";
+        ctx.shadowBlur = baseBlur * 1.8; origRenderLink && origRenderLink.apply(this, args);
+        ctx.shadowBlur = baseBlur;        origRenderLink && origRenderLink.apply(this, args);
+        ctx.shadowBlur = baseBlur * 0.4; origRenderLink && origRenderLink.apply(this, args);
+        // 上层：黑色虚线覆盖，形成黑白相间
+        args[6] = WARNING_COLOR;
         if (ctx.setLineDash) ctx.setLineDash([8, 5]);
+        ctx.shadowBlur = 0;
         origRenderLink && origRenderLink.apply(this, args);
         ctx.restore();
     };
