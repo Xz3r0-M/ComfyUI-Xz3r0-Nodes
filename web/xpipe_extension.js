@@ -492,6 +492,8 @@ function removeValueOutput(node, slot) {
     if (!node || !Array.isArray(node.outputs)) return;
     var index = slotIndexOfName(node.outputs, "value_" + slot);
     if (index < 0) return;
+    var output = node.outputs[index];
+    if (output && slotLinkIds(output).length > 0) return;
     if (typeof node.removeOutput === "function") {
         node.removeOutput(index);
     } else {
