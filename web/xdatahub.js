@@ -95,7 +95,6 @@ let uiLocaleFallback = {};
 let uiLocaleApplySeq = 0;
 let currentUiLocale = "en";
 const uiLocaleCache = new Map();
-let interruptObserverInstalled = false;
 let localeSyncInstalled = false;
 let edgePeekEnabled = false;
 const bridgedNodeRequests = new Map();
@@ -135,7 +134,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260619-4";
+const XDATAHUB_ASSET_VER = "20260619-6";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -642,40 +641,6 @@ function iconUrl(name) {
     return `/extensions/ComfyUI-Xz3r0-Nodes/icons/${name}.svg`;
 }
 
-function toRequestUrl(input) {
-    if (typeof input === "string" || input instanceof URL) {
-        return String(input);
-    }
-    if (input && typeof input === "object" && "url" in input) {
-        return String(input.url || "");
-    }
-    return "";
-}
-
-function resolveRequestMethod(input, init) {
-    const initMethod = String(init?.method || "").trim().toUpperCase();
-    if (initMethod) {
-        return initMethod;
-    }
-    if (input && typeof input === "object" && "method" in input) {
-        return String(input.method || "").trim().toUpperCase();
-    }
-    return "GET";
-}
-
-function isInterruptRequest(input, init) {
-    const requestUrl = toRequestUrl(input);
-    if (!requestUrl) {
-        return false;
-    }
-    try {
-        const url = new URL(requestUrl, window.location.origin);
-        return url.pathname === "/interrupt"
-            && resolveRequestMethod(input, init) === "POST";
-    } catch {
-        return false;
-    }
-}
 
 function notifyInterruptRequested() {
     try {
@@ -714,19 +679,6 @@ function installLockEventBridge() {
     lockEventBridgeInstalled = true;
 }
 
-function installInterruptObserver() {
-    if (interruptObserverInstalled || typeof window.fetch !== "function") {
-        return;
-    }
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = function wrappedFetch(input, init) {
-        if (isInterruptRequest(input, init)) {
-            notifyInterruptRequested();
-        }
-        return originalFetch(input, init);
-    };
-    interruptObserverInstalled = true;
-}
 
 function iconHtml(name, label, className = "xz3r0-icon") {
     return `<img class="${className}" src="${iconUrl(name)}" alt="${label}" aria-hidden="true" draggable="false">`;
@@ -2430,7 +2382,6 @@ const XDataHub = {
         const dataFrame = document.createElement("iframe");
         dataFrame.className = "xz3r0-datahub-window-frame";
         dataFrame.classList.add("active");
-        dataFrame.allowFullscreen = true;
         dataFrame.setAttribute("allow", "fullscreen");
         dataFrame.src = (
             "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app_v2.html"
@@ -3745,7 +3696,7 @@ const XDataHub = {
     }
 };
 xdataHubRef = XDataHub;
-installInterruptObserver();
+api.addEventListener("execution_interrupted", notifyInterruptRequested);
 installLockEventBridge();
 installComfyThemeObserver();
 

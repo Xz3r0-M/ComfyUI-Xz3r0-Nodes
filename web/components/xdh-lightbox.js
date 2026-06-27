@@ -2028,8 +2028,8 @@ export class XdhLightbox extends BaseElement {
                 .fs-side-btn {
                     position: absolute;
                     top: 50%;
-                    width: 48px;
-                    height: 48px;
+                    width: 36px;
+                    height: 36px;
                     padding: 0;
                     border: none;
                     border-radius: 50%;
@@ -2038,24 +2038,16 @@ export class XdhLightbox extends BaseElement {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    box-shadow:
-                        var(--lb-shadow-ring),
-                        0 2px 8px rgba(0, 0, 0, 0.08);
+                    box-shadow: var(--lb-shadow-ring);
                     opacity: 0;
                     transform: translateY(-50%) scale(0.9);
                     transition:
-                        transform 0.24s cubic-bezier(0.4, 0, 0.2, 1),
-                        opacity 0.2s ease,
-                        background 0.15s ease;
+                        background 0.15s ease,
+                        transform 0.15s ease,
+                        box-shadow 0.15s ease;
                     pointer-events: none;
                     z-index: 10;
                     cursor: pointer;
-                }
-
-                :host-context(body[data-theme="light"]) .fs-side-btn {
-                    box-shadow:
-                        var(--lb-shadow-ring),
-                        0 2px 8px rgba(0, 0, 0, 0.06);
                 }
 
                 .fs-prev-edge-btn {
@@ -2073,8 +2065,21 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-side-btn:hover {
-                    background: var(--lb-btn-bg-hover);
-                    transform: translateY(-50%) scale(1.08);
+                    background: var(--lb-surface);
+                    transform: translateY(-50%) scale(1.05);
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.08);
+                }
+
+                :host-context(body[data-theme="light"]) .fs-side-btn:hover {
+                    box-shadow:
+                        var(--lb-shadow-ring),
+                        0 2px 8px rgba(0, 0, 0, 0.06);
+                }
+
+                .fs-stage[data-active="true"] .fs-side-btn:hover {
+                    transform: translateY(-50%) scale(1.05);
                 }
 
                 .fs-side-btn:focus-visible {
@@ -2083,7 +2088,7 @@ export class XdhLightbox extends BaseElement {
                 }
 
                 .fs-side-btn:disabled {
-                    opacity: 0.24;
+                    opacity: 0.32;
                     cursor: not-allowed;
                     transform: translateY(-50%) scale(1);
                 }
@@ -2790,8 +2795,8 @@ export class XdhLightbox extends BaseElement {
                     }
 
                     .fs-side-btn {
-                        width: 40px;
-                        height: 40px;
+                        width: 32px;
+                        height: 32px;
                     }
 
                     .fs-prev-edge-btn {
@@ -2910,14 +2915,14 @@ export class XdhLightbox extends BaseElement {
                         data-lightbox-action="prev"
                         data-tooltip="${t("lightbox.prev")}"
                         aria-label="${t("lightbox.prev")}">
-                    ${icon("arrow-left", 18)}
+                    ${icon("arrow-left", 16)}
                 </button>
                 <button class="fs-side-btn fs-next-edge-btn xdh-tooltip xdh-tooltip-left"
                         type="button"
                         data-lightbox-action="next"
                         data-tooltip="${t("lightbox.next")}"
                         aria-label="${t("lightbox.next")}">
-                    ${icon("arrow-right", 18)}
+                    ${icon("arrow-right", 16)}
                 </button>
 
                 <!-- Main Media Area -->

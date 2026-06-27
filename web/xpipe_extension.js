@@ -457,7 +457,7 @@ function cloneSlotDef(slot) {
 }
 function createValueInputDef(state, slot) {
     var def = cloneSlotDef(state.slotDefs.inputs[slot]);
-    def.name = "values.value_" + slot;
+    def.name = "value_" + slot;
     def.display_name = String(slot);
     def.label = formatInputPortLabel(slot, state.names && state.names[slot - 1]);
     def.localized_name = def.label;
@@ -794,8 +794,8 @@ function normalizeAutogrowValueInputs(node) {
     for (var i = 0; i < node.inputs.length; i++) {
         var input = node.inputs[i];
         var slot = valueSlotNumber(input && input.name);
-        if (!slot || String(input.name).indexOf(".") >= 0) continue;
-        input.name = "values.value_" + slot;
+        if (!slot) continue;
+        input.name = "value_" + slot;
         input.display_name = String(slot);
     }
 }

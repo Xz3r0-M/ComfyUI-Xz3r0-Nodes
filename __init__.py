@@ -34,6 +34,7 @@ from .xnode.xanytostring import XAnyToString
 from .xnode.xcontrolpanel import XControlPanel
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
+from .xnode.ximageresize import XImageResize
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xlinker import XLinker
 from .xnode.xmath import XMath
@@ -48,7 +49,6 @@ from .xnode.xstringwrap import XStringWrap
 # File-Processing
 
 from .xnode.xaudiosave import XAudioSave
-from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
 from .xnode.xlatentload import XLatentLoad
 from .xnode.xlatentsave import XLatentSave
@@ -104,6 +104,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XControlPanel,
     XDateTimeString,
     XImageCompare,
+    XImageResize,
     XKleinRefConditioning,
     XLinker,
     XMath,
@@ -116,7 +117,6 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     # =============================================
     # File-Processing
     XAudioSave,
-    XImageResize,
     XImageSave,
     XLatentLoad,
     XLatentSave,
