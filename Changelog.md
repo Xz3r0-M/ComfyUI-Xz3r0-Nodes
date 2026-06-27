@@ -75,6 +75,7 @@
     - 跟随 ComfyUI
         - 大体上配色接近 ComfyUI，但某些组件的颜色不完全准确一致，因为组件和颜色变量太多，我懒得改🤣
         - 让 XDataHub 以及 相关配套节点与 ComfyUI 视觉上更加统一
+- ComfyUI 设置面板 Xz3r0 扩展设置页中现在使用 2 个开关分别控制 是否启用 XDataHub 以及 入口按钮显示
 - 修复和优化一些小问题
 
 ### 5. 🛠️ 增强 `XImageCompare` 图像和遮罩 A/B 对比节点
@@ -187,6 +188,7 @@
     - Follow ComfyUI
         - The color scheme generally matches ComfyUI, though some component colors may not be perfectly consistent — there are too many components and color variables, and I'm too lazy to adjust them all 🤣
         - Makes XDataHub and its related companion nodes visually more unified with ComfyUI
+- In the Xz3r0 extension settings panel of ComfyUI, there are now two separate toggles to control whether XDataHub is enabled and whether the entry button is displayed
 - Fixed and optimized various minor issues
 
 ### 5. 🛠️ Enhanced `XImageCompare` Image & Mask A/B Comparison Node
