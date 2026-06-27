@@ -43,6 +43,8 @@ var XPIPE_LOG_PREFIX = "[XPipe]";
 var uiLocalePrimary = null;
 var uiLocaleFallback = null;
 var i18nCache = {};
+var localeSyncInstalled = false;
+var LOCALE_SYNC_INTERVAL_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -199,6 +201,20 @@ function applyUiLocale() {
             } catch (_e) { /* ignore */ }
         });
 }
+
+function installLocaleSync() {
+    if (localeSyncInstalled) return;
+    localeSyncInstalled = true;
+    var lastLocale = null;
+    setInterval(function () {
+        var nextLocale = resolveComfyLocale();
+        if (nextLocale && nextLocale !== lastLocale) {
+            lastLocale = nextLocale;
+            applyUiLocale();
+        }
+    }, LOCALE_SYNC_INTERVAL_MS);
+}
+
 function isXPipeBundle(data) {
     // 验证是否为 XPipe 管道束格式
     return !!(data && typeof data === "object" && data.__xpipe_bundle__ === true);
@@ -2865,6 +2881,7 @@ app.registerExtension({
 
     async setup() {
         applyUiLocale();
+        installLocaleSync();
         xpipeLog("setup.debugEnabled", {
             debug: xpipeDebugEnabled(),
             hint: "Filter console by [XPipe]. Set window.XPIPE_DEBUG=false to silence.",

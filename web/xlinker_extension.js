@@ -31,6 +31,8 @@ var BUTTON_GROUP_STYLE_ID = "xlinker-button-group-style";
 var uiLocalePrimary = null;
 var uiLocaleFallback = null;
 var i18nCache = {};
+var localeSyncInstalled = false;
+var LOCALE_SYNC_INTERVAL_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -236,6 +238,19 @@ function applyUiLocale() {
                 }
             }
         });
+}
+
+function installLocaleSync() {
+    if (localeSyncInstalled) return;
+    localeSyncInstalled = true;
+    var lastLocale = null;
+    setInterval(function () {
+        var nextLocale = resolveComfyLocale();
+        if (nextLocale && nextLocale !== lastLocale) {
+            lastLocale = nextLocale;
+            applyUiLocale();
+        }
+    }, LOCALE_SYNC_INTERVAL_MS);
 }
 
 function hiddenState(node) {
@@ -749,6 +764,7 @@ app.registerExtension({
     async setup() {
         installCanvasHooks();
         applyUiLocale();
+        installLocaleSync();
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
