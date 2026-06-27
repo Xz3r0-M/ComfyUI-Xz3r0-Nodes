@@ -35,6 +35,18 @@ var localeSyncInstalled = false;
 var LOCALE_SYNC_INTERVAL_MS = 1000;
 
 // ---------------------------------------------------------------------------
+// 类型不兼容视觉提示（参照 XPipe 警告渲染模式）
+// ---------------------------------------------------------------------------
+var WARNING_COLOR = "#1a1a1a";
+var WARNING_GLOW = "rgba(255, 15, 15, 0.95)";
+var WARNING_BREATH_SPEED = 0.012;
+function warningGlowBlur() {
+    var t = Date.now() * WARNING_BREATH_SPEED;
+    var breath = Math.sin(t) * 0.5 + 0.5;
+    return 3 + breath * 8;
+}
+
+// ---------------------------------------------------------------------------
 // 工具
 // ---------------------------------------------------------------------------
 function activeGraph() {
@@ -44,6 +56,29 @@ function activeGraph() {
 }
 function nodeKey(node) {
     return String(node && node.id);
+}
+function getNodeByIdInGraph(graph, id) {
+    if (!graph || id == null) return null;
+    return graph.getNodeById
+        ? graph.getNodeById(id)
+        : ((graph._nodes || graph.nodes || []).find(function (n) {
+            return n && n.id === id;
+        }) || null);
+}
+function getLinkInfo(linkId, graph) {
+    if (linkId == null || !graph) return null;
+    var links = graph.links || graph._links;
+    if (!links) return null;
+    if (links instanceof Map) return links.get(linkId) || null;
+    return links[linkId] || null;
+}
+function cleanType(value) {
+    if (Array.isArray(value)) value = value[0];
+    var type = value == null ? "" : String(value).trim();
+    return type && type !== "*" ? type : "";
+}
+function isXLinker(node) {
+    return !!(node && String(node.comfyClass || node.type || "") === NODE_CLASS);
 }
 function findWidget(node, name) {
     if (!node || !Array.isArray(node.widgets)) return null;
@@ -685,6 +720,119 @@ function updateButtonGroupWidget(node) {
 
 
 // ---------------------------------------------------------------------------
+// 类型不兼容警告检测
+// ---------------------------------------------------------------------------
+function getXLinkerLinkWarning(link, graph) {
+    if (!link || link.id == null) return null;
+    graph = graph || activeGraph();
+    if (!graph) return null;
+    var src = getNodeByIdInGraph(graph, link.origin_id);
+    if (!isXLinker(src) || !src.outputs) return null;
+    var output = src.outputs[link.origin_slot];
+    if (!output) return null;
+    var tgt = getNodeByIdInGraph(graph, link.target_id);
+    var input = tgt && tgt.inputs ? tgt.inputs[link.target_slot] : null;
+    if (!input) return null;
+
+    var outType = cleanType(output.type) || cleanType(link.type);
+    var inType = cleanType(input.type);
+    if (!outType || !inType || outType === inType) return null;
+
+    return {
+        source: src,
+        sourceSlot: link.origin_slot,
+        target: tgt,
+        outputType: outType,
+        inputType: inType,
+    };
+}
+function xlinkerOutputHasWarning(node) {
+    var output = node && node.outputs ? node.outputs[0] : null;
+    if (!output || !output.links) return false;
+    for (var i = 0; i < output.links.length; i++) {
+        if (getXLinkerLinkWarning(getLinkInfo(output.links[i], node.graph), node.graph)) {
+            return true;
+        }
+    }
+    return false;
+}
+function syncXLinkerOutputTypeFromInput(node) {
+    // 根据输入端实际连接的类型，被动同步输出端口类型。
+    // 用于处理上游节点（如 XPipe）静默改变输出类型时，
+    // XLinker 也能自动更新并显示警告效果。
+    //
+    // 性能：onDrawForeground 每帧触发，故此函数用快速路径避免
+    // 每帧 O(n) 遍历。仅当 link.type 与 output.type 不一致
+    // 时才进入慢路径（getNodeByIdInGraph 遍历节点列表）。
+    if (!isXLinker(node) || !node.graph || !node.inputs || !node.outputs) return;
+    var input = node.inputs[0];
+    var output = node.outputs[0];
+    if (!output) return;
+
+    if (!input || input.link == null) {
+        // 无输入连接：输出回退为通配符
+        if (output.type !== "*") {
+            output.type = "*";
+            syncLinkTypes(output, node.graph);
+        }
+        return;
+    }
+
+    var link = getLinkInfo(input.link, node.graph);
+    if (!link) return;
+
+    // 快速路径：link.type 已与 output.type 一致且非通配符 → 跳过
+    var linkType = link.type;
+    if (linkType && linkType !== "*" && linkType === output.type) return;
+
+    // 慢路径：解析源节点确定实际类型
+    var srcNode = getNodeByIdInGraph(node.graph, link.origin_id);
+    if (!srcNode || !srcNode.outputs) return;
+    var srcOutput = srcNode.outputs[link.origin_slot];
+    if (!srcOutput) return;
+    var srcType = srcOutput.type;
+    if (!srcType || srcType === "*") return;
+
+    if (output.type !== srcType) {
+        output.type = srcType;
+        syncLinkTypes(output, node.graph);
+    }
+}
+function syncLinkTypes(output, graph) {
+    // 将输出端口类型同步到所有下游链接的 type 元数据
+    if (!output || !output.links || !graph) return;
+    var newType = output.type;
+    for (var i = 0; i < output.links.length; i++) {
+        var outLink = getLinkInfo(output.links[i], graph);
+        if (outLink) outLink.type = newType;
+    }
+}
+function drawXLinkerWarningOutputRing(node, ctx) {
+    if (!ctx || !isXLinker(node) || !node.outputs) return;
+    if (!xlinkerOutputHasWarning(node)) return;
+    var output = node.outputs[0];
+    var lineWidth = 2.5;
+    var radius = 7;
+    var glowBlur = warningGlowBlur();
+    var pos = typeof node.getConnectionPos === "function"
+        ? node.getConnectionPos(false, 0)
+        : null;
+    if (pos && node.pos) pos = [pos[0] - node.pos[0], pos[1] - node.pos[1]];
+    else pos = output.pos || [node.size ? node.size[0] : 0, 35];
+    ctx.save();
+    ctx.strokeStyle = WARNING_COLOR;
+    ctx.lineWidth = lineWidth;
+    ctx.shadowColor = WARNING_GLOW;
+    ctx.beginPath();
+    ctx.arc(pos[0], pos[1], radius, 0, Math.PI * 2);
+    // 三层叠加叠出厚辉光
+    ctx.shadowBlur = glowBlur * 1.8; ctx.stroke();
+    ctx.shadowBlur = glowBlur;       ctx.stroke();
+    ctx.shadowBlur = glowBlur * 0.4; ctx.stroke();
+    ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // 连线隐藏 / 高亮判定
 // ---------------------------------------------------------------------------
 function isLinkerHiddenLink(link, graph) {
@@ -738,15 +886,39 @@ function installCanvasHooks() {
     app.canvas.renderLink = function (ctx, a, b, link) {
         var graph = this.graph || activeGraph();
         if (isLinkerHiddenLink(link, graph)) return;
-        if (isLinkerHighlightedLink(link, graph)) {
+
+        // 类型不兼容警告：白线 + 三层红光辉光 + 黑虚线
+        // 缩放处理由 origRenderLink 内部的 buildLinkRenderContext().scale
+        // 统一负责，此处使用与 XPipe 完全一致的固定值。
+        var warning = getXLinkerLinkWarning(link, graph);
+        if (warning) {
             var args = Array.prototype.slice.call(arguments);
+            var baseBlur = warningGlowBlur();
+            ctx.save();
+            ctx.shadowColor = WARNING_GLOW;
+            // 底层：白色实线 + 三层红光辉光，铺满整条线
+            args[6] = "#ffffff";
+            ctx.shadowBlur = baseBlur * 1.8; origRenderLink && origRenderLink.apply(this, args);
+            ctx.shadowBlur = baseBlur;        origRenderLink && origRenderLink.apply(this, args);
+            ctx.shadowBlur = baseBlur * 0.4; origRenderLink && origRenderLink.apply(this, args);
+            // 上层：黑色虚线覆盖，形成黑白相间
+            args[6] = WARNING_COLOR;
+            if (ctx.setLineDash) ctx.setLineDash([8, 5]);
+            ctx.shadowBlur = 0;
+            origRenderLink && origRenderLink.apply(this, args);
+            ctx.restore();
+            return;
+        }
+
+        if (isLinkerHighlightedLink(link, graph)) {
+            var args2 = Array.prototype.slice.call(arguments);
             var colors = ["red","orange","lime","cyan","magenta"];
             var cycle = 40, seg = cycle / colors.length;
-            for (var c = 0; c < colors.length; c++) {
-                args[6] = colors[c];
+            for (var c2 = 0; c2 < colors.length; c2++) {
+                args2[6] = colors[c2];
                 ctx.setLineDash([seg, cycle - seg]);
-                ctx.lineDashOffset = -c * seg;
-                origRenderLink && origRenderLink.apply(this, args);
+                ctx.lineDashOffset = -c2 * seg;
+                origRenderLink && origRenderLink.apply(this, args2);
             }
             ctx.setLineDash([]);
             return;
@@ -790,13 +962,57 @@ app.registerExtension({
             }
         };
 
-        // 监听连接变化事件
-        var origOnConnectionsChange = nodeType.prototype.onConnectionsChange;
-        nodeType.prototype.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
-            if (origOnConnectionsChange) {
-                origOnConnectionsChange.apply(this, arguments);
-            }
-            // 连接变化时不需要特殊处理，端口名称同步基于 note_text
+        // 监听连接变化事件，阻止 MatchType 系统自动断开不兼容的输出链接。
+        // 策略：在 withComfyMatchType → changeOutputType 执行之前，
+        // 抢先将输出类型设为目标值。changeOutputType 检测到类型已匹配
+        // 时会直接 return，跳过断开逻辑。这比拦截 disconnectInput 更可靠。
+        var installOnConnectionsHook = function () {
+            var origOnConnectionsChange = nodeType.prototype.onConnectionsChange;
+            nodeType.prototype.onConnectionsChange = function (type, slotIndex, isConnected, link, ioSlot) {
+                // 输入端变化时：抢先同步输出类型，让 changeOutputType 提前返回
+                if (type === 1 /* LiteGraph.INPUT */ && this.graph && this.outputs && this.outputs[0]) {
+                    var output = this.outputs[0];
+                    if (isConnected && link) {
+                        // 解析新连入链接的源类型，抢先赋值给输出
+                        var linkInfo = getLinkInfo(
+                            link && link.id != null ? link.id : link,
+                            this.graph
+                        );
+                        if (linkInfo) {
+                            var srcNode = getNodeByIdInGraph(this.graph, linkInfo.origin_id);
+                            if (srcNode && srcNode.outputs && srcNode.outputs[linkInfo.origin_slot]) {
+                                var srcType = srcNode.outputs[linkInfo.origin_slot].type;
+                                if (srcType && srcType !== "*") {
+                                    output.type = srcType;
+                                }
+                            }
+                        }
+                    } else if (!isConnected) {
+                        // 断开时回退为通配符
+                        output.type = "*";
+                    }
+                }
+
+                // 调用 ComfyUI 原始 MatchType 处理
+                // changeOutputType 发现 output.type 已等于 combinedType 时会直接 return
+                if (origOnConnectionsChange) {
+                    origOnConnectionsChange.apply(this, arguments);
+                }
+            };
+        };
+        // 推迟到下一个宏任务：此时 ComfyUI 的 MatchType 链已安装完成
+        setTimeout(installOnConnectionsHook, 0);
+
+        // 在节点绘制前景上：同步输出类型 + 叠加警告环
+        // 解决上游节点（如 XPipe）静默改变输出类型时，XLinker
+        // 无法通过 onConnectionsChange 感知的问题。
+        var origOnDrawForeground = nodeType.prototype.onDrawForeground;
+        nodeType.prototype.onDrawForeground = function (ctx) {
+            if (origOnDrawForeground) origOnDrawForeground.apply(this, arguments);
+            try {
+                syncXLinkerOutputTypeFromInput(this);
+                drawXLinkerWarningOutputRing(this, ctx);
+            } catch (_e) { /* ignore */ }
         };
 
     },

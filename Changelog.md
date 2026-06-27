@@ -1,5 +1,235 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.5.0
+
+<details>
+
+### 1. ⭐ 新增 `XControlPanel` 控制面板节点
+`♾️ Xz3r0/Workflow-Processing`
+- 该节点主要提供手动激活的功能
+- 当前包含功能：
+    - 重启 ComfyUI
+
+### 2. ⭐ 新增 `XLinker` 数据透传节点
+`♾️ Xz3r0/Workflow-Processing`
+- 与知名的 Set/Get 节点用法大致相同
+    - 主要区别是 XLinker 需要手动进行端口链接，这是我的设计决定，因为 Set/Get 节点自动连接方式有些弊端
+- 输入和输出数据透传端口
+    - 当输入端口更改了数据类型，其对应的输出端口不会自动断开其连接线，而是出现警告效果（连接线变为黑白相间以及边缘红色闪烁）
+- 文本输入框
+- 标题同步 按钮
+    - 启用时，自动将文本输入框内的内容作为节点的标题名称
+    - 默认为：关闭
+    - 按钮状态保存在工作流中
+- 端口名称同步 按钮
+    - 启用时，自动将文本输入框内的内容作为节点的输入和输出端口名称
+    - 默认为：关闭
+    - 按钮状态保存在工作流中
+- 隐藏端口连接线 按钮
+    - 不隐藏（默认）
+    - 仅隐藏 接收端口（左）连接线
+    - 仅隐藏 输出端口（右）连接线
+    - 全部隐藏
+    - 按钮状态保存在工作流中
+- 连接线高亮 按钮
+    - 连接线变为 5 段彩色
+    - 默认为：关闭
+    - 按钮状态不会保存
+        - 因为彩色效果会增加页面性能消耗，这是用来找问题的临时效果功能
+
+### 3. ⭐ 新增 `XPipe` 高级数据管道束节点
+`♾️ Xz3r0/Workflow-Processing`
+- 可能是 ComfyUI 目前（相对）最复杂的管道束节点
+- 与经典的 管道束节点 用法大致相同
+- 将 20 个透传输入输出端口的数据与名称进行打包传递的管道束端口
+    - 用于 XPipe 节点之间相互连接传递数据
+    - xpipe_in（接收）和 xpipe_out（发送）管道束端口
+- 20 个动态增减（视觉）的数据透传输入输出端口
+    - 端口在连接时端口名称自动命名
+        - 端口通过连接线进行连接时，会进行一次自动端口名称同步，该端口名称会同步为所连接的上游节点端口名称
+    - 支持连接 xpipe_in，以实现多个 XPipe 节点的管道束集合到单个 XPipe 节点进行分发
+    - 当输入端口更改了数据类型，其对应的输出端口不会自动断开其连接线，而是出现警告效果（连接线变为黑白相间以及边缘红色闪烁）
+- 20 个数据透传端口对应的名称输入栏
+    - 端口名称会自动同步对应的输入栏内容
+    - 输入栏手动输入的内容优先级高于自动命名
+    - 清空输入栏内容会退回自动命名
+- 隐藏管道束端口连接线 按钮
+    - 不隐藏（默认）
+    - 仅隐藏 xpipe_in 端口（左）连接线
+    - 仅隐藏 xpipe_out 端口（右）连接线
+    - 全部隐藏
+    - 按钮状态保存在工作流中
+- 隐藏 20 个端口连接线 按钮
+    - 不隐藏（默认）
+    - 仅隐藏 接收端口（左）连接线
+    - 仅隐藏 输出端口（右）连接线
+    - 全部隐藏
+    - 按钮状态保存在工作流中
+- 刷新 按钮
+    - 如果上游节点端口名称在已连接端口后进行了修改，导致名称不一致，可以使用刷新按钮进行手动同步
+- 目前 XPipe 的节点界面并非我设想的最好的方案（主要是端口名称显示和名称输入栏部分），因为 ComfyUI 的前端界面对自定义交互组件的限制和缺陷导致我原本设想的方案会出现一些无法解决的视觉问题，当前的节点界面为兼容性的妥协方案，效率会差一些，希望将来能实现我原本的方案☹️
+
+### 4. 🛠️ 增强和修复 `XDataHub` 数据中心
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- 新增 主题
+    - 跟随 ComfyUI
+        - 大体上配色接近 ComfyUI，但某些组件的颜色不完全准确一致，因为组件和颜色变量太多，我懒得改🤣
+        - 让 XDataHub 以及 相关配套节点与 ComfyUI 视觉上更加统一
+- 修复和优化一些小问题
+
+### 5. 🛠️ 增强 `XImageCompare` 图像和遮罩 A/B 对比节点
+`♾️ Xz3r0/Workflow-Processing`
+- 新增 实时预览功能
+    - 也就是采样器节点在生成图片过程中显示的阶段性预览图
+        - 现在把你的注意力全部都放在 XImageCompare !😍
+- 自定义界面组件颜色从沿用 XDataHub 主题颜色改为沿用 ComfyUI 主题颜色
+
+### 6. 🪛 调整 `XImageResize` 图像缩放节点
+`♾️ Xz3r0/Workflow-Processing`
+- 分类改为工作流处理 `♾️ Xz3r0/Workflow-Processing`
+
+### 7. 🛠️ 增强 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet`
+- 新增 遮罩区域 反色效果显示按钮
+    - 仅视觉显示，不影响实际选择应用的遮罩颜色
+
+### 8. 🛠️ 增强 `XMemoryCleanup` 内存显存资源占用清理节点
+`♾️ Xz3r0/Workflow-Processing`
+- 更新 文本和说明描述
+- 新增 手动清理按钮
+    - 3 种清理功能
+        - 清理所有模型
+        - 清理工作流节点结果缓存
+        - 清理所有模型 + 清理工作流节点结果缓存
+    - 与 ComfyUI-Manager 的手动清理按钮等效
+
+### 9. 🪛 调整 `XStringGet` 与 XDataHub 配套的 文本数据接收节点
+`♾️ Xz3r0/XDataHub`
+- 无内容时输出改为 `None`
+    - 以兼容 XAnyGate10 的递归功能判断（递归判断基于端口数据是否为：None）
+
+### 10. 🩹 修复 其他节点
+- 修复部分节点在 `Nodes 2.0` 的界面显示问题
+    - 我现在并不使用 Nodes 2.0 也不会专门对 2.0 进行节点测试
+    - 2.0 直到目前性能依然很差，问题依然不少，并且 2.0 的架构与 1.0 不一样，对于界面中拥有自定义组件的节点有时对于某些问题需要写 2 套代码分别处理 1.0 和 2.0，这简直就是折磨
+- 修复部分节点的小问题
+
+---
+
+### 1. ⭐ Added `XControlPanel` Control Panel Node
+`♾️ Xz3r0/Workflow-Processing`
+- This node primarily provides manually triggered functionality
+- Current features:
+    - Restart ComfyUI
+
+### 2. ⭐ Added `XLinker` Data Passthrough Node
+`♾️ Xz3r0/Workflow-Processing`
+- Usage is largely similar to the well-known Set/Get nodes
+    - The key difference is that XLinker requires manual port linking — this is my design decision, as the auto-connect approach of Set/Get nodes has certain drawbacks
+- Input and output data passthrough ports
+    - When an input port changes its data type, the corresponding output port does not automatically disconnect its link, but instead displays a warning effect (the link turns black-and-white striped with a red flashing border)
+- Text input field
+- Title Sync button
+    - When enabled, automatically uses the content of the text input field as the node's title
+    - Default: Disabled
+    - Button state is saved in the workflow
+- Port Name Sync button
+    - When enabled, automatically uses the content of the text input field as the node's input and output port names
+    - Default: Disabled
+    - Button state is saved in the workflow
+- Hide Port Links button
+    - Don't hide (default)
+    - Hide only input port (left) links
+    - Hide only output port (right) links
+    - Hide all
+    - Button state is saved in the workflow
+- Link Highlight button
+    - Links become 5-segment colored
+    - Default: Disabled
+    - Button state is not saved
+        - Because the colorful effect increases page performance consumption; this is a temporary diagnostic feature for troubleshooting
+
+### 3. ⭐ Added `XPipe` Advanced Data Pipe Bundle Node
+`♾️ Xz3r0/Workflow-Processing`
+- Possibly the most complex pipe bundle node currently (relatively) available in ComfyUI
+- Usage is largely similar to classic pipe bundle nodes
+- Pipe bundle ports that package and transmit the data and names of 20 passthrough input/output ports
+    - Used for connecting and transferring data between XPipe nodes
+    - xpipe_in (receive) and xpipe_out (send) pipe bundle ports
+- 20 dynamically expanding/collapsing (visual) data passthrough input/output ports
+    - Port names are auto-named upon connection
+        - When a port is connected via a link, an automatic port name sync occurs, and the port name syncs to the connected upstream node's port name
+    - Supports connecting to xpipe_in, enabling multiple XPipe nodes' pipe bundles to be aggregated into a single XPipe node for distribution
+    - When an input port changes its data type, the corresponding output port does not automatically disconnect its link, but instead displays a warning effect (the link turns black-and-white striped with a red flashing border)
+- 20 name input fields corresponding to the data passthrough ports
+    - Port names automatically sync with the corresponding input field content
+    - Manually entered content in the input fields takes priority over auto-naming
+    - Clearing the input field content falls back to auto-naming
+- Hide Pipe Bundle Port Links button
+    - Don't hide (default)
+    - Hide only xpipe_in port (left) links
+    - Hide only xpipe_out port (right) links
+    - Hide all
+    - Button state is saved in the workflow
+- Hide 20 Port Links button
+    - Don't hide (default)
+    - Hide only input port (left) links
+    - Hide only output port (right) links
+    - Hide all
+    - Button state is saved in the workflow
+- Refresh button
+    - If upstream node port names have changed after ports were connected, causing name inconsistencies, use the refresh button for manual synchronization
+- The current XPipe node interface is not the ideal solution I envisioned (mainly the port name display and name input field sections), because limitations and deficiencies in ComfyUI's frontend for custom interactive components caused some unsolvable visual issues with my originally planned approach. The current node interface is a compromise for compatibility, with somewhat lower efficiency. I hope to realize my original design in the future ☹️
+
+### 4. 🛠️ Enhanced & Fixed `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Added Theme
+    - Follow ComfyUI
+        - The color scheme generally matches ComfyUI, though some component colors may not be perfectly consistent — there are too many components and color variables, and I'm too lazy to adjust them all 🤣
+        - Makes XDataHub and its related companion nodes visually more unified with ComfyUI
+- Fixed and optimized various minor issues
+
+### 5. 🛠️ Enhanced `XImageCompare` Image & Mask A/B Comparison Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added real-time preview feature
+    - i.e., the intermediate preview images displayed by sampler nodes during image generation
+        - Now focus all your attention on XImageCompare! 😍
+- Custom UI component colors now follow the ComfyUI theme colors instead of the XDataHub theme colors
+
+### 6. 🪛 Adjusted `XImageResize` Image Resize Node
+`♾️ Xz3r0/Workflow-Processing`
+- Category changed to Workflow-Processing `♾️ Xz3r0/Workflow-Processing`
+
+### 7. 🛠️ Enhanced `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet`
+- Added mask area invert color display button
+    - Visual display only, does not affect the actual mask color applied
+
+### 8. 🛠️ Enhanced `XMemoryCleanup` Memory & VRAM Resource Cleanup Node
+`♾️ Xz3r0/Workflow-Processing`
+- Updated text and descriptions
+- Added manual cleanup button
+    - 3 cleanup functions
+        - Clear all models
+        - Clear workflow node result cache
+        - Clear all models + Clear workflow node result cache
+    - Equivalent to ComfyUI-Manager's manual cleanup button
+
+### 9. 🪛 Adjusted `XStringGet` Text Data Receiver Node for XDataHub
+`♾️ Xz3r0/XDataHub`
+- Output when empty changed to `None`
+    - For compatibility with XAnyGate10's recursive function detection (recursive detection is based on whether the port data is: None)
+
+### 10. 🩹 Fixed Other Nodes
+- Fixed display issues in `Nodes 2.0` interface for some nodes
+    - I'm not currently using Nodes 2.0, nor do I plan to run dedicated node tests for it
+    - Performance in 2.0 is still pretty poor so far, and there are quite a few lingering issues. On top of that, since 2.0 has a completely different architecture from 1.0, nodes with custom components in the UI sometimes require maintaining two separate codebases to handle the same issues. It’s absolutely torture.
+- Fixed minor issues in some nodes
+
+</details>
+
+---
+
 ## 🎉 v2.4.0
 
 > [!WARNING]

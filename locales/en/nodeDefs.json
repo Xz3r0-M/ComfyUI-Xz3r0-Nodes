@@ -787,7 +787,7 @@
       },
       "prefix_separator": {
         "name": "Prefix Separator",
-        "tooltip": "Separator placed before the text.",
+        "tooltip": "Separator placed before the text (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -804,7 +804,7 @@
       },
       "suffix_separator": {
         "name": "Suffix Separator",
-        "tooltip": "Separator placed after the text.",
+        "tooltip": "Separator placed after the text (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
