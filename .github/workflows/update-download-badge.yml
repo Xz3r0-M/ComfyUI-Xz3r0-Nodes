@@ -40,16 +40,40 @@ jobs:
           }
           EOF
 
+      - name: 更新历史曲线数据
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+
+          # 读取现有历史数据
+          if [ -f docs/downloads-history.json ]; then
+            # 用 jq 追加今天的记录，保留最近 90 天
+            jq --arg date "$TODAY" --argjson count "${{ env.downloads }}" '
+              # 如果最后一条已是今天的日期，则替换；否则追加
+              if .[-1].date == $date then
+                .[-1].downloads = $count
+              else
+                . + [{"date": $date, "downloads": $count}]
+              end
+              | .[-90:]  # 保留最近 90 条
+            ' docs/downloads-history.json > /tmp/history.json
+            mv /tmp/history.json docs/downloads-history.json
+          else
+            # 首次创建
+            echo '[{"date": "'$TODAY'", "downloads": ${{ env.downloads }}}]' > docs/downloads-history.json
+          fi
+
+          echo "📈 历史数据已更新（保存最近 90 天）"
+
       - name: 提交并推送
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add docs/badge.json
+          git add docs/badge.json docs/downloads-history.json
           if git diff --staged --quiet; then
-            echo "📭 下载数未变化，跳过提交"
+            echo "📭 无变化，跳过提交"
           else
-            git commit -m "📊 更新下载数: ${{ env.downloads }}"
+            git commit -m "📊 更新下载: ${{ env.downloads }} | 历史曲线"
             git push
             echo "✅ 已推送: downloads=${{ env.downloads }}"
           fi

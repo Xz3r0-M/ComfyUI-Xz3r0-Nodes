@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ComfyUI-Xz3r0-Nodes · 下载趋势</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --blue: #58a6ff;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .container { max-width: 800px; width: 100%; }
+  h1 { font-size: 1.5rem; margin-bottom: 8px; }
+  h1 a { color: var(--blue); text-decoration: none; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 0.9rem; }
+  .stats-row {
+    display: flex; gap: 16px; margin-bottom: 24px;
+  }
+  .stat-card {
+    flex:1; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; text-align: center;
+  }
+  .stat-value { font-size: 2rem; font-weight: 700; color: var(--green); }
+  .stat-label { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+  .chart-box {
+    background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .footer { text-align: center; color: var(--muted); font-size: 0.8rem; }
+  .footer a { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📊 <a href="https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes">ComfyUI-Xz3r0-Nodes</a></h1>
+  <p class="subtitle">ComfyRegistry 下载趋势 · 每日更新</p>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value" id="total">—</div>
+      <div class="stat-label">累计下载</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="today">—</div>
+      <div class="stat-label">今日新增</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="avg">—</div>
+      <div class="stat-label">日均下载</div>
+    </div>
+  </div>
+
+  <div class="chart-box">
+    <canvas id="chart" height="300"></canvas>
+  </div>
+
+  <p class="footer">
+    数据来源 <a href="https://registry.comfy.org/publishers/xz3r0/nodes/xz3r0-nodes">ComfyRegistry</a>
+    · 由 GitHub Actions 每日自动更新
+  </p>
+</div>
+
+<script>
+(async () => {
+  const resp = await fetch('downloads-history.json');
+  const raw = await resp.json();
+
+  const labels = raw.map(d => d.date);
+  const values = raw.map(d => d.downloads);
+  const latest = values[values.length - 1];
+  const prev = values.length > 1 ? values[values.length - 2] : latest;
+  const daily = latest - prev;
+  const days = values.length;
+  const first = values[0];
+  const avg = days > 0 ? Math.round((latest - first) / days) : 0;
+
+  document.getElementById('total').textContent = latest.toLocaleString();
+  document.getElementById('today').textContent = daily >= 0 ? '+' + daily.toLocaleString() : '—';
+  document.getElementById('avg').textContent = avg.toLocaleString() + '/天';
+
+  new Chart(document.getElementById('chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: '下载量',
+        data: values,
+        borderColor: '#3fb950',
+        backgroundColor: 'rgba(63,185,80,0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 1,
+        pointHoverRadius: 5,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b949e', maxTicksLimit: 10 },
+          grid: { color: '#21262d' }
+        },
+        y: {
+          ticks: { color: '#8b949e' },
+          grid: { color: '#21262d' },
+          beginAtZero: false,
+        }
+      },
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>
