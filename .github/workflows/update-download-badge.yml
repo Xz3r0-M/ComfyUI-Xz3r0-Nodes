@@ -36,8 +36,7 @@ jobs:
             "label": "downloads",
             "message": "${{ env.downloads }}",
             "color": "brightgreen",
-            "namedLogo": "comfyui",
-            "logoColor": "white"
+            "cacheSeconds": 3600
           }
           EOF
 

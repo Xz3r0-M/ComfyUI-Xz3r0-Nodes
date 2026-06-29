@@ -6,7 +6,7 @@
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
 ![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
-[![downloads](https://img.shields.io/endpoint?url=https://Xz3r0-M.github.io/ComfyUI-Xz3r0-Nodes/badge.json)](https://registry.comfy.org/publishers/xz3r0/nodes/xz3r0-nodes)
+[![downloads](https://img.shields.io/endpoint?url=https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/badge.json)](https://registry.comfy.org/publishers/xz3r0/nodes/xz3r0-nodes)
 
 ## For non-Chinese users - Please use web translation 🌍
 
