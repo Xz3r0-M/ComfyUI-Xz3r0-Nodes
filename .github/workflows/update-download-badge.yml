@@ -117,6 +117,20 @@ jobs:
 
           with open('docs/sparkline.svg', 'w', encoding='utf-8') as f:
               f.write(svg)
+
+          # 更新 README 中的缓存版本号（打破 GitHub camo 缓存）
+          import re, datetime
+          today = datetime.date.today().strftime('%Y%m%d')
+          with open('README.md', 'r', encoding='utf-8') as f:
+              readme = f.read()
+          readme = re.sub(
+              r'!\[下载趋势\]\(https://xz3r0-m\.github\.io/ComfyUI-Xz3r0-Nodes/sparkline\.svg\?v=[^)]*\)',
+              f'![下载趋势](https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/sparkline.svg?v={today})',
+              readme
+          )
+          with open('README.md', 'w', encoding='utf-8') as f:
+              f.write(readme)
+
           print(f"✅ SVG 火花线图已生成 ({n} 个数据点)")
           PYEOF
 
