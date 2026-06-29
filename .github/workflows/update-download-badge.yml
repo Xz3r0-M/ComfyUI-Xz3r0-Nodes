@@ -60,49 +60,64 @@ jobs:
 
           echo "📈 历史数据已更新（保留最近 90 天）"
 
-      - name: 生成火花线图并更新 README
+      - name: 生成 SVG 火花线图
         run: |
           python3 << 'PYEOF'
-          import json, urllib.parse, re
+          import json
 
-          # 读取历史数据（最近 60 天）
+          W, H = 500, 100
+          PAD = 4
+          GREEN = "#3fb950"
+
           with open('docs/downloads-history.json') as f:
               history = json.load(f)
           history = history[-60:]
-
           data = [entry['downloads'] for entry in history]
+          n = len(data)
 
-          # 构建 QuickChart.io 火花线图配置
-          chart = {
-              "type": "sparkline",
-              "data": {
-                  "datasets": [{
-                      "data": data,
-                      "borderColor": "#3fb950",
-                      "borderWidth": 2,
-                      "fill": True,
-                      "backgroundColor": "rgba(63,185,80,0.10)",
-                  }]
-              }
-          }
+          if n < 2:
+              # 数据不足，生成简单占位图
+              svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">'
+              svg += f'<rect width="{W}" height="{H}" fill="#0d1117"/>'
+              svg += '<text x="50%" y="50%" fill="#8b949e" font-size="14" font-family="sans-serif" text-anchor="middle" dominant-baseline="middle">数据收集中...</text>'
+              svg += '</svg>'
+          else:
+              mn, mx = min(data), max(data)
+              rng = mx - mn or 1
 
-          config_json = json.dumps(chart, separators=(',', ':'))
-          url = f"https://quickchart.io/chart?w=500&h=100&c={urllib.parse.quote(config_json)}"
+              x_step = (W - 2 * PAD) / (n - 1)
 
-          # 更新 README.md 中的火花线图
-          with open('README.md', 'r', encoding='utf-8') as f:
-              readme = f.read()
+              def x(i): return PAD + i * x_step
+              def y(v): return H - PAD - ((v - mn) / rng) * (H - 2 * PAD)
 
-          readme = re.sub(
-              r'!\[下载趋势\]\(https://quickchart\.io/chart\?[^)]*\)',
-              f'![下载趋势]({url})',
-              readme
-          )
+              # 折线点
+              pts = [f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(data)]
+              polyline = " ".join(pts)
 
-          with open('README.md', 'w', encoding='utf-8') as f:
-              f.write(readme)
+              # 填充区域（折线 + 底部两个角）
+              fill_pts = pts + [f"{x(n-1):.1f},{H - PAD}", f"{x(0):.1f},{H - PAD}"]
+              polygon = " ".join(fill_pts)
 
-          print(f"✅ 火花线图已生成 ({len(data)} 个数据点)")
+              svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
+              svg += '<defs>'
+              svg += f'<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">'
+              svg += f'<stop offset="0%" stop-color="{GREEN}" stop-opacity="0.25"/>'
+              svg += f'<stop offset="100%" stop-color="{GREEN}" stop-opacity="0.0"/>'
+              svg += '</linearGradient>'
+              svg += '</defs>'
+              # 背景
+              svg += f'<rect width="{W}" height="{H}" fill="#0d1117" rx="4"/>'
+              # 填充
+              svg += f'<polygon points="{polygon}" fill="url(#g)"/>'
+              # 折线
+              svg += f'<polyline points="{polyline}" fill="none" stroke="{GREEN}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+              # 末尾圆点
+              svg += f'<circle cx="{x(n-1):.1f}" cy="{y(data[-1]):.1f}" r="3" fill="{GREEN}"/>'
+              svg += '</svg>'
+
+          with open('docs/sparkline.svg', 'w', encoding='utf-8') as f:
+              f.write(svg)
+          print(f"✅ SVG 火花线图已生成 ({n} 个数据点)")
           PYEOF
 
       - name: 提交并推送
@@ -110,7 +125,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add docs/badge.json docs/downloads-history.json README.md
+          git add docs/badge.json docs/downloads-history.json docs/sparkline.svg
           if git diff --staged --quiet; then
             echo "📭 无变化，跳过提交"
           else
