@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="500" height="100" viewBox="0 0 500 100">
-  <rect width="500" height="100" fill="#0d1117" rx="4"/>
-  <circle cx="250" cy="40" r="4" fill="#3fb950"/>
-  <text x="250" y="28" fill="#3fb950" font-size="16" font-family="sans-serif" text-anchor="middle" font-weight="bold">1995</text>
-  <text x="250" y="72" fill="#8b949e" font-size="11" font-family="sans-serif" text-anchor="middle">下次 Action 运行后出现曲线</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="100" viewBox="0 0 500 100"><rect width="500" height="100" fill="#0d1117" rx="4"/><circle cx="250" cy="50" r="4" fill="#3fb950"/><text x="250" y="38" fill="#3fb950" font-size="16" font-family="sans-serif" text-anchor="middle" font-weight="bold">1997</text><text x="50%" y="75%" fill="#8b949e" font-size="11" font-family="sans-serif" text-anchor="middle">再多等一天就有曲线啦</text></svg>
