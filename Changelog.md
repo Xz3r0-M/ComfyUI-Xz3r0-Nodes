@@ -102,7 +102,7 @@
         - 清理所有模型
         - 清理工作流节点结果缓存
         - 清理所有模型 + 清理工作流节点结果缓存
-    - 与 ComfyUI-Manager 的手动清理按钮等效
+    - 与 `ComfyUI-Manager` 的手动清理按钮等效
 
 ### 9. 🪛 调整 `XStringGet` 与 XDataHub 配套的 文本数据接收节点
 `♾️ Xz3r0/XDataHub`
@@ -215,7 +215,7 @@
         - Clear all models
         - Clear workflow node result cache
         - Clear all models + Clear workflow node result cache
-    - Equivalent to ComfyUI-Manager's manual cleanup button
+    - Equivalent to `ComfyUI-Manager`'s manual cleanup button
 
 ### 9. 🪛 Adjusted `XStringGet` Text Data Receiver Node for XDataHub
 `♾️ Xz3r0/XDataHub`

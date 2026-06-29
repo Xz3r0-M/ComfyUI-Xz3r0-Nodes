@@ -291,6 +291,12 @@ function applyNodeLocale(state) {
         }
     }
 
+    // 实时预览按钮文字
+    if (state.livePreviewBtn) {
+        state.livePreviewBtn.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
+        state.livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
+    }
+
     // 滑动方向按钮（固定文字，不随方向变化）
     if (state.slideDirBtn) {
         state.slideDirBtn.textContent = t(SLIDE_DIR_TOGGLE_KEY, SLIDE_DIR_TOGGLE_FB);
