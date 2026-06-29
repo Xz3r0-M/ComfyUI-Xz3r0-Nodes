@@ -7,7 +7,6 @@
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
 ![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
 [![downloads](https://img.shields.io/endpoint?url=https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/badge.json)](https://registry.comfy.org/publishers/xz3r0/nodes/xz3r0-nodes)
-[📈 下载趋势](https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/stats.html)
 
 ## For non-Chinese users - Please use web translation 🌍
 
@@ -137,3 +136,9 @@ https://github.com/user-attachments/assets/8cd339ab-f054-440e-a7eb-6cbd50cb76eb
 ## 📄 许可证
 
 - 本项目采用 GPL-3.0 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+![下载趋势](https://quickchart.io/chart?w=500&h=100&c=%7B%22type%22%3A%22sparkline%22%2C%22data%22%3A%7B%22datasets%22%3A%5B%7B%22data%22%3A%5B1995%5D%2C%22borderColor%22%3A%22%233fb950%22%2C%22borderWidth%22%3A2%2C%22fill%22%3Atrue%2C%22backgroundColor%22%3A%22rgba(63%2C185%2C80%2C0.1)%22%7D%5D%7D%7D)
+
+[📈 完整曲线](https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/stats.html)
