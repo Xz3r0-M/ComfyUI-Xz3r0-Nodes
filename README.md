@@ -139,6 +139,6 @@ https://github.com/user-attachments/assets/8cd339ab-f054-440e-a7eb-6cbd50cb76eb
 
 ---
 
-![下载趋势](https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/sparkline.svg)
+![下载趋势](https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/sparkline.svg?v=20260629)
 
 [📈 完整曲线](https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/stats.html)
