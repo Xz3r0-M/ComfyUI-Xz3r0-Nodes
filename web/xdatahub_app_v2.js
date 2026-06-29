@@ -17,9 +17,9 @@ import "./components/xdh-media-grid.js?v=20260601-1";
 import "./components/xdh-staging-dock.js?v=20260531-1";
 import "./components/xdh-node-picker.js?v=20260426-4";
 import "./core/node-bridge.js?v=20260426-1";
-import "./components/xdh-content-nav.js?v=20260531-1";
+import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20260530-3";
+import "./components/xdh-lightbox.js?v=20260619-2";
 import "./components/xdh-history-view.js?v=20260508-1";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20260406-15";
@@ -92,20 +92,47 @@ const DIRECTORY_VIEW_CATEGORIES = new Set([
 
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
 const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
-const THEME_MODE_VALUES = new Set(["dark", "light"]);
+const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
+const EFFECTIVE_THEME_VALUES = new Set(["dark", "light"]);
 const THEME_STORAGE_KEY = "XDataHub.V2.Theme";
+const THEME_VAR_KEYS = Object.freeze([
+    "--xdh-clr-primary",
+    "--xdh-clr-primary-active",
+    "--xdh-clr-on-primary",
+    "--xdh-clr-canvas",
+    "--xdh-clr-surface-soft",
+    "--xdh-clr-surface-card",
+    "--xdh-clr-surface-strong",
+    "--xdh-clr-ink",
+    "--xdh-clr-body",
+    "--xdh-clr-muted",
+    "--xdh-clr-muted-soft",
+    "--xdh-clr-hairline",
+    "--xdh-clr-hairline-soft",
+    "--xdh-clr-border-strong",
+    "--xdh-clr-scrim",
+]);
+
+let currentThemeContext = {
+    theme_mode: "dark",
+    effective_mode: "dark",
+    vars: {},
+};
 
 // ── 初始主题检测：基于 prefers-color-scheme 设置 data-theme ──────────────
 (function initTheme() {
     try {
         const saved = localStorage.getItem(THEME_STORAGE_KEY);
-        if (saved === "light" || saved === "dark") {
-            document.body.dataset.theme = saved;
+        if (saved === "light" || saved === "dark" || saved === "comfyui") {
+            currentThemeContext.theme_mode = saved;
+            document.body.dataset.theme = saved === "light" ? "light" : "dark";
+            document.body.dataset.themeSource = getThemeSourceMode(saved);
             return;
         }
     } catch { /* ignore */ }
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     document.body.dataset.theme = prefersDark ? "dark" : "light";
+    document.body.dataset.themeSource = "xdatahub";
 })();
 
 let lockRefreshTimer = 0;
@@ -120,6 +147,17 @@ let categoryViewRestoreToken = 0;
 function normalizeThemeMode(mode) {
     const nextMode = String(mode || "").trim().toLowerCase();
     return THEME_MODE_VALUES.has(nextMode) ? nextMode : "dark";
+}
+
+function normalizeEffectiveThemeMode(mode) {
+    const nextMode = String(mode || "").trim().toLowerCase();
+    return EFFECTIVE_THEME_VALUES.has(nextMode) ? nextMode : "dark";
+}
+
+function getThemeSourceMode(themeMode) {
+    return normalizeThemeMode(themeMode) === "comfyui"
+        ? "comfyui"
+        : "xdatahub";
 }
 
 function normalizeMessageOrigin(value) {
@@ -160,6 +198,56 @@ function postThemeModeToHost(mode) {
         },
         targetOrigin
     );
+}
+
+function clearThemeVars(target) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    for (const tokenName of THEME_VAR_KEYS) {
+        target.style.removeProperty(tokenName);
+    }
+}
+
+function applyThemeVars(target, vars) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    clearThemeVars(target);
+    for (const [tokenName, tokenValue] of Object.entries(vars || {})) {
+        if (typeof tokenValue === "string" && tokenValue.trim()) {
+            target.style.setProperty(tokenName, tokenValue);
+        }
+    }
+}
+
+function applyThemeContext(context, options = {}) {
+    const nextContext = context && typeof context === "object"
+        ? {
+            theme_mode: normalizeThemeMode(context.theme_mode),
+            effective_mode: normalizeEffectiveThemeMode(
+                context.effective_mode
+            ),
+            vars: { ...(context.vars || {}) },
+        }
+        : {
+            theme_mode: normalizeThemeMode(context),
+            effective_mode: normalizeEffectiveThemeMode(context),
+            vars: {},
+        };
+    currentThemeContext = nextContext;
+    document.body.dataset.theme = nextContext.effective_mode;
+    document.body.dataset.themeSource = getThemeSourceMode(
+        nextContext.theme_mode
+    );
+    applyThemeVars(document.body, nextContext.vars);
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, nextContext.theme_mode);
+    } catch { /* ignore localStorage write errors */ }
+    if (options.notifyHost !== false) {
+        postThemeModeToHost(nextContext.theme_mode);
+    }
+    refreshGlobalUi();
 }
 
 function postToggleWindowRequest() {
@@ -429,8 +517,19 @@ window.addEventListener("message", (event) => {
     if (!payload || typeof payload !== "object") {
         return;
     }
+    if (payload.type === "xdatahub:theme-context") {
+        applyThemeContext(payload.context, { notifyHost: false });
+        return;
+    }
     if (payload.type === "xdatahub:theme-mode") {
-        applyThemeV2(payload.theme_mode, { notifyHost: false });
+        applyThemeContext(
+            {
+                theme_mode: payload.theme_mode,
+                effective_mode: payload.theme_mode,
+                vars: {},
+            },
+            { notifyHost: false }
+        );
         return;
     }
     if (payload.type === "xdatahub:ui-locale") {
@@ -530,18 +629,14 @@ function refreshGlobalUi() {
 }
 
 function applyThemeV2(mode, options = {}) {
-    const normalized = normalizeThemeMode(mode);
-    if (document.body.dataset.theme === normalized) {
-        return;
-    }
-    document.body.dataset.theme = normalized;
-    try {
-        localStorage.setItem(THEME_STORAGE_KEY, normalized);
-    } catch { /* ignore localStorage write errors */ }
-    if (options.notifyHost !== false) {
-        postThemeModeToHost(normalized);
-    }
-    refreshGlobalUi();
+    applyThemeContext(
+        {
+            theme_mode: mode,
+            effective_mode: mode === "light" ? "light" : "dark",
+            vars: {},
+        },
+        options
+    );
 }
 
 function categoryToMediaType(category) {

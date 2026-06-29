@@ -6,7 +6,7 @@ import { appStore as store } from "../core/store.js";
 import { apiPost } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-15";
+import { t } from "../core/i18n.js?v=20260619-1";
 
 function getSortOptions() {
     return [
@@ -578,10 +578,7 @@ export class XdhContentNav extends BaseElement {
                     flex-shrink: 0;
                     gap: var(--xdh-space-xs);
                     padding: var(--xdh-space-xs) 3px 6px;
-                    background:
-                        linear-gradient(180deg,
-                            color-mix(in srgb, var(--xdh-color-surface-2) 42%, transparent),
-                            transparent 90%);
+                    background: var(--xdh-color-surface-1);
                     box-shadow:
                         inset 0 1px 0 color-mix(in srgb, var(--xdh-color-text-primary) 6%, transparent),
                         inset -1px 0 0 color-mix(in srgb, var(--xdh-color-surface-4) 22%, transparent);
@@ -591,10 +588,7 @@ export class XdhContentNav extends BaseElement {
                 }
                 .status-panel:hover,
                 .status-wrap.open .status-panel {
-                    background:
-                        linear-gradient(180deg,
-                            color-mix(in srgb, var(--xdh-color-surface-2) 56%, transparent),
-                            color-mix(in srgb, var(--xdh-color-surface-2) 16%, transparent));
+                    background: var(--xdh-color-surface-2);
                 }
                 .status-panel:focus-visible {
                     box-shadow:
@@ -667,7 +661,7 @@ export class XdhContentNav extends BaseElement {
                     transition: background 0.14s, color 0.14s;
                     flex-shrink: 0;
                 }
-                button:hover { background: var(--xdh-color-hover); color: var(--xdh-color-text-primary); }
+                button:hover { background: var(--xdh-clr-btn-hover, var(--xdh-color-hover)); color: var(--xdh-color-text-primary); }
                 button:disabled { opacity: 0.3; cursor: not-allowed; }
                 button.active {
                     background-color: var(--xdh-color-primary-muted);
@@ -869,13 +863,55 @@ export class XdhContentNav extends BaseElement {
                 .drawer-item {
                     padding: 9px 14px; font-size: 13px;
                     color: var(--xdh-color-text-primary);
-                    cursor: pointer; white-space: nowrap; transition: background 0.12s;
+                    cursor: pointer; white-space: nowrap;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    border-radius: calc(var(--xdh-radius-sm) - 2px);
+                    margin: 0 var(--xdh-space-xs);
+                    outline: none;
+                    transition:
+                        background-color 0.12s ease,
+                        color 0.12s ease,
+                        box-shadow 0.12s ease;
                 }
-                .drawer-item:hover { background: var(--xdh-color-hover); }
-                .drawer-item:active { background: var(--xdh-color-surface-4); }
+                .drawer-item:hover,
+                .drawer-item:focus-visible {
+                    background: color-mix(
+                        in srgb, var(--xdh-color-text-primary) 10%,
+                        var(--xdh-color-surface-2) 90%
+                    );
+                    color: var(--xdh-color-text-primary);
+                    box-shadow:
+                        inset 0 0 0 1px color-mix(
+                            in srgb, var(--xdh-color-text-primary) 16%,
+                            transparent
+                        );
+                }
+                .drawer-item:active {
+                    background: color-mix(
+                        in srgb, var(--xdh-color-text-primary) 14%,
+                        var(--xdh-color-surface-2) 86%
+                    );
+                    box-shadow:
+                        inset 0 0 0 1px color-mix(
+                            in srgb, var(--xdh-color-text-primary) 20%,
+                            transparent
+                        );
+                }
                 .drawer-sep { height: 1px; background: var(--xdh-color-border); margin: 3px 0; }
                 .drawer-item.danger { color: #e06060; }
-                .drawer-item.danger:hover { background: rgba(200,60,60,0.15); }
+                .drawer-item.danger:hover,
+                .drawer-item.danger:focus-visible {
+                    background: color-mix(
+                        in srgb, var(--xdh-clr-error) 16%, transparent
+                    );
+                    box-shadow:
+                        inset 0 0 0 1px color-mix(
+                            in srgb, var(--xdh-clr-error) 24%,
+                            transparent
+                        );
+                }
 
                 @container nav (max-width: 360px) { .label { display: none; } }
                 @container nav (max-width: 280px) { .size-cycle-btn { display: none; } }
@@ -953,9 +989,9 @@ export class XdhContentNav extends BaseElement {
                     <div class="global-more-wrap">
                         <button class="global-more-btn xdh-tooltip xdh-tooltip-down" data-tooltip="${t("nav.btn.more")}">${icon('ellipsis-vertical', 14)}</button>
                         <div class="global-drawer">
-                            <div class="drawer-item" data-action="clean-index">${icon('database', 14)} ${t("nav.drawer.clean_index")}</div>
+                            <div class="drawer-item xdh-tooltip xdh-tooltip-left" data-action="clean-index" data-tooltip="${t("nav.drawer.clean_index_tip")}">${icon('database', 14)} ${t("nav.drawer.clean_index")}</div>
                             <div class="drawer-sep"></div>
-                            <div class="drawer-item" data-action="open-db-folder">${icon('folder-open', 14)} ${t("nav.drawer.open_db_folder")}</div>
+                            <div class="drawer-item xdh-tooltip xdh-tooltip-left" data-action="open-db-folder" data-tooltip="${t("nav.drawer.open_db_folder_tip")}">${icon('folder-open', 14)} ${t("nav.drawer.open_db_folder")}</div>
                         </div>
                     </div>
                     <div class="divider" aria-hidden="true"></div>

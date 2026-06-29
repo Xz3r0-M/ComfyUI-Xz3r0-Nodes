@@ -68,6 +68,8 @@ class XStringGet(io.ComfyNode):
     def execute(
         cls, text_value: str = "", title_value: str = ""
     ) -> io.NodeOutput:
+        if not text_value and not title_value:
+            return io.NodeOutput(None, None)
         return io.NodeOutput(
             str(text_value or ""),
             str(title_value or ""),

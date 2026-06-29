@@ -163,6 +163,12 @@
       }
     }
   },
+  "XControlPanel": {
+    "display_name": "XControlPanel",
+    "description": "Panel-only control node for immediate ComfyUI actions. Currently provides a manual restart button.",
+    "inputs": {},
+    "outputs": {}
+  },
   "XDateTimeString": {
     "display_name": "XDateTimeString",
     "description": "DateTime string node that generates formatted datetime strings with placeholders for use with nodes that don't natively support date identifiers.",
@@ -263,6 +269,26 @@
       }
     }
   },
+  "XLinker": {
+    "display_name": "XLinker",
+    "description": "Passthrough node with a note text area. One any-type input passes directly to one any-type output. Node widget buttons toggle link visibility and link highlighting.",
+    "inputs": {
+      "any_input": {
+        "name": "Any input",
+        "tooltip": "Input (any type). Passed through to the output unchanged."
+      },
+      "note_text": {
+        "name": "Note Text",
+        "tooltip": "Freeform note text. Use this to annotate the workflow — the value is ignored during execution."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Any output",
+        "tooltip": "Passthrough output (same data type as input)."
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
@@ -323,29 +349,213 @@
   },
   "XMemoryCleanup": {
     "display_name": "XMemoryCleanup",
-    "description": "Manual cleanup node for optional Python memory cleanup, model/node usage cleanup, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
+    "description": "Manual cleanup node for optional Python memory cleanup, unloading models and cleaning model usage, and VRAM cache cleanup. All options are disabled by default for safe manual control.",
     "inputs": {
       "anything": {
         "name": "Anything",
         "tooltip": "Optional pass-through input. Output type automatically matches the connected input type."
       },
       "cleanup_memory": {
-        "name": "Cleanup Memory",
-        "tooltip": "Run Python garbage collection (gc.collect). Disabled by default."
+        "name": "Cleanup Python Memory",
+        "tooltip": "Run Python garbage collection (gc.collect) to release reclaimable Python-side objects. Disabled by default."
       },
       "cleanup_node_usage": {
-        "name": "Cleanup Node Usage",
-        "tooltip": "Unload currently loaded models and run model cleanup checks. Disabled by default."
+        "name": "Unload Models and Clean Model Usage",
+        "tooltip": "Unload currently loaded models, then clean the related model memory and VRAM usage. Disabled by default."
       },
       "cleanup_vram": {
-        "name": "Cleanup VRAM",
-        "tooltip": "Run VRAM/device cache cleanup (soft_empty_cache). Disabled by default."
+        "name": "Cleanup VRAM Cache",
+        "tooltip": "Run VRAM cache cleanup (soft_empty_cache) without unloading currently loaded models. Disabled by default."
       }
     },
     "outputs": {
       "0": {
         "name": "Anything",
         "tooltip": "Pass-through output (same data type as input)"
+      }
+    }
+  },
+  "XPipe": {
+    "display_name": "XPipe",
+    "description": "Pipe bundle node: route up to 20 any-type data groups through one bundle wire while keeping autogrowing inputs and matching visible outputs. Per-slot inputs override the bundle; port names are customizable and travel with the bundle.",
+    "inputs": {
+      "xpipe_in": {
+        "name": "XPipe In",
+        "tooltip": "Connect an upstream XPipe bundle to receive the full set of slot data and names at once. If a direct slot input is also connected, that slot still uses the direct input."
+      },
+      "values": {
+        "name": "Data",
+        "tooltip": "Autogrowing data inputs. Each connected slot overrides the same slot from the bundle."
+      },
+      "value_1": {
+        "name": "Data 1",
+        "tooltip": "Slot 1 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_2": {
+        "name": "Data 2",
+        "tooltip": "Slot 2 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_3": {
+        "name": "Data 3",
+        "tooltip": "Slot 3 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_4": {
+        "name": "Data 4",
+        "tooltip": "Slot 4 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_5": {
+        "name": "Data 5",
+        "tooltip": "Slot 5 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_6": {
+        "name": "Data 6",
+        "tooltip": "Slot 6 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_7": {
+        "name": "Data 7",
+        "tooltip": "Slot 7 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_8": {
+        "name": "Data 8",
+        "tooltip": "Slot 8 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_9": {
+        "name": "Data 9",
+        "tooltip": "Slot 9 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_10": {
+        "name": "Data 10",
+        "tooltip": "Slot 10 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_11": {
+        "name": "Data 11",
+        "tooltip": "Slot 11 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_12": {
+        "name": "Data 12",
+        "tooltip": "Slot 12 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_13": {
+        "name": "Data 13",
+        "tooltip": "Slot 13 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_14": {
+        "name": "Data 14",
+        "tooltip": "Slot 14 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_15": {
+        "name": "Data 15",
+        "tooltip": "Slot 15 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_16": {
+        "name": "Data 16",
+        "tooltip": "Slot 16 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_17": {
+        "name": "Data 17",
+        "tooltip": "Slot 17 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_18": {
+        "name": "Data 18",
+        "tooltip": "Slot 18 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_19": {
+        "name": "Data 19",
+        "tooltip": "Slot 19 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "value_20": {
+        "name": "Data 20",
+        "tooltip": "Slot 20 input (optional, accepts any data). Overrides the bundle slot when present."
+      },
+      "port_names": {
+        "name": "Port Names",
+        "tooltip": "Serialized slot names managed by the naming panel. Do not edit by hand."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XPipe Out",
+        "tooltip": "Send the current full set of slot data and names onward as a single XPipe bundle."
+      },
+      "1": {
+        "name": "Data 1",
+        "tooltip": "Slot 1 output (per-slot data, or bundle fallback)."
+      },
+      "2": {
+        "name": "Data 2",
+        "tooltip": "Slot 2 output (per-slot data, or bundle fallback)."
+      },
+      "3": {
+        "name": "Data 3",
+        "tooltip": "Slot 3 output (per-slot data, or bundle fallback)."
+      },
+      "4": {
+        "name": "Data 4",
+        "tooltip": "Slot 4 output (per-slot data, or bundle fallback)."
+      },
+      "5": {
+        "name": "Data 5",
+        "tooltip": "Slot 5 output (per-slot data, or bundle fallback)."
+      },
+      "6": {
+        "name": "Data 6",
+        "tooltip": "Slot 6 output (per-slot data, or bundle fallback)."
+      },
+      "7": {
+        "name": "Data 7",
+        "tooltip": "Slot 7 output (per-slot data, or bundle fallback)."
+      },
+      "8": {
+        "name": "Data 8",
+        "tooltip": "Slot 8 output (per-slot data, or bundle fallback)."
+      },
+      "9": {
+        "name": "Data 9",
+        "tooltip": "Slot 9 output (per-slot data, or bundle fallback)."
+      },
+      "10": {
+        "name": "Data 10",
+        "tooltip": "Slot 10 output (per-slot data, or bundle fallback)."
+      },
+      "11": {
+        "name": "Data 11",
+        "tooltip": "Slot 11 output (per-slot data, or bundle fallback)."
+      },
+      "12": {
+        "name": "Data 12",
+        "tooltip": "Slot 12 output (per-slot data, or bundle fallback)."
+      },
+      "13": {
+        "name": "Data 13",
+        "tooltip": "Slot 13 output (per-slot data, or bundle fallback)."
+      },
+      "14": {
+        "name": "Data 14",
+        "tooltip": "Slot 14 output (per-slot data, or bundle fallback)."
+      },
+      "15": {
+        "name": "Data 15",
+        "tooltip": "Slot 15 output (per-slot data, or bundle fallback)."
+      },
+      "16": {
+        "name": "Data 16",
+        "tooltip": "Slot 16 output (per-slot data, or bundle fallback)."
+      },
+      "17": {
+        "name": "Data 17",
+        "tooltip": "Slot 17 output (per-slot data, or bundle fallback)."
+      },
+      "18": {
+        "name": "Data 18",
+        "tooltip": "Slot 18 output (per-slot data, or bundle fallback)."
+      },
+      "19": {
+        "name": "Data 19",
+        "tooltip": "Slot 19 output (per-slot data, or bundle fallback)."
+      },
+      "20": {
+        "name": "Data 20",
+        "tooltip": "Slot 20 output (per-slot data, or bundle fallback)."
       }
     }
   },
@@ -577,7 +787,7 @@
       },
       "prefix_separator": {
         "name": "Prefix Separator",
-        "tooltip": "Separator placed before the text.",
+        "tooltip": "Separator placed before the text (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -594,7 +804,7 @@
       },
       "suffix_separator": {
         "name": "Suffix Separator",
-        "tooltip": "Separator placed after the text.",
+        "tooltip": "Separator placed after the text (none: '', newline: \\n, space: ' ', comma: ',', comma_space: ', ', period: '.', period_space: '. ')",
         "options": {
           "none": "None",
           "newline": "Newline",
@@ -1194,9 +1404,4 @@
     }
   }
 }
-
-
-
-
-
 

@@ -1215,12 +1215,19 @@ function xmgClamp(value, min, max) {
 /* Global theme observer — redraws all audio waveforms on data-theme change */
 var XMG_WAVEFORM_CALLBACKS = new Set();
 var XMG_THEME_OBSERVER = null;
+var XMG_THEME_CONTEXT_LISTENER_INSTALLED = false;
 function xmgEnsureThemeObserver() {
     if (XMG_THEME_OBSERVER) return;
     XMG_THEME_OBSERVER = new MutationObserver(function () {
         XMG_WAVEFORM_CALLBACKS.forEach(function (fn) { fn(); });
     });
     XMG_THEME_OBSERVER.observe(document.body, { attributes: true, attributeFilter: ["data-theme"] });
+    if (!XMG_THEME_CONTEXT_LISTENER_INSTALLED) {
+        XMG_THEME_CONTEXT_LISTENER_INSTALLED = true;
+        document.addEventListener("xdatahub:theme-context-applied", function () {
+            XMG_WAVEFORM_CALLBACKS.forEach(function (fn) { fn(); });
+        });
+    }
 }
 
 const XMG_AUDIO_BAR_COUNT = 3000;
@@ -3032,6 +3039,8 @@ function ensureHiddenWidget(node, widgetName, onChange = null) {
     }
     if (widget) {
         widget.hidden = true;
+        widget.options = widget.options || {};
+        widget.options.hidden = true;
         widget.serializeValue = () => widget.value;
     }
     return widget || null;

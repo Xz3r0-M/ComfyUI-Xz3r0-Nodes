@@ -274,6 +274,66 @@ body:not([data-theme]) {
     --xdh-scrollbar-thumb-hover: var(--xdh-clr-primary);
 }
 
+:root[data-xdh-default-theme="light"] {
+    --xdh-clr-primary:         #ff385c;
+    --xdh-clr-primary-active:  #e00b41;
+    --xdh-clr-primary-disabled:#ffd1da;
+    --xdh-clr-on-primary:      #ffffff;
+    --xdh-clr-luxe:            #460479;
+    --xdh-clr-plus:            #92174d;
+
+    --xdh-clr-canvas:         #ffffff;
+    --xdh-clr-surface-soft:   #f7f7f7;
+    --xdh-clr-surface-card:   #ffffff;
+    --xdh-clr-surface-strong: #f2f2f2;
+
+    --xdh-clr-ink:        #222222;
+    --xdh-clr-body:       #3f3f3f;
+    --xdh-clr-muted:      #6a6a6a;
+    --xdh-clr-muted-soft: #929292;
+    --xdh-clr-star-rating:#222222;
+
+    --xdh-clr-hairline:       #dddddd;
+    --xdh-clr-hairline-soft:  #ebebeb;
+    --xdh-clr-border-strong:  #c1c1c1;
+
+    --xdh-clr-error:       #c13515;
+    --xdh-clr-error-hover: #b32505;
+    --xdh-clr-legal-link:  #428bff;
+
+    --xdh-clr-scrim: rgba(0,0,0,0.50);
+}
+
+:root[data-xdh-default-theme="dark"] {
+    --xdh-clr-primary:         #ff385c;
+    --xdh-clr-primary-active:  #e00b41;
+    --xdh-clr-primary-disabled:#ffd1da;
+    --xdh-clr-on-primary:      #ffffff;
+    --xdh-clr-luxe:            #460479;
+    --xdh-clr-plus:            #92174d;
+
+    --xdh-clr-canvas:         #0c0c0e;
+    --xdh-clr-surface-soft:   #161618;
+    --xdh-clr-surface-card:   #161618;
+    --xdh-clr-surface-strong: #1d1d20;
+
+    --xdh-clr-ink:        #ffffff;
+    --xdh-clr-body:       rgba(255,255,255,0.85);
+    --xdh-clr-muted:      rgba(255,255,255,0.6);
+    --xdh-clr-muted-soft: rgba(255,255,255,0.4);
+    --xdh-clr-star-rating:#ffffff;
+
+    --xdh-clr-hairline:       rgba(255,255,255,0.12);
+    --xdh-clr-hairline-soft:  rgba(255,255,255,0.06);
+    --xdh-clr-border-strong:  rgba(255,255,255,0.22);
+
+    --xdh-clr-error:       #c13515;
+    --xdh-clr-error-hover: #e04a20;
+    --xdh-clr-legal-link:  #428bff;
+
+    --xdh-clr-scrim: rgba(0,0,0,0.7);
+}
+
 body[data-theme="light"] {
     /* ============================================ */
     /*  Color Palette (Light)                       */

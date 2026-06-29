@@ -47,6 +47,16 @@ var WHEEL_CTRL_FB = "Image Area Scroll";
 var WHEEL_CTRL_TIP_KEY = LOCALE_PREFIX + ".wheel_ctrl_tip";
 var WHEEL_CTRL_TIP_FB = "When enabled, scrolling on the canvas adjusts the slider parameter for the current mode.";
 
+// 实时预览开关
+var LIVE_PREVIEW_KEY = LOCALE_PREFIX + ".live_preview";
+var LIVE_PREVIEW_FB = "Live Preview";
+var LIVE_PREVIEW_ENABLED_KEY = LOCALE_PREFIX + ".live_preview_enabled";
+var LIVE_PREVIEW_ENABLED_FB = "Live Preview: Enabled";
+var LIVE_PREVIEW_DISABLED_KEY = LOCALE_PREFIX + ".live_preview_disabled";
+var LIVE_PREVIEW_DISABLED_FB = "Live Preview: Disabled";
+var LIVE_PREVIEW_TIP_KEY = LOCALE_PREFIX + ".live_preview_tip";
+var LIVE_PREVIEW_TIP_FB = "Show real-time preview from upstream sampler while running. Requires ComfyUI real-time preview to be enabled.";
+
 // 滑块控制标签
 var LABEL_SPLIT_KEY = LOCALE_PREFIX + ".label_split";
 var LABEL_SPLIT_FB = "Split";
@@ -140,15 +150,18 @@ var DEFAULT_CH = 480;
 
 // 工具栏高度（3行：按钮行 + 标签行 + 滑块行）
 var TOOLBAR_H = 70;
+// 底部间隔（为拉伸手柄留出触发空间）
+var BOTTOM_SPACING = 16;
+var PANEL_WIDGET_H = DEFAULT_CH + TOOLBAR_H + BOTTOM_SPACING;
 
 // 不设独立的 canvas min-height——canvas 跟随节点窗口，
 // 由 node.min_size 保证最小可用空间。
 // DEFAULT_CH 仅用于占位状态下的 imgW/imgH 初始值。
 
 // 最小节点尺寸（1.0 视图兼容）
-// 节点内部：header(~30px) + toolbar(34px) + canvas + padding(~16px)
+// 节点内部：header(~30px) + toolbar(70px) + canvas + bottom-spacing(16px) + padding(~16px)
 var MIN_NODE_W = DEFAULT_CW + 44;
-var MIN_NODE_H = DEFAULT_CH + TOOLBAR_H + 48;
+var MIN_NODE_H = DEFAULT_CH + TOOLBAR_H + BOTTOM_SPACING + 48;
 
 // 默认参数
 var DEFAULT_SLIDE_POS = 50;
@@ -276,6 +289,12 @@ function applyNodeLocale(state) {
                 PINGPONG_CURVES[ci].tipFB
             );
         }
+    }
+
+    // 实时预览按钮文字
+    if (state.livePreviewBtn) {
+        state.livePreviewBtn.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
+        state.livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
     }
 
     // 滑动方向按钮（固定文字，不随方向变化）
@@ -418,6 +437,8 @@ function ensureHiddenWidget(node, name, defaultValue) {
     }
     if (widget) {
         widget.hidden = true;
+        widget.options = widget.options || {};
+        widget.options.hidden = true;
         widget.serializeValue = function () {
             return this.value;
         };
@@ -457,18 +478,19 @@ function injectStyles() {
     style.id = "xcompare-styles";
     style.textContent = [
         ".xcompare-wrap {",
-        "  position: absolute;",
-        "  top: 0; left: 0; right: 0; bottom: 0;",
+        "  position: relative;",
+        "  width: 100%; height: 100%;",
         "  display: flex; flex-direction: column;",
         "  box-sizing: border-box;",
-        "  border: 1px solid var(--xdh-clr-hairline, #333);",
+        "  background: transparent;",
+        "  color: var(--input-text, inherit);",
         "  overflow: hidden;",
         "}",
         ".xcompare-toolbar {",
         "  display: flex; flex-direction: column; gap: 2px;",
         "  padding: 4px 0 2px 0;",
-        "  background: var(--xdh-clr-surface-strong, #1e1e1e);",
-        "  border-bottom: 1px solid var(--xdh-clr-hairline, #333);",
+        "  background: transparent;",
+        "  border-bottom: none;",
         "  flex-shrink: 0; box-sizing: border-box;",
         "}",
         ".xcompare-toolbar-row {",
@@ -487,10 +509,10 @@ function injectStyles() {
         "}",
         ".xcompare-toolbar button {",
         "  padding: 3px 8px;",
-        "  border: 1px solid var(--xdh-clr-hairline, #555);",
+        "  border: 1px solid var(--border-color, #555);",
         "  border-radius: var(--xdh-radius-sm, 3px); cursor: pointer;",
-        "  background: var(--xdh-clr-surface-strong, #2a2a2a);",
-        "  color: var(--xdh-color-text-primary, #ccc);",
+        "  background: transparent;",
+        "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  white-space: nowrap;",
         "  transition: border-color 120ms ease, background-color 120ms ease;",
@@ -505,46 +527,93 @@ function injectStyles() {
         "  border-color: var(--xdh-clr-primary, #ff385c);",
         "}",
         ".xcompare-toolbar input[type=\"range\"] {",
-        "  flex: 1; min-width: 60px; height: 4px; cursor: pointer;",
+        "  --xcompare-slider-pct: 50%;",
+        "  flex: 1; min-width: 60px; height: 18px; cursor: pointer;",
         "  margin: 0; -webkit-appearance: none; appearance: none;",
         "  background: transparent; outline: none;",
+        "  accent-color: var(--xdh-clr-primary, #ff385c);",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-webkit-slider-runnable-track {",
-        "  height: 2px; border-radius: 1px;",
-        "  background: var(--xdh-clr-hairline, #555);",
+        "  height: 6px; border-radius: 999px;",
+        "  background: linear-gradient(90deg,",
+        "    var(--xdh-clr-primary, #ff385c) 0%,",
+        "    var(--xdh-clr-primary, #ff385c) var(--xcompare-slider-pct),",
+        "    rgba(255, 255, 255, 0.16) var(--xcompare-slider-pct),",
+        "    rgba(255, 255, 255, 0.16) 100%);",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-moz-range-track {",
-        "  height: 2px; border-radius: 1px;",
-        "  background: var(--xdh-clr-hairline, #555); border: none;",
+        "  height: 6px; border-radius: 999px;",
+        "  background: rgba(255, 255, 255, 0.16); border: none;",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]::-moz-range-progress {",
+        "  height: 6px; border-radius: 999px;",
+        "  background: var(--xdh-clr-primary, #ff385c); border: none;",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-webkit-slider-thumb {",
         "  -webkit-appearance: none; appearance: none;",
-        "  width: 12px; height: 12px; border-radius: 50%;",
-        "  margin-top: -5px;",
-        "  background: var(--xdh-clr-primary, #ff385c);",
-        "  border: 2px solid var(--xdh-clr-surface-strong, #1e1e1e);",
+        "  width: 14px; height: 14px; border-radius: 50%;",
+        "  margin-top: -4px;",
+        "  background: color-mix(in srgb, var(--xdh-clr-primary, #ff385c) 88%, white 12%);",
+        "  border: 1px solid rgba(255, 255, 255, 0.55);",
+        "  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);",
+        "  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;",
         "  cursor: pointer;",
         "}",
         ".xcompare-toolbar input[type=\"range\"]::-moz-range-thumb {",
-        "  width: 12px; height: 12px; border-radius: 50%;",
-        "  background: var(--xdh-clr-primary, #ff385c);",
-        "  border: 2px solid var(--xdh-clr-surface-strong, #1e1e1e);",
+        "  width: 14px; height: 14px; border-radius: 50%;",
+        "  background: color-mix(in srgb, var(--xdh-clr-primary, #ff385c) 88%, white 12%);",
+        "  border: 1px solid rgba(255, 255, 255, 0.55);",
+        "  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);",
+        "  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;",
         "  cursor: pointer;",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-webkit-slider-runnable-track {",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-moz-range-track {",
+        "  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-webkit-slider-thumb {",
+        "  transform: scale(1.08);",
+        "  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:hover::-moz-range-thumb {",
+        "  transform: scale(1.08);",
+        "  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:active::-webkit-slider-thumb {",
+        "  transform: scale(1.12);",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.15), 0 2px 8px rgba(0, 0, 0, 0.34);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:active::-moz-range-thumb {",
+        "  transform: scale(1.12);",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.15), 0 2px 8px rgba(0, 0, 0, 0.34);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:focus-visible::-webkit-slider-thumb {",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.18), 0 2px 8px rgba(0, 0, 0, 0.34);",
+        "}",
+        ".xcompare-toolbar input[type=\"range\"]:focus-visible::-moz-range-thumb {",
+        "  box-shadow: 0 0 0 4px rgba(255, 56, 92, 0.18), 0 2px 8px rgba(0, 0, 0, 0.34);",
         "}",
         ".xcompare-toolbar-label {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #999);",
+        "  color: inherit;",
+        "  opacity: 0.78;",
         "  white-space: nowrap; text-align: center;",
         "  position: absolute; left: 50%; transform: translateX(-50%);",
         "}",
         ".xcompare-toolbar-res-a {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #777);",
+        "  color: inherit;",
+        "  opacity: 0.72;",
         "  white-space: nowrap;",
         "}",
         ".xcompare-toolbar-res-b {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #777);",
+        "  color: inherit;",
+        "  opacity: 0.72;",
         "  white-space: nowrap;",
         "}",
         ".xcompare-res-group {",
@@ -560,14 +629,13 @@ function injectStyles() {
         "}",
         ".xcompare-curve-btn {",
         "  padding: 3px 6px;",
-        "  border: 1px solid var(--xdh-clr-hairline, #555);",
+        "  border: 1px solid var(--border-color, #555);",
         "  border-radius: var(--xdh-radius-sm, 3px);",
         "  cursor: pointer;",
-        "  background: var(--xdh-clr-surface-strong, #2a2a2a);",
-        "  color: var(--xdh-color-text-secondary, #888);",
+        "  background: transparent;",
+        "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  white-space: nowrap;",
-        "  opacity: 0.7;",
         "  transition: border-color 120ms ease, background-color 120ms ease;",
         "}",
         ".xcompare-curve-btn:hover {",
@@ -575,22 +643,23 @@ function injectStyles() {
         "}",
         ".xcompare-curve-label {",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #666);",
+        "  color: inherit;",
+        "  opacity: 0.72;",
         "  white-space: nowrap;",
         "  margin-right: 4px;",
         "}",
         ".xcompare-curve-btn.active {",
-        "  opacity: 1;",
         "  background: var(--xdh-clr-primary, #ff385c);",
         "  color: #fff;",
         "  border-color: var(--xdh-clr-primary, #ff385c);",
         "}",
         ".xcompare-canvas-wrap {",
         "  position: relative; overflow: hidden;",
-        "  background: var(--xdh-clr-surface-card, #1a1a1a);",
+        "  background: transparent;",
         "  cursor: crosshair;",
         "  flex: 1 1 0;",
         "  box-sizing: border-box;",
+        "  margin-bottom: 16px;",
         "}",
         ".xcompare-canvas-wrap canvas {",
         "  display: block;",
@@ -602,7 +671,8 @@ function injectStyles() {
         "  position: absolute; inset: 0;",
         "  display: flex; align-items: center; justify-content: center;",
         "  font: var(--xdh-font-caption-sm, 13px sans-serif);",
-        "  color: var(--xdh-color-text-secondary, #666);",
+        "  color: inherit;",
+        "  opacity: 0.6;",
         "  pointer-events: none; z-index: 1;",
         "}",
     ].join("\n");
@@ -638,6 +708,10 @@ function createCompareState(node) {
         animStart: 0,
         loaded: false,
         loadToken: 0,
+        _previewBlobUrl: null, // 上游实时预览 blob URL
+        _previewOverlay: null,  // 预览覆盖层 DOM 元素
+        _previewDone: false,    // 该节点已完成执行，不再接收预览
+        livePreviewEnabled: false, // 实时预览开关（默认关闭）
     };
 }
 
@@ -651,7 +725,7 @@ function createCompareState(node) {
 function getCanvasBg(state) {
     if (!state.wrap) return "#1a1a1a";
     var cs = getComputedStyle(state.wrap);
-    var bg = cs.getPropertyValue("--xdh-clr-surface-card").trim();
+    var bg = cs.getPropertyValue("--comfy-menu-bg").trim();
     return bg || "#1a1a1a";
 }
 
@@ -733,11 +807,6 @@ function render(state) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, bw, bh);
 
-    // 跟随主题的背景色
-    var bgColor = getCanvasBg(state);
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, bw, bh);
-
     if (!state.imageA && !state.imageB) {
         return;
     }
@@ -752,10 +821,6 @@ function render(state) {
 
     var iw = state.imgW;
     var ih = state.imgH;
-
-    // 统一空间中填充与画布相同的背景色
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, iw, ih);
 
     if (!hasBoth) {
         // 仅显示单张图片
@@ -1082,10 +1147,25 @@ function createCompareUI(node) {
     var toolbar = document.createElement("div");
     toolbar.className = "xcompare-toolbar";
 
-    // 第1行：模式按钮（居中）+ 滚轮控制开关（靠右）
+    // 第1行：实时预览开关（最左）+ 模式按钮（居中）+ 滚轮控制开关（靠右）
     var row1 = document.createElement("div");
     row1.className = "xcompare-toolbar-row xcompare-buttons-row";
     row1.style.position = "relative";
+
+    // 实时预览开关按钮（最左侧，绝对定位）
+    var livePreviewBtn = document.createElement("button");
+    livePreviewBtn.className = "xcompare-live-preview-btn";
+    livePreviewBtn.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
+    livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
+    livePreviewBtn.style.cssText =
+        "position:absolute;left:6px;top:50%;transform:translateY(-50%);" +
+        "padding:3px 6px;font:var(--xdh-font-micro-label, 11px sans-serif);";
+    livePreviewBtn.addEventListener("click", function () {
+        toggleLivePreview(state);
+    });
+    row1.appendChild(livePreviewBtn);
+    state.livePreviewBtn = livePreviewBtn;
+
     var modeNames = [
         t(MODE_SLIDE_KEY, MODE_SLIDE_FB),
         t(MODE_SPOTLIGHT_KEY, MODE_SPOTLIGHT_FB),
@@ -1229,6 +1309,20 @@ function createCompareUI(node) {
     state.canvas = canvas;
     state.ctx = canvas.getContext("2d");
 
+    // --- 实时预览覆盖层（透传鼠标事件，不影响原有交互） ---
+    var previewOverlay = document.createElement("img");
+    previewOverlay.className = "xcompare-preview-overlay";
+    previewOverlay.style.cssText =
+        "position:absolute;top:0;left:0;" +
+        "width:100%;height:100%;" +
+        "object-fit:contain;" +
+        "pointer-events:none;" +
+        "z-index:10;" +
+        "display:none;" +
+        "background:transparent;";
+    canvasWrap.appendChild(previewOverlay);
+    state._previewOverlay = previewOverlay;
+
     wrap.appendChild(canvasWrap);
 
     // --- 注册 DOM widget ---
@@ -1305,6 +1399,7 @@ function createCompareUI(node) {
 
     // --- 初始状态 ---
     updateModeButtons(state);
+    updateLivePreviewBtn(state);
     updateSlideDirBtn(state);
     updateSlider(state);
     render(state);
@@ -1376,6 +1471,25 @@ function updateWheelToggle(state) {
     }
 }
 
+/** 切换实时预览开关 */
+function toggleLivePreview(state) {
+    state.livePreviewEnabled = !state.livePreviewEnabled;
+    updateLivePreviewBtn(state);
+    saveState(state);
+    if (!state.livePreviewEnabled && state._previewOverlay) {
+        state._previewOverlay.style.display = "none";
+    }
+}
+
+function updateLivePreviewBtn(state) {
+    if (!state.livePreviewBtn) return;
+    if (state.livePreviewEnabled) {
+        state.livePreviewBtn.classList.add("active");
+    } else {
+        state.livePreviewBtn.classList.remove("active");
+    }
+}
+
 /** 切换曲线并更新 UI */
 function setCurve(state, curveIdx) {
     if (state.pingPongCurve === curveIdx) return;
@@ -1419,6 +1533,21 @@ function updateSlideDirBtn(state) {
     // 保留作为 hook 供后续状态相关更新使用
 }
 
+function updateSliderVisual(state) {
+    if (!state || !state.slider) return;
+    var min = Number(state.slider.min);
+    var max = Number(state.slider.max);
+    var val = Number(state.slider.value);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+        state.slider.style.setProperty("--xcompare-slider-pct", "50%");
+        return;
+    }
+    if (!Number.isFinite(val)) val = min;
+    var pct = ((val - min) / (max - min)) * 100;
+    pct = Math.max(0, Math.min(100, pct));
+    state.slider.style.setProperty("--xcompare-slider-pct", pct + "%");
+}
+
 function updateSlider(state) {
     var cfg = getSliderConfig(state.mode, state);
     state.slider.min = String(cfg.min);
@@ -1430,9 +1559,10 @@ function updateSlider(state) {
     case MODE.SPOTLIGHT: val = state.spotRadius; break;
     case MODE.BLEND: val = state.blendOpacity; break;
     case MODE.PINGPONG: val = state.pingPongSpeed; break;
-    default: val = 50;
+        default: val = 50;
     }
     state.slider.value = String(val);
+    updateSliderVisual(state);
     updateCtrlLabel(state);
 }
 
@@ -1477,6 +1607,7 @@ function onSliderChange(state, value) {
         state.pingPongSpeed = value;
         break;
     }
+    updateSliderVisual(state);
     updateCtrlLabel(state);
     render(state);
     saveState(state);
@@ -1549,6 +1680,7 @@ function onMouseDown(state, e) {
         var pos = state.slideDirection === SLIDE_DIR_H ? imgPt.x : imgPt.y;
         state.slidePos = Math.max(0, Math.min(100, (pos / maxDim) * 100));
         state.slider.value = String(Math.round(state.slidePos));
+        updateSliderVisual(state);
         updateCtrlLabel(state);
         state.dragging = true;
         render(state);
@@ -1567,6 +1699,7 @@ function onMouseMove(state, e) {
         var pos = state.slideDirection === SLIDE_DIR_H ? imgPt.x : imgPt.y;
         state.slidePos = Math.max(0, Math.min(100, (pos / maxDim) * 100));
         state.slider.value = String(Math.round(state.slidePos));
+        updateSliderVisual(state);
         updateCtrlLabel(state);
         render(state);
         return;
@@ -1597,6 +1730,7 @@ function onWindowMouseMove(state, e) {
     var pos = state.slideDirection === SLIDE_DIR_H ? imgPt.x : imgPt.y;
     state.slidePos = Math.max(0, Math.min(100, (pos / maxDim) * 100));
     state.slider.value = String(Math.round(state.slidePos));
+    updateSliderVisual(state);
     updateCtrlLabel(state);
     render(state);
 }
@@ -1760,6 +1894,16 @@ function handleNodeExecuted(node, output) {
     var state = node.__xcompareState;
     if (!state) return;
 
+    // 清理上游实时预览覆盖层 + 标记该节点已完成
+    state._previewDone = true;
+    if (state._previewBlobUrl) {
+        URL.revokeObjectURL(state._previewBlobUrl);
+        state._previewBlobUrl = null;
+    }
+    if (state._previewOverlay) {
+        state._previewOverlay.style.display = "none";
+    }
+
     var images = (output && output.images) ? output.images : [];
     // images[0]=A, images[1]=B（无 filename 表示空占位）
     var imgA = (images.length >= 1 && images[0] && images[0].filename) ? images[0] : null;
@@ -1808,6 +1952,9 @@ function saveState(state) {
 
     var dirW = ensureHiddenWidget(node, "__compare_slide_dir", DEFAULT_SLIDE_DIR);
     if (dirW) dirW.value = state.slideDirection;
+
+    var liveW = ensureHiddenWidget(node, "__live_preview", "0");
+    if (liveW) liveW.value = state.livePreviewEnabled ? "1" : "0";
 }
 
 function restoreState(state) {
@@ -1865,8 +2012,15 @@ function restoreState(state) {
         state.wheelControlEnabled = String(wheelW.value) === "1";
     }
 
+    // 恢复实时预览开关
+    var liveW = ensureHiddenWidget(node, "__live_preview", "0");
+    if (liveW && liveW.value != null && liveW.value !== "") {
+        state.livePreviewEnabled = String(liveW.value) !== "0";
+    }
+
     updateModeButtons(state);
     updateWheelToggle(state);
+    updateLivePreviewBtn(state);
     updateCurveButtons(state);
     updateSlideDirBtn(state);
     updateSlider(state);
@@ -1914,7 +2068,7 @@ function clampNodeSize(node) {
 
     var origOnResize = node.onResize;
     node.onResize = function (size) {
-        // 动态更新 min_size
+        // 使用固定最小尺寸
         this.min_size = [MIN_NODE_W, MIN_NODE_H];
 
         // 取实际尺寸并 clamp，直接设 this.size 避免 setSize 递归
@@ -1997,5 +2151,92 @@ app.registerExtension({
         injectStyles();
         await applyUiLocale();
         installLocaleSync();
+
+        // === 实时预览：执行中 → 所有 XImageCompare 显示预览；执行结束 → 隐藏 ===
+        var _api = app.api;
+
+        if (!_api) {
+            console.warn("[XImageCompare] app.api not available — "
+                + "live preview disabled");
+            return;
+        }
+
+        var _previewActive = false;
+
+        // ---- 收集所有 XImageCompare state（避免每次遍历） ----
+        function _getAllStates() {
+            var graph = app.graph;
+            if (!graph || !graph._nodes) return [];
+            var result = [];
+            var nodes = graph._nodes;
+            for (var i = 0; i < nodes.length; i++) {
+                var node = nodes[i];
+                if (String(node.comfyClass || node.type || "") !== NODE_CLASS) {
+                    continue;
+                }
+                var state = node.__xcompareState;
+                if (state && state._previewOverlay) {
+                    result.push(state);
+                }
+            }
+            return result;
+        }
+
+        // ---- executing：执行开始/结束控制预览开关 ----
+        _api.addEventListener("executing", function (event) {
+            if (event.detail == null) {
+                // 全部执行结束 → 关闭预览 + 重置完成标记
+                _previewActive = false;
+                _getAllStates().forEach(function (s) {
+                    s._previewDone = false;
+                    if (s._previewBlobUrl) {
+                        URL.revokeObjectURL(s._previewBlobUrl);
+                        s._previewBlobUrl = null;
+                    }
+                    if (s._previewOverlay) {
+                        s._previewOverlay.style.display = "none";
+                    }
+                });
+            } else {
+                // 执行开始 → 开启预览模式（不重置 _previewDone）
+                _previewActive = true;
+            }
+        });
+
+        // ---- b_preview：执行中每帧推送（跳过已完成的节点） ----
+        _api.addEventListener("b_preview", function (event) {
+            if (!_previewActive) return;
+            var blob = event.detail;
+            if (!blob) return;
+
+            _getAllStates().forEach(function (state) {
+                if (state._previewDone || !state.livePreviewEnabled) return;
+                var blobUrl = URL.createObjectURL(blob);
+                if (state._previewBlobUrl) {
+                    URL.revokeObjectURL(state._previewBlobUrl);
+                }
+                state._previewBlobUrl = blobUrl;
+                state._previewOverlay.src = blobUrl;
+                state._previewOverlay.style.display = "";
+            });
+        });
+
+        // ---- b_preview_with_metadata：同上（Type 4 兜底） ----
+        _api.addEventListener("b_preview_with_metadata", function (event) {
+            if (!_previewActive) return;
+            var blob = event.detail && event.detail.blob;
+            if (!blob) return;
+
+            _getAllStates().forEach(function (state) {
+                if (state._previewDone || !state.livePreviewEnabled) return;
+                var blobUrl = URL.createObjectURL(blob);
+                if (state._previewBlobUrl) {
+                    URL.revokeObjectURL(state._previewBlobUrl);
+                }
+                state._previewBlobUrl = blobUrl;
+                state._previewOverlay.src = blobUrl;
+                state._previewOverlay.style.display = "";
+            });
+        });
     },
 });

@@ -40,9 +40,13 @@
     "name": "适应视图延迟 (毫秒)",
     "tooltip": "适应视图前的延迟时间（毫秒）。如果视图适应不正确，请增加此值。范围：0-2000 毫秒"
   },
-  "Xz3r0_XDataHub_Enabled": {
-    "name": "启用 ♾️ XDataHub (按钮)",
+  "Xz3r0_XDataHub_ShowButton": {
+    "name": "显示 ♾️ XDataHub 入口按钮",
     "tooltip": "在顶部菜单栏显示 [♾️] 浮动窗口按钮"
+  },
+  "Xz3r0_XDataHub_Enabled": {
+    "name": "启用 ♾️ XDataHub",
+    "tooltip": "控制 XDataHub 窗口、快捷键及相关动作是否可用"
   },
   "Xz3r0_XDataHub_UnderSidebar": {
     "name": "将 ♾️ XDataHub 置于 ComfyUI 界面组件之下",

@@ -115,7 +115,7 @@ class XImageResize(io.ComfyNode):
             display_name="XImageResize",
             description="Automatic image resize with batch-unified scaling "
             "and divisible adjustment support",
-            category="♾️ Xz3r0/File-Processing",
+            category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
                 io.MatchType.Input(
                     "image_or_mask",

@@ -75,8 +75,9 @@ class XStringWrap(io.ComfyNode):
                     default="none",
                     tooltip=(
                         "Prefix separator before text "
-                        "(none/newline/space/comma/comma_space/"
-                        "period/period_space)"
+                        "(none: '', newline: \\n, space: ' ', "
+                        "comma: ',', comma_space: ', ', "
+                        "period: '.', period_space: '. ')"
                     ),
                 ),
                 io.String.Input(
@@ -91,8 +92,9 @@ class XStringWrap(io.ComfyNode):
                     default="none",
                     tooltip=(
                         "Suffix separator after text "
-                        "(none/newline/space/comma/comma_space/"
-                        "period/period_space)"
+                        "(none: '', newline: \\n, space: ' ', "
+                        "comma: ',', comma_space: ', ', "
+                        "period: '.', period_space: '. ')"
                     ),
                 ),
             ],

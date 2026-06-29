@@ -27,31 +27,34 @@ import shutil  # noqa: I001
 from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
 # ============================================
+# Workflow-Processing
+
+from .xnode.xanygate10 import XAnyGate10
+from .xnode.xanytostring import XAnyToString
+from .xnode.xcontrolpanel import XControlPanel
+from .xnode.xdatetimestring import XDateTimeString
+from .xnode.ximagecompare import XImageCompare
+from .xnode.ximageresize import XImageResize
+from .xnode.xkleinrefconditioning import XKleinRefConditioning
+from .xnode.xlinker import XLinker
+from .xnode.xmath import XMath
+from .xnode.xmemorycleanup import XMemoryCleanup
+from .xnode.xpipe import XPipe
+from .xnode.xresolution import XResolution
+from .xnode.xseed import XSeed
+from .xnode.xstringgroup import XStringGroup
+from .xnode.xstringwrap import XStringWrap
+
+# =============================================
 # File-Processing
 
 from .xnode.xaudiosave import XAudioSave
-from .xnode.ximageresize import XImageResize
 from .xnode.ximagesave import XImageSave
 from .xnode.xlatentload import XLatentLoad
 from .xnode.xlatentsave import XLatentSave
 from .xnode.xmarkdownsave import XMarkdownSave
 from .xnode.xvideosave import XVideoSave
 from .xnode.xworkflowsave import XWorkflowSave
-
-# =============================================
-# Workflow-Processing
-
-from .xnode.xanygate10 import XAnyGate10
-from .xnode.xanytostring import XAnyToString
-from .xnode.xdatetimestring import XDateTimeString
-from .xnode.ximagecompare import XImageCompare
-from .xnode.xkleinrefconditioning import XKleinRefConditioning
-from .xnode.xmath import XMath
-from .xnode.xmemorycleanup import XMemoryCleanup
-from .xnode.xresolution import XResolution
-from .xnode.xseed import XSeed
-from .xnode.xstringgroup import XStringGroup
-from .xnode.xstringwrap import XStringWrap
 
 # =============================================
 # XDataHub
@@ -79,9 +82,13 @@ def _register_api_modules() -> None:
     2) 作为脚本顶层导入（pytest 某些收集模式）
     """
     if __package__:
+        __import__(f"{__package__}.api.xcontrolpanel_api", fromlist=["*"])
+        __import__(f"{__package__}.api.xmemorycleanup_api", fromlist=["*"])
         __import__(f"{__package__}.api.xdatahub_api", fromlist=["*"])
         __import__(f"{__package__}.api.xworkflowsave_api", fromlist=["*"])
         return
+    __import__("api.xcontrolpanel_api")
+    __import__("api.xmemorycleanup_api")
     __import__("api.xdatahub_api")
     __import__("api.xworkflowsave_api")
 
@@ -91,9 +98,25 @@ _register_api_modules()
 WEB_DIRECTORY = "./web"
 REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     # ============================================
+    # Workflow-Processing
+    XAnyGate10,
+    XAnyToString,
+    XControlPanel,
+    XDateTimeString,
+    XImageCompare,
+    XImageResize,
+    XKleinRefConditioning,
+    XLinker,
+    XMath,
+    XMemoryCleanup,
+    XPipe,
+    XResolution,
+    XSeed,
+    XStringGroup,
+    XStringWrap,
+    # =============================================
     # File-Processing
     XAudioSave,
-    XImageResize,
     XImageSave,
     XLatentLoad,
     XLatentSave,
@@ -101,23 +124,10 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XVideoSave,
     XWorkflowSave,
     # =============================================
-    # Workflow-Processing
-    XAnyGate10,
-    XAnyToString,
-    XDateTimeString,
-    XImageCompare,
-    XKleinRefConditioning,
-    XMath,
-    XMemoryCleanup,
-    XResolution,
-    XSeed,
-    XStringGroup,
-    XStringWrap,
-    # =============================================
     # XDataHub
+    XAudioGet,
     XDataSave,
     XImageGet,
-    XAudioGet,
     XLoraGet,
     XStringGet,
     XVideoGet,

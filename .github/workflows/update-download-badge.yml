@@ -1,0 +1,56 @@
+name: Update Download Badge
+
+on:
+  schedule:
+    # 每天 UTC 0:00 和 12:00 (中国时间 8:00 和 20:00)
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: write      # 允许 push 提交
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 获取 ComfyRegistry 下载数
+        run: |
+          RESPONSE=$(curl -s "https://api.comfy.org/nodes/xz3r0-nodes")
+          DOWNLOADS=$(echo "$RESPONSE" | jq -r '.downloads')
+          STARS=$(echo "$RESPONSE" | jq -r '.github_stars')
+          NAME=$(echo "$RESPONSE" | jq -r '.name')
+
+          echo "downloads=$DOWNLOADS" >> $GITHUB_ENV
+          echo "stars=$STARS" >> $GITHUB_ENV
+          echo "name=$NAME" >> $GITHUB_ENV
+
+          echo "📦 $NAME: ⬇ $DOWNLOADS | ⭐ $STARS"
+
+      - name: 更新 badge.json
+        run: |
+          cat > docs/badge.json << EOF
+          {
+            "schemaVersion": 1,
+            "label": "downloads",
+            "message": "${{ env.downloads }}",
+            "color": "brightgreen",
+            "namedLogo": "comfyui",
+            "logoColor": "white"
+          }
+          EOF
+
+      - name: 提交并推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add docs/badge.json
+          if git diff --staged --quiet; then
+            echo "📭 下载数未变化，跳过提交"
+          else
+            git commit -m "📊 更新下载数: ${{ env.downloads }}"
+            git push
+            echo "✅ 已推送: downloads=${{ env.downloads }}"
+          fi

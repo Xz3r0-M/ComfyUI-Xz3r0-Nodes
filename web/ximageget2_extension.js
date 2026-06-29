@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260412b";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260618-1";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -1019,6 +1019,8 @@ function ensureHiddenWidget(node, widgetName) {
     }
     if (widget) {
         widget.hidden = true;
+        widget.options = widget.options || {};
+        widget.options.hidden = true;
         widget.serializeValue = () => widget.value;
     }
     return widget || null;
@@ -1381,6 +1383,11 @@ function getMaskEditorTexts() {
         invertColorTip: t(
             key("invert_color_tip"),
             "Swap black and white"
+        ),
+        invertDisplay: t(key("invert_display"), "Invert Disp"),
+        invertDisplayTip: t(
+            key("invert_display_tip"),
+            "Invert image colors in masked areas (visual only)"
         ),
         paintOpacity: t(key("paint_opacity"), "Color Opacity"),
         maskOpacity: t(key("mask_opacity"), "Mask Opacity"),

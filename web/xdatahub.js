@@ -95,7 +95,6 @@ let uiLocaleFallback = {};
 let uiLocaleApplySeq = 0;
 let currentUiLocale = "en";
 const uiLocaleCache = new Map();
-let interruptObserverInstalled = false;
 let localeSyncInstalled = false;
 let edgePeekEnabled = false;
 const bridgedNodeRequests = new Map();
@@ -135,18 +134,207 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20260508-2";
+const XDATAHUB_ASSET_VER = "20260619-6";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
     + `?v=${XDATAHUB_ASSET_VER}`;
-const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light"]);
+const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
+const XDATAHUB_EFFECTIVE_THEME_VALUES = new Set(["dark", "light"]);
+const XDATAHUB_THEME_CONTEXT_EVENT = "xdatahub:theme-context-applied";
+const XDATAHUB_THEME_VAR_KEYS = Object.freeze([
+    "--xdh-clr-primary",
+    "--xdh-clr-primary-active",
+    "--xdh-clr-on-primary",
+    "--xdh-clr-canvas",
+    "--xdh-clr-surface-soft",
+    "--xdh-clr-surface-card",
+    "--xdh-clr-surface-strong",
+    "--xdh-clr-btn-hover",
+    "--xdh-clr-ink",
+    "--xdh-clr-body",
+    "--xdh-clr-muted",
+    "--xdh-clr-muted-soft",
+    "--xdh-clr-hairline",
+    "--xdh-clr-hairline-soft",
+    "--xdh-clr-border-strong",
+    "--xdh-clr-scrim",
+    "--xdh-window-header-bg",
+]);
+const XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS = new Set([
+    "--xdh-clr-primary",
+    "--xdh-clr-primary-active",
+    "--xdh-clr-on-primary",
+]);
+const XDATAHUB_COMFY_THEME_VAR_CANDIDATES = Object.freeze({
+    "--xdh-clr-canvas": [
+        "--comfy-menu-bg",
+        "--p-surface-900",
+        "--panel-bg",
+        "--bg-color",
+    ],
+    "--xdh-clr-surface-soft": [
+        "--comfy-menu-secondary-bg",
+        "--comfy-input-bg",
+        "--p-surface-800",
+        "--content-bg",
+    ],
+    "--xdh-clr-surface-card": [
+        "--comfy-input-bg",
+        "--comfy-menu-secondary-bg",
+        "--p-surface-800",
+        "--content-bg",
+    ],
+    "--xdh-clr-surface-strong": [
+        "--comfy-menu-secondary-bg",
+        "--p-surface-700",
+        "--content-bg",
+    ],
+    "--xdh-clr-ink": [
+        "--fg-color",
+        "--input-text",
+        "--text-color",
+        "--p-text-color",
+    ],
+    "--xdh-clr-body": [
+        "--input-text",
+        "--fg-color",
+        "--text-color-secondary",
+        "--p-text-muted-color",
+    ],
+    "--xdh-clr-muted": [
+        "--descrip-text",
+        "--fg-color",
+        "--text-color-secondary",
+        "--p-text-muted-color",
+    ],
+    "--xdh-clr-muted-soft": [
+        "--descrip-text",
+        "--text-color-secondary",
+        "--p-text-muted-color",
+    ],
+    "--xdh-clr-hairline": [
+        "--border-color",
+        "--comfy-menu-border",
+        "--p-content-border-color",
+        "--tr-even-bg-color",
+    ],
+    "--xdh-clr-hairline-soft": [
+        "--border-color",
+        "--comfy-menu-border",
+        "--p-content-border-color",
+    ],
+    "--xdh-clr-border-strong": [
+        "--border-color",
+        "--comfy-menu-border",
+        "--p-content-border-color",
+    ],
+    "--xdh-clr-scrim": [
+        "--comfy-menu-bg",
+        "--bg-color",
+    ],
+    // Ordinary-button hover, ComfyUI-only. Maps to ComfyUI's semantic,
+    // theme-aware secondary-surface hover (dark #313235 / light #d9d9d9).
+    // Consumed by buttons via var(--xdh-clr-btn-hover, <original>) so the
+    // built-in dark/light themes fall back untouched.
+    "--xdh-clr-btn-hover": [
+        "--secondary-background-hover",
+        "--comfy-menu-secondary-bg",
+    ],
+    "--xdh-window-header-bg": [
+        "--comfy-menu-bg",
+        "--bg-color",
+    ],
+});
+// Surface tokens need mode-aware mapping: ComfyUI's surface variables do not
+// keep a consistent lightness order across its dark/light palettes (e.g.
+// --comfy-menu-bg is the darkest surface in dark themes but the lightest in
+// light themes), so a single candidate list would invert the elevation
+// hierarchy on one side. These per-mode lists keep canvas → soft = card →
+// strong monotonic in both directions (lighter-is-higher in dark,
+// darker-is-higher in light).
+const XDATAHUB_COMFY_SURFACE_CANDIDATES = Object.freeze({
+    dark: {
+        "--xdh-clr-canvas": ["--comfy-menu-bg", "--bg-color"],
+        "--xdh-clr-surface-soft": [
+            "--comfy-input-bg",
+            "--comfy-menu-secondary-bg",
+        ],
+        "--xdh-clr-surface-card": [
+            "--comfy-input-bg",
+            "--comfy-menu-secondary-bg",
+        ],
+        "--xdh-clr-surface-strong": [
+            "--comfy-menu-secondary-bg",
+            "--content-bg",
+        ],
+    },
+    light: {
+        "--xdh-clr-canvas": ["--comfy-menu-bg", "--bg-color"],
+        "--xdh-clr-surface-soft": [
+            "--comfy-menu-secondary-bg",
+            "--comfy-input-bg",
+        ],
+        "--xdh-clr-surface-card": [
+            "--comfy-menu-secondary-bg",
+            "--comfy-input-bg",
+        ],
+        "--xdh-clr-surface-strong": ["--bg-color", "--comfy-input-bg"],
+    },
+});
+// Tokens whose value is derived (via color-mix) from a resolved base color
+// rather than mapped directly, so the soft/strong tiers keep their relative
+// hierarchy instead of all collapsing onto one opaque ComfyUI variable.
+const XDATAHUB_COMFY_DERIVED_THEME_VAR_KEYS = new Set([
+    "--xdh-clr-hairline",
+    "--xdh-clr-hairline-soft",
+    "--xdh-clr-border-strong",
+    "--xdh-clr-muted-soft",
+]);
 let currentThemeMode = "dark";
+let currentEffectiveThemeMode = "dark";
+let currentThemeVars = {};
 let lockEventBridgeInstalled = false;
 
 function normalizeThemeMode(value) {
     const mode = String(value || "").trim().toLowerCase();
     return XDATAHUB_THEME_MODE_VALUES.has(mode) ? mode : "dark";
+}
+
+function normalizeEffectiveThemeMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    return XDATAHUB_EFFECTIVE_THEME_VALUES.has(mode) ? mode : "dark";
+}
+
+function getThemeSourceMode(themeMode) {
+    return normalizeThemeMode(themeMode) === "comfyui"
+        ? "comfyui"
+        : "xdatahub";
+}
+
+function buildThemeContext() {
+    return {
+        theme_mode: currentThemeMode,
+        effective_mode: currentEffectiveThemeMode,
+        vars: { ...currentThemeVars },
+    };
+}
+
+function resolveThemeContextForMode(mode) {
+    const normalized = normalizeThemeMode(mode);
+    if (normalized === "comfyui") {
+        const comfyTheme = buildComfyThemeVars();
+        return {
+            theme_mode: normalized,
+            effective_mode: comfyTheme.effectiveMode,
+            vars: comfyTheme.vars,
+        };
+    }
+    return {
+        theme_mode: normalized,
+        effective_mode: normalizeEffectiveThemeMode(normalized),
+        vars: {},
+    };
 }
 
 function normalizeMessageOrigin(value) {
@@ -191,13 +379,246 @@ function ensureColorTokensStylesheet() {
     document.head.appendChild(link);
 }
 
-function applyThemeMode(mode) {
-    const normalized = normalizeThemeMode(mode);
-    if (normalized === currentThemeMode) {
+function readCssVarValue(style, name) {
+    return String(style?.getPropertyValue?.(name) || "").trim();
+}
+
+function resolveComputedCssValue(property, value) {
+    const probe = document.createElement("div");
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.pointerEvents = "none";
+    probe.style[property] = value;
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe)[property] || "";
+    probe.remove();
+    return String(resolved || "").trim();
+}
+
+function getDefaultThemeTokenValue(themeMode, tokenName) {
+    const root = document.documentElement;
+    const body = document.body;
+    const previousTheme = root.getAttribute("data-xdh-default-theme");
+    const previousRootInline = root.style.getPropertyValue(tokenName);
+    const previousBodyInline = body?.style?.getPropertyValue(tokenName) || "";
+    root.setAttribute("data-xdh-default-theme", themeMode);
+    root.style.removeProperty(tokenName);
+    body?.style?.removeProperty(tokenName);
+    const resolved = readCssVarValue(getComputedStyle(root), tokenName)
+        || resolveComputedCssValue("color", `var(${tokenName})`);
+    if (previousRootInline) {
+        root.style.setProperty(tokenName, previousRootInline);
+    } else {
+        root.style.removeProperty(tokenName);
+    }
+    if (body) {
+        if (previousBodyInline) {
+            body.style.setProperty(tokenName, previousBodyInline);
+        } else {
+            body.style.removeProperty(tokenName);
+        }
+    }
+    if (previousTheme) {
+        root.setAttribute("data-xdh-default-theme", previousTheme);
+    } else {
+        root.removeAttribute("data-xdh-default-theme");
+    }
+    return resolved;
+}
+
+function inferEffectiveThemeModeFromComfy() {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const canvas = resolveComputedCssValue(
+        "backgroundColor",
+        `var(${XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-canvas"][0]})`
+    ) || readCssVarValue(rootStyle, "--comfy-menu-bg");
+    const probe = document.createElement("div");
+    probe.style.color = canvas;
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    const match = resolved.match(/\d+(?:\.\d+)?/g);
+    if (!match || match.length < 3) {
+        return "dark";
+    }
+    const [r, g, b] = match.slice(0, 3).map(Number);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance >= 0.6 ? "light" : "dark";
+}
+
+function resolveComfyVarValue(rootStyle, candidates) {
+    for (const candidate of candidates || []) {
+        let resolved = resolveComputedCssValue("color", `var(${candidate})`);
+        if (resolved) {
+            return resolved;
+        }
+        resolved = readCssVarValue(rootStyle, candidate);
+        if (resolved) {
+            return resolveComputedCssValue("color", resolved) || resolved;
+        }
+    }
+    return "";
+}
+
+function mixToTransparent(color, percent) {
+    return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
+function buildComfyThemeVars() {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const effective = inferEffectiveThemeModeFromComfy();
+    const surfaceCandidates = XDATAHUB_COMFY_SURFACE_CANDIDATES[effective]
+        || XDATAHUB_COMFY_SURFACE_CANDIDATES.dark;
+    const vars = {};
+    const resolveTokenValue = (tokenName, candidates) =>
+        resolveComfyVarValue(rootStyle, candidates)
+            || getDefaultThemeTokenValue(effective, tokenName);
+    for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
+        if (XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS.has(tokenName)) {
+            const preserved = getDefaultThemeTokenValue(effective, tokenName);
+            if (preserved) {
+                vars[tokenName] = preserved;
+            }
+            continue;
+        }
+        if (tokenName === "--xdh-clr-scrim") {
+            vars[tokenName] = effective === "light"
+                ? "rgba(0, 0, 0, 0.50)"
+                : "rgba(0, 0, 0, 0.70)";
+            continue;
+        }
+        // Derived border/text tiers are computed after the loop.
+        if (XDATAHUB_COMFY_DERIVED_THEME_VAR_KEYS.has(tokenName)) {
+            continue;
+        }
+        const candidates = surfaceCandidates[tokenName]
+            || XDATAHUB_COMFY_THEME_VAR_CANDIDATES[tokenName]
+            || [];
+        const resolved = resolveTokenValue(tokenName, candidates);
+        if (resolved) {
+            vars[tokenName] = resolved;
+        }
+    }
+    // Derive the three border tiers from a single ComfyUI border base so the
+    // hairline / hairline-soft / border-strong hierarchy is preserved instead
+    // of collapsing onto one opaque color.
+    const borderBase = resolveTokenValue(
+        "--xdh-clr-hairline",
+        XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-hairline"]
+    );
+    if (borderBase) {
+        vars["--xdh-clr-border-strong"] = borderBase;
+        vars["--xdh-clr-hairline"] = mixToTransparent(borderBase, 55);
+        vars["--xdh-clr-hairline-soft"] = mixToTransparent(borderBase, 26);
+    }
+    // Derive the softer muted text tier from the resolved muted base so
+    // muted-soft reads dimmer than muted instead of being identical.
+    const mutedBase = vars["--xdh-clr-muted"]
+        || resolveTokenValue(
+            "--xdh-clr-muted",
+            XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-muted"]
+        );
+    if (mutedBase) {
+        vars["--xdh-clr-muted-soft"] = mixToTransparent(mutedBase, 65);
+    }
+    return { effectiveMode: effective, vars };
+}
+
+function clearThemeVars(target) {
+    if (!(target instanceof HTMLElement)) {
         return;
     }
+    for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
+        target.style.removeProperty(tokenName);
+    }
+}
+
+function applyThemeVarsToElement(target, vars) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    clearThemeVars(target);
+    for (const [tokenName, tokenValue] of Object.entries(vars || {})) {
+        if (typeof tokenValue === "string" && tokenValue.trim()) {
+            target.style.setProperty(tokenName, tokenValue);
+        }
+    }
+}
+
+function applyThemeContextToHostWindow(context) {
+    if (!xdataHubRef?.instance?.windowEl) {
+        return;
+    }
+    const windowEl = xdataHubRef.instance.windowEl;
+    windowEl.setAttribute("data-theme", context.effective_mode);
+    windowEl.setAttribute(
+        "data-theme-source",
+        getThemeSourceMode(context.theme_mode)
+    );
+    applyThemeVarsToElement(windowEl, context.vars);
+}
+
+function applyThemeContextToDocument(context) {
+    const effective = normalizeEffectiveThemeMode(context?.effective_mode);
+    const themeSource = getThemeSourceMode(context?.theme_mode);
+    document.documentElement.dataset.themeSource = themeSource;
+    document.body.dataset.theme = effective;
+    document.body.dataset.themeSource = themeSource;
+    applyThemeVarsToElement(document.documentElement, context?.vars || {});
+    applyThemeVarsToElement(document.body, context?.vars || {});
+    document.dispatchEvent(
+        new CustomEvent(XDATAHUB_THEME_CONTEXT_EVENT, {
+            detail: context,
+        })
+    );
+}
+
+function applyThemeMode(mode) {
+    const normalized = normalizeThemeMode(mode);
     currentThemeMode = normalized;
-    xdataHubRef?.instance?.applyThemeMode?.(currentThemeMode);
+    const nextContext = resolveThemeContextForMode(normalized);
+    currentEffectiveThemeMode = nextContext.effective_mode;
+    currentThemeVars = nextContext.vars;
+    applyThemeContextToDocument(nextContext);
+    xdataHubRef?.instance?.applyThemeMode?.(nextContext);
+}
+
+function reapplyCurrentThemeContext() {
+    applyThemeMode(currentThemeMode);
+}
+
+function installComfyThemeObserver() {
+    const refresh = () => {
+        if (currentThemeMode === "comfyui") {
+            reapplyCurrentThemeContext();
+        }
+    };
+    try {
+        const observer = new MutationObserver((mutations) => {
+            if (
+                mutations.some((mutation) =>
+                    mutation.attributeName === "data-theme"
+                    || mutation.attributeName === "class"
+                )
+            ) {
+                refresh();
+            }
+        });
+        observer.observe(document.body, {
+            attributes: true,
+            attributeFilter: ["class"],
+        });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["data-theme", "class"],
+        });
+    } catch {
+        // Ignore observer install failures.
+    }
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
 }
 
 async function syncThemeModeFromSettings() {
@@ -220,40 +641,6 @@ function iconUrl(name) {
     return `/extensions/ComfyUI-Xz3r0-Nodes/icons/${name}.svg`;
 }
 
-function toRequestUrl(input) {
-    if (typeof input === "string" || input instanceof URL) {
-        return String(input);
-    }
-    if (input && typeof input === "object" && "url" in input) {
-        return String(input.url || "");
-    }
-    return "";
-}
-
-function resolveRequestMethod(input, init) {
-    const initMethod = String(init?.method || "").trim().toUpperCase();
-    if (initMethod) {
-        return initMethod;
-    }
-    if (input && typeof input === "object" && "method" in input) {
-        return String(input.method || "").trim().toUpperCase();
-    }
-    return "GET";
-}
-
-function isInterruptRequest(input, init) {
-    const requestUrl = toRequestUrl(input);
-    if (!requestUrl) {
-        return false;
-    }
-    try {
-        const url = new URL(requestUrl, window.location.origin);
-        return url.pathname === "/interrupt"
-            && resolveRequestMethod(input, init) === "POST";
-    } catch {
-        return false;
-    }
-}
 
 function notifyInterruptRequested() {
     try {
@@ -292,22 +679,21 @@ function installLockEventBridge() {
     lockEventBridgeInstalled = true;
 }
 
-function installInterruptObserver() {
-    if (interruptObserverInstalled || typeof window.fetch !== "function") {
-        return;
-    }
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = function wrappedFetch(input, init) {
-        if (isInterruptRequest(input, init)) {
-            notifyInterruptRequested();
-        }
-        return originalFetch(input, init);
-    };
-    interruptObserverInstalled = true;
-}
 
 function iconHtml(name, label, className = "xz3r0-icon") {
     return `<img class="${className}" src="${iconUrl(name)}" alt="${label}" aria-hidden="true" draggable="false">`;
+}
+
+// Mask-based icon (same technique as the in-iframe `icon()` in core/icon.js):
+// the SVG is a CSS mask and the visible color is `background-color:
+// currentColor`, so the icon color follows the element's `color` token instead
+// of a brittle invert() filter. Used by the window control buttons so they
+// match the in-app buttons (e.g. the settings gear) exactly.
+function maskIconHtml(name, label, className = "xz3r0-mask-icon") {
+    const url = iconUrl(name);
+    return `<span class="${className}" aria-label="${label}" role="img"`
+        + ` style="-webkit-mask-image:url(${url});mask-image:url(${url})">`
+        + "</span>";
 }
 
 function applyMenuButtonIcon() {
@@ -912,6 +1298,7 @@ function applyDefaultOpenLayoutToOpenWindow() {
  * 窗口启用状态
  */
 let windowEnabled = true;
+let showMenuButton = true;
 let windowUnderComfySidebar = false;
 
 const WINDOW_Z_INDEX_DEFAULT = 10000;
@@ -939,8 +1326,20 @@ function applyWindowZIndexToOpenWindow() {
 function updateMenuButtonVisibility() {
     if (!menuButton) return;
     applyMenuButtonIcon();
-    menuButton.element.style.display = windowEnabled ? "" : "none";
-    if (!windowEnabled) {
+    menuButton.element.style.display = showMenuButton ? "" : "none";
+}
+
+function applyWindowEnabledState() {
+    if (windowEnabled) {
+        return;
+    }
+    if (XDataHub.instance) {
+        if (closeBehavior === "destroy") {
+            XDataHub.instance.destroy();
+        } else {
+            XDataHub.instance.hide();
+        }
+    } else {
         const windowEl = document.querySelector(".xz3r0-datahub-window");
         if (windowEl) {
             windowEl.style.display = "none";
@@ -960,17 +1359,31 @@ app.registerExtension({
      */
     settings: [
         {
-            id: "Xz3r0.XDataHub.Enabled",
-            name: "Enable XDataHub (Button)",
+            id: "Xz3r0.XDataHub.ShowButton",
+            name: "Show XDataHub Entry Button",
             type: "boolean",
             defaultValue: true,
-            tooltip: "Show XDataHub button in the top-menu bar",
+            tooltip: "Show floating window button [♾️] in the top-menu bar",
+            // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
+            category: ["♾️ Xz3r0", "XDataHub", "ShowButton"],
+            onChange: (value) => {
+                if (showMenuButton === value) return;
+                showMenuButton = value;
+                updateMenuButtonVisibility();
+            }
+        },
+        {
+            id: "Xz3r0.XDataHub.Enabled",
+            name: "Enable XDataHub",
+            type: "boolean",
+            defaultValue: true,
+            tooltip: "Enable the XDataHub window, hotkey, and related actions",
             // 注意：分类前缀 EMOJI（♾️）为固定分组标识，禁止修改。
             category: ["♾️ Xz3r0", "XDataHub", "Enabled"],
             onChange: (value) => {
                 if (windowEnabled === value) return;
                 windowEnabled = value;
-                updateMenuButtonVisibility();
+                applyWindowEnabledState();
             }
         },
         {
@@ -1064,7 +1477,7 @@ app.registerExtension({
                 align-items: center;
                 gap: 6px;
                 font-weight: 600;
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 font-size: 14px;
             }
             .xz3r0-datahub-window-title-text {
@@ -1187,26 +1600,27 @@ app.registerExtension({
                 align-items: center;
                 justify-content: center;
                 background: transparent;
-                color: var(--text-standard);
+                color: var(--xdh-clr-body);
                 transition: all 0.2s;
             }
             .xz3r0-datahub-window-btn:hover {
-                background: var(--hover-accent-bg);
+                background: var(--xdh-clr-btn-hover, var(--xdh-clr-surface-soft));
+                color: var(--xdh-clr-ink);
             }
             .xz3r0-datahub-window-btn.active {
-                color: var(--p-button-primary-background, #6366f1);
+                color: var(--xdh-clr-primary);
             }
-            .xz3r0-datahub-window-btn.active .xz3r0-icon {
-                filter: var(--icon-color-filter-active);
-            }
-            .xz3r0-datahub-window-btn .xz3r0-icon {
+            .xz3r0-datahub-window-btn .xz3r0-mask-icon {
                 width: 18px;
                 height: 18px;
                 display: block;
-                filter: var(--icon-color-filter);
-            }
-            .xz3r0-datahub-window-btn:hover .xz3r0-icon {
-                filter: var(--icon-color-filter-active);
+                background-color: currentColor;
+                -webkit-mask-repeat: no-repeat;
+                mask-repeat: no-repeat;
+                -webkit-mask-position: center;
+                mask-position: center;
+                -webkit-mask-size: contain;
+                mask-size: contain;
             }
             .xz3r0-datahub-window-content {
                 flex: 1;
@@ -1346,9 +1760,9 @@ app.registerExtension({
                 }
             }
             .xz3r0-datahub-window-host-tab:not(.active):hover {
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 border-color: var(--border-standard);
-                background: var(--hover-accent-bg);
+                background: var(--xdh-clr-surface-soft);
                 box-shadow: none;
                 animation: xz3r0TabBorderBreath 1.15s ease-in-out infinite;
             }
@@ -1526,7 +1940,7 @@ app.registerExtension({
             .xz3r0-opacity-popup-label {
                 font-size: 11px;
                 font-weight: 700;
-                color: var(--text-standard);
+                color: var(--xdh-clr-ink);
                 letter-spacing: 0.06em;
                 text-transform: uppercase;
                 display: flex;
@@ -1618,7 +2032,6 @@ app.registerExtension({
                 });
                 app.menu.settingsGroup.append(menuButton);
                 applyMenuButtonIcon();
-                // 根据设置显示/隐藏按钮
                 updateMenuButtonVisibility();
             } catch (e) {
                 console.warn("[Xz3r0-Nodes] Failed to create menu button:", e);
@@ -1749,6 +2162,9 @@ const XDataHub = {
      * 如果窗口未创建则先创建
      */
     show() {
+        if (!windowEnabled) {
+            return;
+        }
         if (!this.instance) {
             this.instance = this.create();
         }
@@ -1889,7 +2305,7 @@ const XDataHub = {
 
         const dockLeftBtn = document.createElement("button");
         dockLeftBtn.className = "xz3r0-datahub-window-btn";
-        dockLeftBtn.innerHTML = iconHtml(
+        dockLeftBtn.innerHTML = maskIconHtml(
             "panel-left-close",
             t("dockLeftBtn", "Dock Left")
         );
@@ -1897,7 +2313,7 @@ const XDataHub = {
 
         const dockRightBtn = document.createElement("button");
         dockRightBtn.className = "xz3r0-datahub-window-btn";
-        dockRightBtn.innerHTML = iconHtml(
+        dockRightBtn.innerHTML = maskIconHtml(
             "panel-right-close",
             t("dockRightBtn", "Dock Right")
         );
@@ -1910,13 +2326,10 @@ const XDataHub = {
         const opacityBtn = document.createElement("button");
         opacityBtn.className = "xz3r0-datahub-window-btn";
         opacityBtn.title = t("opacityLabel", "Opacity");
-        opacityBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-            viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-            class="xz3r0-icon" style="filter:none;opacity:1">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 2a10 10 0 0 1 0 20z"/>
-        </svg>`;
+        opacityBtn.innerHTML = maskIconHtml(
+            "contrast",
+            t("opacityLabel", "Opacity")
+        );
 
         const opacityPopup = document.createElement("div");
         opacityPopup.className = "xz3r0-opacity-popup";
@@ -1944,12 +2357,12 @@ const XDataHub = {
 
         const maxBtn = document.createElement("button");
         maxBtn.className = "xz3r0-datahub-window-btn";
-        maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+        maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
         maxBtn.title = t("maxBtn", "Maximize");
 
         const closeBtn = document.createElement("button");
         closeBtn.className = "xz3r0-datahub-window-btn";
-        closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
+        closeBtn.innerHTML = maskIconHtml("x", t("closeBtn", "Close"));
         closeBtn.title = t("closeBtn", "Close");
 
         controls.appendChild(dockLeftBtn);
@@ -1969,7 +2382,6 @@ const XDataHub = {
         const dataFrame = document.createElement("iframe");
         dataFrame.className = "xz3r0-datahub-window-frame";
         dataFrame.classList.add("active");
-        dataFrame.allowFullscreen = true;
         dataFrame.setAttribute("allow", "fullscreen");
         dataFrame.src = (
             "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub_app_v2.html"
@@ -1991,11 +2403,11 @@ const XDataHub = {
                 getDataFrameTargetOrigin(dataFrame)
             );
         };
-        const postThemeModeToDataFrame = () => {
+        const postThemeContextToDataFrame = () => {
             postToDataFrame(
                 {
-                    type: "xdatahub:theme-mode",
-                    theme_mode: currentThemeMode,
+                    type: "xdatahub:theme-context",
+                    context: buildThemeContext(),
                 },
             );
         };
@@ -2025,7 +2437,7 @@ const XDataHub = {
             );
         };
         const postSharedStateToDataFrame = () => {
-            postThemeModeToDataFrame();
+            postThemeContextToDataFrame();
             postUiLocaleToDataFrame(currentUiLocale);
         };
         const postCloseFacetToDataFrame = () => {
@@ -2052,23 +2464,23 @@ const XDataHub = {
             `;
             opacityLabelText.textContent = t("opacityLabel", "Opacity");
             opacityBtn.title = t("opacityLabel", "Opacity");
-            dockLeftBtn.innerHTML = iconHtml(
+            dockLeftBtn.innerHTML = maskIconHtml(
                 "panel-left-close",
                 t("dockLeftBtn", "Dock Left")
             );
             dockLeftBtn.title = t("dockLeftBtn", "Dock Left");
-            dockRightBtn.innerHTML = iconHtml(
+            dockRightBtn.innerHTML = maskIconHtml(
                 "panel-right-close",
                 t("dockRightBtn", "Dock Right")
             );
             dockRightBtn.title = t("dockRightBtn", "Dock Right");
-            closeBtn.innerHTML = iconHtml("x", t("closeBtn", "Close"));
+            closeBtn.innerHTML = maskIconHtml("x", t("closeBtn", "Close"));
             closeBtn.title = t("closeBtn", "Close");
             if (isMaximized) {
-                maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+                maxBtn.innerHTML = maskIconHtml("minimize-2", t("restoreBtn", "Restore"));
                 maxBtn.title = t("restoreBtn", "Restore");
             } else {
-                maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+                maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
                 maxBtn.title = t("maxBtn", "Maximize");
             }
             updateDockButtonVisual();
@@ -2083,7 +2495,7 @@ const XDataHub = {
         shell.appendChild(content);
         windowEl.appendChild(shell);
         document.body.appendChild(windowEl);
-        windowEl.setAttribute("data-theme", currentThemeMode);
+        applyThemeContextToHostWindow(buildThemeContext());
         dataFrame.addEventListener("load", () => {
             postSharedStateToDataFrame();
             postLockEventToDataFrame("frame_loaded");
@@ -2430,7 +2842,7 @@ const XDataHub = {
 
             isMaximized = true;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+            maxBtn.innerHTML = maskIconHtml("minimize-2", t("restoreBtn", "Restore"));
             maxBtn.title = t("restoreBtn", "Restore");
             maxBtn.classList.add('maximized');
             updateHostTabCompactMode();
@@ -2456,7 +2868,7 @@ const XDataHub = {
             isMaximized = false;
             preMaximizeState = null;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
             maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove('maximized');
             updateHostTabCompactMode();
@@ -2491,7 +2903,7 @@ const XDataHub = {
             resetInteractionState(false);
             isMaximized = false;
             preMaximizeState = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
             maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove("maximized");
 
@@ -2519,7 +2931,7 @@ const XDataHub = {
             }
         };
         if (isMaximized) {
-            maxBtn.innerHTML = iconHtml("minimize-2", t("restoreBtn", "Restore"));
+            maxBtn.innerHTML = maskIconHtml("minimize-2", t("restoreBtn", "Restore"));
             maxBtn.title = t("restoreBtn", "Restore");
             maxBtn.classList.add("maximized");
         }
@@ -2545,7 +2957,7 @@ const XDataHub = {
             isMaximized = false;
             preMaximizeState = null;
             dockSide = null;
-            maxBtn.innerHTML = iconHtml("maximize-2", t("maxBtn", "Maximize"));
+            maxBtn.innerHTML = maskIconHtml("maximize-2", t("maxBtn", "Maximize"));
             maxBtn.title = t("maxBtn", "Maximize");
             maxBtn.classList.remove("maximized");
 
@@ -3157,11 +3569,16 @@ const XDataHub = {
             async applyUiLocale(locale) {
                 await applyHostUiLocale(locale);
             },
-            applyThemeMode(mode) {
-                const normalized = normalizeThemeMode(mode);
-                windowEl.setAttribute("data-theme", normalized);
-                document.body.dataset.theme = normalized;
-                postThemeModeToDataFrame();
+            windowEl,
+            dataFrame,
+            applyThemeMode(contextOrMode) {
+                const context = contextOrMode
+                    && typeof contextOrMode === "object"
+                    && contextOrMode.effective_mode
+                    ? contextOrMode
+                    : resolveThemeContextForMode(contextOrMode);
+                applyThemeContextToHostWindow(context);
+                postThemeContextToDataFrame();
             },
             postInterruptRequestedToDataFrame() {
                 postInterruptRequestedToDataFrame();
@@ -3279,8 +3696,9 @@ const XDataHub = {
     }
 };
 xdataHubRef = XDataHub;
-installInterruptObserver();
+api.addEventListener("execution_interrupted", notifyInterruptRequested);
 installLockEventBridge();
+installComfyThemeObserver();
 
 window.addEventListener("message", (event) => {
     const isFrameMessage = isTrustedDataFrameMessage(event);
@@ -3405,6 +3823,19 @@ window.addEventListener("message", (event) => {
                 "default_open_layout"
             ),
         });
+        return;
+    }
+    if (payload.type === "xdatahub:theme-context") {
+        const context = payload.context;
+        if (context && typeof context === "object") {
+            currentThemeMode = normalizeThemeMode(context.theme_mode);
+            currentEffectiveThemeMode = normalizeEffectiveThemeMode(
+                context.effective_mode
+            );
+            currentThemeVars = { ...(context.vars || {}) };
+            applyThemeContextToDocument(buildThemeContext());
+            xdataHubRef?.instance?.applyThemeMode?.(buildThemeContext());
+        }
         return;
     }
     if (payload.type === "xdatahub:theme-mode") {
