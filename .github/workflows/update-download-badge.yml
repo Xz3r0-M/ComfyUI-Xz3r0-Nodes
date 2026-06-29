@@ -44,36 +44,77 @@ jobs:
         run: |
           TODAY=$(date +%Y-%m-%d)
 
-          # 读取现有历史数据
           if [ -f docs/downloads-history.json ]; then
-            # 用 jq 追加今天的记录，保留最近 90 天
             jq --arg date "$TODAY" --argjson count "${{ env.downloads }}" '
-              # 如果最后一条已是今天的日期，则替换；否则追加
               if .[-1].date == $date then
                 .[-1].downloads = $count
               else
                 . + [{"date": $date, "downloads": $count}]
               end
-              | .[-90:]  # 保留最近 90 条
+              | .[-90:]
             ' docs/downloads-history.json > /tmp/history.json
             mv /tmp/history.json docs/downloads-history.json
           else
-            # 首次创建
             echo '[{"date": "'$TODAY'", "downloads": ${{ env.downloads }}}]' > docs/downloads-history.json
           fi
 
-          echo "📈 历史数据已更新（保存最近 90 天）"
+          echo "📈 历史数据已更新（保留最近 90 天）"
+
+      - name: 生成火花线图并更新 README
+        run: |
+          python3 << 'PYEOF'
+          import json, urllib.parse, re
+
+          # 读取历史数据（最近 60 天）
+          with open('docs/downloads-history.json') as f:
+              history = json.load(f)
+          history = history[-60:]
+
+          data = [entry['downloads'] for entry in history]
+
+          # 构建 QuickChart.io 火花线图配置
+          chart = {
+              "type": "sparkline",
+              "data": {
+                  "datasets": [{
+                      "data": data,
+                      "borderColor": "#3fb950",
+                      "borderWidth": 2,
+                      "fill": True,
+                      "backgroundColor": "rgba(63,185,80,0.10)",
+                  }]
+              }
+          }
+
+          config_json = json.dumps(chart, separators=(',', ':'))
+          url = f"https://quickchart.io/chart?w=500&h=100&c={urllib.parse.quote(config_json)}"
+
+          # 更新 README.md 中的火花线图
+          with open('README.md', 'r', encoding='utf-8') as f:
+              readme = f.read()
+
+          readme = re.sub(
+              r'!\[下载趋势\]\(https://quickchart\.io/chart\?[^)]*\)',
+              f'![下载趋势]({url})',
+              readme
+          )
+
+          with open('README.md', 'w', encoding='utf-8') as f:
+              f.write(readme)
+
+          print(f"✅ 火花线图已生成 ({len(data)} 个数据点)")
+          PYEOF
 
       - name: 提交并推送
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add docs/badge.json docs/downloads-history.json
+          git add docs/badge.json docs/downloads-history.json README.md
           if git diff --staged --quiet; then
             echo "📭 无变化，跳过提交"
           else
-            git commit -m "📊 更新下载: ${{ env.downloads }} | 历史曲线"
+            git commit -m "📊 更新下载: ${{ env.downloads }}"
             git push
             echo "✅ 已推送: downloads=${{ env.downloads }}"
           fi
