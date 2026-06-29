@@ -3,6 +3,5 @@
   "label": "downloads",
   "message": "1995",
   "color": "brightgreen",
-  "namedLogo": "comfyui",
-  "logoColor": "white"
+  "cacheSeconds": 3600
 }
