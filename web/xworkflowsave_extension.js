@@ -71,10 +71,9 @@ app.registerExtension({
         const wrappedQueuePrompt = async function(number, batchCount) {
             const capturePayload = self.buildCapturePayload();
             if (capturePayload) {
-                self.sendCaptureInBackground(capturePayload);
+                await self.sendCapturePayload(capturePayload);
             }
 
-            // 调用原始的 queuePrompt，不等待上传请求
             return originalQueuePrompt.apply(this, arguments);
         };
 
@@ -133,19 +132,6 @@ app.registerExtension({
             target_nodes: targetNodes,
             workflow: workflowData,
         };
-    },
-
-    /**
-     * 后台上传，避免阻塞 queuePrompt。
-     *
-     * @param {Object} payload - 上传负载
-     */
-    sendCaptureInBackground(payload) {
-        Promise.resolve()
-            .then(() => this.sendCapturePayload(payload))
-            .catch((error) => {
-                console.error("[XWorkflowSave] Background send error:", error);
-            });
     },
 
     /**

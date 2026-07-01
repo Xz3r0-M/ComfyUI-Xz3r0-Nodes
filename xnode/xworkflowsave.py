@@ -13,6 +13,7 @@
 """
 
 import json
+import time
 from pathlib import Path
 
 import folder_paths
@@ -339,15 +340,25 @@ class XWorkflowSave(io.ComfyNode):
     def _get_full_workflow_data(cls, unique_id) -> dict | None:
         """
         从缓存读取完整工作流数据。
+
+        带重试机制：前端 capture 请求可能与节点执行存在
+        微秒级竞态，最多重试 5 次（间隔 10ms）。
         """
         if not unique_id:
             return None
-        stored_data = workflow_store.retrieve(unique_id)
-        if not isinstance(stored_data, dict):
-            return None
-        workflow = stored_data.get("workflow")
-        if isinstance(workflow, dict):
-            return workflow
+
+        for attempt in range(5):
+            stored_data = workflow_store.retrieve(
+                unique_id, auto_cleanup=False
+            )
+            if isinstance(stored_data, dict):
+                workflow = stored_data.get("workflow")
+                if isinstance(workflow, dict):
+                    return workflow
+
+            if attempt < 4:
+                time.sleep(0.01)
+
         return None
 
     @classmethod
