@@ -6,13 +6,13 @@
 
 ### 1. 🩹 修复 `XWorkflowSave` 工作流元数据 JSON 保存节点
 `♾️ Xz3r0/File-Processing`
-- 修复工作流序列（执行 2 次或更多）错误
+- 修复工作流队列（执行 2 次或更多）错误
 
 ---
 
 ### 1. 🩹Fixed `XWorkflowSave` Workflow Metadata JSON Save Node
 `♾️ Xz3r0/File-Processing`
-- Fixed workflow sequence error (executed 2 or more times)
+- Fixed workflow queue error (executed 2 or more times)
 
 </details>
 
