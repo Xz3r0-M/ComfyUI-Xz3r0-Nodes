@@ -102,7 +102,7 @@ https://github.com/user-attachments/assets/8cd339ab-f054-440e-a7eb-6cbd50cb76eb
 
 ## XMetadataWorkflow 预览
 
-🌐 在线使用：https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes
+🌐 在线使用：https://xz3r0-m.github.io/Xz3r0/
 <img src="preview/XMetadataWorkflow_preview.png" alt="XMetadataWorkflow preview" width="800">
 
 </div>
