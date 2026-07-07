@@ -38,6 +38,70 @@ const CAPTURE_TIMEOUT_MS = 5000;
 const DEBUG_SUCCESS_LOG = false;
 
 /**
+ * 构建作用域节点 ID。
+ *
+ * ComfyUI 执行引擎在子图中的节点使用 "parent_id:child_id"
+ * 格式的作用域 ID，前端必须使用相同格式才能与后端匹配。
+ */
+function buildScopedNodeId(pathIds, nodeId) {
+    const base = String(nodeId ?? "").trim();
+    if (!base) {
+        return "";
+    }
+    if (!Array.isArray(pathIds) || pathIds.length < 1) {
+        return base;
+    }
+    return pathIds.join(":") + ":" + base;
+}
+
+/**
+ * 遍历完整图树（包含所有嵌套子图），对每个节点调用 visitor。
+ *
+ * 与 app.graph.nodes 不同，后者仅包含当前可见图的节点。
+ * 此函数递归进入每个 node.subgraph，确保子图中的
+ * XWorkflowSave 节点也能被发现。
+ */
+function forEachNodeInGraphTree(rootGraph, visitor) {
+    if (!rootGraph || typeof visitor !== "function") {
+        return;
+    }
+    const visited = new Set();
+
+    const walk = function (graph, pathIds) {
+        if (!graph || typeof graph !== "object" || visited.has(graph)) {
+            return;
+        }
+        visited.add(graph);
+        const nodes = Array.isArray(graph._nodes)
+            ? graph._nodes
+            : Array.isArray(graph.nodes)
+                ? graph.nodes
+                : [];
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const nodeId = String(
+                node && node.id != null ? node.id : ""
+            ).trim();
+            if (!nodeId) {
+                continue;
+            }
+            const scopedId = buildScopedNodeId(pathIds, nodeId);
+            visitor(node, scopedId);
+
+            if (
+                node &&
+                node.subgraph &&
+                typeof node.subgraph === "object"
+            ) {
+                walk(node.subgraph, pathIds.concat([nodeId]));
+            }
+        }
+    };
+
+    walk(rootGraph, []);
+}
+
+/**
  * 注册 ComfyUI 扩展
  */
 app.registerExtension({
@@ -88,36 +152,33 @@ app.registerExtension({
      * @returns {Object|null} 上传负载
      */
     buildCapturePayload() {
-        const graphNodes = app.graph?.nodes;
-        if (!Array.isArray(graphNodes) || graphNodes.length === 0) {
-            return null;
-        }
-
-        // 查找需要完整 workflow 数据的 XWorkflowSave 节点
-        const saveNodes = graphNodes.filter(
-            (node) => node?.type === "XWorkflowSave"
-        );
-        if (saveNodes.length === 0) {
-            return null;
-        }
-
-        // 检查是否有节点需要完整 workflow
-        const targetNodes = saveNodes
-            .map((node) => {
+        // 遍历完整图树（含嵌套子图），发现所有 XWorkflowSave 节点
+        const targetNodes = [];
+        forEachNodeInGraphTree(
+            app.graph,
+            function (node, scopedId) {
+                if (node?.type !== "XWorkflowSave") {
+                    return;
+                }
                 const modeWidget = node.widgets?.find(
-                    (widget) => widget.name === "save_mode"
+                    function (widget) {
+                        return widget.name === "save_mode";
+                    }
                 );
                 const mode = modeWidget?.value || "Auto";
-                return {
-                    node_id: String(node.id),
-                    mode,
-                };
-            })
-            .filter(
-                (nodeInfo) => nodeInfo.mode === "FullWorkflow" ||
-                    nodeInfo.mode === "Auto" ||
-                    nodeInfo.mode === "Prompt+FullWorkflow"
-            );
+                if (
+                    mode === "FullWorkflow" ||
+                    mode === "Auto" ||
+                    mode === "Prompt+FullWorkflow"
+                ) {
+                    targetNodes.push({
+                        node_id: scopedId,
+                        mode: mode,
+                    });
+                }
+            }
+        );
+
         if (targetNodes.length === 0) {
             return null;
         }
@@ -268,13 +329,15 @@ app.registerExtension({
             return workflow;
         }
 
-        const graphNodes = app.graph?.nodes;
-        if (!Array.isArray(graphNodes)) {
-            return workflow;
-        }
-
-        const graphNodeMap = new Map(
-            graphNodes.map((node) => [node.id, node])
+        // 遍历完整图树构建节点映射，确保子图中的节点也能匹配
+        const graphNodeMap = new Map();
+        forEachNodeInGraphTree(
+            app.graph,
+            function (node) {
+                if (node && node.id != null) {
+                    graphNodeMap.set(node.id, node);
+                }
+            }
         );
 
         for (const node of workflow.nodes) {

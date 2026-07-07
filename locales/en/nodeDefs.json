@@ -1290,6 +1290,10 @@
     "display_name": "XStringGet",
     "description": "Load the latest text sent from XDataHub.",
     "inputs": {
+      "none_on_empty": {
+        "name": "None on Empty",
+        "tooltip": "When enabled, output None if no content; when disabled, output empty string instead"
+      },
       "text_value": {
         "name": "Content",
         "tooltip": "Latest body text received from XDataHub"

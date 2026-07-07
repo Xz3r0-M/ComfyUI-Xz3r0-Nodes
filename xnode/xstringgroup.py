@@ -269,6 +269,14 @@ class XStringGroup(io.ComfyNode):
         Returns:
             NodeOutput: 包含组合字符串、选中字符串和所有原始字符串
         """
+        # Coerce None to empty string for compatibility with upstream
+        # nodes that output None when disabled or empty.
+        string_1 = string_1 if string_1 is not None else ""
+        string_2 = string_2 if string_2 is not None else ""
+        string_3 = string_3 if string_3 is not None else ""
+        string_4 = string_4 if string_4 is not None else ""
+        string_5 = string_5 if string_5 is not None else ""
+
         sm_1_2 = cls.resolve_separation_method(separation_method_1_2)
         sm_2_3 = cls.resolve_separation_method(separation_method_2_3)
         sm_3_4 = cls.resolve_separation_method(separation_method_3_4)

@@ -23,6 +23,16 @@ class XStringGet(io.ComfyNode):
             description="Load latest text sent from XDataHub",
             category="♾️ Xz3r0/XDataHub",
             inputs=[
+                io.Boolean.Input(
+                    "none_on_empty",
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip=(
+                        "When enabled, output None if no content; "
+                        "when disabled, output empty string instead"
+                    ),
+                ),
                 io.String.Input(
                     "text_value",
                     default="",
@@ -56,7 +66,10 @@ class XStringGet(io.ComfyNode):
 
     @classmethod
     def fingerprint_inputs(
-        cls, text_value: str = "", title_value: str = ""
+        cls,
+        none_on_empty: bool = True,
+        text_value: str = "",
+        title_value: str = "",
     ) -> int:
         if not text_value and not title_value:
             return 0
@@ -66,10 +79,15 @@ class XStringGet(io.ComfyNode):
 
     @classmethod
     def execute(
-        cls, text_value: str = "", title_value: str = ""
+        cls,
+        none_on_empty: bool = True,
+        text_value: str = "",
+        title_value: str = "",
     ) -> io.NodeOutput:
         if not text_value and not title_value:
-            return io.NodeOutput(None, None)
+            if none_on_empty:
+                return io.NodeOutput(None, None)
+            return io.NodeOutput("", "")
         return io.NodeOutput(
             str(text_value or ""),
             str(title_value or ""),

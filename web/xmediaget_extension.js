@@ -66,6 +66,7 @@ const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const DEFAULT_MIN_NODE_WIDTH = 260;
 const DEFAULT_MIN_NODE_HEIGHT = 320;
 const IMAGE_GET_MIN_NODE_HEIGHT = 356;
+const STRING_GET_MIN_NODE_HEIGHT = 356;
 const MEDIA_REF_PROPERTY = "__xdatahub_media_ref";
 const MASK_IMAGE_REF_PROPERTY = "__xdatahub_mask_image_ref";
 const TEXT_VALUE_PROPERTY = "__xdatahub_text_value";
@@ -2370,6 +2371,9 @@ function getNodeMinSize(node) {
     const nodeClass = String(node?.comfyClass || "");
     if (nodeClass === "XImageGet") {
         return [DEFAULT_MIN_NODE_WIDTH, IMAGE_GET_MIN_NODE_HEIGHT];
+    }
+    if (nodeClass === STRING_NODE_CLASS) {
+        return [DEFAULT_MIN_NODE_WIDTH, STRING_GET_MIN_NODE_HEIGHT];
     }
     return [DEFAULT_MIN_NODE_WIDTH, DEFAULT_MIN_NODE_HEIGHT];
 }

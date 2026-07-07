@@ -20,7 +20,7 @@ class XStringWrap(io.ComfyNode):
     按照前后分隔生效策略，将输入文本进行包装并输出。
 
     处理流程：
-        1. 检查节点开关，关闭则输出空字符串
+        1. 检查节点开关，关闭则输出 None
         2. 检查文本是否为空，空则输出空字符串
         3. 解析前后分隔符和生效模式
         4. 拼接并输出结果字符串
@@ -58,7 +58,7 @@ class XStringWrap(io.ComfyNode):
                     default=True,
                     label_on="Enabled",
                     label_off="Disabled",
-                    tooltip="Enable output; if disabled, output is empty",
+                    tooltip="Enable output; if disabled, output is None",
                 ),
                 io.Combo.Input(
                     "apply_mode",
@@ -119,11 +119,11 @@ class XStringWrap(io.ComfyNode):
         执行文本包装。
 
         说明：
-            - 节点关闭时静默输出空字符串
-            - 文本为空时静默输出空字符串
+            - 节点关闭时输出 None
+            - 文本为空时输出空字符串
         """
         if not enabled:
-            return io.NodeOutput("")
+            return io.NodeOutput(None)
 
         if text == "":
             return io.NodeOutput("")
