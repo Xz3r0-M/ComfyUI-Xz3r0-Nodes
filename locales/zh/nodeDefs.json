@@ -559,6 +559,26 @@
       }
     }
   },
+  "XPrimitiveCombo": {
+    "display_name": "XPrimitiveCombo",
+    "description": "将 COMBO 控件的选中值桥接为 STRING 输出。将 COMBO 输出连接到目标 widget，然后使用 STRING 输出传递给下游节点。",
+    "inputs": {
+      "combo_string": {
+        "name": "combo_string",
+        "tooltip": "内部：从目标 widget 同步的选中值"
+      }
+    },
+    "outputs": {
+      "COMBO": {
+        "name": "COMBO",
+        "tooltip": "连接到目标节点的 COMBO widget 以传递选中值"
+      },
+      "STRING": {
+        "name": "STRING",
+        "tooltip": "以字符串形式输出选中的 widget 值"
+      }
+    }
+  },
   "XResolution": {
     "display_name": "XResolution",
     "description": "分辨率设置节点，提供标准预设、自定义缩放、整除调整和偏移功能。",
