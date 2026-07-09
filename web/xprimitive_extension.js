@@ -2,30 +2,30 @@
  * XPrimitiveCombo — 桥接 COMBO widget 并输出 STRING
  * ==================================================
  *
- * 在 XPrimitiveCombo 节点上添加第二个 BRIDGE 输出端口 (type=*)，
- * 连接到目标节点的 widget 输入时动态创建匹配控件，并双向同步值。
+ * 输出端口（slot 0 = COMBO, slot 1 = STRING），仅限连接 COMBO
+ * 类型目标 widget，连接时自动读取选项并创建匹配控件。
  *
  * 数据流：
- *   BRIDGE 输出 → 目标 widget 输入
+ *   COMBO 输出（slot 0）→ 目标 COMBO widget   （Python 执行管道）
  *        ↕ (双向同步)
- *   bridge_control 控件 → bridge_value 隐藏 widget → Python execute()
+ *   combo_control 控件 → combo_string 隐藏 widget → Python execute()
  *                                                      ↓
- *                                                STRING 输出 → 下游节点
+ *                                                STRING 输出（slot 1）→ 下游
  *
  * 用法：
- *   1. 将 XPrimitiveCombo 的 BRIDGE 输出（右侧第2个端口）拖到
- *      任意节点的 COMBO/INT/FLOAT/STRING/BOOLEAN widget 输入上
- *   2. XPrimitiveCombo 自动创建匹配控件
+ *   1. 将 XPrimitiveCombo 的 COMBO 输出（左侧第1个端口）拖到
+ *      任意节点的 COMBO widget 输入上
+ *   2. XPrimitiveCombo 自动创建匹配控件（标签 "COMBO"）
  *   3. 控件值同步到目标节点，同时通过 STRING 输出传给下游
  */
 
 import { app } from "../../scripts/app.js";
 
 var NODE_CLASS = "XPrimitiveCombo";
-var BRIDGE_OUTPUT_INDEX = 1;
-var BRIDGE_OUTPUT_NAME = "connect to widget input";
-var HIDDEN_WIDGET_NAME = "bridge_value";
-var CONTROL_WIDGET_NAME = "bridge_control";
+var BRIDGE_OUTPUT_INDEX = 0;
+var BRIDGE_OUTPUT_NAME = "COMBO";
+var HIDDEN_WIDGET_NAME = "combo_string";
+var CONTROL_WIDGET_NAME = "combo_control";
 
 // ---------------------------------------------------------------------------
 // 工具函数
@@ -86,7 +86,7 @@ function activeGraph() {
 }
 
 // ---------------------------------------------------------------------------
-// 桥接逻辑（参照官方 PrimitiveNode）
+// COMBO 桥接逻辑（输出由 Python schema 定义，前端限制为 COMBO-only）
 // ---------------------------------------------------------------------------
 
 /**
@@ -146,11 +146,11 @@ function onFirstConnection(node) {
     }
 
     // 创建可见控件
-    createBridgeWidget(node, widgetType, options);
+    createComboWidget(node, widgetType, options);
 
     // 同步初始值
-    syncBridgeToHidden(node);
-    syncBridgeToTarget(node, targetNode, link.target_slot);
+    syncComboToHidden(node);
+    syncComboToTarget(node, targetNode, link.target_slot);
 }
 
 /**
@@ -177,9 +177,9 @@ function normalizeWidgetType(type, options) {
 /**
  * 在节点上动态创建桥接控件。
  */
-function createBridgeWidget(node, widgetType, options) {
+function createComboWidget(node, widgetType, options) {
     // 清理旧控件
-    removeBridgeWidget(node);
+    removeComboWidget(node);
 
     var ComfyWidgets = getComfyWidgets();
     var widget = null;
@@ -229,12 +229,12 @@ function createBridgeWidget(node, widgetType, options) {
 
     if (!widget) return;
 
-    // 隐藏标签（节省空间）
+    // 标签显示 "COMBO" 以明确控件用途
     if (widget.options) {
-        widget.options.label = "";
+        widget.options.label = "COMBO";
     }
     if (widget.label != null) {
-        widget.label = "";
+        widget.label = "COMBO";
     }
 
     // 拦截 callback：变更时双向同步
@@ -243,8 +243,8 @@ function createBridgeWidget(node, widgetType, options) {
         if (origCallback) {
             origCallback.apply(widget, arguments);
         }
-        syncBridgeToHidden(node);
-        syncBridgeToTarget(node);
+        syncComboToHidden(node);
+        syncComboToTarget(node);
         markCanvasDirty();
     };
 
@@ -255,7 +255,7 @@ function createBridgeWidget(node, widgetType, options) {
 /**
  * 移除桥接控件。
  */
-function removeBridgeWidget(node) {
+function removeComboWidget(node) {
     if (!node || !Array.isArray(node.widgets)) return;
 
     for (var i = node.widgets.length - 1; i >= 0; i--) {
@@ -276,11 +276,11 @@ function onLastDisconnect(node) {
     var output = node.outputs[BRIDGE_OUTPUT_INDEX];
     if (!output) return;
 
-    output.type = "*";
-    output.name = BRIDGE_OUTPUT_NAME;
+    output.type = "COMBO";
+    output.name = "COMBO";
     delete output.widget;
 
-    removeBridgeWidget(node);
+    removeComboWidget(node);
 
     // 清空隐藏 widget
     var hidden = findWidget(node, HIDDEN_WIDGET_NAME);
@@ -299,7 +299,7 @@ function onLastDisconnect(node) {
 /**
  * 桥接控件 → hidden widget
  */
-function syncBridgeToHidden(node) {
+function syncComboToHidden(node) {
     var control = findWidget(node, CONTROL_WIDGET_NAME);
     var hidden = findWidget(node, HIDDEN_WIDGET_NAME);
     if (!control || !hidden) return;
@@ -311,7 +311,7 @@ function syncBridgeToHidden(node) {
 /**
  * 桥接控件 → 目标节点 widget
  */
-function syncBridgeToTarget(node, specificTarget, specificSlot) {
+function syncComboToTarget(node, specificTarget, specificSlot) {
     var control = findWidget(node, CONTROL_WIDGET_NAME);
     if (!control) return;
 
@@ -392,14 +392,15 @@ function markCanvasDirty() {
 // 节点生命周期钩子
 // ---------------------------------------------------------------------------
 
-function ensureBridgeOutput(node) {
+function ensureComboOutput(node) {
     if (!node || !Array.isArray(node.outputs)) return;
 
-    // 检查桥接输出是否已存在
+    // BRIDGE 输出仅限 COMBO（LiteGraph 类型匹配自动拒绝其他类型）
     if (
         node.outputs.length > BRIDGE_OUTPUT_INDEX &&
         node.outputs[BRIDGE_OUTPUT_INDEX]
     ) {
+        node.outputs[BRIDGE_OUTPUT_INDEX].type = "COMBO";
         return;
     }
 
@@ -409,10 +410,10 @@ function ensureBridgeOutput(node) {
     }
 
     // 如果已有连接但无控件，恢复控件
-    restoreBridgeWidget(node);
+    restoreComboWidget(node);
 }
 
-function restoreBridgeWidget(node) {
+function restoreComboWidget(node) {
     var output = node.outputs[BRIDGE_OUTPUT_INDEX];
     if (!output || !output.links || !output.links.length) return;
 
@@ -426,11 +427,20 @@ function setupNode(node) {
     if (!node || node.__xprimitiveSetupDone) return;
     node.__xprimitiveSetupDone = true;
 
-    ensureBridgeOutput(node);
+    ensureComboOutput(node);
+
+    // 隐藏 combo_string widget（LiteGraph 原生隐藏方式）
+    var hiddenW = findWidget(node, HIDDEN_WIDGET_NAME);
+    if (hiddenW) {
+        hiddenW.hidden = true;
+        hiddenW.options = hiddenW.options || {};
+        hiddenW.options.hidden = true;
+        hiddenW.computeSize = function () { return [0, -4]; };
+    }
 
     // 如果桥接输出已有连接但无控件，恢复
     setTimeout(function () {
-        restoreBridgeWidget(node);
+        restoreComboWidget(node);
     }, 50);
 }
 
@@ -451,12 +461,12 @@ app.registerExtension({
                 origOnNodeCreated.apply(this, arguments);
             }
 
-            // 添加桥接输出端口
+            // BRIDGE 输出仅限 COMBO（LiteGraph 类型匹配自动拒绝其他类型）
             if (
                 this.outputs &&
-                this.outputs.length <= BRIDGE_OUTPUT_INDEX
+                this.outputs[BRIDGE_OUTPUT_INDEX]
             ) {
-                this.addOutput(BRIDGE_OUTPUT_NAME, "*");
+                this.outputs[BRIDGE_OUTPUT_INDEX].type = "COMBO";
             }
 
             // 保存原始 onConnectionsChange
@@ -495,7 +505,7 @@ app.registerExtension({
                         onFirstConnection(self);
                     } else {
                         // 额外连接：同步值到新目标
-                        syncBridgeToTarget(self);
+                        syncComboToTarget(self);
                     }
                 } else {
                     var out = self.outputs[BRIDGE_OUTPUT_INDEX];
@@ -515,7 +525,7 @@ app.registerExtension({
                 origOnConfigure.apply(this, arguments);
             }
             this.__xprimitiveSetupDone = false;
-            ensureBridgeOutput(this);
+            ensureComboOutput(this);
         };
 
         // ── onGraphConfigured：图配置完成时恢复控件 ──
@@ -525,7 +535,7 @@ app.registerExtension({
             if (origOnGraphConfigured) {
                 origOnGraphConfigured.apply(this, arguments);
             }
-            restoreBridgeWidget(this);
+            restoreComboWidget(this);
         };
     },
 
