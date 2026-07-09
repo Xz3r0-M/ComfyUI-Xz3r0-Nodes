@@ -21,8 +21,9 @@ class XSeed(io.ComfyNode):
     """
     XSeed 种子生成节点
 
-    使用原生 seed 输入和原生生成控件，并在输出阶段按
-    位数上限做截断或可选补零处理。
+    使用自定义前端控件管理种子值，并在输出阶段按
+    位数上限做截断处理。随机生成、手动输入、
+    执行时随机、复用上次种子值均由前端自定义组件处理。
     """
 
     MAX_DIGITS = 20
@@ -30,13 +31,12 @@ class XSeed(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         """定义节点输入输出模式。"""
-        max_seed = (2**64) - 1
         return io.Schema(
             node_id="XSeed",
             display_name="XSeed",
             description=(
-                "Generate non-negative seed value with native seed control, "
-                "then apply max-digit truncation and optional zero padding"
+                "Generate non-negative seed value with custom seed UI, "
+                "then apply max-digit truncation"
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
@@ -52,29 +52,44 @@ class XSeed(io.ComfyNode):
                         "(1 to 20 digits)"
                     ),
                 ),
-                io.Boolean.Input(
-                    "pad_to_limit",
-                    default=False,
-                    label_on="Enabled",
-                    label_off="Disabled",
+                io.String.Input(
+                    "seed_string",
+                    default="1",
+                    socketless=True,
+                    extra_dict={"hidden": True},
                     tooltip=(
-                        "Pad trailing zeros to reach the digit limit when "
-                        "seed length is below the limit. Since random seeds "
-                        "in the 64-bit range are usually high-digit values, "
-                        "this option is rarely triggered in practice."
+                        "Internal: seed value from custom UI. "
+                        "Written by the frontend extension."
                     ),
                 ),
-                io.Int.Input(
-                    "seed_value",
-                    default=1,
-                    min=0,
-                    max=max_seed,
-                    step=1,
-                    control_after_generate=True,
-                    display_mode=io.NumberDisplay.number,
+                io.String.Input(
+                    "last_seed_string",
+                    default="",
+                    socketless=True,
+                    extra_dict={"hidden": True},
                     tooltip=(
-                        "Base non-negative seed value. "
-                        "Control-after-generate is enabled."
+                        "Internal: last applied seed value. "
+                        "Written by the frontend on execution."
+                    ),
+                ),
+                io.Boolean.Input(
+                    "random_on_execute",
+                    default=False,
+                    socketless=True,
+                    extra_dict={"hidden": True},
+                    tooltip=(
+                        "Internal: random-on-execute toggle state. "
+                        "Persisted across workflow saves."
+                    ),
+                ),
+                io.Boolean.Input(
+                    "last_seed_locked",
+                    default=False,
+                    socketless=True,
+                    extra_dict={"hidden": True},
+                    tooltip=(
+                        "Internal: lock last-seed from being overwritten. "
+                        "Persisted across workflow saves."
                     ),
                 ),
             ],
@@ -94,15 +109,17 @@ class XSeed(io.ComfyNode):
     def execute(
         cls,
         digits: int = 20,
-        pad_to_limit: bool = False,
-        seed_value: int = 1,
+        seed_string: str = "1",
+        last_seed_string: str = "",
+        random_on_execute: bool = False,
+        last_seed_locked: bool = False,
     ) -> io.NodeOutput:
         """执行种子生成。"""
         normalized_digits = cls._normalize_digits(digits)
+        seed_value = cls._parse_seed_string(seed_string)
         normalized_seed = cls._normalize_seed(
             seed_value=seed_value,
             digit_limit=normalized_digits,
-            pad_to_limit=pad_to_limit,
         )
 
         payload = {
@@ -119,6 +136,18 @@ class XSeed(io.ComfyNode):
         return io.NodeOutput(normalized_seed, payload)
 
     @classmethod
+    def _parse_seed_string(cls, seed_string: str) -> int:
+        """将前端传入的种子字符串解析为整数。"""
+        if not isinstance(seed_string, str):
+            raise ValueError("seed_string must be a string")
+        stripped = seed_string.strip()
+        if not stripped:
+            raise ValueError("seed_string must not be empty")
+        if not stripped.isdigit():
+            raise ValueError("seed_string must be a non-negative integer")
+        return int(stripped)
+
+    @classmethod
     def _normalize_digits(cls, digits: int) -> int:
         """校验并返回有效位数。"""
         if not isinstance(digits, int):
@@ -132,9 +161,8 @@ class XSeed(io.ComfyNode):
         cls,
         seed_value: int,
         digit_limit: int,
-        pad_to_limit: bool,
     ) -> int:
-        """按位数上限规则归一化种子。"""
+        """按位数上限规则截断种子。"""
         if not isinstance(seed_value, int):
             raise ValueError("seed_value must be an integer")
         if seed_value < 0:
@@ -145,9 +173,6 @@ class XSeed(io.ComfyNode):
 
         if seed_len > digit_limit:
             normalized_text = seed_text[:digit_limit]
-        elif seed_len < digit_limit and pad_to_limit:
-            normalized_text = seed_text + ("0" * (digit_limit - seed_len))
         else:
             normalized_text = seed_text
         return int(normalized_text)
-

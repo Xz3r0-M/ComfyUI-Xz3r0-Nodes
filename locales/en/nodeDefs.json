@@ -637,25 +637,25 @@
   },
   "XSeed": {
     "display_name": "XSeed",
-    "description": "Generate non-negative seed values with native seed control, then apply max-digit truncation and optional trailing zero-padding.",
+    "description": "Generate non-negative seed values with custom seed UI, then apply max-digit truncation.",
     "inputs": {
       "digits": {
         "name": "Digit Limit",
         "tooltip": "Max output digit limit (1 to 20). Truncation is applied only when seed length exceeds this limit."
       },
-      "pad_to_limit": {
-        "name": "Pad With Zeros",
-        "tooltip": "When enabled, seeds shorter than the digit limit are padded with trailing zeros to the limit length. Because random seeds in the 64-bit range are usually high-digit values, this option is rarely triggered in practice."
-      },
-      "seed_value": {
+      "seed_string": {
         "name": "Seed Value",
-        "tooltip": "Base non-negative seed value with native generate control. Final output applies digit-limit rules."
+        "tooltip": "Internal: seed value from custom UI. Managed by the frontend extension."
+      },
+      "last_seed_string": {
+        "name": "Last Seed",
+        "tooltip": "Internal: last applied seed value. Written by the frontend on execution."
       }
     },
     "outputs": {
       "0": {
         "name": "Seed Int",
-        "tooltip": "Final non-negative integer seed after limit and padding rules."
+        "tooltip": "Final non-negative integer seed after digit-limit truncation."
       },
       "1": {
         "name": "xdata Seed",
