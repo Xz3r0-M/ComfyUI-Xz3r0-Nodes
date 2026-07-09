@@ -174,8 +174,8 @@ function findAsNumber(value, fallback) {
 
 function readDigits(node) {
     var w = findWidget(node, WIDGET_DIGITS);
-    if (!w) return 20;
-    var v = findAsNumber(w.value, 20);
+    if (!w) return 10;
+    var v = findAsNumber(w.value, 10);
     if (v < 1) v = 1;
     if (v > 20) v = 20;
     return v;

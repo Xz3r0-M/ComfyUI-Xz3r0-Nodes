@@ -42,7 +42,7 @@ class XSeed(io.ComfyNode):
             inputs=[
                 io.Int.Input(
                     "digits",
-                    default=20,
+                    default=10,
                     min=1,
                     max=cls.MAX_DIGITS,
                     step=1,
