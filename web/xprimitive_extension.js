@@ -395,7 +395,7 @@ function markCanvasDirty() {
 function ensureComboOutput(node) {
     if (!node || !Array.isArray(node.outputs)) return;
 
-    // BRIDGE 输出仅限 COMBO（LiteGraph 类型匹配自动拒绝其他类型）
+    // COMBO 输出仅限 COMBO（LiteGraph 类型匹配自动拒绝其他类型）
     if (
         node.outputs.length > BRIDGE_OUTPUT_INDEX &&
         node.outputs[BRIDGE_OUTPUT_INDEX]
@@ -404,13 +404,38 @@ function ensureComboOutput(node) {
         return;
     }
 
-    // 补建桥接输出（加载已有工作流时）
+    // 补建 COMBO 输出（加载已有工作流时）
     if (typeof node.addOutput === "function") {
-        node.addOutput(BRIDGE_OUTPUT_NAME, "*");
+        node.addOutput(BRIDGE_OUTPUT_NAME, "COMBO");
     }
 
     // 如果已有连接但无控件，恢复控件
     restoreComboWidget(node);
+}
+
+function hideComboStringWidget(node) {
+    var w = findWidget(node, HIDDEN_WIDGET_NAME);
+    if (!w) return;
+    w.hidden = true;
+    w.options = w.options || {};
+    w.options.hidden = true;
+    w.computeSize = function () { return [0, -4]; };
+    w.type = "hidden";
+    if (w.element) w.element.style.display = "none";
+    if (w.inputEl) w.inputEl.style.display = "none";
+
+    // 移除对应的 input slot（socketless 不足以保证无圆点）
+    if (node.inputs) {
+        for (var i = node.inputs.length - 1; i >= 0; i--) {
+            if (node.inputs[i] && node.inputs[i].name === HIDDEN_WIDGET_NAME) {
+                if (typeof node.removeInput === "function") {
+                    node.removeInput(i);
+                } else {
+                    node.inputs.splice(i, 1);
+                }
+            }
+        }
+    }
 }
 
 function restoreComboWidget(node) {
@@ -428,17 +453,9 @@ function setupNode(node) {
     node.__xprimitiveSetupDone = true;
 
     ensureComboOutput(node);
+    hideComboStringWidget(node);
 
-    // 隐藏 combo_string widget（LiteGraph 原生隐藏方式）
-    var hiddenW = findWidget(node, HIDDEN_WIDGET_NAME);
-    if (hiddenW) {
-        hiddenW.hidden = true;
-        hiddenW.options = hiddenW.options || {};
-        hiddenW.options.hidden = true;
-        hiddenW.computeSize = function () { return [0, -4]; };
-    }
-
-    // 如果桥接输出已有连接但无控件，恢复
+    // 如果 COMBO 输出已有连接但无控件，恢复
     setTimeout(function () {
         restoreComboWidget(node);
     }, 50);
@@ -526,6 +543,7 @@ app.registerExtension({
             }
             this.__xprimitiveSetupDone = false;
             ensureComboOutput(this);
+            hideComboStringWidget(this);
         };
 
         // ── onGraphConfigured：图配置完成时恢复控件 ──
