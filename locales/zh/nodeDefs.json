@@ -1099,6 +1099,10 @@
       "height_offset": {
         "name": "高度偏移",
         "tooltip": "在输出高度上添加偏移值（正数=增加，负数=减少，默认=0）"
+      },
+      "skip_on_empty": {
+        "name": "无输入时跳过",
+        "tooltip": "开启后，若没有连接输入图像，则直接输出 None 而非报错。"
       }
     },
     "outputs": {

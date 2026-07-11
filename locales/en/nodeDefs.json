@@ -1099,6 +1099,10 @@
       "height_offset": {
         "name": "Height Offset",
         "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
+      },
+      "skip_on_empty": {
+        "name": "Skip on Empty",
+        "tooltip": "When enabled, outputs None for all ports if no input image is connected, instead of raising an error."
       }
     },
     "outputs": {
