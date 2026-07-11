@@ -749,6 +749,10 @@
       "string_5": {
         "name": "String 5",
         "tooltip": "Fifth multiline string input"
+      },
+      "none_on_empty": {
+        "name": "None on Empty",
+        "tooltip": "When enabled, output None if all strings are empty; when disabled, output empty string instead"
       }
     },
     "outputs": {
@@ -828,6 +832,10 @@
           "period": "Period",
           "period_space": "Period + Space"
         }
+      },
+      "none_on_empty": {
+        "name": "None on Empty",
+        "tooltip": "When enabled, output None if text is empty; when disabled, output empty string instead"
       }
     },
     "outputs": {

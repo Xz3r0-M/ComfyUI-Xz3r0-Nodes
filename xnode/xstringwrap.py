@@ -97,6 +97,16 @@ class XStringWrap(io.ComfyNode):
                         "period: '.', period_space: '. ')"
                     ),
                 ),
+                io.Boolean.Input(
+                    "none_on_empty",
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip=(
+                        "When enabled, output None if text is empty; "
+                        "when disabled, output empty string instead"
+                    ),
+                ),
             ],
             outputs=[
                 io.String.Output(
@@ -107,25 +117,49 @@ class XStringWrap(io.ComfyNode):
         )
 
     @classmethod
+    def fingerprint_inputs(
+        cls,
+        enabled: bool = True,
+        apply_mode: str = "both",
+        prefix_separator: str = "none",
+        text: str = "",
+        suffix_separator: str = "none",
+        none_on_empty: bool = True,
+    ) -> int:
+        if not enabled or (none_on_empty and not text):
+            return 0
+        import hashlib
+
+        digest = hashlib.sha1(
+            f"{enabled}|{apply_mode}|{prefix_separator}|{text}|{suffix_separator}|{none_on_empty}".encode(
+                "utf-8", errors="ignore"
+            )
+        ).hexdigest()
+        return int(digest, 16)
+
+    @classmethod
     def execute(
         cls,
-        enabled: bool,
-        apply_mode: str,
-        prefix_separator: str,
-        text: str,
-        suffix_separator: str,
+        enabled: bool = True,
+        apply_mode: str = "both",
+        prefix_separator: str = "none",
+        text: str = "",
+        suffix_separator: str = "none",
+        none_on_empty: bool = True,
     ) -> io.NodeOutput:
         """
         执行文本包装。
 
         说明：
             - 节点关闭时输出 None
-            - 文本为空时输出空字符串
+            - none_on_empty 开启时文本为空输出 None，关闭时输出空字符串
         """
         if not enabled:
             return io.NodeOutput(None)
 
-        if text == "":
+        if not text:
+            if none_on_empty:
+                return io.NodeOutput(None)
             return io.NodeOutput("")
 
         resolved_mode = cls._resolve_apply_mode(apply_mode)

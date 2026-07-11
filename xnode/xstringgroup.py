@@ -203,6 +203,16 @@ class XStringGroup(io.ComfyNode):
                     default="",
                     tooltip="Fifth multiline string input",
                 ),
+                io.Boolean.Input(
+                    "none_on_empty",
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip=(
+                        "When enabled, output None if all strings are empty; "
+                        "when disabled, output empty string instead"
+                    ),
+                ),
             ],
             outputs=[
                 io.String.Output(
@@ -238,18 +248,53 @@ class XStringGroup(io.ComfyNode):
         )
 
     @classmethod
+    def fingerprint_inputs(
+        cls,
+        none_on_empty: bool = True,
+        select_string: str = "1",
+        string_1: str = "",
+        separation_method_1_2: str = "none",
+        string_2: str = "",
+        separation_method_2_3: str = "none",
+        string_3: str = "",
+        separation_method_3_4: str = "none",
+        string_4: str = "",
+        separation_method_4_5: str = "none",
+        string_5: str = "",
+    ) -> int:
+        if none_on_empty and not any(
+            [string_1, string_2, string_3, string_4, string_5]
+        ):
+            return 0
+        return cls._fingerprint_text(
+            f"{select_string}|{string_1}|{separation_method_1_2}|{string_2}|"
+            f"{separation_method_2_3}|{string_3}|{separation_method_3_4}|"
+            f"{string_4}|{separation_method_4_5}|{string_5}"
+        )
+
+    @staticmethod
+    def _fingerprint_text(text_value: str) -> int:
+        import hashlib
+
+        digest = hashlib.sha1(
+            str(text_value).encode("utf-8", errors="ignore")
+        ).hexdigest()
+        return int(digest, 16)
+
+    @classmethod
     def execute(
         cls,
-        select_string: str,
-        string_1: str,
-        separation_method_1_2: str,
-        string_2: str,
-        separation_method_2_3: str,
-        string_3: str,
-        separation_method_3_4: str,
-        string_4: str,
-        separation_method_4_5: str,
-        string_5: str,
+        none_on_empty: bool = True,
+        select_string: str = "1",
+        string_1: str = "",
+        separation_method_1_2: str = "none",
+        string_2: str = "",
+        separation_method_2_3: str = "none",
+        string_3: str = "",
+        separation_method_3_4: str = "none",
+        string_4: str = "",
+        separation_method_4_5: str = "none",
+        string_5: str = "",
     ) -> io.NodeOutput:
         """
         执行字符串分组和选择
@@ -277,6 +322,13 @@ class XStringGroup(io.ComfyNode):
         string_4 = string_4 if string_4 is not None else ""
         string_5 = string_5 if string_5 is not None else ""
 
+        if none_on_empty and not any(
+            [string_1, string_2, string_3, string_4, string_5]
+        ):
+            return io.NodeOutput(
+                None, None, None, None, None, None, None
+            )
+
         sm_1_2 = cls.resolve_separation_method(separation_method_1_2)
         sm_2_3 = cls.resolve_separation_method(separation_method_2_3)
         sm_3_4 = cls.resolve_separation_method(separation_method_3_4)
@@ -299,6 +351,18 @@ class XStringGroup(io.ComfyNode):
             select_string,
             strings,
         )
+
+        # Per-port none_on_empty: when enabled, convert empty outputs
+        # to None so downstream nodes can distinguish "empty" from
+        # "has content".
+        if none_on_empty:
+            grouped_string = grouped_string if grouped_string else None
+            selected_string = selected_string if selected_string else None
+            string_1 = string_1 if string_1 else None
+            string_2 = string_2 if string_2 else None
+            string_3 = string_3 if string_3 else None
+            string_4 = string_4 if string_4 else None
+            string_5 = string_5 if string_5 else None
 
         return io.NodeOutput(
             grouped_string,

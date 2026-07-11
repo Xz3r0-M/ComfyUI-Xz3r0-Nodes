@@ -749,6 +749,10 @@
       "string_5": {
         "name": "字符串 5",
         "tooltip": "第五个多行字符串输入"
+      },
+      "none_on_empty": {
+        "name": "空内容输出 None",
+        "tooltip": "开启时字符串为空输出 None，关闭时输出空字符串"
       }
     },
     "outputs": {
@@ -828,6 +832,10 @@
           "period": "句号",
           "period_space": "句号 + 空格"
         }
+      },
+      "none_on_empty": {
+        "name": "空内容输出 None",
+        "tooltip": "开启时文本为空输出 None，关闭时输出空字符串"
       }
     },
     "outputs": {
