@@ -809,6 +809,8 @@ function syncLinkTypes(output, graph) {
 }
 function drawXLinkerWarningOutputRing(node, ctx) {
     if (!ctx || !isXLinker(node) || !node.outputs) return;
+    var warnWidget = findWidget(node, "type_warning");
+    if (warnWidget && !warnWidget.value) return;
     if (!xlinkerOutputHasWarning(node)) return;
     var output = node.outputs[0];
     var lineWidth = 2.5;
@@ -891,6 +893,11 @@ function installCanvasHooks() {
         // 缩放处理由 origRenderLink 内部的 buildLinkRenderContext().scale
         // 统一负责，此处使用与 XPipe 完全一致的固定值。
         var warning = getXLinkerLinkWarning(link, graph);
+        // 检查源节点的 type_warning 开关
+        if (warning && warning.source) {
+            var w = findWidget(warning.source, "type_warning");
+            if (w && !w.value) warning = null;
+        }
         if (warning) {
             var args = Array.prototype.slice.call(arguments);
             var baseBlur = warningGlowBlur();

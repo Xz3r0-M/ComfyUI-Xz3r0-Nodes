@@ -416,6 +416,15 @@ function refreshAllXPipesInGraphTree(rootGraph) {
 // ---------------------------------------------------------------------------
 // 状态
 // ---------------------------------------------------------------------------
+function findWidget(node, name) {
+    if (!node || !Array.isArray(node.widgets)) return null;
+    for (var i = 0; i < node.widgets.length; i++) {
+        if (node.widgets[i] && node.widgets[i].name === name) {
+            return node.widgets[i];
+        }
+    }
+    return null;
+}
 function findNamesWidget(node) {
     if (!node.widgets) return null;
     for (var i = 0; i < node.widgets.length; i++)
@@ -1911,6 +1920,8 @@ function outputHasWarning(node, outputIndex) {
 }
 function drawWarningOutputRings(node, ctx) {
     if (!ctx || !isXPipe(node) || !node.outputs) return;
+    var w = findWidget(node, "type_warning");
+    if (w && !w.value) return;
     var lineWidth = 2.5;
     var radius = 7;
     var glowBlur = warningGlowBlur();
@@ -2688,6 +2699,11 @@ function installCanvasHooks() {
     app.canvas.renderLink = function (ctx, a, b, link) {
         var graph = this.graph || activeGraph();
         var warning = getXPipeLinkWarning(link, graph);
+        // 检查源节点的 type_warning 开关
+        if (warning && warning.source) {
+            var w = findWidget(warning.source, "type_warning");
+            if (w && !w.value) warning = null;
+        }
         if (isHiddenBundleLink(link, graph)) return;
         if (isHiddenValueLink(link, graph)) return;
         if (!warning) {

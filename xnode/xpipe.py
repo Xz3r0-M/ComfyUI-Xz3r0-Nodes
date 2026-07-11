@@ -85,7 +85,18 @@ class XPipe(io.ComfyNode):
                     "Serialized JSON list of slot names, managed by the "
                     "XPipe naming panel. Do not edit by hand."
                 ),
-            )
+            ),
+        )
+        inputs.append(
+            io.Boolean.Input(
+                "type_warning",
+                default=True,
+                label_on="Enabled",
+                label_off="Disabled",
+                tooltip="Show visual warning on links and output "
+                "ports when a type mismatch is detected. "
+                "Disable to hide the warning effect.",
+            ),
         )
 
         outputs: list[Any] = [

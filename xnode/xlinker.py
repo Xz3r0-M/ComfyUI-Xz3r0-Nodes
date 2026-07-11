@@ -64,6 +64,15 @@ class XLinker(io.ComfyNode):
                         "workflow — the value is ignored during execution."
                     ),
                 ),
+                io.Boolean.Input(
+                    "type_warning",
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip="Show visual warning on links and output "
+                    "ports when a type mismatch is detected. "
+                    "Disable to hide the warning effect.",
+                ),
             ],
             outputs=[
                 io.MatchType.Output(

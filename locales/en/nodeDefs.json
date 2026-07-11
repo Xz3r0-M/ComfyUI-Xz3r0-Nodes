@@ -280,6 +280,10 @@
       "note_text": {
         "name": "Note Text",
         "tooltip": "Freeform note text. Use this to annotate the workflow — the value is ignored during execution."
+      },
+      "type_warning": {
+        "name": "Type Mismatch Warning",
+        "tooltip": "Show visual warning on links and output ports when a type mismatch is detected. Disable to hide the warning effect."
       }
     },
     "outputs": {
@@ -470,6 +474,10 @@
       "port_names": {
         "name": "Port Names",
         "tooltip": "Serialized slot names managed by the naming panel. Do not edit by hand."
+      },
+      "type_warning": {
+        "name": "Type Mismatch Warning",
+        "tooltip": "Show visual warning on links and output ports when a type mismatch is detected. Disable to hide the warning effect."
       }
     },
     "outputs": {
@@ -1434,4 +1442,3 @@
     }
   }
 }
-
