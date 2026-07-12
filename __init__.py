@@ -31,12 +31,15 @@ from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
 from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
+from .xnode.xcontrol import XControl
 from .xnode.xcontrolpanel import XControlPanel
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
 from .xnode.ximageresize import XImageResize
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xlinker import XLinker
+from .xnode.xlistcreate import XListCreate
+from .xnode.xlistpull import XListPull
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xpipe import XPipe
@@ -102,12 +105,15 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     # Workflow-Processing
     XAnyGate10,
     XAnyToString,
+    XControl,
     XControlPanel,
     XDateTimeString,
     XImageCompare,
     XImageResize,
     XKleinRefConditioning,
     XLinker,
+    XListCreate,
+    XListPull,
     XMath,
     XMemoryCleanup,
     XPipe,

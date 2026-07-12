@@ -293,6 +293,126 @@
       }
     }
   },
+  "XListCreate": {
+    "display_name": "XListCreate",
+    "description": "从多个输入创建列表，同时输出数据数量（1-based）。搭配 XListPull 使用可将列表拆分回独立输出。",
+    "inputs": {
+      "inputs": {
+        "name": "输入",
+        "tooltip": "连接输入以将其加入列表"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "列表",
+        "tooltip": "所有输入的合并列表"
+      },
+      "1": {
+        "name": "数量",
+        "tooltip": "列表中的数据数量（1-based）。连接到 XListPull 以控制其输出端口展开。"
+      }
+    }
+  },
+  "XListPull": {
+    "display_name": "XListPull",
+    "description": "将列表按数据拆分到独立输出端口。从 XListCreate 连接（列表 + 数量），每个列表数据出现在各自的输出端口上。端口可见性由数量值控制。",
+    "inputs": {
+      "list_input": {
+        "name": "列表输入",
+        "tooltip": "输入列表。将 XListCreate 或任意列表类型输出连接至此。"
+      },
+      "count": {
+        "name": "数量",
+        "tooltip": "数量输入端口。连接时自动设置；未连接时使用上方输入栏的值。"
+      },
+      "count_display": {
+        "name": "数量",
+        "tooltip": "活跃输出端口数量。数量端口连接时禁用，未连接时手动设置。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "数据 1",
+        "tooltip": "列表中的第 1 个数据（仅在数量 >= 1 时活跃）"
+      },
+      "1": {
+        "name": "数据 2",
+        "tooltip": "列表中的第 2 个数据（仅在数量 >= 2 时活跃）"
+      },
+      "2": {
+        "name": "数据 3",
+        "tooltip": "列表中的第 3 个数据（仅在数量 >= 3 时活跃）"
+      },
+      "3": {
+        "name": "数据 4",
+        "tooltip": "列表中的第 4 个数据（仅在数量 >= 4 时活跃）"
+      },
+      "4": {
+        "name": "数据 5",
+        "tooltip": "列表中的第 5 个数据（仅在数量 >= 5 时活跃）"
+      },
+      "5": {
+        "name": "数据 6",
+        "tooltip": "列表中的第 6 个数据（仅在数量 >= 6 时活跃）"
+      },
+      "6": {
+        "name": "数据 7",
+        "tooltip": "列表中的第 7 个数据（仅在数量 >= 7 时活跃）"
+      },
+      "7": {
+        "name": "数据 8",
+        "tooltip": "列表中的第 8 个数据（仅在数量 >= 8 时活跃）"
+      },
+      "8": {
+        "name": "数据 9",
+        "tooltip": "列表中的第 9 个数据（仅在数量 >= 9 时活跃）"
+      },
+      "9": {
+        "name": "数据 10",
+        "tooltip": "列表中的第 10 个数据（仅在数量 >= 10 时活跃）"
+      },
+      "10": {
+        "name": "数据 11",
+        "tooltip": "列表中的第 11 个数据（仅在数量 >= 11 时活跃）"
+      },
+      "11": {
+        "name": "数据 12",
+        "tooltip": "列表中的第 12 个数据（仅在数量 >= 12 时活跃）"
+      },
+      "12": {
+        "name": "数据 13",
+        "tooltip": "列表中的第 13 个数据（仅在数量 >= 13 时活跃）"
+      },
+      "13": {
+        "name": "数据 14",
+        "tooltip": "列表中的第 14 个数据（仅在数量 >= 14 时活跃）"
+      },
+      "14": {
+        "name": "数据 15",
+        "tooltip": "列表中的第 15 个数据（仅在数量 >= 15 时活跃）"
+      },
+      "15": {
+        "name": "数据 16",
+        "tooltip": "列表中的第 16 个数据（仅在数量 >= 16 时活跃）"
+      },
+      "16": {
+        "name": "数据 17",
+        "tooltip": "列表中的第 17 个数据（仅在数量 >= 17 时活跃）"
+      },
+      "17": {
+        "name": "数据 18",
+        "tooltip": "列表中的第 18 个数据（仅在数量 >= 18 时活跃）"
+      },
+      "18": {
+        "name": "数据 19",
+        "tooltip": "列表中的第 19 个数据（仅在数量 >= 19 时活跃）"
+      },
+      "19": {
+        "name": "数据 20",
+        "tooltip": "列表中的第 20 个数据（仅在数量 >= 20 时活跃）"
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "数学运算节点，支持加、减、乘、除、幂运算和取模操作，提供双输出格式。",
@@ -1439,6 +1559,49 @@
         "name": "工作流信息",
         "tooltip": "工作流信息摘要，包含保存状态、节点数量、数据概览和文件路径。可用于调试和验证。"
       }
+    }
+  },
+  "XControl": {
+    "display_name": "XControl",
+    "description": "通用控制组件节点。通过下拉菜单切换控件类型：旋钮、横向滑块、竖向推子、开关、按压按钮、XY 坐标面板。",
+    "inputs": {
+      "control_type": { "name": "控件类型", "tooltip": "控件类型：旋钮 / 横向滑块 / 竖向推子 / 开关 / 按钮 / XY坐标" },
+      "value_mode": { "name": "数值模式", "tooltip": "数值映射模式" },
+      "min": { "name": "最小值", "tooltip": "输出最小值（范围模式）" },
+      "max": { "name": "最大值", "tooltip": "输出最大值（范围模式）" },
+      "step": { "name": "步长", "tooltip": "取整步长（范围模式）" },
+      "default_value": { "name": "默认值", "tooltip": "默认值（范围模式）" },
+      "steps": { "name": "档位值", "tooltip": "离散档位值的 JSON 数组" },
+      "default_step_index": { "name": "默认档位索引", "tooltip": "默认档位索引（从 0 开始）" },
+      "base_value": { "name": "基础值", "tooltip": "百分比偏移的基础值" },
+      "pct_min": { "name": "百分比下限", "tooltip": "最小百分比偏移" },
+      "pct_max": { "name": "百分比上限", "tooltip": "最大百分比偏移" },
+      "default_pct": { "name": "默认百分比", "tooltip": "默认百分比偏移" },
+      "shape": { "name": "形状", "tooltip": "旋钮形状 / 滑块手柄形状" },
+      "toggle_style": { "name": "开关样式", "tooltip": "开关的视觉样式" },
+      "default_state": { "name": "默认状态", "tooltip": "默认开关状态" },
+      "button_mode": { "name": "按钮模式", "tooltip": "瞬时：按住生效。锁存：点击切换" },
+      "button_style": { "name": "按钮样式", "tooltip": "按钮的视觉样式" },
+      "x_min": { "name": "X 最小值", "tooltip": "X 轴输出最小值" },
+      "x_max": { "name": "X 最大值", "tooltip": "X 轴输出最大值" },
+      "x_step": { "name": "X 步长", "tooltip": "X 轴取整步长" },
+      "x_default": { "name": "X 默认值", "tooltip": "X 轴默认值" },
+      "y_min": { "name": "Y 最小值", "tooltip": "Y 轴输出最小值" },
+      "y_max": { "name": "Y 最大值", "tooltip": "Y 轴输出最大值" },
+      "y_step": { "name": "Y 步长", "tooltip": "Y 轴取整步长" },
+      "y_default": { "name": "Y 默认值", "tooltip": "Y 轴默认值" },
+      "crosshair_visible": { "name": "显示十字线", "tooltip": "显示十字准线" },
+      "grid_visible": { "name": "显示网格", "tooltip": "显示背景网格" },
+      "_normalized": { "name": "_normalized", "tooltip": "内部：当前归一化值" },
+      "_state": { "name": "_state", "tooltip": "内部：当前状态" },
+      "_x_normalized": { "name": "_x_normalized", "tooltip": "内部：当前 X 归一化值" },
+      "_y_normalized": { "name": "_y_normalized", "tooltip": "内部：当前 Y 归一化值" }
+    },
+    "outputs": {
+      "0": { "name": "FLOAT", "tooltip": "当前值（模拟控件）" },
+      "1": { "name": "BOOLEAN", "tooltip": "当前状态（开关 / 按钮）" },
+      "2": { "name": "X", "tooltip": "当前 X 坐标（XY Pad）" },
+      "3": { "name": "Y", "tooltip": "当前 Y 坐标（XY Pad）" }
     }
   }
 }

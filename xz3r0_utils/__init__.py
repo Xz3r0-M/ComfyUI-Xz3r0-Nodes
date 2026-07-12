@@ -14,6 +14,20 @@ from .filename_uniqueness import ensure_unique_filename
 from .logging_control import configure_logging, get_logger
 from .output_path_guard import resolve_output_subpath
 from .path_component_sanitizer import sanitize_path_component
+from .xcontrol_utils import (
+    ButtonMode,
+    ButtonStyle,
+    HandleShape,
+    KnobShape,
+    ToggleStyle,
+    ValueMode,
+    apply_percentage,
+    compute_output,
+    map_range,
+    normalize_to_unit,
+    parse_steps_json,
+    snap_to_steps,
+)
 from .xdatahub_media_refs import (
     generate_public_ref,
     media_ref_to_file_url,
@@ -30,6 +44,19 @@ __all__ = [
     "get_logger",
     "resolve_output_subpath",
     "sanitize_path_component",
+    "ButtonMode",
+    "ButtonStyle",
+    "HandleShape",
+    "KnobShape",
+    "ToggleStyle",
+    "ValueMode",
+    "apply_percentage",
+    "compute_output",
+    "map_range",
+    "normalize_to_unit",
+    "parse_steps_json",
+    "snap_to_steps",
+    # xdatahub
     "generate_public_ref",
     "media_ref_to_file_url",
     "normalize_media_ref",

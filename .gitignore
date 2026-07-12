@@ -231,3 +231,7 @@ CLAUDE.md
 REASONIX.md
 .reasonix/
 reasonix.toml
+xz3r0_utils/xcontrol_utils.py
+web/core/xcontrol_core.js
+web/xcontrol_extension.js
+xnode/xcontrol.py

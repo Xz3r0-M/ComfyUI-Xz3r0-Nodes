@@ -293,6 +293,126 @@
       }
     }
   },
+  "XListCreate": {
+    "display_name": "XListCreate",
+    "description": "Create a list from multiple inputs and output the item count (1-based). Pair with XListPull to split the list back into individual outputs.",
+    "inputs": {
+      "inputs": {
+        "name": "Inputs",
+        "tooltip": "Connect inputs to add them to the list"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "List",
+        "tooltip": "Combined list of all inputs"
+      },
+      "1": {
+        "name": "Count",
+        "tooltip": "Number of elements in the list (1-based). Connect to XListPull to control its output port expansion."
+      }
+    }
+  },
+  "XListPull": {
+    "display_name": "XListPull",
+    "description": "Split a list into individual output ports. Connect from XListCreate (list + count), and each list item appears on its own output port. Port visibility is controlled by the count value.",
+    "inputs": {
+      "list_input": {
+        "name": "List Input",
+        "tooltip": "Input list. Connect a XListCreate or any list-type output here."
+      },
+      "count": {
+        "name": "Count",
+        "tooltip": "Number input port. Connect to auto-set; when not connected, use the widget above."
+      },
+      "count_display": {
+        "name": "Count",
+        "tooltip": "Number of active output ports. When count port is connected, disabled; when not connected, manually set here."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Data 1",
+        "tooltip": "Data 1 from the list (only active when count >= 1)"
+      },
+      "1": {
+        "name": "Data 2",
+        "tooltip": "Data 2 from the list (only active when count >= 2)"
+      },
+      "2": {
+        "name": "Data 3",
+        "tooltip": "Data 3 from the list (only active when count >= 3)"
+      },
+      "3": {
+        "name": "Data 4",
+        "tooltip": "Data 4 from the list (only active when count >= 4)"
+      },
+      "4": {
+        "name": "Data 5",
+        "tooltip": "Data 5 from the list (only active when count >= 5)"
+      },
+      "5": {
+        "name": "Data 6",
+        "tooltip": "Data 6 from the list (only active when count >= 6)"
+      },
+      "6": {
+        "name": "Data 7",
+        "tooltip": "Data 7 from the list (only active when count >= 7)"
+      },
+      "7": {
+        "name": "Data 8",
+        "tooltip": "Data 8 from the list (only active when count >= 8)"
+      },
+      "8": {
+        "name": "Data 9",
+        "tooltip": "Data 9 from the list (only active when count >= 9)"
+      },
+      "9": {
+        "name": "Data 10",
+        "tooltip": "Data 10 from the list (only active when count >= 10)"
+      },
+      "10": {
+        "name": "Data 11",
+        "tooltip": "Data 11 from the list (only active when count >= 11)"
+      },
+      "11": {
+        "name": "Data 12",
+        "tooltip": "Data 12 from the list (only active when count >= 12)"
+      },
+      "12": {
+        "name": "Data 13",
+        "tooltip": "Data 13 from the list (only active when count >= 13)"
+      },
+      "13": {
+        "name": "Data 14",
+        "tooltip": "Data 14 from the list (only active when count >= 14)"
+      },
+      "14": {
+        "name": "Data 15",
+        "tooltip": "Data 15 from the list (only active when count >= 15)"
+      },
+      "15": {
+        "name": "Data 16",
+        "tooltip": "Data 16 from the list (only active when count >= 16)"
+      },
+      "16": {
+        "name": "Data 17",
+        "tooltip": "Data 17 from the list (only active when count >= 17)"
+      },
+      "17": {
+        "name": "Data 18",
+        "tooltip": "Data 18 from the list (only active when count >= 18)"
+      },
+      "18": {
+        "name": "Data 19",
+        "tooltip": "Data 19 from the list (only active when count >= 19)"
+      },
+      "19": {
+        "name": "Data 20",
+        "tooltip": "Data 20 from the list (only active when count >= 20)"
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
@@ -1439,6 +1559,49 @@
         "name": "Workflow Info",
         "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
       }
+    }
+  },
+  "XControl": {
+    "display_name": "XControl",
+    "description": "Universal control node. Select control type via dropdown: Knob, Horizontal Fader, Vertical Fader, Toggle, Button, or XY Pad.",
+    "inputs": {
+      "control_type": { "name": "Control Type", "tooltip": "Control type: Knob / FaderH / FaderV / Toggle / Button / XYPad" },
+      "value_mode": { "name": "Value Mode", "tooltip": "Value mapping mode" },
+      "min": { "name": "Min", "tooltip": "Minimum output value (Range mode)" },
+      "max": { "name": "Max", "tooltip": "Maximum output value (Range mode)" },
+      "step": { "name": "Step", "tooltip": "Rounding step (Range mode)" },
+      "default_value": { "name": "Default Value", "tooltip": "Default value (Range mode)" },
+      "steps": { "name": "Steps", "tooltip": "JSON array of discrete step values" },
+      "default_step_index": { "name": "Default Step Index", "tooltip": "Default step index (0-based)" },
+      "base_value": { "name": "Base Value", "tooltip": "Base value for percentage offset" },
+      "pct_min": { "name": "Pct Min", "tooltip": "Minimum percentage offset" },
+      "pct_max": { "name": "Pct Max", "tooltip": "Maximum percentage offset" },
+      "default_pct": { "name": "Default Pct", "tooltip": "Default percentage offset" },
+      "shape": { "name": "Shape", "tooltip": "Shape for Knob / Handle for Fader" },
+      "toggle_style": { "name": "Toggle Style", "tooltip": "Visual style for Toggle" },
+      "default_state": { "name": "Default State", "tooltip": "Default toggle state" },
+      "button_mode": { "name": "Button Mode", "tooltip": "Momentary: hold to activate. Toggle: click to latch" },
+      "button_style": { "name": "Button Style", "tooltip": "Visual style of the button" },
+      "x_min": { "name": "X Min", "tooltip": "Minimum X output value" },
+      "x_max": { "name": "X Max", "tooltip": "Maximum X output value" },
+      "x_step": { "name": "X Step", "tooltip": "X rounding step" },
+      "x_default": { "name": "X Default", "tooltip": "Default X value" },
+      "y_min": { "name": "Y Min", "tooltip": "Minimum Y output value" },
+      "y_max": { "name": "Y Max", "tooltip": "Maximum Y output value" },
+      "y_step": { "name": "Y Step", "tooltip": "Y rounding step" },
+      "y_default": { "name": "Y Default", "tooltip": "Default Y value" },
+      "crosshair_visible": { "name": "Crosshair Visible", "tooltip": "Show crosshair lines" },
+      "grid_visible": { "name": "Grid Visible", "tooltip": "Show background grid" },
+      "_normalized": { "name": "_normalized", "tooltip": "Internal: current normalized value" },
+      "_state": { "name": "_state", "tooltip": "Internal: current state" },
+      "_x_normalized": { "name": "_x_normalized", "tooltip": "Internal: current normalized X" },
+      "_y_normalized": { "name": "_y_normalized", "tooltip": "Internal: current normalized Y" }
+    },
+    "outputs": {
+      "0": { "name": "FLOAT", "tooltip": "Current value (analog controls)" },
+      "1": { "name": "BOOLEAN", "tooltip": "Current state (toggle / button)" },
+      "2": { "name": "X", "tooltip": "Current X coordinate (XY Pad)" },
+      "3": { "name": "Y", "tooltip": "Current Y coordinate (XY Pad)" }
     }
   }
 }
