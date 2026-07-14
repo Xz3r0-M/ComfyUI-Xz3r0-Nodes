@@ -231,6 +231,12 @@
   "xdatahub.ui.node.xcontrolpanel.status.idle": "空闲",
   "xdatahub.ui.node.xcontrolpanel.status.restarting": "已发送重启请求...",
   "xdatahub.ui.node.xcontrolpanel.status.restart_scheduled": "已安排重启。ComfyUI 恢复后请刷新浏览器页面。",
-  "xdatahub.ui.node.xcontrolpanel.status.request_failed": "重启请求失败"
+  "xdatahub.ui.node.xcontrolpanel.status.request_failed": "重启请求失败",
+  "xdatahub.ui.node.xanytostring.label": "转换结果",
+  "xdatahub.ui.node.xanytostring.placeholder": "执行后字符串输出将显示在此处",
+  "xdatahub.ui.node.xanytostring.expand_tip": "展开字符串输出",
+  "xdatahub.ui.node.xanytostring.collapse_tip": "收起字符串输出",
+  "xdatahub.ui.node.xanytostring.expand_label": "点击展开",
+  "xdatahub.ui.node.xanytostring.collapse_label": "点击收起"
 }
 

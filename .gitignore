@@ -206,31 +206,30 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# ----------------------------------------------------
 
-
-# Xz3r0
+# IDE
 .vscode/
-tests/
-web/test
 ruff.toml
-_记录/
-_检验/
+
+# Agents
+opencode.json
 .agents/
 AGENTS.md
+
+# Xz3r0-Project-files
+tests/
+web/test
+_记录/
+_检验/
 XDataSaved/
-_audit/
 node_modules/
 package-lock.json
 package.json
-skills-lock.json
 icons_dev/
-.github/instructions/
 _temp/
-CLAUDE.md
-.claude/
-REASONIX.md
-.reasonix/
-reasonix.toml
+
+# Xz3r0-Dev-WIP
 xz3r0_utils/xcontrol_utils.py
 web/core/xcontrol_core.js
 web/xcontrol_extension.js

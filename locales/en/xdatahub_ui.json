@@ -231,6 +231,12 @@
   "xdatahub.ui.node.xcontrolpanel.status.idle": "Idle",
   "xdatahub.ui.node.xcontrolpanel.status.restarting": "Restart request sent...",
   "xdatahub.ui.node.xcontrolpanel.status.restart_scheduled": "Restart scheduled. Refresh the browser after ComfyUI is back.",
-  "xdatahub.ui.node.xcontrolpanel.status.request_failed": "Restart request failed"
+  "xdatahub.ui.node.xcontrolpanel.status.request_failed": "Restart request failed",
+  "xdatahub.ui.node.xanytostring.label": "Result",
+  "xdatahub.ui.node.xanytostring.placeholder": "String output will appear here after execution",
+  "xdatahub.ui.node.xanytostring.expand_tip": "Expand string output",
+  "xdatahub.ui.node.xanytostring.collapse_tip": "Collapse string output",
+  "xdatahub.ui.node.xanytostring.expand_label": "Click to expand",
+  "xdatahub.ui.node.xanytostring.collapse_label": "Click to collapse"
 }
 
