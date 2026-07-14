@@ -15,6 +15,7 @@ var EXT_NAME = "ComfyUI.Xz3r0.XAnyToString";
 var NODE_CLASS = "XAnyToString";
 var WIDGET_NAME = "xanytostring_display";
 var STYLE_ID = "xanytostring-styles";
+var PROPERTY_COLLAPSED = "xanytostring_collapsed";
 var MIN_NODE_W = 280;
 var MIN_NODE_H_COLLAPSED = 88;
 var MIN_NODE_H_EXPANDED = 170;
@@ -369,9 +370,29 @@ function clampNodeSize(node, state) {
 function EXPAND_ICON() { return "\u25B6"; }
 function COLLAPSE_ICON() { return "\u25BC"; }
 
-function setCollapsed(state, collapsed) {
+function resolveStoredCollapsed(node) {
+    if (node && node.properties
+        && typeof node.properties[PROPERTY_COLLAPSED] === "boolean") {
+        return node.properties[PROPERTY_COLLAPSED];
+    }
+    return true;
+}
+
+function persistCollapsed(state) {
+    if (!state || !state.node) return;
+    state.node.properties = state.node.properties || {};
+    state.node.properties[PROPERTY_COLLAPSED] = state.collapsed;
+    if (state.node.graph && typeof state.node.graph.change === "function") {
+        state.node.graph.change();
+    }
+}
+
+function setCollapsed(state, collapsed, options) {
     if (!state) return;
     state.collapsed = !!collapsed;
+    if (!options || options.persist !== false) {
+        persistCollapsed(state);
+    }
     if (state.displayEl) {
         if (state.collapsed) {
             state.displayEl.classList.add("is-collapsed");
@@ -451,7 +472,7 @@ function createDisplayUI(node) {
         labelEl: label,
         toggleBtn: toggleBtn,
         displayEl: display,
-        collapsed: true,
+        collapsed: resolveStoredCollapsed(node),
     };
     node.__xanytostringState = state;
     nodeStates[String(node.id)] = state;
@@ -467,6 +488,7 @@ function createDisplayUI(node) {
     }
 
     bindCanvasForwarding(wrap);
+    setCollapsed(state, state.collapsed, { persist: false });
     applyLocale(state);
     clampNodeSize(node, state);
 }
@@ -493,6 +515,11 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function () {
             origOnConfigure && origOnConfigure.apply(this, arguments);
             createDisplayUI(this);
+            setCollapsed(
+                this.__xanytostringState,
+                resolveStoredCollapsed(this),
+                { persist: false }
+            );
         };
 
         nodeType.prototype.onExecuted = function (output) {
@@ -512,6 +539,11 @@ app.registerExtension({
     async loadedGraphNode(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
         createDisplayUI(node);
+        setCollapsed(
+            node.__xanytostringState,
+            resolveStoredCollapsed(node),
+            { persist: false }
+        );
     },
 
     async setup() {
