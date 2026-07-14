@@ -103,7 +103,7 @@ class XListPull(io.ComfyNode):
 
     @classmethod
     def execute(
-        cls, list_input: Any, count_display: Any, count: Any
+        cls, list_input: Any, count_display: Any, count: Any = 0
     ) -> io.NodeOutput:
         """
         将列表元素分发到对应编号的输出端口。
@@ -122,8 +122,9 @@ class XListPull(io.ComfyNode):
             return v
 
         cnt_raw = _unwrap(count)
-        cnt = max(1, min(int(cnt_raw) if cnt_raw else 0, _MAX_OUTPUTS))
-        if cnt == 0:
+        if cnt_raw:
+            cnt = max(1, min(int(cnt_raw), _MAX_OUTPUTS))
+        else:
             cnt_disp = _unwrap(count_display)
             cnt = max(1, min(int(cnt_disp) or 1, _MAX_OUTPUTS))
 
