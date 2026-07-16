@@ -230,7 +230,3 @@ icons_dev/
 _temp/
 
 # Xz3r0-Dev-WIP
-xz3r0_utils/xcontrol_utils.py
-web/core/xcontrol_core.js
-web/xcontrol_extension.js
-xnode/xcontrol.py

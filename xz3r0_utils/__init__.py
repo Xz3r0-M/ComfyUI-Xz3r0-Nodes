@@ -14,7 +14,7 @@ from .filename_uniqueness import ensure_unique_filename
 from .logging_control import configure_logging, get_logger
 from .output_path_guard import resolve_output_subpath
 from .path_component_sanitizer import sanitize_path_component
-from .xcontrol_utils import (
+from .xcontroller_utils import (
     ButtonMode,
     ButtonStyle,
     HandleShape,

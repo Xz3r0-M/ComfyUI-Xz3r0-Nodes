@@ -31,7 +31,7 @@ from comfy_api.latest import ComfyExtension, io  # noqa: I001
 
 from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
-from .xnode.xcontrol import XControl
+from .xnode.xcontroller import XController
 from .xnode.xcontrolpanel import XControlPanel
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
@@ -105,7 +105,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     # Workflow-Processing
     XAnyGate10,
     XAnyToString,
-    XControl,
+    XController,
     XControlPanel,
     XDateTimeString,
     XImageCompare,
