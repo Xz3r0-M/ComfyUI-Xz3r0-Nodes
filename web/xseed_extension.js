@@ -208,17 +208,27 @@ function ensureStyles() {
         "  display: flex;",
         "  flex-direction: column;",
         "  gap: 6px;",
-        "  padding: 8px 10px 10px 10px;",
+        "  padding: 6px;",
         "  box-sizing: border-box;",
-        "  border: 1px solid var(--xdh-clr-hairline, #333);",
-        "  background: var(--comfy-menu-bg, #1a1a1a);",
         "  overflow: hidden;",
+        "}",
+        ".xseed-fieldset {",
+        "  flex: 1 1 auto;",
+        "  min-height: 0;",
+        "  margin: 0;",
+        "  padding: 5px 6px 6px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 4px;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 6px;",
         "}",
         ".xseed-label {",
         "  font: var(--xdh-font-ui-md, 12px sans-serif);",
-        "  color: var(--input-text, #ddd);",
+        "  color: var(--descrip-text, #999);",
         "  font-weight: 600;",
         "  line-height: 1.3;",
+        "  padding: 0 4px;",
         "}",
         ".xseed-row {",
         "  display: flex;",
@@ -488,10 +498,13 @@ function createSeedUI(node) {
     var wrap = document.createElement("div");
     wrap.className = "xseed-wrap";
 
+    var fieldset = document.createElement("fieldset");
+    fieldset.className = "xseed-fieldset";
+
     // ── 行 1: 种子值标签 ──
-    var label1 = document.createElement("div");
+    var label1 = document.createElement("legend");
     label1.className = "xseed-label";
-    wrap.appendChild(label1);
+    fieldset.appendChild(label1);
     state.labelSeed = label1;
 
     // ── 行 2: 种子值输入 + 生成按钮 + 随机开关 ──
@@ -518,12 +531,12 @@ function createSeedUI(node) {
     randomToggle.textContent = "\u{1F504}"; // 🔄
     row1.appendChild(randomToggle);
 
-    wrap.appendChild(row1);
+    fieldset.appendChild(row1);
 
     // ── 行 3: 上次种子标签 ──
     var label2 = document.createElement("div");
     label2.className = "xseed-label";
-    wrap.appendChild(label2);
+    fieldset.appendChild(label2);
     state.labelLast = label2;
 
     // ── 行 4: 上次种子值显示（只读） ──
@@ -552,14 +565,14 @@ function createSeedUI(node) {
     lastSeedLockBtn.disabled = !readLastSeedString(node);
     row2.appendChild(lastSeedLockBtn);
 
-    wrap.appendChild(row2);
+    fieldset.appendChild(row2);
 
     // ── 行 5: 使用上次种子按钮 ──
     var useLastBtn = document.createElement("button");
     useLastBtn.className = "xseed-btn xseed-btn-apply";
     useLastBtn.type = "button";
     useLastBtn.disabled = !readLastSeedString(node);
-    wrap.appendChild(useLastBtn);
+    fieldset.appendChild(useLastBtn);
 
     // ── 保存状态引用 ──
     state.wrap = wrap;
@@ -668,6 +681,8 @@ function createSeedUI(node) {
 
     // ── beforeQueued：队列时捕获种子 ──
     attachBeforeQueued(node, state);
+
+    wrap.appendChild(fieldset);
 
     // ── 注册 DOM widget ──
     if (typeof node.addDOMWidget === "function") {

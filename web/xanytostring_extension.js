@@ -160,18 +160,29 @@ function ensureStyles() {
         "  display: flex;",
         "  flex-direction: column;",
         "  gap: 6px;",
-        "  padding: 8px;",
+        "  padding: 6px;",
         "  box-sizing: border-box;",
-        "  border: 1px solid var(--xdh-clr-hairline, #333);",
-        "  background: var(--comfy-menu-bg, #1a1a1a);",
         "  overflow: hidden;",
         "  transition: height 120ms ease;",
+        "}",
+        ".xanytostring-result {",
+        "  flex: 1 1 auto;",
+        "  min-height: 0;",
+        "  margin: 0;",
+        "  padding: 5px 6px 6px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 4px;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 4px;",
         "}",
         ".xanytostring-header {",
         "  display: flex;",
         "  align-items: center;",
         "  justify-content: space-between;",
+        "  gap: 6px;",
         "  flex-shrink: 0;",
+        "  padding: 0 4px;",
         "}",
         ".xanytostring-label {",
         "  font: var(--xdh-font-ui-md, 12px sans-serif);",
@@ -437,7 +448,10 @@ function createDisplayUI(node) {
     var wrap = document.createElement("div");
     wrap.className = "xanytostring-wrap";
 
-    var header = document.createElement("div");
+    var result = document.createElement("fieldset");
+    result.className = "xanytostring-result";
+
+    var header = document.createElement("legend");
     header.className = "xanytostring-header";
 
     var label = document.createElement("div");
@@ -455,19 +469,20 @@ function createDisplayUI(node) {
     toggleBtn.title = tk("expand_tip", "Expand string output");
     header.appendChild(toggleBtn);
 
-    wrap.appendChild(header);
-
     var display = document.createElement("div");
     display.className = "xanytostring-display is-collapsed";
     display.setAttribute(
         "data-placeholder",
         tk("placeholder", "String output will appear here after execution")
     );
-    wrap.appendChild(display);
+    result.appendChild(header);
+    result.appendChild(display);
+    wrap.appendChild(result);
 
     var state = {
         node: node,
         wrap: wrap,
+        resultEl: result,
         headerEl: header,
         labelEl: label,
         toggleBtn: toggleBtn,
