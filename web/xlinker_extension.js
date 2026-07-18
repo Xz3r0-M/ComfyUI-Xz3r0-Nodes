@@ -736,7 +736,8 @@ function getXLinkerLinkWarning(link, graph) {
 
     var outType = cleanType(output.type) || cleanType(link.type);
     var inType = cleanType(input.type);
-    if (!outType || !inType || outType === inType) return null;
+    if (!outType || !inType) return null;
+    if (LiteGraph.isValidConnection(outType, inType)) return null;
 
     return {
         source: src,
