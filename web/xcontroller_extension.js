@@ -612,12 +612,12 @@ function controlVisualHeight(node) {
     var ctype = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
     var info = CONTROL_TYPES[ctype];
     if (info) {
-        if (ctype === "Knob") ctrlH = 80;
-        else if (ctype === "FaderH") ctrlH = 52;
-        else if (ctype === "FaderV") ctrlH = 160;
-        else if (ctype === "Toggle") ctrlH = 66;
-        else if (ctype === "Button") ctrlH = 50;
-        else if (info.isXY) ctrlH = 162;
+        if (ctype === "Knob") ctrlH = 20;
+        else if (ctype === "FaderH") ctrlH = -8;
+        else if (ctype === "FaderV") ctrlH = 100;
+        else if (ctype === "Toggle") ctrlH = -14;
+        else if (ctype === "Button") ctrlH = -10;
+        else if (info.isXY) ctrlH = 102;
     }
     return ctrlH;
 }
@@ -714,6 +714,88 @@ function clampNodeSize(node, minW, minH) {
 }
 
 // ================================================================
+// 输出端口可见性控制
+// ================================================================
+
+function outputIndexByName(node, name) {
+    if (!node || !Array.isArray(node.outputs)) return -1;
+    for (var i = 0; i < node.outputs.length; i++) {
+        if (node.outputs[i] && node.outputs[i].name === name) return i;
+    }
+    return -1;
+}
+
+function outputLinkCountByIndex(node, index) {
+    if (!node || index < 0 || index >= (node.outputs || []).length) return 0;
+    var output = node.outputs[index];
+    return (output && output.links && output.links.length) || 0;
+}
+
+function outputTypeForName(name) {
+    if (name === "INT") return "INT";
+    if (name === "BOOLEAN") return "BOOLEAN";
+    return "FLOAT";
+}
+
+/**
+ * 根据当前 control_type 同步输出端口可见性。
+ * - 不在当前类型显示列表且无连线的端口：删除
+ * - 在当前类型显示列表但缺失的端口：添加
+ * - 已有连线的端口即使不在显示列表中也会保留
+ */
+function syncOutputVisibility(node) {
+    if (!node || !Array.isArray(node.outputs)) return;
+
+    var ctype = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
+    var info = VISIBLE_OUTPUTS[ctype];
+    if (!info) return;
+    var wantedNames = info.names;
+
+    // Phase 1: 删除不需要的输出（仅无连线，从后往前避免索引漂移）
+    for (var i = node.outputs.length - 1; i >= 0; i--) {
+        var output = node.outputs[i];
+        if (!output) continue;
+        if (wantedNames.indexOf(output.name) >= 0) continue;
+
+        if (outputLinkCountByIndex(node, i) > 0) continue;
+
+        if (typeof node.removeOutput === "function") {
+            node.removeOutput(i);
+        } else {
+            node.outputs.splice(i, 1);
+        }
+    }
+
+    // Phase 2: 添加缺失的所需输出
+    var existingNames = {};
+    for (var j = 0; j < node.outputs.length; j++) {
+        if (node.outputs[j]) existingNames[node.outputs[j].name] = true;
+    }
+    for (var k = 0; k < wantedNames.length; k++) {
+        var name = wantedNames[k];
+        if (existingNames[name]) continue;
+        if (typeof node.addOutput === "function") {
+            node.addOutput(name, outputTypeForName(name));
+        }
+    }
+
+    // Phase 3: 刷新布局
+    try {
+        if (typeof node._setConcreteSlots === "function") {
+            node._setConcreteSlots();
+        }
+        if (typeof node.arrange === "function") {
+            node.arrange();
+        }
+    } catch (_e) {}
+
+    node.setDirtyCanvas && node.setDirtyCanvas(true, true);
+    if (app.canvas && typeof app.canvas.setDirty === "function") {
+        app.canvas.setDirty(true, true);
+    }
+}
+
+// ================================================================
 // 控件类型映射
 // ================================================================
 
@@ -736,6 +818,17 @@ var BUTTON_MODES = ["increase", "decrease", "toggle"];
 var BUTTON_REPEAT_MS = 80;
 var MIN_NODE_W = 320;
 var NODE_CHROME_H = 90;
+
+// ── 输出端口可见性映射 ──
+var ALL_OUTPUT_NAMES = ["FLOAT", "INT", "BOOLEAN", "X", "Y"];
+var VISIBLE_OUTPUTS = {
+    Knob:   { names: ["FLOAT", "INT"] },
+    FaderH: { names: ["FLOAT", "INT"] },
+    FaderV: { names: ["FLOAT", "INT"] },
+    Toggle: { names: ["BOOLEAN"] },
+    Button: { names: ["FLOAT", "INT"] },
+    XYPad:  { names: ["X", "Y"] },
+};
 
 // ================================================================
 // 构建 UI
@@ -989,6 +1082,7 @@ function buildXControlUI(node) {
 
         // 从 widget 恢复初始值
         restoreControlValue(node, control, ctype);
+        syncOutputVisibility(node);
         adjustNodeSize(node, true);
     }
 
@@ -1667,6 +1761,7 @@ function rebuildControlForNode(node) {
     node.__xcontrol = control;
 
     restoreControlValue(node, control, ctype);
+    syncOutputVisibility(node);
     adjustNodeSize(node, true);
 }
 

@@ -27,6 +27,7 @@ var BUTTON_GROUP = "xlinker_button_group";
 var BUTTON_GROUP_MARGIN = 15;
 var BUTTON_GROUP_GAP = 4;
 var BUTTON_GROUP_HEIGHT = 24;
+var LINKER_EXTRA_HEIGHT = 10;
 var BUTTON_GROUP_STYLE_ID = "xlinker-button-group-style";
 var uiLocalePrimary = null;
 var uiLocaleFallback = null;
@@ -1131,7 +1132,7 @@ app.registerExtension({
             origOnCreated && origOnCreated.apply(this, arguments);
             if (typeof this.setSize === "function") {
                 var cs = this.computeSize();
-                this.setSize([Math.max(cs[0], 200), Math.max(cs[1], 80)]);
+                this.setSize([Math.max(cs[0], 200), Math.max(cs[1], 80) + LINKER_EXTRA_HEIGHT]);
             }
             // 监听 note_text widget 的变化
             var self = this;

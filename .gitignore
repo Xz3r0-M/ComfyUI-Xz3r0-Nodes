@@ -214,12 +214,9 @@ ruff.toml
 
 # Agents
 opencode.json
-.pi/
 auth.json
 settings.json
 trust.json
-models-store.json
-sessions/
 
 # Xz3r0-Dev-WIP
 
@@ -232,9 +229,4 @@ web/test
 _记录/
 _检验/
 XDataSaved/
-node_modules/
-package-lock.json
-package.json
 icons_dev/
-_temp/
-
