@@ -214,10 +214,19 @@ ruff.toml
 
 # Agents
 opencode.json
-.agents/
-AGENTS.md
+.pi/
+auth.json
+settings.json
+trust.json
+models-store.json
+sessions/
+
+# Xz3r0-Dev-WIP
+
 
 # Xz3r0-Project-files
+AGENTS.md
+.agents/
 tests/
 web/test
 _记录/
@@ -229,4 +238,3 @@ package.json
 icons_dev/
 _temp/
 
-# Xz3r0-Dev-WIP

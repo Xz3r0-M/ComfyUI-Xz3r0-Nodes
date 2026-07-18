@@ -210,6 +210,8 @@
   "xdatahub.ui.node.xlinker.title_sync_disabled": "标题同步已禁用：点击启用后，节点标题会自动同步为 note_text 输入框的内容",
   "xdatahub.ui.node.xlinker.port_sync_enabled": "端口名称同步已启用：输入/输出端口名称会自动同步为 note_text 输入框的内容",
   "xdatahub.ui.node.xlinker.port_sync_disabled": "端口名称同步已禁用：点击启用后，输入/输出端口名称会自动同步为 note_text 输入框的内容",
+  "xdatahub.ui.node.xlinker.convert_output_to_xlinker": "输出连接转换为 XLinker",
+  "xdatahub.ui.node.xlinker.convert_input_to_xlinker": "输入连接转换为 XLinker",
   "xdatahub.ui.node.xseed.label_seed_value": "种子值",
   "xdatahub.ui.node.xseed.label_last_seed": "上次应用的种子值",
   "xdatahub.ui.node.xseed.placeholder_seed": "种子",

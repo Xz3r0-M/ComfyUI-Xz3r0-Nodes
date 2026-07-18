@@ -933,10 +933,184 @@ function installCanvasHooks() {
         origRenderLink && origRenderLink.apply(this, arguments);
     };
 }
+// ---------------------------------------------------------------------------
+// 端口右键菜单：将连接转换为 XLinker
+// ---------------------------------------------------------------------------
+var _xlinkerSlotMenuInstalled = false;
 
-// ---------------------------------------------------------------------------
-// 扩展注册
-// ---------------------------------------------------------------------------
+function installXLinkerSlotMenu(nodeType) {
+    if (_xlinkerSlotMenuInstalled) return;
+    _xlinkerSlotMenuInstalled = true;
+
+    // 通过原型链获取 LGraphNode.prototype（比 LiteGraph.LGraphNode 更可靠）
+    // nodeType 继承自 LGraphNode，找到最顶层的父类原型
+    var LGraphNodeProto = Object.getPrototypeOf(nodeType.prototype);
+    if (!LGraphNodeProto) return;
+
+    // 保存原始 getExtraSlotMenuOptions（如果有的话）
+    var _origGetExtraSlotMenuOptions = LGraphNodeProto.getExtraSlotMenuOptions;
+
+    LGraphNodeProto.getExtraSlotMenuOptions = function (slot) {
+        var options = [];
+
+        // 调用原始实现
+        if (typeof _origGetExtraSlotMenuOptions === "function") {
+            options = _origGetExtraSlotMenuOptions.call(this, slot) || [];
+        }
+
+        // 跳过 XLinker 自身
+        if (isXLinker(this)) return options;
+
+        var graph = this.graph;
+        if (!graph) return options;
+
+        var hasOutputLinks = !!(slot.output && slot.output.links && slot.output.links.length > 0);
+        var hasInputLink = !!(slot.input && slot.input.link != null);
+
+        if (!hasOutputLinks && !hasInputLink) return options;
+
+        var canvasRef = app.canvas;
+
+        if (hasOutputLinks) {
+            options.push({
+                content: tk(
+                    "convert_output_to_xlinker",
+                    "Convert Output to XLinker"
+                ),
+                callback: (function (node, slotIndex, g, canvas) {
+                    return function () {
+                        convertOutputToXLinker(node, slotIndex, g, canvas);
+                    };
+                })(this, slot.slot, graph, canvasRef),
+            });
+        }
+
+        if (hasInputLink) {
+            options.push({
+                content: tk(
+                    "convert_input_to_xlinker",
+                    "Convert Input to XLinker"
+                ),
+                callback: (function (node, slotIndex, g, canvas) {
+                    return function () {
+                        convertInputToXLinker(node, slotIndex, g, canvas);
+                    };
+                })(this, slot.slot, graph, canvasRef),
+            });
+        }
+
+        return options;
+    };
+}
+
+function convertOutputToXLinker(node, slotIndex, graph, canvas) {
+    var output = node.outputs[slotIndex];
+    if (!output || !output.links || output.links.length === 0) return;
+
+    // 复制链接引用（断开前）
+    var linkIds = output.links.slice();
+
+    // 收集目标信息
+    var targets = [];
+    for (var i = 0; i < linkIds.length; i++) {
+        var linkInfo = getLinkInfo(linkIds[i], graph);
+        if (linkInfo) {
+            targets.push({
+                target_id: linkInfo.target_id,
+                target_slot: linkInfo.target_slot,
+            });
+        }
+    }
+
+    if (targets.length === 0) return;
+
+    if (typeof graph.beforeChange === "function") graph.beforeChange();
+
+    // 断开所有输出连接
+    node.disconnectOutput(slotIndex);
+
+    // 创建 XLinker 节点
+    var linkerNode = (typeof LiteGraph !== "undefined" && LiteGraph.createNode)
+        ? LiteGraph.createNode("XLinker")
+        : null;
+    if (!linkerNode) {
+        if (typeof graph.afterChange === "function") graph.afterChange();
+        return;
+    }
+
+    // 计算位置：放在源节点右侧
+    var nodePos = node.pos;
+    var nodeSize = node.size || [200, 80];
+    linkerNode.pos = [
+        nodePos[0] + nodeSize[0] + 80,
+        nodePos[1] + slotIndex * 24,
+    ];
+
+    graph.add(linkerNode);
+
+    // 源节点 -> XLinker
+    node.connect(slotIndex, linkerNode, 0);
+
+    // XLinker -> 所有原下游节点
+    for (var j = 0; j < targets.length; j++) {
+        var targetNode = graph.getNodeById(targets[j].target_id);
+        if (targetNode) {
+            linkerNode.connect(0, targetNode, targets[j].target_slot);
+        }
+    }
+
+    if (typeof graph.afterChange === "function") graph.afterChange();
+    if (typeof graph.change === "function") graph.change();
+    if (canvas) canvas.setDirty(true, true);
+}
+
+function convertInputToXLinker(node, slotIndex, graph, canvas) {
+    var input = node.inputs[slotIndex];
+    if (!input || input.link == null) return;
+
+    var linkId = input.link;
+    var linkInfo = getLinkInfo(linkId, graph);
+    if (!linkInfo) return;
+
+    var sourceId = linkInfo.origin_id;
+    var sourceSlot = linkInfo.origin_slot;
+
+    if (typeof graph.beforeChange === "function") graph.beforeChange();
+
+    // 断开输入连接
+    node.disconnectInput(slotIndex, true);
+
+    // 创建 XLinker 节点
+    var linkerNode2 = (typeof LiteGraph !== "undefined" && LiteGraph.createNode)
+        ? LiteGraph.createNode("XLinker")
+        : null;
+    if (!linkerNode2) {
+        if (typeof graph.afterChange === "function") graph.afterChange();
+        return;
+    }
+
+    // 计算位置：放在目标节点左侧
+    var nodePos2 = node.pos;
+    linkerNode2.pos = [
+        nodePos2[0] - 240,
+        nodePos2[1] + slotIndex * 24,
+    ];
+
+    graph.add(linkerNode2);
+
+    // 上游源节点 -> XLinker
+    var sourceNode = graph.getNodeById(sourceId);
+    if (sourceNode) {
+        sourceNode.connect(sourceSlot, linkerNode2, 0);
+    }
+
+    // XLinker -> 本节点
+    linkerNode2.connect(0, node, slotIndex);
+
+    if (typeof graph.afterChange === "function") graph.afterChange();
+    if (typeof graph.change === "function") graph.change();
+    if (canvas) canvas.setDirty(true, true);
+}
 app.registerExtension({
     name: "ComfyUI.Xz3r0.XLinker",
 
@@ -947,8 +1121,10 @@ app.registerExtension({
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
+        // 在所有节点右键端口菜单中注入「转换为 XLinker」选项（仅首次执行）
+        installXLinkerSlotMenu(nodeType);
+
         if (String(nodeData.name) !== NODE_CLASS) return;
-        // 初始最小尺寸约束（ComfyUI 1.0 兼容）
         var origOnCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             origOnCreated && origOnCreated.apply(this, arguments);
