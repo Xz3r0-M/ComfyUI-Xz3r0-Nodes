@@ -914,10 +914,10 @@ function resolveInitialNodeSize(node) {
     var computed = typeof node.computeSize === "function"
         ? node.computeSize()
         : [0, 0];
-    var width = Number(computed && computed[0])
-        || Number(current[0]) || 0;
-    var height = Number(computed && computed[1])
-        || Number(current[1]) || 0;
+    var computedWidth = Number(computed && computed[0]) || 0;
+    var computedHeight = Number(computed && computed[1]) || 0;
+    var width = computedWidth || Number(current[0]) || 0;
+    var height = computedHeight || Number(current[1]) || 0;
     return [
         Math.max(1, Math.ceil(width + INITIAL_WIDTH_EXTRA)),
         Math.max(1, Math.ceil(height)),
@@ -932,6 +932,7 @@ function applyInitialNodeSize(node) {
     if (typeof node.setSize === "function") node.setSize(size.slice());
     else node.size = size.slice();
     node.__xpipeGateInitialSizeApplied = true;
+    node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 
 function stateSignature(state) {
