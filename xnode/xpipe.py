@@ -128,7 +128,7 @@ class XPipe(io.ComfyNode):
                 "bundle; port names are customizable and travel with "
                 "the bundle."
             ),
-            category="♾️ Xz3r0/Workflow-Processing",
+            category="♾️ Xz3r0/❌Deprecated Nodes",
             inputs=inputs,
             outputs=outputs,
         )
