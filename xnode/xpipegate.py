@@ -72,6 +72,18 @@ class XPipeGate(io.ComfyNode):
                 tooltip="Serialized slot names managed by the frontend",
             ),
         )
+        inputs.append(
+            io.Boolean.Input(
+                "type_warning",
+                default=True,
+                label_on="Enabled",
+                label_off="Disabled",
+                tooltip=(
+                    "Show a warning when a channel output is connected "
+                    "to an incompatible input type."
+                ),
+            ),
+        )
         outputs: list[Any] = [
             XPipeV2Bundle.Output(
                 "xpipe_out",

@@ -1371,7 +1371,7 @@ function removeNameWidget(node, widget) {
 
 function ensureNameWidget(state, slot) {
     var widget = findNameWidget(state.node, slot);
-    var label = txf("name_label", "Name {slot}", { slot: slot });
+    var label = txf("name_label", "[{slot}] Name", { slot: slot });
     if (!widget) {
         widget = state.node.addWidget(
             "text",

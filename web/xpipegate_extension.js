@@ -8,11 +8,28 @@ import {
 
 var NODE_CLASS = "XPipeGate";
 var GATE_SLOTS = 50;
+var HIDE_NONE = 0;
+var HIDE_INPUT = 1;
+var HIDE_OUTPUT = 2;
+var HIDE_BOTH = 3;
 var BUNDLE_INPUT = "xpipe_in";
 var BUNDLE_OUTPUT = "xpipe_out";
 var NAMES_WIDGET = "port_names";
+var HIDE_STATE_PROP = "xpipe_gate_hide_links_state";
+var VALUE_HIDE_STATE_PROP = "xpipe_gate_hide_value_links_state";
 var TYPES_PROP = "xpipe_gate_types";
+var CONTROL_VALUES = ["0", "1", "2", "3"];
+var CONTROL_BUNDLE = "bundle";
+var CONTROL_VALUE = "value";
+var CONTROL_REFRESH = "refresh";
 var INITIAL_WIDTH_EXTRA = 20;
+var WARNING_COLOR = "#1a1a1a";
+var WARNING_GLOW = "rgba(255, 15, 15, 0.95)";
+var uiLocalePrimary = null;
+var uiLocaleFallback = null;
+var i18nCache = {};
+var localeSyncInstalled = false;
+var canvasHooked = false;
 var refreshTimer = null;
 var gateNodeCount = 0;
 
@@ -128,6 +145,94 @@ function markCanvasDirty() {
     } else if (typeof app.canvas.setDirty === "function") {
         app.canvas.setDirty(true, true);
     }
+}
+
+function resolveComfyLocale() {
+    try {
+        var value = app.extensionManager
+            && app.extensionManager.setting
+            && app.extensionManager.setting.get
+            && app.extensionManager.setting.get("Comfy.Locale");
+        if (value) return value;
+    } catch (_error) { /* fall through */ }
+    try {
+        var stored = localStorage.getItem("Comfy.Locale");
+        if (stored) return stored;
+    } catch (_error) { /* fall through */ }
+    if (document.documentElement && document.documentElement.lang) {
+        return document.documentElement.lang;
+    }
+    return navigator.language || "en";
+}
+
+function fetchI18n(locale) {
+    if (i18nCache[locale]) return Promise.resolve(i18nCache[locale]);
+    return fetch("/xz3r0/xdatahub/i18n/ui?locale="
+        + encodeURIComponent(locale))
+        .then(function (response) {
+            return response.ok ? response.json() : {};
+        })
+        .then(function (data) {
+            i18nCache[locale] = data && data.dict ? data.dict : {};
+            return i18nCache[locale];
+        })
+        .catch(function () { return {}; });
+}
+
+function t(key, fallback) {
+    if (uiLocalePrimary && uiLocalePrimary[key] !== undefined) {
+        return uiLocalePrimary[key];
+    }
+    if (uiLocaleFallback && uiLocaleFallback[key] !== undefined) {
+        return uiLocaleFallback[key];
+    }
+    return fallback || key;
+}
+
+function tx(suffix, fallback) {
+    return t("xdatahub.ui.node.xpipe_gate." + suffix, fallback);
+}
+
+function visibilityLabel(value) {
+    if (String(value) === "1") {
+        return tx("visibility_hide_input", "Hide Input");
+    }
+    if (String(value) === "2") {
+        return tx("visibility_hide_output", "Hide Output");
+    }
+    if (String(value) === "3") {
+        return tx("visibility_hide_all", "Hide All");
+    }
+    return tx("visibility_show_all", "Show All");
+}
+
+function applyUiLocale() {
+    var locale = resolveComfyLocale();
+    var normalized = locale === "zh" || locale === "zh-CN"
+        || locale === "zh-TW" ? "zh" : "en";
+    return Promise.all([fetchI18n("en"), fetchI18n(normalized)])
+        .then(function (results) {
+            uiLocaleFallback = results[0];
+            uiLocalePrimary = normalized === "en" ? results[0] : results[1];
+            forEachPipeGate(app.graph, function (node) {
+                updateControlWidgets(node);
+                refreshNodeLayout(node);
+            });
+            markCanvasDirty();
+        });
+}
+
+function installLocaleSync() {
+    if (localeSyncInstalled) return;
+    localeSyncInstalled = true;
+    var lastLocale = null;
+    setInterval(function () {
+        var locale = resolveComfyLocale();
+        if (locale && locale !== lastLocale) {
+            lastLocale = locale;
+            applyUiLocale();
+        }
+    }, 1000);
 }
 
 function cloneSlotDef(slot) {
@@ -364,6 +469,29 @@ function findWidget(node, name) {
     return null;
 }
 
+function findControlWidget(node, role) {
+    if (!node || !Array.isArray(node.widgets)) return null;
+    for (var index = 0; index < node.widgets.length; index++) {
+        var widget = node.widgets[index];
+        if (widget && widget.__xpipeGateControl === role) return widget;
+    }
+    return null;
+}
+
+function setWidgetTooltip(widget, tooltip) {
+    if (!widget) return;
+    widget.tooltip = tooltip;
+    widget.options = widget.options || {};
+    widget.options.tooltip = tooltip;
+}
+
+function disableWidgetSerialization(widget) {
+    if (!widget) return;
+    widget.serialize = false;
+    widget.options = widget.options || {};
+    widget.options.serialize = false;
+}
+
 function setWidgetHidden(widget, hidden) {
     if (!widget) return;
     widget.hidden = hidden;
@@ -374,6 +502,184 @@ function setWidgetHidden(widget, hidden) {
     } else if (Object.prototype.hasOwnProperty.call(widget, "computeSize")) {
         delete widget.computeSize;
     }
+}
+
+function normalizedHideState(value) {
+    return Math.max(HIDE_NONE, Math.min(HIDE_BOTH, Number(value) || 0));
+}
+
+function hiddenState(node) {
+    return normalizedHideState(
+        node && node.properties && node.properties[HIDE_STATE_PROP],
+    );
+}
+
+function valueHiddenState(node) {
+    return normalizedHideState(
+        node && node.properties && node.properties[VALUE_HIDE_STATE_PROP],
+    );
+}
+
+function setHiddenState(node, state) {
+    if (!node) return;
+    node.properties = node.properties || {};
+    var value = normalizedHideState(state);
+    if (value === HIDE_NONE) delete node.properties[HIDE_STATE_PROP];
+    else node.properties[HIDE_STATE_PROP] = value;
+    updateControlWidgets(node);
+    node.graph && node.graph.change && node.graph.change();
+    markCanvasDirty();
+}
+
+function setValueHiddenState(node, state) {
+    if (!node) return;
+    node.properties = node.properties || {};
+    var value = normalizedHideState(state);
+    if (value === HIDE_NONE) delete node.properties[VALUE_HIDE_STATE_PROP];
+    else node.properties[VALUE_HIDE_STATE_PROP] = value;
+    updateControlWidgets(node);
+    node.graph && node.graph.change && node.graph.change();
+    markCanvasDirty();
+}
+
+function ensureControlWidgets(node) {
+    if (!node || typeof node.addWidget !== "function") return;
+    var bundle = findControlWidget(node, CONTROL_BUNDLE);
+    if (!bundle) {
+        bundle = node.addWidget(
+            "combo",
+            tx("control_links", "Links"),
+            String(hiddenState(node)),
+            function (value) { setHiddenState(node, value); },
+            {
+                values: CONTROL_VALUES,
+                getOptionLabel: visibilityLabel,
+                serialize: false,
+            },
+        );
+        bundle.__xpipeGateControl = CONTROL_BUNDLE;
+        disableWidgetSerialization(bundle);
+    }
+    var value = findControlWidget(node, CONTROL_VALUE);
+    if (!value) {
+        value = node.addWidget(
+            "combo",
+            tx("control_ports", "Ports"),
+            String(valueHiddenState(node)),
+            function (next) { setValueHiddenState(node, next); },
+            {
+                values: CONTROL_VALUES,
+                getOptionLabel: visibilityLabel,
+                serialize: false,
+            },
+        );
+        value.__xpipeGateControl = CONTROL_VALUE;
+        disableWidgetSerialization(value);
+    }
+    var refresh = findControlWidget(node, CONTROL_REFRESH);
+    if (!refresh) {
+        refresh = node.addWidget(
+            "button",
+            tx("control_refresh", "Refresh"),
+            "refresh",
+            function () { refreshPortStatus(node); },
+            { serialize: false },
+        );
+        refresh.__xpipeGateControl = CONTROL_REFRESH;
+        disableWidgetSerialization(refresh);
+    }
+    updateControlWidgets(node);
+    sortGateWidgets(node);
+}
+
+function updateControlWidgets(node) {
+    var bundle = findControlWidget(node, CONTROL_BUNDLE);
+    if (bundle) {
+        bundle.name = tx("control_links", "Links");
+        bundle.label = bundle.name;
+        bundle.value = String(hiddenState(node));
+        bundle.options = bundle.options || {};
+        bundle.options.values = CONTROL_VALUES;
+        bundle.options.getOptionLabel = visibilityLabel;
+        setWidgetTooltip(
+            bundle,
+            tx(
+                "control_links_tooltip",
+                "Set XPipeGate bundle link visibility",
+            ),
+        );
+    }
+    var value = findControlWidget(node, CONTROL_VALUE);
+    if (value) {
+        value.name = tx("control_ports", "Ports");
+        value.label = value.name;
+        value.value = String(valueHiddenState(node));
+        value.options = value.options || {};
+        value.options.values = CONTROL_VALUES;
+        value.options.getOptionLabel = visibilityLabel;
+        setWidgetTooltip(
+            value,
+            tx(
+                "control_ports_tooltip",
+                "Set XPipeGate channel link visibility",
+            ),
+        );
+    }
+    var refresh = findControlWidget(node, CONTROL_REFRESH);
+    if (refresh) {
+        refresh.name = tx("control_refresh", "Refresh");
+        refresh.label = refresh.name;
+        setWidgetTooltip(
+            refresh,
+            tx(
+                "control_refresh_tooltip",
+                "Refresh channel names and data types",
+            ),
+        );
+    }
+}
+
+function sortGateWidgets(node) {
+    if (!node || !Array.isArray(node.widgets)) return;
+    var base = [];
+    var controls = {};
+    var enables = [];
+    for (var index = 0; index < node.widgets.length; index++) {
+        var widget = node.widgets[index];
+        if (widget && widget.__xpipeGateControl) {
+            controls[widget.__xpipeGateControl] = widget;
+        } else if (widget && channelEnableNumber(widget.name)) {
+            enables.push(widget);
+        } else {
+            base.push(widget);
+        }
+    }
+    enables.sort(function (left, right) {
+        return channelEnableNumber(left.name)
+            - channelEnableNumber(right.name);
+    });
+    var ordered = base;
+    [CONTROL_BUNDLE, CONTROL_VALUE, CONTROL_REFRESH].forEach(
+        function (role) {
+            if (controls[role]) ordered.push(controls[role]);
+        },
+    );
+    ordered = ordered.concat(enables);
+    var changed = ordered.length !== node.widgets.length;
+    if (!changed) {
+        for (var other = 0; other < ordered.length; other++) {
+            if (ordered[other] !== node.widgets[other]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (!changed) return;
+    node.widgets.splice.apply(
+        node.widgets,
+        [0, node.widgets.length].concat(ordered),
+    );
+    node._widgetSlotsDirty = true;
 }
 
 function syncSwitchVisibility(state) {
@@ -525,11 +831,25 @@ function applyChannelLabels(state) {
             slotIndexByName(state.node.inputs, "input_" + channel),
             label,
         );
+        // Match XPipe_v2: hide output name labels.
         replaceSlotLabel(
             state.node.outputs,
             slotIndexByName(state.node.outputs, "output_" + channel),
-            label,
+            " ",
         );
+    }
+    syncSwitchLabels(state);
+}
+
+function syncSwitchLabels(state) {
+    if (!state || !state.node) return;
+    for (var channel = 1; channel <= GATE_SLOTS; channel++) {
+        var widget = findWidget(state.node, "enable_" + channel);
+        if (!widget) continue;
+        // Keep name=enable_N for serialize/lookup; only label tracks port name.
+        var label = formatPortLabel(channel, state.names[channel - 1]);
+        widget.label = label;
+        if (widget.options) widget.options.label = label;
     }
 }
 
@@ -626,12 +946,14 @@ function stateSignature(state) {
 
 function syncNode(state) {
     var before = stateSignature(state);
+    ensureControlWidgets(state.node);
     syncDynamicChannels(state);
     refreshChannelMetadata(state);
     applyChannelTypes(state);
     applyChannelLabels(state);
     persistState(state);
     hideNamesWidget(state.node);
+    sortGateWidgets(state.node);
     refreshNodeLayout(state.node);
     applyInitialNodeSize(state.node);
     return before !== stateSignature(state);
@@ -656,7 +978,17 @@ function createState(node) {
 }
 
 function ensurePipeGate(node) {
-    return isXPipeGate(node) ? createState(node) : null;
+    if (!isXPipeGate(node)) return null;
+    ensureControlWidgets(node);
+    return createState(node);
+}
+
+function refreshPortStatus(node) {
+    var state = ensurePipeGate(node);
+    if (!state) return;
+    refreshChannelMetadata(state);
+    syncNode(state);
+    scheduleRefresh();
 }
 
 function refreshAllPipeGate() {
@@ -685,10 +1017,96 @@ function scheduleRefresh() {
     }, 0);
 }
 
+function isHiddenBundleLink(link, graph) {
+    if (!link) return false;
+    var source = getNodeById(graph, link.origin_id);
+    var target = getNodeById(graph, link.target_id);
+    var output = source && source.outputs
+        ? source.outputs[link.origin_slot]
+        : null;
+    var input = target && target.inputs ? target.inputs[link.target_slot] : null;
+    if (isXPipeGate(source) && output
+        && output.name === BUNDLE_OUTPUT
+        && (hiddenState(source) & HIDE_OUTPUT)) return true;
+    return !!(
+        isXPipeGate(target)
+        && input
+        && input.name === BUNDLE_INPUT
+        && (hiddenState(target) & HIDE_INPUT)
+    );
+}
+
+function isHiddenValueLink(link, graph) {
+    if (!link) return false;
+    var source = getNodeById(graph, link.origin_id);
+    var target = getNodeById(graph, link.target_id);
+    var output = source && source.outputs
+        ? source.outputs[link.origin_slot]
+        : null;
+    var input = target && target.inputs ? target.inputs[link.target_slot] : null;
+    if (isXPipeGate(source) && channelOutputNumber(output && output.name)
+        && (valueHiddenState(source) & HIDE_OUTPUT)) return true;
+    return !!(
+        isXPipeGate(target)
+        && channelInputNumber(input && input.name)
+        && (valueHiddenState(target) & HIDE_INPUT)
+    );
+}
+
+function linkWarning(link, graph) {
+    if (!link) return null;
+    var source = getNodeById(graph, link.origin_id);
+    if (!isXPipeGate(source) || !source.__xpipeGateState) return null;
+    var output = source.outputs && source.outputs[link.origin_slot];
+    var slot = channelOutputNumber(output && output.name);
+    if (!slot) return null;
+    var target = getNodeById(graph, link.target_id);
+    var input = target && target.inputs ? target.inputs[link.target_slot] : null;
+    var outputType = cleanType(source.__xpipeGateState.types[slot - 1])
+        || cleanType(output && output.type);
+    var inputType = cleanType(input && input.type);
+    if (!outputType || !inputType || !window.LiteGraph) return null;
+    if (LiteGraph.isValidConnection(outputType, inputType)) return null;
+    var warningWidget = findWidget(source, "type_warning");
+    return warningWidget && !warningWidget.value ? null : source;
+}
+
+function installCanvasHooks() {
+    if (canvasHooked || !app.canvas) {
+        if (!app.canvas) setTimeout(installCanvasHooks, 200);
+        return;
+    }
+    canvasHooked = true;
+    var originalRenderLink = app.canvas.renderLink;
+    app.canvas.renderLink = function (ctx, start, end, link) {
+        var graph = this.graph || app.graph;
+        if (isHiddenBundleLink(link, graph)
+            || isHiddenValueLink(link, graph)) return;
+        if (!linkWarning(link, graph)) {
+            return originalRenderLink
+                && originalRenderLink.apply(this, arguments);
+        }
+        var args = Array.prototype.slice.call(arguments);
+        ctx.save();
+        ctx.shadowColor = WARNING_GLOW;
+        ctx.shadowBlur = 10;
+        args[6] = "#ffffff";
+        originalRenderLink && originalRenderLink.apply(this, args);
+        ctx.shadowBlur = 0;
+        ctx.setLineDash && ctx.setLineDash([8, 5]);
+        args[6] = WARNING_COLOR;
+        originalRenderLink && originalRenderLink.apply(this, args);
+        ctx.restore();
+    };
+}
+
 app.registerExtension({
     name: "ComfyUI.Xz3r0.XPipeGate",
 
     async setup() {
+        applyUiLocale();
+        installLocaleSync();
+        installCanvasHooks();
         subscribeXPipeV2Metadata(scheduleRefresh);
     },
 
@@ -730,6 +1148,7 @@ app.registerExtension({
                 GATE_SLOTS,
                 "",
             ).map(cleanType);
+            updateControlWidgets(this);
             scheduleRefresh();
         };
 

@@ -244,7 +244,11 @@
       "enable_48": {"name": "Enable 48", "tooltip": "Enable channel 48 output"},
       "enable_49": {"name": "Enable 49", "tooltip": "Enable channel 49 output"},
       "enable_50": {"name": "Enable 50", "tooltip": "Enable channel 50 output"},
-      "port_names": {"name": "Port Names", "tooltip": "Internal serialized names managed by the XPipeGate frontend"}
+      "port_names": {"name": "Port Names", "tooltip": "Internal serialized names managed by the XPipeGate frontend"},
+      "type_warning": {
+        "name": "Type Mismatch Warning",
+        "tooltip": "Show a visual warning when a channel output is connected to an incompatible input type."
+      }
     },
     "outputs": {
       "0": {"name": "XPipe_v2 Out", "tooltip": "Merged and gated values as an XPipe_v2 bundle"},
@@ -302,13 +306,17 @@
   },
   "XPipeRecursive": {
     "display_name": "XPipeRecursive",
-    "description": "Returns the first accepted value from an XPipe_v2 bundle by scanning slots 1 through 50.",
+    "description": "Returns the first accepted value from an XPipe_v2 bundle using a customizable recursive slot order.",
     "inputs": {
-      "xpipe_in": {"name": "XPipe_v2 In", "tooltip": "XPipe_v2 bundle scanned from slot 1 through 50"},
-      "empty_string_as_none": {"name": "Empty String as None", "tooltip": "When Enabled, skip an exact empty string and continue scanning"}
+      "xpipe_in": {"name": "XPipe_v2 In", "tooltip": "XPipe_v2 bundle scanned by recursive_order from slots 1 through 50"},
+      "empty_string_as_none": {"name": "Empty String as None", "tooltip": "When Enabled, skip an exact empty string and continue scanning"},
+      "recursive_order": {
+        "name": "Recursive Order",
+        "tooltip": "Recursive order list separated by '-' (example: 1-3-5 or 50-1-2). Only 1-50 is allowed and duplicates are forbidden."
+      }
     },
     "outputs": {
-      "0": {"name": "Recursive Output", "tooltip": "First non-None value accepted by the empty-string policy"}
+      "0": {"name": "Recursive Output", "tooltip": "First non-None value accepted by the empty-string policy using recursive_order"}
     }
   },
   "XAnyToString": {

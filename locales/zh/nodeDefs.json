@@ -244,7 +244,11 @@
       "enable_48": {"name": "启用 48", "tooltip": "启用第 48 路输出"},
       "enable_49": {"name": "启用 49", "tooltip": "启用第 49 路输出"},
       "enable_50": {"name": "启用 50", "tooltip": "启用第 50 路输出"},
-      "port_names": {"name": "端口名称", "tooltip": "由 XPipeGate 前端维护的内部序列化名称"}
+      "port_names": {"name": "端口名称", "tooltip": "由 XPipeGate 前端维护的内部序列化名称"},
+      "type_warning": {
+        "name": "类型不兼容警告",
+        "tooltip": "通道输出连接到不兼容输入类型时显示视觉警告。"
+      }
     },
     "outputs": {
       "0": {"name": "XPipe_v2 输出", "tooltip": "将合并并门控后的值作为 XPipe_v2 数据束输出"},
@@ -302,13 +306,17 @@
   },
   "XPipeRecursive": {
     "display_name": "XPipeRecursive",
-    "description": "按第 1 至 50 路的顺序扫描 XPipe_v2 数据束，并返回首个符合条件的值。",
+    "description": "按可自定义的递归顺序扫描 XPipe_v2 数据束，并返回首个符合条件的值。",
     "inputs": {
-      "xpipe_in": {"name": "XPipe_v2 输入", "tooltip": "按第 1 至 50 路扫描的 XPipe_v2 数据束"},
-      "empty_string_as_none": {"name": "空字符串视为 None", "tooltip": "启用时跳过精确的空字符串并继续扫描"}
+      "xpipe_in": {"name": "XPipe_v2 输入", "tooltip": "按 recursive_order 扫描的 XPipe_v2 数据束（第 1 至 50 路）"},
+      "empty_string_as_none": {"name": "空字符串视为 None", "tooltip": "启用时跳过精确的空字符串并继续扫描"},
+      "recursive_order": {
+        "name": "递归顺序",
+        "tooltip": "使用 - 分隔的递归顺序列表（例如：1-3-5 或 50-1-2）。仅允许 1~50 且不允许重复。"
+      }
     },
     "outputs": {
-      "0": {"name": "递归输出", "tooltip": "根据空字符串策略找到的首个非 None 值"}
+      "0": {"name": "递归输出", "tooltip": "按递归顺序与空字符串策略找到的首个非 None 值"}
     }
   },
   "XAnyToString": {
