@@ -9,6 +9,7 @@ var HIDE_OUTPUT = 2;
 var HIDE_BOTH = 3;
 var BUNDLE_INPUT_NAME = "xpipe_in";
 var BUNDLE_OUTPUT_NAME = "xpipe_out";
+var PIPE_GATE_CLASS = "XPipeGate";
 var NAMES_WIDGET = "port_names";
 var HIDE_STATE_PROP = "xpipe_v2_hide_links_state";
 var VALUE_HIDE_STATE_PROP = "xpipe_v2_hide_value_links_state";
@@ -29,6 +30,7 @@ var localeSyncInstalled = false;
 var canvasHooked = false;
 var graphRefreshTimer = null;
 var v2NodeCount = 0;
+var metadataListeners = [];
 var graphIds = new WeakMap();
 var nextGraphId = 1;
 
@@ -299,6 +301,13 @@ function isXPipeV2(node) {
     return !!(
         node
         && String(node.comfyClass || node.type || "") === NODE_CLASS
+    );
+}
+
+function isXPipeGate(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === PIPE_GATE_CLASS
     );
 }
 
@@ -770,6 +779,16 @@ function passthroughInputIndex(node, outputIndex) {
         || !Array.isArray(node.outputs)) return -1;
     var output = node.outputs[outputIndex];
     if (!output) return -1;
+    if (isXPipeGate(node) && output.name === BUNDLE_OUTPUT_NAME) {
+        var gateInputIndex = slotIndexOfName(
+            node.inputs,
+            BUNDLE_INPUT_NAME,
+        );
+        return gateInputIndex >= 0
+            && node.inputs[gateInputIndex].link != null
+            ? gateInputIndex
+            : -1;
+    }
     if (String(node.comfyClass || node.type || "") === "XLinker") {
         return outputIndex === 0 && node.inputs[0]
             && node.inputs[0].link != null ? 0 : -1;
@@ -796,6 +815,11 @@ function resolveBundleStateFromSlot(slot, graph, seen) {
             && outputOwner.slot.name === BUNDLE_OUTPUT_NAME) {
             ensureXPipeV2(outputOwner.node);
             return outputOwner.node.__xpipeV2State || null;
+        }
+        if (isXPipeGate(outputOwner.node)
+            && outputOwner.slot.name === BUNDLE_OUTPUT_NAME
+            && outputOwner.node.__xpipeGateState) {
+            return outputOwner.node.__xpipeGateState;
         }
         var inputIndex = passthroughInputIndex(
             outputOwner.node,
@@ -883,6 +907,11 @@ function resolveBundleStateFromLink(graph, link, seen) {
         ensureXPipeV2(source);
         return source.__xpipeV2State || null;
     }
+    if (isXPipeGate(source) && output
+        && output.name === BUNDLE_OUTPUT_NAME
+        && source.__xpipeGateState) {
+        return source.__xpipeGateState;
+    }
     if (isSubgraphInputNode(source, graph)) {
         var parent = findParentSubgraphNode(graph);
         var inputIndex = findMatchingSlotIndex(
@@ -951,6 +980,222 @@ function resolveBundleStateFromLink(graph, link, seen) {
             seen,
         )
         : null;
+}
+
+export function resolveXPipeV2StateForInput(node, inputName) {
+    var index = slotIndexOfName(node && node.inputs, inputName);
+    var input = index >= 0 ? node.inputs[index] : null;
+    if (!input || input.link == null || !node.graph) return null;
+    return resolveBundleStateFromLink(
+        node.graph,
+        getLinkInfo(node.graph, input.link),
+        {},
+    );
+}
+
+function pipeValueMetadata(node, output) {
+    if (!node || !output) return null;
+    var slot = valueSlotNumber(output.name);
+    var state = node.__xpipeV2State;
+    if (isXPipeGate(node)) {
+        var match = /^output_(\d+)$/.exec(output.name || "");
+        slot = match ? parseInt(match[1], 10) : 0;
+        state = node.__xpipeGateState;
+    }
+    if (!slot || !state) return null;
+    return {
+        name: cleanName(state.names[slot - 1]),
+        type: cleanType(state.types[slot - 1]),
+    };
+}
+
+function resolveValueMetadataFromSlot(slot, graph, seen) {
+    if (!slot) return null;
+    var outputOwner = findSlotOwner(slot, "output", graph);
+    if (outputOwner) {
+        var metadata = pipeValueMetadata(
+            outputOwner.node,
+            outputOwner.slot,
+        );
+        if (metadata) return metadata;
+        var inputIndex = passthroughInputIndex(
+            outputOwner.node,
+            outputOwner.index,
+        );
+        var input = inputIndex >= 0
+            ? outputOwner.node.inputs[inputIndex]
+            : null;
+        if (input && input.link != null) {
+            return resolveValueMetadataFromLink(
+                outputOwner.node.graph,
+                getLinkInfo(outputOwner.node.graph, input.link),
+                seen,
+            );
+        }
+    }
+    var inputOwner = findSlotOwner(slot, "input", graph);
+    if (inputOwner && inputOwner.slot.link != null) {
+        return resolveValueMetadataFromLink(
+            inputOwner.node.graph,
+            getLinkInfo(inputOwner.node.graph, inputOwner.slot.link),
+            seen,
+        );
+    }
+    var ids = slotLinkIds(slot);
+    for (var index = 0; index < ids.length; index++) {
+        var found = findLinkInGraphTree(ids[index], graph);
+        if (!found) continue;
+        var linkedMetadata = resolveValueMetadataFromLink(
+            found.graph,
+            found.link,
+            seen,
+        );
+        if (linkedMetadata) return linkedMetadata;
+    }
+    return null;
+}
+
+function resolveValueMetadataFromLink(graph, link, seen) {
+    if (!graph || !link) return null;
+    var key = "value:" + graphKey(graph) + ":" + String(
+        link.id != null ? link.id : (
+            String(link.origin_id) + ":" + String(link.origin_slot)
+                + ">" + String(link.target_id) + ":"
+                + String(link.target_slot)
+        ),
+    );
+    seen = seen || {};
+    if (seen[key]) return null;
+    seen[key] = true;
+    if (typeof link.resolve === "function") {
+        try {
+            var resolved = link.resolve(graph);
+            var slots = [
+                resolved && resolved.output,
+                resolved && resolved.subgraphOutput,
+                resolved && resolved.subgraphInput,
+            ];
+            for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+                var resolvedMetadata = resolveValueMetadataFromSlot(
+                    slots[slotIndex],
+                    graph,
+                    seen,
+                );
+                if (resolvedMetadata) return resolvedMetadata;
+            }
+        } catch (_error) { /* continue with direct source */ }
+    }
+    if (Number(link.origin_id) < 0) {
+        var parentNode = findParentSubgraphNode(graph);
+        var parentInput = parentNode && parentNode.inputs
+            ? parentNode.inputs[link.origin_slot]
+            : null;
+        if (parentInput && parentInput.link != null) {
+            return resolveValueMetadataFromLink(
+                parentNode.graph,
+                getLinkInfo(parentNode.graph, parentInput.link),
+                seen,
+            );
+        }
+    }
+    var source = getNodeById(graph, link.origin_id);
+    var output = source && source.outputs
+        ? source.outputs[link.origin_slot]
+        : null;
+    var directMetadata = pipeValueMetadata(source, output);
+    if (directMetadata) return directMetadata;
+    if (isSubgraphInputNode(source, graph)) {
+        var parent = findParentSubgraphNode(graph);
+        var inputIndex = findMatchingSlotIndex(
+            graph.inputs,
+            slotAt(source.outputs, link.origin_slot),
+            link.origin_slot,
+        );
+        var parentInput = parent && parent.inputs
+            ? parent.inputs[inputIndex]
+            : null;
+        if (parentInput && parentInput.link != null) {
+            return resolveValueMetadataFromLink(
+                parent.graph,
+                getLinkInfo(parent.graph, parentInput.link),
+                seen,
+            );
+        }
+    }
+    if (source && source.subgraph) {
+        var childGraph = source.subgraph;
+        var childOutputIndex = findMatchingSlotIndex(
+            childGraph.outputs,
+            slotAt(source.outputs, link.origin_slot),
+            link.origin_slot,
+        );
+        var outputNode = findSubgraphOutputNode(childGraph);
+        var outputInputIndex = findMatchingSlotIndex(
+            outputNode && outputNode.inputs,
+            slotAt(childGraph.outputs, childOutputIndex),
+            childOutputIndex,
+        );
+        var boundarySlot = slotAt(childGraph.outputs, childOutputIndex);
+        var boundaryLinks = slotLinkIds(boundarySlot);
+        for (var boundaryIndex = 0;
+            boundaryIndex < boundaryLinks.length;
+            boundaryIndex++) {
+            var found = findLinkInGraphTree(
+                boundaryLinks[boundaryIndex],
+                childGraph,
+            );
+            if (!found) continue;
+            var boundaryMetadata = resolveValueMetadataFromLink(
+                found.graph,
+                found.link,
+                seen,
+            );
+            if (boundaryMetadata) return boundaryMetadata;
+        }
+        var innerLink = findLinkToNodeInput(
+            childGraph,
+            outputNode,
+            outputInputIndex,
+        );
+        if (innerLink) {
+            return resolveValueMetadataFromLink(
+                childGraph,
+                innerLink,
+                seen,
+            );
+        }
+    }
+    var passthroughIndex = passthroughInputIndex(source, link.origin_slot);
+    var passthroughInput = passthroughIndex >= 0 && source.inputs
+        ? source.inputs[passthroughIndex]
+        : null;
+    return passthroughInput && passthroughInput.link != null
+        ? resolveValueMetadataFromLink(
+            source.graph,
+            getLinkInfo(source.graph, passthroughInput.link),
+            seen,
+        )
+        : null;
+}
+
+export function resolveXPipeV2ValueMetadataForInput(node, inputName) {
+    var index = slotIndexOfName(node && node.inputs, inputName);
+    var input = index >= 0 ? node.inputs[index] : null;
+    if (!input || input.link == null || !node.graph) return null;
+    return resolveValueMetadataFromLink(
+        node.graph,
+        getLinkInfo(node.graph, input.link),
+        {},
+    );
+}
+
+export function subscribeXPipeV2Metadata(listener) {
+    if (typeof listener !== "function") return;
+    if (!metadataListeners.includes(listener)) metadataListeners.push(listener);
+}
+
+export function scheduleXPipeV2Refresh() {
+    scheduleGraphRefresh();
 }
 
 function upstreamVisibleCount(node) {
@@ -1322,6 +1567,11 @@ function refreshAllXPipeV2() {
             }
         }
         if (!changed) break;
+    }
+    for (var listenerIndex = 0;
+        listenerIndex < metadataListeners.length;
+        listenerIndex++) {
+        try { metadataListeners[listenerIndex](); } catch (_error) { /* ignore */ }
     }
 }
 
