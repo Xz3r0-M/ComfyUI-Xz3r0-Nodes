@@ -210,13 +210,11 @@ __marimo__/
 
 # IDE
 .vscode/
+*.code-workspace
 ruff.toml
 
 # Agents
-opencode.json
-auth.json
-settings.json
-trust.json
+
 
 # Xz3r0-Dev-WIP
 

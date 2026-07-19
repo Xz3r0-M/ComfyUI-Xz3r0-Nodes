@@ -43,6 +43,7 @@ from .xnode.xlistpull import XListPull
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xpipe import XPipe
+from .xnode.xpipe_v2 import XPipeV2
 from .xnode.xprimitive import XPrimitiveCombo
 from .xnode.xresolution import XResolution
 from .xnode.xseed import XSeed
@@ -117,6 +118,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XMath,
     XMemoryCleanup,
     XPipe,
+    XPipeV2,
     XPrimitiveCombo,
     XResolution,
     XSeed,

@@ -196,6 +196,18 @@
   "xdatahub.ui.node.xpipe.refresh_port_status": "刷新端口名称和类型：从已连接的上游节点重新获取端口名称和数据类型",
   "xdatahub.ui.node.xpipe.name_label": "名称 {slot}",
   "xdatahub.ui.node.xpipe.name_tooltip": "设置第 {slot} 个端口名称",
+  "xdatahub.ui.node.xpipe_v2.control_links": "连线",
+  "xdatahub.ui.node.xpipe_v2.control_ports": "端口",
+  "xdatahub.ui.node.xpipe_v2.control_refresh": "刷新",
+  "xdatahub.ui.node.xpipe_v2.control_links_tooltip": "设置 XPipe_v2 数据束连接线的显隐",
+  "xdatahub.ui.node.xpipe_v2.control_ports_tooltip": "设置 XPipe_v2 槽位连接线的显隐",
+  "xdatahub.ui.node.xpipe_v2.control_refresh_tooltip": "从已连接的上游节点刷新端口名称和数据类型",
+  "xdatahub.ui.node.xpipe_v2.visibility_show_all": "显示全部",
+  "xdatahub.ui.node.xpipe_v2.visibility_hide_input": "隐藏输入",
+  "xdatahub.ui.node.xpipe_v2.visibility_hide_output": "隐藏输出",
+  "xdatahub.ui.node.xpipe_v2.visibility_hide_all": "隐藏全部",
+  "xdatahub.ui.node.xpipe_v2.name_label": "名称 {slot}",
+  "xdatahub.ui.node.xpipe_v2.name_tooltip": "设置第 {slot} 个端口名称",
   "xdatahub.ui.node.xlinker.button_links": "连线",
   "xdatahub.ui.node.xlinker.button_highlight": "高亮",
   "xdatahub.ui.node.xlinker.button_title_sync": "标题",
@@ -320,4 +332,3 @@
   "xdatahub.ui.node.xanytostring.expand_label": "点击展开",
   "xdatahub.ui.node.xanytostring.collapse_label": "点击收起"
 }
-

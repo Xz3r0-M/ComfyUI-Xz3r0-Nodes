@@ -196,6 +196,18 @@
   "xdatahub.ui.node.xpipe.refresh_port_status": "Refresh port names and types: Re-fetch port names and data types from connected upstream nodes",
   "xdatahub.ui.node.xpipe.name_label": "Name {slot}",
   "xdatahub.ui.node.xpipe.name_tooltip": "Set the name for slot {slot}",
+  "xdatahub.ui.node.xpipe_v2.control_links": "Links",
+  "xdatahub.ui.node.xpipe_v2.control_ports": "Ports",
+  "xdatahub.ui.node.xpipe_v2.control_refresh": "Refresh",
+  "xdatahub.ui.node.xpipe_v2.control_links_tooltip": "Set XPipe_v2 bundle link visibility",
+  "xdatahub.ui.node.xpipe_v2.control_ports_tooltip": "Set XPipe_v2 slot link visibility",
+  "xdatahub.ui.node.xpipe_v2.control_refresh_tooltip": "Refresh port names and data types from connected upstream nodes",
+  "xdatahub.ui.node.xpipe_v2.visibility_show_all": "Show All",
+  "xdatahub.ui.node.xpipe_v2.visibility_hide_input": "Hide Input",
+  "xdatahub.ui.node.xpipe_v2.visibility_hide_output": "Hide Output",
+  "xdatahub.ui.node.xpipe_v2.visibility_hide_all": "Hide All",
+  "xdatahub.ui.node.xpipe_v2.name_label": "Name {slot}",
+  "xdatahub.ui.node.xpipe_v2.name_tooltip": "Set the name for slot {slot}",
   "xdatahub.ui.node.xlinker.button_links": "Links",
   "xdatahub.ui.node.xlinker.button_highlight": "Highlight",
   "xdatahub.ui.node.xlinker.button_title_sync": "Title",
@@ -320,4 +332,3 @@
   "xdatahub.ui.node.xanytostring.expand_label": "Click to expand",
   "xdatahub.ui.node.xanytostring.collapse_label": "Click to collapse"
 }
-
