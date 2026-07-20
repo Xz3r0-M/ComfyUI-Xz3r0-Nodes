@@ -141,9 +141,9 @@
   },
   "XPipeGate": {
     "display_name": "XPipeGate",
-    "description": "对 XPipe_v2 数据束及最多 50 路独立输入进行逐路门控，独立输入使用 ComfyUI 原生 Lazy 求值。",
+    "description": "对可选的 XPipe_v2 数据束及最多 50 路独立输入进行逐路门控，独立输入使用 ComfyUI 原生 Lazy 求值。即使未连接 xpipe_in，xpipe_out 也始终输出合法的 XPipe_v2 数据束。",
     "inputs": {
-      "xpipe_in": {"name": "XPipe_v2 输入", "tooltip": "连接 XPipe_v2 数据束；独立通道输入会覆盖数据束中的对应值。"},
+      "xpipe_in": {"name": "XPipe_v2 输入", "tooltip": "可选的 XPipe_v2 数据束。不连接时从空通道起步；独立通道输入会覆盖数据束中的对应值。"},
       "input_1": {"name": "输入 1", "tooltip": "第 1 路 Lazy 输入（可选，支持任意数据）"},
       "input_2": {"name": "输入 2", "tooltip": "第 2 路 Lazy 输入（可选，支持任意数据）"},
       "input_3": {"name": "输入 3", "tooltip": "第 3 路 Lazy 输入（可选，支持任意数据）"},
@@ -251,7 +251,7 @@
       }
     },
     "outputs": {
-      "0": {"name": "XPipe_v2 输出", "tooltip": "将合并并门控后的值作为 XPipe_v2 数据束输出"},
+      "0": {"name": "XPipe_v2 输出", "tooltip": "始终输出合法的 XPipe_v2 数据束（未连接 xpipe_in 时可为空或部分填充的合并门控结果）。"},
       "1": {"name": "输出 1", "tooltip": "第 1 路输出"},
       "2": {"name": "输出 2", "tooltip": "第 2 路输出"},
       "3": {"name": "输出 3", "tooltip": "第 3 路输出"},

@@ -35,8 +35,9 @@ class XPipeGate(io.ComfyNode):
                 "xpipe_in",
                 optional=True,
                 tooltip=(
-                    "Connect an XPipe_v2 bundle. Direct channel inputs "
-                    "override matching bundled values."
+                    "Optional XPipe_v2 bundle. Leave unconnected to start "
+                    "from empty channels; direct channel inputs override "
+                    "matching bundled values."
                 ),
             ),
         ]
@@ -89,7 +90,8 @@ class XPipeGate(io.ComfyNode):
                 "xpipe_out",
                 display_name="xpipe_out",
                 tooltip=(
-                    "Send the merged and gated values as an XPipe_v2 bundle."
+                    "Always a valid XPipe_v2 bundle of merged and gated "
+                    "values (empty or partial when xpipe_in is unconnected)."
                 ),
             ),
         ]
@@ -108,8 +110,10 @@ class XPipeGate(io.ComfyNode):
             node_id="XPipeGate",
             display_name="XPipeGate",
             description=(
-                "Gate an XPipe_v2 bundle and up to 50 direct any-type inputs "
-                "with native Lazy evaluation for direct inputs."
+                "Gate an optional XPipe_v2 bundle and up to 50 direct "
+                "any-type inputs with per-channel switches and native Lazy "
+                "evaluation. Always emits a valid XPipe_v2 bundle on "
+                "xpipe_out even when xpipe_in is unconnected."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=inputs,

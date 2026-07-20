@@ -141,9 +141,9 @@
   },
   "XPipeGate": {
     "display_name": "XPipeGate",
-    "description": "Gate an XPipe_v2 bundle and up to 50 direct inputs with per-channel switches and native Lazy evaluation for direct inputs.",
+    "description": "Gate an optional XPipe_v2 bundle and up to 50 direct any-type inputs with per-channel switches and native Lazy evaluation. Always emits a valid XPipe_v2 bundle on xpipe_out even when xpipe_in is unconnected.",
     "inputs": {
-      "xpipe_in": {"name": "XPipe_v2 In", "tooltip": "Connect an XPipe_v2 bundle. Direct channel inputs override matching bundled values."},
+      "xpipe_in": {"name": "XPipe_v2 In", "tooltip": "Optional XPipe_v2 bundle. Leave unconnected to start from empty channels; direct channel inputs override matching bundled values."},
       "input_1": {"name": "Input 1", "tooltip": "Channel 1 Lazy input (optional, accepts any data)"},
       "input_2": {"name": "Input 2", "tooltip": "Channel 2 Lazy input (optional, accepts any data)"},
       "input_3": {"name": "Input 3", "tooltip": "Channel 3 Lazy input (optional, accepts any data)"},
@@ -251,7 +251,7 @@
       }
     },
     "outputs": {
-      "0": {"name": "XPipe_v2 Out", "tooltip": "Merged and gated values as an XPipe_v2 bundle"},
+      "0": {"name": "XPipe_v2 Out", "tooltip": "Always a valid XPipe_v2 bundle of merged and gated values (empty or partial when xpipe_in is unconnected)."},
       "1": {"name": "Output 1", "tooltip": "Channel 1 output"},
       "2": {"name": "Output 2", "tooltip": "Channel 2 output"},
       "3": {"name": "Output 3", "tooltip": "Channel 3 output"},
