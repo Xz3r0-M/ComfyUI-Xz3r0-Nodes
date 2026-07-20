@@ -18,7 +18,7 @@ except ImportError:
 LOGGER = get_logger(__name__)
 
 XListSlotMapIO = io.Custom("xlist_slot_map")
-_MAX_SLOTS = 20  # 与 XListCreate._MAX_SLOTS / XListPull._MAX_OUTPUTS 一致
+_MAX_SLOTS = 50  # 与 XListCreate._MAX_SLOTS / XListPull._MAX_OUTPUTS 一致
 
 
 class XListRestore(io.ComfyNode):

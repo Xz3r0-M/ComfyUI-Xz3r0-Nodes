@@ -178,7 +178,10 @@ app.registerExtension({
                 if (node.comfyClass === LIST_CREATE_CLASS) {
                     var createSlot = slotInfo
                         || (node.inputs && node.inputs[index]);
-                    if (createSlot && /^input\d*$/.test(createSlot.name || "")) {
+                    var createName = String(
+                        (createSlot && createSlot.name) || ""
+                    );
+                    if (/(?:^|[._])input\d+$/.test(createName)) {
                         scheduleRefreshAll(node.graph);
                     }
                 }

@@ -15,7 +15,7 @@ import { app } from "../../scripts/app.js";
 var NODE_CLASS = "XListPull";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
-var MAX_OUTPUTS = 20;
+var MAX_OUTPUTS = 50;
 
 /** 获取当前 ComfyUI 语言设置 */
 function resolveLocale() {
@@ -38,6 +38,27 @@ function t(en, zh) {
 /** dataCountLabel: 输出端口名 "Data 3" / "数据 3" */
 function dataCountLabel(num) {
     return t("Data " + num, "数据 " + num);
+}
+
+/** inputCountLabel: XListCreate 输入端口名 "Input 3" / "输入 3" */
+function inputCountLabel(num) {
+    return t("Input " + num, "输入 " + num);
+}
+
+/**
+ * 解析 Autogrow 槽位序号。
+ * 兼容 input1 / inputs.input1 / inputs_input1。
+ */
+function resolveAutogrowSlotNumber(name) {
+    var raw = String(name || "");
+    var match = raw.match(/(?:^|[._])input(\d+)$/);
+    if (!match) return 0;
+    var num = parseInt(match[1], 10);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+}
+
+function isXListCreateAutogrowInput(name) {
+    return resolveAutogrowSlotNumber(name) > 0;
 }
 
 function outputLinkCount(node, index) {
@@ -65,10 +86,9 @@ function countActiveInputs(node) {
     for (var i = 0; i < node.inputs.length; i++) {
         var input = node.inputs[i];
         if (!input) continue;
-        var isAutogrow =
-            /^input\d+$/.test(input.name || "") ||
-            (input.name && input.name.indexOf("input") === 0);
-        if (isAutogrow && input.link != null) cnt++;
+        if (isXListCreateAutogrowInput(input.name) && input.link != null) {
+            cnt++;
+        }
     }
     return cnt;
 }
@@ -261,11 +281,36 @@ function fixNodeSize(node) {
     }
 }
 
+function syncXListCreateInputLabels(node) {
+    if (!node || !Array.isArray(node.inputs)) return;
+    var changed = false;
+    for (var i = 0; i < node.inputs.length; i++) {
+        var input = node.inputs[i];
+        if (!input) continue;
+        var slot = resolveAutogrowSlotNumber(input.name);
+        if (slot <= 0) continue;
+        var label = inputCountLabel(slot);
+        if (input.label !== label) {
+            input.label = label;
+            changed = true;
+        }
+        if (input.localized_name !== label) {
+            input.localized_name = label;
+            changed = true;
+        }
+    }
+    if (changed && typeof node.setDirtyCanvas === "function") {
+        node.setDirtyCanvas(true, true);
+    }
+}
+
+
 function fixXListCreateSizes(graph) {
     if (!graph) return;
     var nodes = graph._nodes || graph.nodes || [];
     for (var i = 0; i < nodes.length; i++) {
         if (nodes[i] && nodes[i].comfyClass === "XListCreate") {
+            syncXListCreateInputLabels(nodes[i]);
             fixNodeSize(nodes[i]);
         }
     }
@@ -327,8 +372,12 @@ app.registerExtension({
                 if (node.comfyClass === LIST_CREATE_CLASS) {
                     var slot =
                         slotInfo || (node.inputs && node.inputs[index]);
-                    if (slot && /^input\d*$/.test(slot.name || "")) {
+                    if (
+                        slot
+                        && isXListCreateAutogrowInput(slot.name || "")
+                    ) {
                         scheduleRefreshAll(node.graph);
+                        syncXListCreateInputLabels(node);
                         fixNodeSize(node);
                     }
                 }
@@ -365,7 +414,24 @@ app.registerExtension({
             };
         }
 
+        // ---- XListCreate：本地化 Autogrow 输入端口标签 ----
+        if (nodeData.name === LIST_CREATE_CLASS) {
+            var origCreateCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                if (origCreateCreated) {
+                    origCreateCreated.apply(this, arguments);
+                }
+                var self = this;
+                setTimeout(function () {
+                    syncXListCreateInputLabels(self);
+                    fixNodeSize(self);
+                }, 0);
+            };
+            return;
+        }
+
         if (nodeData.name !== NODE_CLASS) return;
+
 
         // ---- onNodeCreated — 绑定原生 count_display widget ----
         var origCreated = nodeType.prototype.onNodeCreated;

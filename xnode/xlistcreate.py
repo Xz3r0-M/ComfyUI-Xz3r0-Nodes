@@ -22,7 +22,7 @@ except ImportError:
 LOGGER = get_logger(__name__)
 
 # 最大输入槽数，与 XListPull 输出端口数保持一致
-_MAX_SLOTS = 20
+_MAX_SLOTS = 50
 
 XListSlotMapIO = io.Custom("xlist_slot_map")
 _SLOT_KEY_RE = re.compile(r"^input(\d+)$")

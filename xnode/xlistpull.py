@@ -20,7 +20,7 @@ except ImportError:
 LOGGER = get_logger(__name__)
 
 # 最大输出端口数，与 XListCreate 的 Autogrow max 保持一致
-_MAX_OUTPUTS = 20
+_MAX_OUTPUTS = 50
 
 
 class XListPull(io.ComfyNode):

@@ -528,7 +528,57 @@
       "inputs": {
         "name": "Inputs",
         "tooltip": "Connect inputs to add them to the list"
-      }
+      },
+      "inputs_input1": {"name": "Input 1", "tooltip": "List slot 1 input. Connect any data to add it to the list."},
+      "inputs_input2": {"name": "Input 2", "tooltip": "List slot 2 input. Connect any data to add it to the list."},
+      "inputs_input3": {"name": "Input 3", "tooltip": "List slot 3 input. Connect any data to add it to the list."},
+      "inputs_input4": {"name": "Input 4", "tooltip": "List slot 4 input. Connect any data to add it to the list."},
+      "inputs_input5": {"name": "Input 5", "tooltip": "List slot 5 input. Connect any data to add it to the list."},
+      "inputs_input6": {"name": "Input 6", "tooltip": "List slot 6 input. Connect any data to add it to the list."},
+      "inputs_input7": {"name": "Input 7", "tooltip": "List slot 7 input. Connect any data to add it to the list."},
+      "inputs_input8": {"name": "Input 8", "tooltip": "List slot 8 input. Connect any data to add it to the list."},
+      "inputs_input9": {"name": "Input 9", "tooltip": "List slot 9 input. Connect any data to add it to the list."},
+      "inputs_input10": {"name": "Input 10", "tooltip": "List slot 10 input. Connect any data to add it to the list."},
+      "inputs_input11": {"name": "Input 11", "tooltip": "List slot 11 input. Connect any data to add it to the list."},
+      "inputs_input12": {"name": "Input 12", "tooltip": "List slot 12 input. Connect any data to add it to the list."},
+      "inputs_input13": {"name": "Input 13", "tooltip": "List slot 13 input. Connect any data to add it to the list."},
+      "inputs_input14": {"name": "Input 14", "tooltip": "List slot 14 input. Connect any data to add it to the list."},
+      "inputs_input15": {"name": "Input 15", "tooltip": "List slot 15 input. Connect any data to add it to the list."},
+      "inputs_input16": {"name": "Input 16", "tooltip": "List slot 16 input. Connect any data to add it to the list."},
+      "inputs_input17": {"name": "Input 17", "tooltip": "List slot 17 input. Connect any data to add it to the list."},
+      "inputs_input18": {"name": "Input 18", "tooltip": "List slot 18 input. Connect any data to add it to the list."},
+      "inputs_input19": {"name": "Input 19", "tooltip": "List slot 19 input. Connect any data to add it to the list."},
+      "inputs_input20": {"name": "Input 20", "tooltip": "List slot 20 input. Connect any data to add it to the list."},
+      "inputs_input21": {"name": "Input 21", "tooltip": "List slot 21 input. Connect any data to add it to the list."},
+      "inputs_input22": {"name": "Input 22", "tooltip": "List slot 22 input. Connect any data to add it to the list."},
+      "inputs_input23": {"name": "Input 23", "tooltip": "List slot 23 input. Connect any data to add it to the list."},
+      "inputs_input24": {"name": "Input 24", "tooltip": "List slot 24 input. Connect any data to add it to the list."},
+      "inputs_input25": {"name": "Input 25", "tooltip": "List slot 25 input. Connect any data to add it to the list."},
+      "inputs_input26": {"name": "Input 26", "tooltip": "List slot 26 input. Connect any data to add it to the list."},
+      "inputs_input27": {"name": "Input 27", "tooltip": "List slot 27 input. Connect any data to add it to the list."},
+      "inputs_input28": {"name": "Input 28", "tooltip": "List slot 28 input. Connect any data to add it to the list."},
+      "inputs_input29": {"name": "Input 29", "tooltip": "List slot 29 input. Connect any data to add it to the list."},
+      "inputs_input30": {"name": "Input 30", "tooltip": "List slot 30 input. Connect any data to add it to the list."},
+      "inputs_input31": {"name": "Input 31", "tooltip": "List slot 31 input. Connect any data to add it to the list."},
+      "inputs_input32": {"name": "Input 32", "tooltip": "List slot 32 input. Connect any data to add it to the list."},
+      "inputs_input33": {"name": "Input 33", "tooltip": "List slot 33 input. Connect any data to add it to the list."},
+      "inputs_input34": {"name": "Input 34", "tooltip": "List slot 34 input. Connect any data to add it to the list."},
+      "inputs_input35": {"name": "Input 35", "tooltip": "List slot 35 input. Connect any data to add it to the list."},
+      "inputs_input36": {"name": "Input 36", "tooltip": "List slot 36 input. Connect any data to add it to the list."},
+      "inputs_input37": {"name": "Input 37", "tooltip": "List slot 37 input. Connect any data to add it to the list."},
+      "inputs_input38": {"name": "Input 38", "tooltip": "List slot 38 input. Connect any data to add it to the list."},
+      "inputs_input39": {"name": "Input 39", "tooltip": "List slot 39 input. Connect any data to add it to the list."},
+      "inputs_input40": {"name": "Input 40", "tooltip": "List slot 40 input. Connect any data to add it to the list."},
+      "inputs_input41": {"name": "Input 41", "tooltip": "List slot 41 input. Connect any data to add it to the list."},
+      "inputs_input42": {"name": "Input 42", "tooltip": "List slot 42 input. Connect any data to add it to the list."},
+      "inputs_input43": {"name": "Input 43", "tooltip": "List slot 43 input. Connect any data to add it to the list."},
+      "inputs_input44": {"name": "Input 44", "tooltip": "List slot 44 input. Connect any data to add it to the list."},
+      "inputs_input45": {"name": "Input 45", "tooltip": "List slot 45 input. Connect any data to add it to the list."},
+      "inputs_input46": {"name": "Input 46", "tooltip": "List slot 46 input. Connect any data to add it to the list."},
+      "inputs_input47": {"name": "Input 47", "tooltip": "List slot 47 input. Connect any data to add it to the list."},
+      "inputs_input48": {"name": "Input 48", "tooltip": "List slot 48 input. Connect any data to add it to the list."},
+      "inputs_input49": {"name": "Input 49", "tooltip": "List slot 49 input. Connect any data to add it to the list."},
+      "inputs_input50": {"name": "Input 50", "tooltip": "List slot 50 input. Connect any data to add it to the list."}
     },
     "outputs": {
       "0": {
@@ -642,6 +692,126 @@
       "19": {
         "name": "Data 20",
         "tooltip": "Data 20 from the list (only active when count >= 20)"
+      },
+      "20": {
+        "name": "Data 21",
+        "tooltip": "Data 21 from the list (only active when count >= 21)"
+      },
+      "21": {
+        "name": "Data 22",
+        "tooltip": "Data 22 from the list (only active when count >= 22)"
+      },
+      "22": {
+        "name": "Data 23",
+        "tooltip": "Data 23 from the list (only active when count >= 23)"
+      },
+      "23": {
+        "name": "Data 24",
+        "tooltip": "Data 24 from the list (only active when count >= 24)"
+      },
+      "24": {
+        "name": "Data 25",
+        "tooltip": "Data 25 from the list (only active when count >= 25)"
+      },
+      "25": {
+        "name": "Data 26",
+        "tooltip": "Data 26 from the list (only active when count >= 26)"
+      },
+      "26": {
+        "name": "Data 27",
+        "tooltip": "Data 27 from the list (only active when count >= 27)"
+      },
+      "27": {
+        "name": "Data 28",
+        "tooltip": "Data 28 from the list (only active when count >= 28)"
+      },
+      "28": {
+        "name": "Data 29",
+        "tooltip": "Data 29 from the list (only active when count >= 29)"
+      },
+      "29": {
+        "name": "Data 30",
+        "tooltip": "Data 30 from the list (only active when count >= 30)"
+      },
+      "30": {
+        "name": "Data 31",
+        "tooltip": "Data 31 from the list (only active when count >= 31)"
+      },
+      "31": {
+        "name": "Data 32",
+        "tooltip": "Data 32 from the list (only active when count >= 32)"
+      },
+      "32": {
+        "name": "Data 33",
+        "tooltip": "Data 33 from the list (only active when count >= 33)"
+      },
+      "33": {
+        "name": "Data 34",
+        "tooltip": "Data 34 from the list (only active when count >= 34)"
+      },
+      "34": {
+        "name": "Data 35",
+        "tooltip": "Data 35 from the list (only active when count >= 35)"
+      },
+      "35": {
+        "name": "Data 36",
+        "tooltip": "Data 36 from the list (only active when count >= 36)"
+      },
+      "36": {
+        "name": "Data 37",
+        "tooltip": "Data 37 from the list (only active when count >= 37)"
+      },
+      "37": {
+        "name": "Data 38",
+        "tooltip": "Data 38 from the list (only active when count >= 38)"
+      },
+      "38": {
+        "name": "Data 39",
+        "tooltip": "Data 39 from the list (only active when count >= 39)"
+      },
+      "39": {
+        "name": "Data 40",
+        "tooltip": "Data 40 from the list (only active when count >= 40)"
+      },
+      "40": {
+        "name": "Data 41",
+        "tooltip": "Data 41 from the list (only active when count >= 41)"
+      },
+      "41": {
+        "name": "Data 42",
+        "tooltip": "Data 42 from the list (only active when count >= 42)"
+      },
+      "42": {
+        "name": "Data 43",
+        "tooltip": "Data 43 from the list (only active when count >= 43)"
+      },
+      "43": {
+        "name": "Data 44",
+        "tooltip": "Data 44 from the list (only active when count >= 44)"
+      },
+      "44": {
+        "name": "Data 45",
+        "tooltip": "Data 45 from the list (only active when count >= 45)"
+      },
+      "45": {
+        "name": "Data 46",
+        "tooltip": "Data 46 from the list (only active when count >= 46)"
+      },
+      "46": {
+        "name": "Data 47",
+        "tooltip": "Data 47 from the list (only active when count >= 47)"
+      },
+      "47": {
+        "name": "Data 48",
+        "tooltip": "Data 48 from the list (only active when count >= 48)"
+      },
+      "48": {
+        "name": "Data 49",
+        "tooltip": "Data 49 from the list (only active when count >= 49)"
+      },
+      "49": {
+        "name": "Data 50",
+        "tooltip": "Data 50 from the list (only active when count >= 50)"
       }
     }
   },

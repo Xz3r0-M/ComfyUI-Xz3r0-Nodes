@@ -363,7 +363,7 @@ function countXListCreateActiveInputs(node) {
         var input = node.inputs[index];
         if (!input || input.link == null) continue;
         var name = String(input.name || "");
-        if (/^input\d*$/.test(name) || name.indexOf("input") === 0) {
+        if (/(?:^|[._])input\d+$/.test(name) || /^input\d*$/.test(name)) {
             count += 1;
         }
     }
