@@ -429,12 +429,19 @@ function resolveXListToPipeElementType(node) {
 
 function ensureXListToPipeState(node) {
     if (!isXListToPipe(node)) return null;
-    var visibleCount = resolveXListToPipeCount(node);
+    // filledCount = actual list width; types only cover those slots.
+    var filledCount = resolveXListToPipeCount(node);
     var elementType = resolveXListToPipeElementType(node);
     var types = padArray([], PIPE_SLOTS, "");
-    for (var index = 0; index < visibleCount; index++) {
+    for (var index = 0; index < filledCount; index++) {
         types[index] = elementType;
     }
+    // Match desiredDirectVisibleCount: keep one empty spare so XPipe_v2 /
+    // XPipeGate can still grow past the list width.
+    var visibleCount = Math.min(
+        PIPE_SLOTS,
+        filledCount + (filledCount < PIPE_SLOTS ? 1 : 0),
+    );
     var state = {
         node: node,
         names: padArray([], PIPE_SLOTS, ""),
