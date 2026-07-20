@@ -5585,31 +5585,6 @@ async def api_favorites_create(request: web.Request) -> web.Response:
     return web.json_response({"status": "success", **result})
 
 
-# ============================================================================
-# 模块初始化：LORA 数据库索引扫描
-# ============================================================================
-
-
-def _init_lora_index() -> None:
-    """在模块加载时初始化 LORA 数据库索引"""
-    try:
-        ensure_lora_trigger_db_file()
-        LOGGER.info("[xdatahub-lora] schema initialized")
-        result = LORA_STORE.scan_lora_files()
-        LOGGER.info(
-            "[xdatahub-lora] initialization complete: %s",
-            result,
-        )
-    except Exception as exc:
-        LOGGER.exception(
-            "[xdatahub-lora] init failed: %s",
-            type(exc).__name__,
-        )
-
-
-_init_lora_index()
-
-
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/favorites/delete")
 async def api_favorites_delete(request: web.Request) -> web.Response:
     denied = write_guard()
