@@ -1,16 +1,20 @@
 /**
  * XListPull — 动态输出端口可见性控制
- * ======================================
+ * =====================================
  * 根据 count 值自动增减输出端口。
- * 学习 XPipe 的 onConnectionsChange 全局钩子模式：
- * - 在所有节点类型的 onConnectionsChange 上挂钩
+ *
+ * 触发时机：
+ * - count / list_input 连线变化
+ * - count_display widget 值变化
  * - 当 XListCreate 的输入变化时，刷新下游 XListPull
- * - 从 link 对象读取真实类型，避免新增端口显示为 "*"
+ * - 当 XListRestore 的 slot_map 变化时，刷新下游 XListPull
  */
 
 import { app } from "../../scripts/app.js";
 
 var NODE_CLASS = "XListPull";
+var LIST_CREATE_CLASS = "XListCreate";
+var LIST_RESTORE_CLASS = "XListRestore";
 var MAX_OUTPUTS = 20;
 
 /** 获取当前 ComfyUI 语言设置 */
@@ -69,6 +73,33 @@ function countActiveInputs(node) {
     return cnt;
 }
 
+/** 在节点上按名称找输入端口的 linkId */
+function findNamedInputLink(node, name) {
+    if (!node || !Array.isArray(node.inputs)) return null;
+    for (var i = 0; i < node.inputs.length; i++) {
+        var inp = node.inputs[i];
+        if (!inp || inp.name !== name) continue;
+        return inp.link != null ? inp.link : null;
+    }
+    return null;
+}
+
+/**
+ * XListRestore.count = slot_map.width。
+ * 前端从 Restore.slot_map 追溯到 XListCreate，用其已连接 Autogrow 槽位数近似 width。
+ */
+function resolveRestoreWidth(restoreNode) {
+    if (!restoreNode || !restoreNode.graph) return 0;
+    var linkId = findNamedInputLink(restoreNode, "slot_map");
+    if (linkId == null) return 0;
+    var source = getUpstreamNode(restoreNode.graph, linkId);
+    if (source && source.comfyClass === LIST_CREATE_CLASS) {
+        return countActiveInputs(source);
+    }
+    return 0;
+}
+
+
 /** 找到 count 端口（force_input），返回 index 和 linkId */
 function findCountPort(node) {
     if (!node || !Array.isArray(node.inputs))
@@ -95,19 +126,24 @@ function findCountWidget(node) {
 function resolveCount(node) {
     if (!node) return 1;
 
-    // 1) count 端口有连接 → 追踪 XListCreate
+    // 1) count 端口有连接 → 追踪上游 list 结构节点
     var cp = findCountPort(node);
     if (cp.linkId != null && node.graph) {
         var upstream = getUpstreamNode(node.graph, cp.linkId);
-        if (upstream && upstream.comfyClass === "XListCreate") {
-            var c = countActiveInputs(upstream);
-            if (c > 0) return Math.min(c, MAX_OUTPUTS);
+        if (upstream && upstream.comfyClass === LIST_CREATE_CLASS) {
+            var createCount = countActiveInputs(upstream);
+            if (createCount > 0) return Math.min(createCount, MAX_OUTPUTS);
         }
-        // TODO: 后续可支持从通用上游输出数量推断
-        // 如果上游不是 XListCreate，回退到 widget 值
+        if (upstream && upstream.comfyClass === LIST_RESTORE_CLASS) {
+            var restoreWidth = resolveRestoreWidth(upstream);
+            if (restoreWidth > 0) {
+                return Math.min(restoreWidth, MAX_OUTPUTS);
+            }
+        }
+        // 其它 INT 上游：回退 widget，直到执行时由后端 count 决定
     }
 
-    // 2) count 端口无连接 → 用 count_display widget 值
+    // 2) count 端口无连接 / 无法从前端推断 → 用 count_display widget
     var w = findCountWidget(node);
     if (w && w.value != null) {
         return Math.max(
@@ -288,12 +324,25 @@ app.registerExtension({
                 var node = this;
 
                 // XListCreate 输入变化 → 刷新下游 XListPull + 修正自身尺寸
-                if (node.comfyClass === "XListCreate") {
+                if (node.comfyClass === LIST_CREATE_CLASS) {
                     var slot =
                         slotInfo || (node.inputs && node.inputs[index]);
                     if (slot && /^input\d*$/.test(slot.name || "")) {
                         scheduleRefreshAll(node.graph);
                         fixNodeSize(node);
+                    }
+                }
+
+                // XListRestore slot_map / list_input 变化 → 刷新下游 Pull
+                if (node.comfyClass === LIST_RESTORE_CLASS) {
+                    var restoreSlot =
+                        slotInfo || (node.inputs && node.inputs[index]);
+                    if (
+                        restoreSlot &&
+                        (restoreSlot.name === "slot_map" ||
+                            restoreSlot.name === "list_input")
+                    ) {
+                        scheduleRefreshAll(node.graph);
                     }
                 }
 

@@ -41,6 +41,7 @@ from .xnode.xkleinreflistconditioning import XKleinRefListConditioning
 from .xnode.xlinker import XLinker
 from .xnode.xlistcreate import XListCreate
 from .xnode.xlistpull import XListPull
+from .xnode.xlistrestore import XListRestore
 from .xnode.xlisttopipe import XListToPipe
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
@@ -120,6 +121,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XLinker,
     XListCreate,
     XListPull,
+    XListRestore,
     XListToPipe,
     XMath,
     XMemoryCleanup,

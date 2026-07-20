@@ -3,6 +3,7 @@
  * ==================================================
  * 与 XListPull 相同：count 连接时禁用 count_display；
  * 连线/widget 变化时刷新 XPipe_v2 元数据。
+ * 支持 count 来自 XListCreate 或 XListRestore。
  */
 
 import { app } from "../../scripts/app.js";
@@ -12,6 +13,7 @@ import {
 
 var NODE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
+var LIST_RESTORE_CLASS = "XListRestore";
 var PIPE_SLOTS = 50;
 
 function findCountPort(node) {
@@ -67,6 +69,29 @@ function countActiveInputs(node) {
     return Math.max(0, Math.min(PIPE_SLOTS, count));
 }
 
+function findNamedInputLink(node, name) {
+    if (!node || !Array.isArray(node.inputs)) return null;
+    for (var index = 0; index < node.inputs.length; index++) {
+        var input = node.inputs[index];
+        if (!input || input.name !== name) continue;
+        return input.link != null ? input.link : null;
+    }
+    return null;
+}
+
+/** Restore.count ≈ Create 已连接 Autogrow 槽位数（slot_map.width）。 */
+function resolveRestoreWidth(restoreNode) {
+    if (!restoreNode || !restoreNode.graph) return 0;
+    var linkId = findNamedInputLink(restoreNode, "slot_map");
+    if (linkId == null) return 0;
+    var source = getUpstreamNode(restoreNode.graph, linkId);
+    if (source && source.comfyClass === LIST_CREATE_CLASS) {
+        return countActiveInputs(source);
+    }
+    return 0;
+}
+
+
 function resolveCount(node) {
     if (!node) return 1;
     var countPort = findCountPort(node);
@@ -76,6 +101,12 @@ function resolveCount(node) {
             var listCount = countActiveInputs(upstream);
             if (listCount > 0) {
                 return Math.max(1, Math.min(PIPE_SLOTS, listCount));
+            }
+        }
+        if (upstream && upstream.comfyClass === LIST_RESTORE_CLASS) {
+            var restoreWidth = resolveRestoreWidth(upstream);
+            if (restoreWidth > 0) {
+                return Math.max(1, Math.min(PIPE_SLOTS, restoreWidth));
             }
         }
     }
@@ -148,6 +179,20 @@ app.registerExtension({
                     var createSlot = slotInfo
                         || (node.inputs && node.inputs[index]);
                     if (createSlot && /^input\d*$/.test(createSlot.name || "")) {
+                        scheduleRefreshAll(node.graph);
+                    }
+                }
+
+                if (node.comfyClass === LIST_RESTORE_CLASS) {
+                    var restoreSlot = slotInfo
+                        || (node.inputs && node.inputs[index]);
+                    if (
+                        restoreSlot
+                        && (
+                            restoreSlot.name === "slot_map"
+                            || restoreSlot.name === "list_input"
+                        )
+                    ) {
                         scheduleRefreshAll(node.graph);
                     }
                 }

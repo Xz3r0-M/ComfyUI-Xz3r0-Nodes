@@ -507,7 +507,7 @@
   },
   "XListCreate": {
     "display_name": "XListCreate",
-    "description": "Create a list from multiple inputs and output the item count (1-based). Pair with XListPull to split the list back into individual outputs.",
+    "description": "Create a dense list from multiple inputs (None elements skipped), output the dense count, and a slot_map for restoring original input positions. Pair with XListPull for dense split, or XListRestore to scatter back with None placeholders.",
     "inputs": {
       "inputs": {
         "name": "Inputs",
@@ -517,11 +517,15 @@
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "Combined list of all inputs"
+        "tooltip": "Dense list of all non-None input elements (MatchType, same as inputs). Length equals count."
       },
       "1": {
         "name": "Count",
-        "tooltip": "Number of elements in the list (1-based). Connect to XListPull to control its output port expansion."
+        "tooltip": "Number of elements in the dense list. Connect to XListPull to control output port expansion."
+      },
+      "2": {
+        "name": "Slot Map",
+        "tooltip": "Structure only (no media). Maps each dense list index to a 1-based XListCreate input slot and records width. Connect to XListRestore to rebuild a sparse list with None in empty slots."
       }
     }
   },
@@ -622,6 +626,30 @@
       "19": {
         "name": "Data 20",
         "tooltip": "Data 20 from the list (only active when count >= 20)"
+      }
+    }
+  },
+  "XListRestore": {
+    "display_name": "XListRestore",
+    "description": "Scatter a dense list back into a sparse list using slot_map from XListCreate. Empty slots are None (same as a disabled gate channel). Connect the sparse list + count to XListPull or XListToPipe if needed.",
+    "inputs": {
+      "list_input": {
+        "name": "List Input",
+        "tooltip": "Dense list to scatter. Usually XListCreate list output (optionally after batch processing)."
+      },
+      "slot_map": {
+        "name": "Slot Map",
+        "tooltip": "Structure map from XListCreate.slot_map (indices + width). Not media data."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "List",
+        "tooltip": "Sparse list with None in empty slots. Length equals count (slot_map width)."
+      },
+      "1": {
+        "name": "Count",
+        "tooltip": "Sparse width from slot_map. Connect to XListPull / XListToPipe for port expansion."
       }
     }
   },

@@ -507,7 +507,7 @@
   },
   "XListCreate": {
     "display_name": "XListCreate",
-    "description": "从多个输入创建列表，同时输出数据数量（1-based）。搭配 XListPull 使用可将列表拆分回独立输出。",
+    "description": "从多个输入创建稠密列表（跳过 None 元素），输出稠密数量与 slot_map，便于还原原始输入槽位。可搭配 XListPull 拆分稠密列表，或搭配 XListRestore 还原为含 None 占位的稀疏列表。",
     "inputs": {
       "inputs": {
         "name": "输入",
@@ -517,11 +517,15 @@
     "outputs": {
       "0": {
         "name": "列表",
-        "tooltip": "所有输入的合并列表"
+        "tooltip": "所有非 None 输入元素的稠密列表（MatchType，与输入同类型）。长度等于数量。"
       },
       "1": {
         "name": "数量",
-        "tooltip": "列表中的数据数量（1-based）。连接到 XListPull 以控制其输出端口展开。"
+        "tooltip": "稠密列表中的元素数量。连接到 XListPull 以控制其输出端口展开。"
+      },
+      "2": {
+        "name": "槽位映射",
+        "tooltip": "纯结构（无媒体数据）。记录稠密 list 每项对应的 XListCreate 输入槽位（1-based）与总宽度。连接到 XListRestore 可还原为含 None 占位的稀疏 list。"
       }
     }
   },
@@ -622,6 +626,30 @@
       "19": {
         "name": "数据 20",
         "tooltip": "列表中的第 20 个数据（仅在数量 >= 20 时活跃）"
+      }
+    }
+  },
+  "XListRestore": {
+    "display_name": "XListRestore",
+    "description": "使用 XListCreate 的 slot_map 将稠密列表散射回稀疏列表。空位为 None（与关闭的门控通道一致）。可将稀疏列表 + 数量接到 XListPull 或 XListToPipe。",
+    "inputs": {
+      "list_input": {
+        "name": "列表输入",
+        "tooltip": "待散射的稠密列表。通常来自 XListCreate 的列表输出（也可经批处理后）。"
+      },
+      "slot_map": {
+        "name": "槽位映射",
+        "tooltip": "来自 XListCreate.slot_map 的结构映射（indices + width）。非媒体数据。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "列表",
+        "tooltip": "含 None 空位的稀疏列表。长度等于数量（slot_map 宽度）。"
+      },
+      "1": {
+        "name": "数量",
+        "tooltip": "来自 slot_map 的稀疏宽度。可连接到 XListPull / XListToPipe 控制端口展开。"
       }
     }
   },

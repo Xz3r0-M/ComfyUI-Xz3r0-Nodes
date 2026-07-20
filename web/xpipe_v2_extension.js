@@ -12,6 +12,7 @@ var BUNDLE_OUTPUT_NAME = "xpipe_out";
 var PIPE_GATE_CLASS = "XPipeGate";
 var LIST_TO_PIPE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
+var LIST_RESTORE_CLASS = "XListRestore";
 var NAMES_WIDGET = "port_names";
 var HIDE_STATE_PROP = "xpipe_v2_hide_links_state";
 var VALUE_HIDE_STATE_PROP = "xpipe_v2_hide_value_links_state";
@@ -327,6 +328,14 @@ function isXListCreate(node) {
     );
 }
 
+function isXListRestore(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === LIST_RESTORE_CLASS
+    );
+}
+
+
 function findWidgetByName(node, name) {
     if (!node || !Array.isArray(node.widgets)) return null;
     for (var index = 0; index < node.widgets.length; index++) {
@@ -373,7 +382,25 @@ function resolveXListToPipeCount(node) {
                 return Math.max(1, Math.min(PIPE_SLOTS, listCount));
             }
         }
-        // Non-XListCreate count sources fall back to widget until execute.
+        if (isXListRestore(source)) {
+            // Restore.count = slot_map.width; resolve via Create inputs.
+            var slotMapInput = findInputByName(source, "slot_map");
+            if (slotMapInput && slotMapInput.link != null) {
+                var mapLink = getLinkInfo(source.graph, slotMapInput.link);
+                var mapSource =
+                    mapLink && getNodeById(source.graph, mapLink.origin_id);
+                if (isXListCreate(mapSource)) {
+                    var restoreWidth = countXListCreateActiveInputs(mapSource);
+                    if (restoreWidth > 0) {
+                        return Math.max(
+                            1,
+                            Math.min(PIPE_SLOTS, restoreWidth),
+                        );
+                    }
+                }
+            }
+        }
+        // Other INT sources fall back to widget until execute.
     }
     var widget = findWidgetByName(node, "count_display");
     if (widget && widget.value != null) {

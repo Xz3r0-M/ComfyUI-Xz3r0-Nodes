@@ -35,7 +35,11 @@ class XListPull(io.ComfyNode):
 
     @classmethod
     def define_schema(cls) -> io.Schema:
-        template = io.MatchType.Template("type")
+        # 与 XListCreate list 输出对齐：元素类型经 MatchType 传到 Data 口
+        template = io.MatchType.Template(
+            "list_element",
+            allowed_types=[io.AnyType],
+        )
 
         # 动态生成固定数量的输出端口
         output_ports = []
