@@ -449,6 +449,38 @@
       }
     }
   },
+  "XKleinRefListConditioning": {
+    "display_name": "XKleinRefListConditioning",
+    "description": "将 IMAGE 列表编码为 FLUX.2-klein 参考 latent，并追加到正面与负面条件链。列表元素按顺序处理；IMAGE batch 沿 batch 维拆成单帧。最多应用 50 张参考帧。",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "正面条件",
+        "tooltip": "正面条件输入"
+      },
+      "negative_conditioning": {
+        "name": "负面条件",
+        "tooltip": "负面条件输入"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "用于编码参考图的 VAE"
+      },
+      "image_list": {
+        "name": "图像列表",
+        "tooltip": "参考图 IMAGE 列表。可连接 XListCreate 的 list 输出或任意 IMAGE list 线。不连接时条件原样透传。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "正面条件",
+        "tooltip": "追加参考 latent 后的正面条件"
+      },
+      "1": {
+        "name": "负面条件",
+        "tooltip": "追加参考 latent 后的负面条件"
+      }
+    }
+  },
   "XLinker": {
     "display_name": "XLinker",
     "description": "透传节点，携带自由笔记文本。一路任意类型输入直通输出；节点 widget 区按钮可循环切换连线可见性并切换连线高亮。",

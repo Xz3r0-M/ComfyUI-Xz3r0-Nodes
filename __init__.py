@@ -37,6 +37,7 @@ from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
 from .xnode.ximageresize import XImageResize
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
+from .xnode.xkleinreflistconditioning import XKleinRefListConditioning
 from .xnode.xlinker import XLinker
 from .xnode.xlistcreate import XListCreate
 from .xnode.xlistpull import XListPull
@@ -115,6 +116,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XImageCompare,
     XImageResize,
     XKleinRefConditioning,
+    XKleinRefListConditioning,
     XLinker,
     XListCreate,
     XListPull,

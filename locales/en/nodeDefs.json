@@ -449,6 +449,38 @@
       }
     }
   },
+  "XKleinRefListConditioning": {
+    "display_name": "XKleinRefListConditioning",
+    "description": "Encode an IMAGE list into FLUX.2-klein reference latents and append them to both positive and negative conditioning. Each list item is processed in order; IMAGE batches are split along the batch dimension into single frames. At most 50 reference frames are applied.",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning input"
+      },
+      "negative_conditioning": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning input"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "VAE used to encode reference images"
+      },
+      "image_list": {
+        "name": "Image List",
+        "tooltip": "IMAGE list of reference images. Connect XListCreate list output (or any IMAGE list wire). Leave unconnected for passthrough conditioning."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning with reference latents"
+      },
+      "1": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning with reference latents"
+      }
+    }
+  },
   "XLinker": {
     "display_name": "XLinker",
     "description": "Passthrough node with a note text area. One any-type input passes directly to one any-type output. Node widget buttons toggle link visibility and link highlighting.",
