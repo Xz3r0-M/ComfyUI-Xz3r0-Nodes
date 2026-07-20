@@ -18,6 +18,7 @@ var NAMES_WIDGET = "port_names";
 var HIDE_STATE_PROP = "xpipe_gate_hide_links_state";
 var VALUE_HIDE_STATE_PROP = "xpipe_gate_hide_value_links_state";
 var TYPES_PROP = "xpipe_gate_types";
+var ENABLES_PROP = "xpipe_gate_enables";
 var CONTROL_VALUES = ["0", "1", "2", "3"];
 var CONTROL_BUNDLE = "bundle";
 var CONTROL_VALUE = "value";
@@ -485,9 +486,12 @@ function setWidgetTooltip(widget, tooltip) {
     widget.options.tooltip = tooltip;
 }
 
-function disableWidgetSerialization(widget) {
+function disableWidgetPromptSerialization(widget) {
     if (!widget) return;
-    widget.serialize = false;
+    // Keep workflow serialization enabled. LiteGraph writes widgets_values by
+    // original index but restores sequentially, so serialize:false holes in
+    // the middle scramble later enable_* values on every reload.
+    widget.serialize = true;
     widget.options = widget.options || {};
     widget.options.serialize = false;
 }
@@ -554,11 +558,11 @@ function ensureControlWidgets(node) {
             {
                 values: CONTROL_VALUES,
                 getOptionLabel: visibilityLabel,
-                serialize: false,
+                // workflow-serializable; only exclude from API prompt
             },
         );
         bundle.__xpipeGateControl = CONTROL_BUNDLE;
-        disableWidgetSerialization(bundle);
+        disableWidgetPromptSerialization(bundle);
     }
     var value = findControlWidget(node, CONTROL_VALUE);
     if (!value) {
@@ -570,11 +574,11 @@ function ensureControlWidgets(node) {
             {
                 values: CONTROL_VALUES,
                 getOptionLabel: visibilityLabel,
-                serialize: false,
+                // workflow-serializable; only exclude from API prompt
             },
         );
         value.__xpipeGateControl = CONTROL_VALUE;
-        disableWidgetSerialization(value);
+        disableWidgetPromptSerialization(value);
     }
     var refresh = findControlWidget(node, CONTROL_REFRESH);
     if (!refresh) {
@@ -583,10 +587,9 @@ function ensureControlWidgets(node) {
             tx("control_refresh", "Refresh"),
             "refresh",
             function () { refreshPortStatus(node); },
-            { serialize: false },
         );
         refresh.__xpipeGateControl = CONTROL_REFRESH;
-        disableWidgetSerialization(refresh);
+        disableWidgetPromptSerialization(refresh);
     }
     updateControlWidgets(node);
     sortGateWidgets(node);
@@ -875,9 +878,89 @@ function applyChannelTypes(state) {
     }
 }
 
+function normalizeEnableValue(value) {
+    if (value === false || value === 0 || value === "0" || value === "false") {
+        return false;
+    }
+    if (value === true || value === 1 || value === "1" || value === "true") {
+        return true;
+    }
+    // null/undefined from sparse widgets_values holes must not force-disable.
+    return true;
+}
+
+function normalizeEnableArray(values) {
+    return padArray(values, GATE_SLOTS, true).map(normalizeEnableValue);
+}
+
+function readEnableStates(node) {
+    var result = [];
+    for (var channel = 1; channel <= GATE_SLOTS; channel++) {
+        var widget = findWidget(node, "enable_" + channel);
+        result.push(normalizeEnableValue(widget && widget.value));
+    }
+    return result;
+}
+
+function applyEnableStates(node, enables) {
+    if (!node) return;
+    var values = normalizeEnableArray(enables);
+    for (var channel = 1; channel <= GATE_SLOTS; channel++) {
+        var widget = findWidget(node, "enable_" + channel);
+        if (widget) widget.value = values[channel - 1];
+    }
+}
+
+function recoverEnablesFromWidgetsValues(values) {
+    if (!Array.isArray(values)) return null;
+    var bools = [];
+    for (var index = 0; index < values.length; index++) {
+        var value = values[index];
+        if (value === true || value === false) bools.push(value);
+    }
+    // First boolean is type_warning; remaining values are enable_* switches.
+    if (bools.length < 2) return null;
+    return padArray(bools.slice(1), GATE_SLOTS, true);
+}
+
+function loadEnableStates(node, info) {
+    // Prefer the values that actually arrived with the serialized node.
+    // onNodeCreated may have written temporary defaults into node.properties
+    // before configure runs, so do not trust live properties alone on load.
+    var fromInfo = info
+        && info.properties
+        && info.properties[ENABLES_PROP];
+    if (Array.isArray(fromInfo) && fromInfo.length) {
+        return normalizeEnableArray(fromInfo);
+    }
+    var recovered = recoverEnablesFromWidgetsValues(
+        info && info.widgets_values,
+    );
+    if (recovered) return recovered;
+    var saved = node.properties && node.properties[ENABLES_PROP];
+    if (Array.isArray(saved) && saved.length) {
+        return normalizeEnableArray(saved);
+    }
+    return readEnableStates(node);
+}
+
 function persistState(state) {
-    state.node.properties = state.node.properties || {};
-    state.node.properties[TYPES_PROP] = state.types.slice();
+    var props = state.node.properties = state.node.properties || {};
+    props[TYPES_PROP] = state.types.slice();
+    if (!Array.isArray(state.enables) || !state.enables.length) {
+        state.enables = readEnableStates(state.node);
+    } else {
+        // Keep state.enables authoritative for currently visible switches.
+        var current = readEnableStates(state.node);
+        for (var channel = 1; channel <= state.visibleCount; channel++) {
+            state.enables[channel - 1] = current[channel - 1];
+        }
+    }
+    // Avoid writing temporary create-time defaults before configure restores
+    // the saved enable vector from the workflow JSON.
+    if (state.node.__xpipeGateEnablesReady) {
+        props[ENABLES_PROP] = normalizeEnableArray(state.enables);
+    }
     var namesWidget = findWidget(state.node, NAMES_WIDGET);
     if (namesWidget) namesWidget.value = JSON.stringify(state.names);
 }
@@ -941,6 +1024,7 @@ function stateSignature(state) {
         outputCount: state.node.outputs ? state.node.outputs.length : 0,
         names: state.names,
         types: state.types,
+        enables: state.enables,
         visibleCount: state.visibleCount,
     });
 }
@@ -949,6 +1033,12 @@ function syncNode(state) {
     var before = stateSignature(state);
     ensureControlWidgets(state.node);
     syncDynamicChannels(state);
+    // Expand/collapse may create new enable widgets with schema defaults.
+    // Re-apply the authoritative enable vector after channel sync.
+    if (!Array.isArray(state.enables) || !state.enables.length) {
+        state.enables = readEnableStates(state.node);
+    }
+    applyEnableStates(state.node, state.enables);
     refreshChannelMetadata(state);
     applyChannelTypes(state);
     applyChannelLabels(state);
@@ -972,6 +1062,7 @@ function createState(node) {
             GATE_SLOTS,
             "",
         ).map(cleanType),
+        enables: loadEnableStates(node, null),
         visibleCount: 1,
     };
     node.__xpipeGateState = state;
@@ -1112,6 +1203,12 @@ app.registerExtension({
     },
 
     async afterConfigureGraph() {
+        forEachPipeGate(app.graph, function (node) {
+            if (node.__xpipeGateEnablesReady) return;
+            node.__xpipeGateEnablesReady = true;
+            var state = ensurePipeGate(node);
+            if (state) persistState(state);
+        });
         scheduleRefresh();
     },
 
@@ -1135,12 +1232,24 @@ app.registerExtension({
                 this.__xpipeGateCounted = true;
                 gateNodeCount++;
             }
+            // Do not mark enables ready here. Graph-loaded nodes call
+            // onConfigure next; writing defaults first would clobber the
+            // missing ENABLES_PROP case with all-true values.
             var state = ensurePipeGate(this);
             if (state) syncNode(state);
+            var node = this;
+            setTimeout(function () {
+                if (node.__xpipeGateEnablesReady) return;
+                // No configure followed creation: treat as a fresh node and
+                // start persisting the current enable defaults.
+                node.__xpipeGateEnablesReady = true;
+                var readyState = ensurePipeGate(node);
+                if (readyState) persistState(readyState);
+            }, 0);
         };
 
         var originalConfigure = nodeType.prototype.onConfigure;
-        nodeType.prototype.onConfigure = function () {
+        nodeType.prototype.onConfigure = function (info) {
             originalConfigure && originalConfigure.apply(this, arguments);
             var state = ensurePipeGate(this);
             if (!state) return;
@@ -1149,8 +1258,33 @@ app.registerExtension({
                 GATE_SLOTS,
                 "",
             ).map(cleanType);
+            state.enables = loadEnableStates(this, info);
+            this.__xpipeGateEnablesReady = true;
+            applyEnableStates(this, state.enables);
             updateControlWidgets(this);
             scheduleRefresh();
+        };
+
+        var originalWidgetChanged = nodeType.prototype.onWidgetChanged;
+        nodeType.prototype.onWidgetChanged = function (
+            name,
+            value,
+            oldValue,
+            widget,
+        ) {
+            var result = originalWidgetChanged
+                && originalWidgetChanged.apply(this, arguments);
+            var channel = channelEnableNumber(name);
+            if (channel) {
+                var state = ensurePipeGate(this);
+                if (state) {
+                    this.__xpipeGateEnablesReady = true;
+                    state.enables = normalizeEnableArray(state.enables);
+                    state.enables[channel - 1] = normalizeEnableValue(value);
+                    persistState(state);
+                }
+            }
+            return result;
         };
 
         var originalRemoved = nodeType.prototype.onRemoved;
@@ -1166,7 +1300,15 @@ app.registerExtension({
     async loadedGraphNode(node) {
         if (!isXPipeGate(node)) return;
         var state = ensurePipeGate(node);
-        if (state) syncNode(state);
+        if (!state) return;
+        // Configure already restored enables when available. Still re-assert
+        // them after dynamic channel expansion.
+        if (!Array.isArray(state.enables) || !state.enables.length) {
+            state.enables = loadEnableStates(node, null);
+        }
+        node.__xpipeGateEnablesReady = true;
+        applyEnableStates(node, state.enables);
+        syncNode(state);
         scheduleRefresh();
     },
 
