@@ -405,6 +405,22 @@
       }
     }
   },
+  "XImagePreview": {
+    "display_name": "XImagePreview",
+    "description": "Preview an optional IMAGE input using the official PreviewImage UI. Runs independently when empty and shows a text notice when no image is available.",
+    "inputs": {
+      "images": {
+        "name": "Images",
+        "tooltip": "Optional image input. Leave unconnected or receive None to show a text notice instead of previewing an image."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "IMAGE",
+        "tooltip": "Passthrough of the input image, or None when no image is available"
+      }
+    }
+  },
   "XKleinRefConditioning": {
     "display_name": "XKleinRefConditioning",
     "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",

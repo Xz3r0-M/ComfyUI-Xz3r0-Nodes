@@ -405,6 +405,22 @@
       }
     }
   },
+  "XImagePreview": {
+    "display_name": "XImagePreview",
+    "description": "基于官方 PreviewImage 的可选图像预览。无输入时可独立执行，显示文字提示；有图像时预览并透传。",
+    "inputs": {
+      "images": {
+        "name": "图像",
+        "tooltip": "可选图像输入。未连接或接收到 None 时显示文字提示，不报错。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "IMAGE",
+        "tooltip": "输入图像透传；无图像时输出 None"
+      }
+    }
+  },
   "XKleinRefConditioning": {
     "display_name": "XKleinRefConditioning",
     "description": "自动对已连接参考图执行 VAE 编码，并将参考 latent 同步追加到正面与负面条件链。",

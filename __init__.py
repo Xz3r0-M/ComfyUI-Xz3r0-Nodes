@@ -35,6 +35,7 @@ from .xnode.xcontroller import XController
 from .xnode.xcontrolpanel import XControlPanel
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
+from .xnode.ximagepreview import XImagePreview
 from .xnode.ximageresize import XImageResize
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
 from .xnode.xkleinreflistconditioning import XKleinRefListConditioning
@@ -115,6 +116,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XControlPanel,
     XDateTimeString,
     XImageCompare,
+    XImagePreview,
     XImageResize,
     XKleinRefConditioning,
     XKleinRefListConditioning,
