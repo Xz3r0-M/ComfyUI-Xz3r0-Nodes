@@ -593,6 +593,30 @@
       }
     }
   },
+  "XListToPipe": {
+    "display_name": "XListToPipe",
+    "description": "Convert a list into a valid XPipe_v2 bundle. List items map to slots 1..N (max 50); remaining slots are None. Names are empty strings. Port count follows the count input (same pattern as XListPull).",
+    "inputs": {
+      "list_input": {
+        "name": "List",
+        "tooltip": "List to expand into XPipe_v2 slots. Connect XListCreate list output or any list-type wire. Leave unconnected for an empty bundle."
+      },
+      "count": {
+        "name": "Count",
+        "tooltip": "Number input port. Connect from XListCreate count (or any INT) to auto-set the slot count. When not connected, falls back to count_display."
+      },
+      "count_display": {
+        "name": "Count",
+        "tooltip": "Number of active XPipe_v2 slots. When count port is connected, disabled; when not connected, manually set here."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XPipe_v2 Out",
+        "tooltip": "Always a valid XPipe_v2 bundle: list items in slots 1..N (truncated at 50), empty names, None-padded. N is controlled by count."
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "Mathematical operation node supporting addition, subtraction, multiplication, division, power, and modulo operations with dual output format.",
@@ -684,7 +708,7 @@
     "description": "Pipe bundle node: route up to 20 any-type data groups through one bundle wire while keeping autogrowing inputs and matching visible outputs. Per-slot inputs override the bundle; port names are customizable and travel with the bundle.",
     "inputs": {
       "xpipe_in": {
-        "name": "XPipe In",
+        "name": "XPipe In(Old)",
         "tooltip": "Connect an upstream XPipe bundle to receive the full set of slot data and names at once. If a direct slot input is also connected, that slot still uses the direct input."
       },
       "values": {
@@ -782,7 +806,7 @@
     },
     "outputs": {
       "0": {
-        "name": "XPipe Out",
+        "name": "XPipe Out(Old)",
         "tooltip": "Send the current full set of slot data and names onward as a single XPipe bundle."
       },
       "1": {

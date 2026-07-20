@@ -10,6 +10,8 @@ var HIDE_BOTH = 3;
 var BUNDLE_INPUT_NAME = "xpipe_in";
 var BUNDLE_OUTPUT_NAME = "xpipe_out";
 var PIPE_GATE_CLASS = "XPipeGate";
+var LIST_TO_PIPE_CLASS = "XListToPipe";
+var LIST_CREATE_CLASS = "XListCreate";
 var NAMES_WIDGET = "port_names";
 var HIDE_STATE_PROP = "xpipe_v2_hide_links_state";
 var VALUE_HIDE_STATE_PROP = "xpipe_v2_hide_value_links_state";
@@ -309,6 +311,111 @@ function isXPipeGate(node) {
         node
         && String(node.comfyClass || node.type || "") === PIPE_GATE_CLASS
     );
+}
+
+function isXListToPipe(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === LIST_TO_PIPE_CLASS
+    );
+}
+
+function isXListCreate(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === LIST_CREATE_CLASS
+    );
+}
+
+function findWidgetByName(node, name) {
+    if (!node || !Array.isArray(node.widgets)) return null;
+    for (var index = 0; index < node.widgets.length; index++) {
+        if (node.widgets[index] && node.widgets[index].name === name) {
+            return node.widgets[index];
+        }
+    }
+    return null;
+}
+
+function findInputByName(node, name) {
+    if (!node || !Array.isArray(node.inputs)) return null;
+    for (var index = 0; index < node.inputs.length; index++) {
+        if (node.inputs[index] && node.inputs[index].name === name) {
+            return node.inputs[index];
+        }
+    }
+    return null;
+}
+
+function countXListCreateActiveInputs(node) {
+    if (!node || !Array.isArray(node.inputs)) return 0;
+    var count = 0;
+    for (var index = 0; index < node.inputs.length; index++) {
+        var input = node.inputs[index];
+        if (!input || input.link == null) continue;
+        var name = String(input.name || "");
+        if (/^input\d*$/.test(name) || name.indexOf("input") === 0) {
+            count += 1;
+        }
+    }
+    return Math.max(0, Math.min(PIPE_SLOTS, count));
+}
+
+function resolveXListToPipeCount(node) {
+    // Same priority as XListPull: connected count port first, else widget.
+    var countInput = findInputByName(node, "count");
+    if (countInput && countInput.link != null && node.graph) {
+        var link = getLinkInfo(node.graph, countInput.link);
+        var source = link && getNodeById(node.graph, link.origin_id);
+        if (isXListCreate(source)) {
+            var listCount = countXListCreateActiveInputs(source);
+            if (listCount > 0) {
+                return Math.max(1, Math.min(PIPE_SLOTS, listCount));
+            }
+        }
+        // Non-XListCreate count sources fall back to widget until execute.
+    }
+    var widget = findWidgetByName(node, "count_display");
+    if (widget && widget.value != null) {
+        return Math.max(
+            1,
+            Math.min(PIPE_SLOTS, Math.round(Number(widget.value)) || 1),
+        );
+    }
+    return 1;
+}
+
+function resolveXListToPipeElementType(node) {
+    // List is homogeneous: one element type applies to every expanded slot.
+    var listInput = findInputByName(node, "list_input");
+    if (!listInput || listInput.link == null || !node.graph) return "";
+    var link = getLinkInfo(node.graph, listInput.link);
+    if (!link) return "";
+    var source = getNodeById(node.graph, link.origin_id);
+    var output = source && source.outputs
+        ? source.outputs[link.origin_slot]
+        : null;
+    return cleanType(output && output.type)
+        || cleanType(link.type)
+        || "";
+}
+
+function ensureXListToPipeState(node) {
+    if (!isXListToPipe(node)) return null;
+    var visibleCount = resolveXListToPipeCount(node);
+    var elementType = resolveXListToPipeElementType(node);
+    var types = padArray([], PIPE_SLOTS, "");
+    for (var index = 0; index < visibleCount; index++) {
+        types[index] = elementType;
+    }
+    var state = {
+        node: node,
+        names: padArray([], PIPE_SLOTS, ""),
+        types: types,
+        visibleCount: visibleCount,
+    };
+    node.__xlistToPipeState = state;
+    return state;
 }
 
 function forEachXPipeV2(rootGraph, visitor) {
@@ -821,6 +928,10 @@ function resolveBundleStateFromSlot(slot, graph, seen) {
             && outputOwner.node.__xpipeGateState) {
             return outputOwner.node.__xpipeGateState;
         }
+        if (isXListToPipe(outputOwner.node)
+            && outputOwner.slot.name === BUNDLE_OUTPUT_NAME) {
+            return ensureXListToPipeState(outputOwner.node);
+        }
         var inputIndex = passthroughInputIndex(
             outputOwner.node,
             outputOwner.index,
@@ -911,6 +1022,10 @@ function resolveBundleStateFromLink(graph, link, seen) {
         && output.name === BUNDLE_OUTPUT_NAME
         && source.__xpipeGateState) {
         return source.__xpipeGateState;
+    }
+    if (isXListToPipe(source) && output
+        && output.name === BUNDLE_OUTPUT_NAME) {
+        return ensureXListToPipeState(source);
     }
     if (isSubgraphInputNode(source, graph)) {
         var parent = findParentSubgraphNode(graph);

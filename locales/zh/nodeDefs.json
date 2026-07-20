@@ -593,6 +593,30 @@
       }
     }
   },
+  "XListToPipe": {
+    "display_name": "XListToPipe",
+    "description": "将列表转换为合法的 XPipe_v2 数据束。列表元素依次映射到槽位 1..N（最多 50）；其余槽位为 None。名称为空字符串。槽位数量由 count 输入控制（与 XListPull 相同）。",
+    "inputs": {
+      "list_input": {
+        "name": "列表",
+        "tooltip": "展开为 XPipe_v2 槽位的列表。可连接 XListCreate 的 list 输出或任意 list 线。不连接时输出空数据束。"
+      },
+      "count": {
+        "name": "数量",
+        "tooltip": "数量输入端口。可连接 XListCreate 的 count（或任意 INT）自动设置槽位数。未连接时使用上方输入栏的值。"
+      },
+      "count_display": {
+        "name": "数量",
+        "tooltip": "活跃 XPipe_v2 槽位数。数量端口连接时禁用，未连接时手动设置。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XPipe_v2 输出",
+        "tooltip": "始终输出合法的 XPipe_v2 数据束：列表元素占槽位 1..N（超过 50 截断），名称为空，其余槽位为 None。N 由 count 控制。"
+      }
+    }
+  },
   "XMath": {
     "display_name": "XMath",
     "description": "数学运算节点，支持加、减、乘、除、幂运算和取模操作，提供双输出格式。",
@@ -684,7 +708,7 @@
     "description": "管道束节点：用一根数据束在节点间传输至多 20 组任意类型数据，同时保留 Autogrow 输入与随可见输入同步的输出端口。单独输入会覆盖数据束同槽位；端口名称可自定义并随数据束向下游传递。",
     "inputs": {
       "xpipe_in": {
-        "name": "XPipe入口",
+        "name": "XPipe 输入(旧)",
         "tooltip": "连接上游 XPipe 的整组数据束，一次接收全部槽位端口的数据和名称。若某个单独槽位也有输入，则该槽位仍以单独输入为准。"
       },
       "values": {
@@ -782,7 +806,7 @@
     },
     "outputs": {
       "0": {
-        "name": "XPipe出口",
+        "name": "XPipe 输出(旧)",
         "tooltip": "将当前全部槽位的数据和名称打包成一根 XPipe 数据束，继续传给下一个 XPipe。"
       },
       "1": {
@@ -872,7 +896,7 @@
     "description": "独立的第二代管道束节点。通过隔离的 XPipe_v2 数据束传输至多 50 路任意类型数据，不影响原版 XPipe 节点。",
     "inputs": {
       "xpipe_in": {
-        "name": "XPipe_v2入口",
+        "name": "XPipe_v2 输入",
         "tooltip": "连接上游 XPipe_v2 数据束。单独槽位输入会覆盖数据束中的对应值。"
       },
       "values": {
@@ -940,7 +964,7 @@
     },
     "outputs": {
       "0": {
-        "name": "XPipe_v2出口",
+        "name": "XPipe_v2 输出",
         "tooltip": "将当前所有值和名称作为独立的 XPipe_v2 数据束继续传递。"
       },
       "1": {"name": "数据 1", "tooltip": "V2 槽位 1 输出。"},
