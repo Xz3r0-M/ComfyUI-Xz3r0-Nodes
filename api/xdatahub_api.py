@@ -1355,9 +1355,12 @@ class LockManager:
                 self._interrupt_request_at = None
 
     def snapshot(self) -> dict[str, Any]:
+        # 在锁外获取队列计数，避免与 prompt_queue.mutex 形成
+        # AB-BA 死锁（队列操作的 send_sync monkey-patch 会在持有
+        # prompt_queue.mutex 时尝试获取 LOCK._lock）。
+        running_count, queued_count = self._queue_counts()
         with self._lock:
             now = time.monotonic()
-            running_count, queued_count = self._queue_counts()
             queue_remaining = running_count + queued_count
             is_executing = queue_remaining > 0
 
