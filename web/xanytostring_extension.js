@@ -222,6 +222,7 @@ function ensureStyles() {
         "  word-break: break-all;",
         "  overflow-y: auto;",
         "  overflow-x: hidden;",
+        "  overscroll-behavior: contain;",
         "}",
         ".xanytostring-display.is-collapsed {",
         "  display: none;",
@@ -263,7 +264,44 @@ function installGlobalMiddleForwarding() {
     }, true);
 }
 
+function isScrollableOverflowElement(element) {
+    if (!element || element.nodeType !== 1) return false;
+    if (element.scrollHeight <= element.clientHeight
+        && element.scrollWidth <= element.clientWidth) {
+        return false;
+    }
+    var style = window.getComputedStyle(element);
+    var overflow = style.overflow || "";
+    var overflowX = style.overflowX || "";
+    var overflowY = style.overflowY || "";
+    return overflow.indexOf("auto") >= 0
+        || overflow.indexOf("scroll") >= 0
+        || overflowX.indexOf("auto") >= 0
+        || overflowX.indexOf("scroll") >= 0
+        || overflowY.indexOf("auto") >= 0
+        || overflowY.indexOf("scroll") >= 0;
+}
+
+function eventTargetInScrollableRegion(event, root) {
+    var target = event && event.target;
+    if (!target || !root) return false;
+    if (target.nodeType === 3) {
+        target = target.parentElement;
+    }
+    for (var el = target; el && el !== root; el = el.parentElement) {
+        if (isScrollableOverflowElement(el)) {
+            return true;
+        }
+    }
+    return isScrollableOverflowElement(root)
+        && (root === target || root.contains(target));
+}
+
 function forwardWheelToCanvas(event) {
+    // 结果文本框有可滚动内容时保留原生滚动，否则转发到画布缩放。
+    if (eventTargetInScrollableRegion(event, event.currentTarget)) {
+        return;
+    }
     var graphCanvas = app.canvas && app.canvas.canvas;
     if (!graphCanvas) return;
     event.preventDefault();
