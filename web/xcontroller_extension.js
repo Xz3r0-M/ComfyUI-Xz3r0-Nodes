@@ -714,15 +714,53 @@ function clampNodeSize(node, minW, minH) {
 }
 
 // ================================================================
-// 输出端口可见性控制
+// 输出端口可见性（运行时按控件类型显隐，序列化保持 schema 索引）
 // ================================================================
+//
+// ComfyUI 连线只记 origin_slot 数字索引；configure 时按 schema 顺序
+// zip 覆盖 name/type。若运行时 removeOutput 后直接保存，Toggle 的
+// BOOLEAN 会落在 index 0，刷新后被 zip 成 FLOAT。
+//
+// 策略：
+// 1. 运行时仍可按 control_type 增删可见输出（视觉隐藏）
+// 2. 序列化时把 outputs 展开为固定 schema 顺序，并把 link.origin_slot
+//    临时改回 schema 索引；序列化完成后立刻恢复运行时索引
+// 3. 加载时先按端口名 remap 到 schema，再按 control_type 裁剪可见端口
+//
+// schema: 0:FLOAT  1:INT  2:BOOLEAN  3:X  4:Y
+//
 
-function outputIndexByName(node, name) {
-    if (!node || !Array.isArray(node.outputs)) return -1;
-    for (var i = 0; i < node.outputs.length; i++) {
-        if (node.outputs[i] && node.outputs[i].name === name) return i;
+var SCHEMA_OUTPUTS = [
+    { name: "FLOAT", type: "FLOAT" },
+    { name: "INT", type: "INT" },
+    { name: "BOOLEAN", type: "BOOLEAN" },
+    { name: "X", type: "FLOAT" },
+    { name: "Y", type: "FLOAT" },
+];
+
+var ALL_OUTPUT_NAMES = SCHEMA_OUTPUTS.map(function (o) {
+    return o.name;
+});
+
+var VISIBLE_OUTPUTS = {
+    Knob: { names: ["FLOAT", "INT"] },
+    FaderH: { names: ["FLOAT", "INT"] },
+    FaderV: { names: ["FLOAT", "INT"] },
+    Toggle: { names: ["BOOLEAN"] },
+    Button: { names: ["FLOAT", "INT"] },
+    XYPad: { names: ["X", "Y"] },
+};
+
+function schemaIndexOf(name) {
+    for (var i = 0; i < SCHEMA_OUTPUTS.length; i++) {
+        if (SCHEMA_OUTPUTS[i].name === name) return i;
     }
     return -1;
+}
+
+function outputTypeForName(name) {
+    var idx = schemaIndexOf(name);
+    return idx >= 0 ? SCHEMA_OUTPUTS[idx].type : "FLOAT";
 }
 
 function outputLinkCountByIndex(node, index) {
@@ -731,55 +769,134 @@ function outputLinkCountByIndex(node, index) {
     return (output && output.links && output.links.length) || 0;
 }
 
-function outputTypeForName(name) {
-    if (name === "INT") return "INT";
-    if (name === "BOOLEAN") return "BOOLEAN";
-    return "FLOAT";
+function getGraphLink(graph, linkId) {
+    if (!graph || linkId == null) return null;
+    if (typeof graph.getLink === "function") {
+        try {
+            return graph.getLink(linkId) || null;
+        } catch (_e) {}
+    }
+    var links = graph.links || graph._links;
+    if (!links) return null;
+    if (typeof links.get === "function") return links.get(linkId) || null;
+    return links[linkId] || null;
+}
+
+function fixLinkOriginSlots(graph, links, slotIndex) {
+    if (!graph || !Array.isArray(links)) return;
+    for (var i = 0; i < links.length; i++) {
+        var link = getGraphLink(graph, links[i]);
+        if (link) link.origin_slot = slotIndex;
+    }
+}
+
+function wantedOutputNames(node) {
+    var ctype = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
+    ctype = normalizeControlType(ctype);
+    var info = VISIBLE_OUTPUTS[ctype];
+    return (info && info.names) ? info.names.slice() : ALL_OUTPUT_NAMES.slice();
 }
 
 /**
- * 根据当前 control_type 同步输出端口可见性。
- * - 不在当前类型显示列表且无连线的端口：删除
- * - 在当前类型显示列表但缺失的端口：添加
- * - 已有连线的端口即使不在显示列表中也会保留
+ * configure 前：按端口名把序列化 outputs 展开为固定 schema 顺序，
+ * 并修正 link.origin_slot。兼容「只保存了 BOOLEAN@0」的旧工作流。
  */
-function syncOutputVisibility(node) {
-    if (!node || !Array.isArray(node.outputs)) return;
+function remapSerializedOutputs(node, info) {
+    if (!info || !Array.isArray(info.outputs) || !info.outputs.length) return;
 
-    var ctype = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
-    var info = VISIBLE_OUTPUTS[ctype];
-    if (!info) return;
-    var wantedNames = info.names;
-
-    // Phase 1: 删除不需要的输出（仅无连线，从后往前避免索引漂移）
-    for (var i = node.outputs.length - 1; i >= 0; i--) {
-        var output = node.outputs[i];
-        if (!output) continue;
-        if (wantedNames.indexOf(output.name) >= 0) continue;
-
-        if (outputLinkCountByIndex(node, i) > 0) continue;
-
-        if (typeof node.removeOutput === "function") {
-            node.removeOutput(i);
+    var byName = {};
+    var extras = [];
+    for (var i = 0; i < info.outputs.length; i++) {
+        var o = info.outputs[i];
+        if (!o) continue;
+        if (o.name && ALL_OUTPUT_NAMES.indexOf(o.name) >= 0) {
+            byName[o.name] = o;
         } else {
-            node.outputs.splice(i, 1);
+            extras.push(o);
         }
     }
 
-    // Phase 2: 添加缺失的所需输出
-    var existingNames = {};
-    for (var j = 0; j < node.outputs.length; j++) {
-        if (node.outputs[j]) existingNames[node.outputs[j].name] = true;
-    }
-    for (var k = 0; k < wantedNames.length; k++) {
-        var name = wantedNames[k];
-        if (existingNames[name]) continue;
-        if (typeof node.addOutput === "function") {
-            node.addOutput(name, outputTypeForName(name));
+    var remapped = [];
+    var graph = node && node.graph;
+    for (var k = 0; k < SCHEMA_OUTPUTS.length; k++) {
+        var def = SCHEMA_OUTPUTS[k];
+        var existing = byName[def.name];
+        if (existing) {
+            fixLinkOriginSlots(graph, existing.links, k);
+            existing.name = def.name;
+            existing.type = def.type;
+            remapped.push(existing);
+        } else {
+            remapped.push({
+                name: def.name,
+                type: def.type,
+                links: null,
+            });
         }
     }
+    for (var e = 0; e < extras.length; e++) {
+        remapped.push(extras[e]);
+    }
+    info.outputs = remapped;
+}
 
-    // Phase 3: 刷新布局
+/**
+ * 序列化时写入完整 schema outputs，并把 link.origin_slot 临时改为 schema 索引。
+ * 返回 restore 列表，序列化结束后必须立刻恢复运行时索引。
+ */
+function prepareOutputsForSerialize(node, serialised) {
+    if (!node || !serialised || !Array.isArray(node.outputs)) return [];
+
+    var byName = {};
+    for (var i = 0; i < node.outputs.length; i++) {
+        var o = node.outputs[i];
+        if (!o || !o.name || ALL_OUTPUT_NAMES.indexOf(o.name) < 0) continue;
+        byName[o.name] = o;
+    }
+
+    var expanded = [];
+    var restore = [];
+    for (var k = 0; k < SCHEMA_OUTPUTS.length; k++) {
+        var def = SCHEMA_OUTPUTS[k];
+        var existing = byName[def.name];
+        if (existing) {
+            expanded.push({
+                name: def.name,
+                type: def.type,
+                links: existing.links ? existing.links.slice() : null,
+                localized_name: existing.localized_name,
+                label: existing.label,
+                shape: existing.shape,
+            });
+            if (existing.links && existing.links.length && node.graph) {
+                for (var j = 0; j < existing.links.length; j++) {
+                    var link = getGraphLink(node.graph, existing.links[j]);
+                    if (!link) continue;
+                    restore.push({ link: link, slot: link.origin_slot });
+                    link.origin_slot = k;
+                }
+            }
+        } else {
+            expanded.push({
+                name: def.name,
+                type: def.type,
+                links: null,
+            });
+        }
+    }
+    serialised.outputs = expanded;
+    return restore;
+}
+
+function restoreLinkOriginSlots(restoreList) {
+    if (!Array.isArray(restoreList)) return;
+    for (var i = 0; i < restoreList.length; i++) {
+        var item = restoreList[i];
+        if (item && item.link) item.link.origin_slot = item.slot;
+    }
+}
+
+function refreshOutputLayout(node) {
     try {
         if (typeof node._setConcreteSlots === "function") {
             node._setConcreteSlots();
@@ -793,6 +910,116 @@ function syncOutputVisibility(node) {
     if (app.canvas && typeof app.canvas.setDirty === "function") {
         app.canvas.setDirty(true, true);
     }
+}
+
+/**
+ * 根据当前 control_type 同步输出端口可见性。
+ * - 不在当前类型显示列表且无连线的端口：删除
+ * - 在当前类型显示列表但缺失的端口：按 schema 顺序补回
+ * - 已有连线的端口即使不在显示列表中也会保留
+ */
+function syncOutputVisibility(node) {
+    if (!node || !Array.isArray(node.outputs)) return;
+
+    var wantedNames = wantedOutputNames(node);
+    var keepNames = {};
+    var i;
+    for (i = 0; i < wantedNames.length; i++) {
+        keepNames[wantedNames[i]] = true;
+    }
+    // 已连线的端口即使当前类型不显示也保留，避免误断线
+    for (i = 0; i < node.outputs.length; i++) {
+        var out = node.outputs[i];
+        if (!out || !out.name) continue;
+        if (outputLinkCountByIndex(node, i) > 0) {
+            keepNames[out.name] = true;
+        }
+    }
+
+    // Phase 1: 删除不需要的输出（仅无连线，从后往前）
+    for (var ri = node.outputs.length - 1; ri >= 0; ri--) {
+        var output = node.outputs[ri];
+        if (!output) continue;
+        if (keepNames[output.name]) continue;
+        if (outputLinkCountByIndex(node, ri) > 0) continue;
+
+        if (typeof node.removeOutput === "function") {
+            node.removeOutput(ri);
+        } else {
+            node.outputs.splice(ri, 1);
+        }
+    }
+
+    // Phase 2: 按 schema 顺序决定最终显示列表，补齐缺失端口
+    var existingByName = {};
+    for (i = 0; i < node.outputs.length; i++) {
+        if (node.outputs[i] && node.outputs[i].name) {
+            existingByName[node.outputs[i].name] = node.outputs[i];
+        }
+    }
+
+    var displayNames = [];
+    for (i = 0; i < SCHEMA_OUTPUTS.length; i++) {
+        var name = SCHEMA_OUTPUTS[i].name;
+        if (keepNames[name]) displayNames.push(name);
+    }
+
+    var needsReorder = node.outputs.length !== displayNames.length;
+    if (!needsReorder) {
+        for (i = 0; i < displayNames.length; i++) {
+            if (!node.outputs[i] || node.outputs[i].name !== displayNames[i]) {
+                needsReorder = true;
+                break;
+            }
+        }
+    }
+
+    if (needsReorder) {
+        // 直接按名字重建数组，避免 removeOutput 断开连线
+        node.outputs.length = 0;
+        for (i = 0; i < displayNames.length; i++) {
+            var pname = displayNames[i];
+            var pprev = existingByName[pname];
+            var pout;
+            if (pprev) {
+                pout = pprev;
+                pout.name = pname;
+                pout.type = outputTypeForName(pname);
+                node.outputs.push(pout);
+                fixLinkOriginSlots(node.graph, pout.links, i);
+            } else if (typeof node.addOutput === "function") {
+                // addOutput 会 push；若返回值已在末尾则不再 push
+                var beforeLen = node.outputs.length;
+                pout = node.addOutput(pname, outputTypeForName(pname));
+                if (node.outputs.length === beforeLen && pout) {
+                    node.outputs.push(pout);
+                }
+            } else {
+                node.outputs.push({
+                    name: pname,
+                    type: outputTypeForName(pname),
+                    links: null,
+                });
+            }
+        }
+    } else {
+        // 集合与顺序都正确：仅补缺失（兜底）
+        for (i = 0; i < wantedNames.length; i++) {
+            var wname = wantedNames[i];
+            if (existingByName[wname]) continue;
+            if (typeof node.addOutput === "function") {
+                node.addOutput(wname, outputTypeForName(wname));
+            }
+        }
+        // 对齐 origin_slot
+        for (i = 0; i < node.outputs.length; i++) {
+            if (node.outputs[i] && node.outputs[i].links) {
+                fixLinkOriginSlots(node.graph, node.outputs[i].links, i);
+            }
+        }
+    }
+
+    refreshOutputLayout(node);
 }
 
 // ================================================================
@@ -818,17 +1045,6 @@ var BUTTON_MODES = ["increase", "decrease", "toggle"];
 var BUTTON_REPEAT_MS = 80;
 var MIN_NODE_W = 320;
 var NODE_CHROME_H = 90;
-
-// ── 输出端口可见性映射 ──
-var ALL_OUTPUT_NAMES = ["FLOAT", "INT", "BOOLEAN", "X", "Y"];
-var VISIBLE_OUTPUTS = {
-    Knob:   { names: ["FLOAT", "INT"] },
-    FaderH: { names: ["FLOAT", "INT"] },
-    FaderV: { names: ["FLOAT", "INT"] },
-    Toggle: { names: ["BOOLEAN"] },
-    Button: { names: ["FLOAT", "INT"] },
-    XYPad:  { names: ["X", "Y"] },
-};
 
 // ================================================================
 // 构建 UI
@@ -1892,15 +2108,70 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (String(nodeData.name) !== NODE_CLASS) return;
 
+        // 必须在 ComfyNode.configure 的 index-zip 之前按名称重排 outputs，
+        // 否则旧工作流 BOOLEAN@0 会被 zip 成 FLOAT。
+        var origConfigure = nodeType.prototype.configure;
+        nodeType.prototype.configure = function (info) {
+            try {
+                remapSerializedOutputs(this, info);
+            } catch (err) {
+                console.error("[XController] remapSerializedOutputs error:", err);
+            }
+            if (origConfigure) {
+                origConfigure.apply(this, arguments);
+            }
+            // configure 后按 control_type 裁剪可见端口（保留已连线端口）
+            try {
+                syncOutputVisibility(this);
+            } catch (err) {
+                console.error("[XController] syncOutputVisibility error:", err);
+            }
+        };
+
+        // 序列化时展开为完整 schema + 临时修正 origin_slot，避免刷新错线。
+        // graph.asSerialisable 顺序：先 node.serialize，再 links 序列化，
+        // 因此临时改 origin_slot 会进入保存的 links；之后再恢复运行时索引。
+        var origOnSerialize = nodeType.prototype.onSerialize;
+        nodeType.prototype.onSerialize = function (o) {
+            if (origOnSerialize) {
+                try {
+                    origOnSerialize.apply(this, arguments);
+                } catch (err) {
+                    console.error("[XController] origOnSerialize error:", err);
+                }
+            }
+            var changed = false;
+            try {
+                var restore = prepareOutputsForSerialize(this, o) || [];
+                changed = restore.length > 0;
+            } catch (err) {
+                console.error("[XController] prepareOutputsForSerialize error:", err);
+            }
+            if (!changed) return;
+            var self = this;
+            setTimeout(function () {
+                try {
+                    if (!self || !Array.isArray(self.outputs)) return;
+                    for (var i = 0; i < self.outputs.length; i++) {
+                        var out = self.outputs[i];
+                        if (out && out.links) {
+                            fixLinkOriginSlots(self.graph, out.links, i);
+                        }
+                    }
+                } catch (_e) {}
+            }, 0);
+        };
+
         var origOnCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             if (origOnCreated) {
                 try {
                     origOnCreated.apply(this, arguments);
                 } catch (err) {
-        console.error("[XController] origOnCreated error:", err);
+                    console.error("[XController] origOnCreated error:", err);
                 }
             }
+            syncOutputVisibility(this);
             buildXControlUI(this);
             adjustNodeSize(this, true);
         };
@@ -1911,7 +2182,7 @@ app.registerExtension({
                 try {
                     origOnConfigure.apply(this, arguments);
                 } catch (err) {
-        console.error("[XController] origOnConfigure error:", err);
+                    console.error("[XController] origOnConfigure error:", err);
                 }
             }
             // 重新隐藏 + 恢复值
@@ -1926,6 +2197,7 @@ app.registerExtension({
             if (String(rawType) !== fixedType) {
                 setWidgetValue(this, W_CONTROL_TYPE, fixedType);
             }
+            syncOutputVisibility(this);
             syncControlTypeUI(this);
             adjustNodeSize(this, true);
         };
@@ -1935,6 +2207,7 @@ app.registerExtension({
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) {
             return;
         }
+        syncOutputVisibility(node);
         if (!node.__xcontrolUI) {
             buildXControlUI(node);
         } else {
