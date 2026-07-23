@@ -721,11 +721,16 @@ function clampNodeSize(node, minW, minH) {
 // zip 覆盖 name/type。若运行时 removeOutput 后直接保存，Toggle 的
 // BOOLEAN 会落在 index 0，刷新后被 zip 成 FLOAT。
 //
-// 策略：
-// 1. 运行时仍可按 control_type 增删可见输出（视觉隐藏）
-// 2. 序列化时把 outputs 展开为固定 schema 顺序，并把 link.origin_slot
-//    临时改回 schema 索引；序列化完成后立刻恢复运行时索引
-// 3. 加载时先按端口名 remap 到 schema，再按 control_type 裁剪可见端口
+// 加载顺序（关键）：
+// 1. 构造 / remap 时保持完整 schema 端口（稳定索引，供连线挂载）
+// 2. 先从持久化恢复 control_type（决定应显示哪些端口）
+// 3. 全图 configure 完成后再按 control_type 裁剪可见端口
+// 4. 裁剪后按当前可见顺序回写 link.origin_slot
+//
+// 序列化：
+// - outputs 展开为固定 schema 顺序
+// - 临时把 link.origin_slot 改成 schema 索引，供 graph 写出 links
+// - 写出后立刻恢复为运行时可见索引
 //
 // schema: 0:FLOAT  1:INT  2:BOOLEAN  3:X  4:Y
 //
@@ -790,16 +795,93 @@ function fixLinkOriginSlots(graph, links, slotIndex) {
     }
 }
 
-function wantedOutputNames(node) {
-    var ctype = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
-    ctype = normalizeControlType(ctype);
-    var info = VISIBLE_OUTPUTS[ctype];
-    return (info && info.names) ? info.names.slice() : ALL_OUTPUT_NAMES.slice();
+function rewriteAllOutputOriginSlots(node) {
+    if (!node || !node.graph || !Array.isArray(node.outputs)) return;
+    for (var i = 0; i < node.outputs.length; i++) {
+        var out = node.outputs[i];
+        if (out && out.links && out.links.length) {
+            fixLinkOriginSlots(node.graph, out.links, i);
+        }
+    }
+}
+
+function isXControllerNode(node) {
+    if (!node) return false;
+    return String(node.comfyClass || node.type || "") === NODE_CLASS;
 }
 
 /**
- * configure 前：按端口名把序列化 outputs 展开为固定 schema 顺序，
- * 并修正 link.origin_slot。兼容「只保存了 BOOLEAN@0」的旧工作流。
+ * 从 widget / 序列化 info 读取控件类型。
+ * configure 完成后优先读 widget；加载早期可从 widgets_values 回退。
+ */
+function readControlType(node, info) {
+    var w = findWidget(node, W_CONTROL_TYPE);
+    if (w && w.value != null && w.value !== "") {
+        return normalizeControlType(w.value);
+    }
+
+    if (
+        info
+        && Array.isArray(info.widgets_values)
+        && Array.isArray(node.widgets)
+    ) {
+        // LiteGraph serialize 按 widgets 下标写入（serialize:false 留空穴）
+        for (var i = 0; i < node.widgets.length; i++) {
+            var widget = node.widgets[i];
+            if (!widget || widget.name !== W_CONTROL_TYPE) continue;
+            if (i < info.widgets_values.length
+                && info.widgets_values[i] != null
+                && info.widgets_values[i] !== "") {
+                return normalizeControlType(info.widgets_values[i]);
+            }
+            break;
+        }
+        // 兼容紧凑 widgets_values：按可序列化 widget 顺序取
+        var serialIndex = 0;
+        for (var j = 0; j < node.widgets.length; j++) {
+            var wj = node.widgets[j];
+            if (!wj || wj.serialize === false) continue;
+            if (wj.name === W_CONTROL_TYPE) {
+                if (
+                    serialIndex < info.widgets_values.length
+                    && info.widgets_values[serialIndex] != null
+                    && info.widgets_values[serialIndex] !== ""
+                ) {
+                    return normalizeControlType(
+                        info.widgets_values[serialIndex]
+                    );
+                }
+                break;
+            }
+            serialIndex++;
+        }
+    }
+
+    return "Knob";
+}
+
+/** 先恢复持久化 control_type，再决定端口显示。 */
+function ensureControlType(node, info) {
+    if (!node) return "Knob";
+    var ctype = readControlType(node, info);
+    var w = findWidget(node, W_CONTROL_TYPE);
+    if (w && String(w.value) !== ctype) {
+        w.value = ctype;
+    }
+    return ctype;
+}
+
+function wantedOutputNames(node, info) {
+    var ctype = ensureControlType(node, info);
+    var visible = VISIBLE_OUTPUTS[ctype];
+    return (visible && visible.names)
+        ? visible.names.slice()
+        : ALL_OUTPUT_NAMES.slice();
+}
+/**
+ * configure 前：按端口名把序列化 outputs 展开为固定 schema 顺序。
+ * 若 graph.links 已存在（工作流加载），同步把 origin_slot 写为 schema 索引。
+ * 端口裁剪仍延后到 control_type 恢复且连线就绪之后。
  */
 function remapSerializedOutputs(node, info) {
     if (!info || !Array.isArray(info.outputs) || !info.outputs.length) return;
@@ -822,6 +904,7 @@ function remapSerializedOutputs(node, info) {
         var def = SCHEMA_OUTPUTS[k];
         var existing = byName[def.name];
         if (existing) {
+            // 加载路径：links 已在 graph 中，先对齐到 schema 索引
             fixLinkOriginSlots(graph, existing.links, k);
             existing.name = def.name;
             existing.type = def.type;
@@ -896,6 +979,24 @@ function restoreLinkOriginSlots(restoreList) {
     }
 }
 
+function scheduleRuntimeSlotRestore(node, restoreList) {
+    var self = node;
+    var list = restoreList;
+    var restore = function () {
+        try {
+            // 优先用序列化前快照恢复，避免连续 serialize 把运行时索引粘在 schema 上
+            restoreLinkOriginSlots(list);
+            // 再按当前可见端口顺序对齐一次（幂等）
+            rewriteAllOutputOriginSlots(self);
+        } catch (_e) {}
+    };
+    if (typeof queueMicrotask === "function") {
+        queueMicrotask(restore);
+    } else {
+        setTimeout(restore, 0);
+    }
+}
+
 function refreshOutputLayout(node) {
     try {
         if (typeof node._setConcreteSlots === "function") {
@@ -914,14 +1015,22 @@ function refreshOutputLayout(node) {
 
 /**
  * 根据当前 control_type 同步输出端口可见性。
+ * - 先确保 control_type 来自持久化值
  * - 不在当前类型显示列表且无连线的端口：删除
  * - 在当前类型显示列表但缺失的端口：按 schema 顺序补回
  * - 已有连线的端口即使不在显示列表中也会保留
+ * - 最后按可见顺序回写 origin_slot
  */
-function syncOutputVisibility(node) {
+function syncOutputVisibility(node, info) {
     if (!node || !Array.isArray(node.outputs)) return;
 
-    var wantedNames = wantedOutputNames(node);
+    // 加载中且尚未标记可裁剪：只保证 schema 完整，不裁端口，避免连线挂错
+    if (node.__xctrlRestoring && !node.__xctrlPortsReady) {
+        ensureFullSchemaOutputs(node);
+        return;
+    }
+
+    var wantedNames = wantedOutputNames(node, info);
     var keepNames = {};
     var i;
     for (i = 0; i < wantedNames.length; i++) {
@@ -976,7 +1085,8 @@ function syncOutputVisibility(node) {
 
     if (needsReorder) {
         // 直接按名字重建数组，避免 removeOutput 断开连线
-        node.outputs.length = 0;
+        // 使用 splice 以兼容 Vue reactive outputs
+        var nextOutputs = [];
         for (i = 0; i < displayNames.length; i++) {
             var pname = displayNames[i];
             var pprev = existingByName[pname];
@@ -985,21 +1095,24 @@ function syncOutputVisibility(node) {
                 pout = pprev;
                 pout.name = pname;
                 pout.type = outputTypeForName(pname);
-                node.outputs.push(pout);
-                fixLinkOriginSlots(node.graph, pout.links, i);
-            } else if (typeof node.addOutput === "function") {
-                // addOutput 会 push；若返回值已在末尾则不再 push
-                var beforeLen = node.outputs.length;
-                pout = node.addOutput(pname, outputTypeForName(pname));
-                if (node.outputs.length === beforeLen && pout) {
-                    node.outputs.push(pout);
-                }
+                nextOutputs.push(pout);
             } else {
-                node.outputs.push({
+                nextOutputs.push({
                     name: pname,
                     type: outputTypeForName(pname),
                     links: null,
                 });
+            }
+        }
+        if (typeof node.outputs.splice === "function") {
+            node.outputs.splice.apply(
+                node.outputs,
+                [0, node.outputs.length].concat(nextOutputs)
+            );
+        } else {
+            node.outputs.length = 0;
+            for (i = 0; i < nextOutputs.length; i++) {
+                node.outputs.push(nextOutputs[i]);
             }
         }
     } else {
@@ -1009,17 +1122,101 @@ function syncOutputVisibility(node) {
             if (existingByName[wname]) continue;
             if (typeof node.addOutput === "function") {
                 node.addOutput(wname, outputTypeForName(wname));
-            }
-        }
-        // 对齐 origin_slot
-        for (i = 0; i < node.outputs.length; i++) {
-            if (node.outputs[i] && node.outputs[i].links) {
-                fixLinkOriginSlots(node.graph, node.outputs[i].links, i);
+            } else {
+                node.outputs.push({
+                    name: wname,
+                    type: outputTypeForName(wname),
+                    links: null,
+                });
             }
         }
     }
 
+    // 端口布局已按 control_type 就绪 → 再对齐连线索引
+    rewriteAllOutputOriginSlots(node);
     refreshOutputLayout(node);
+}
+
+/** 确保运行时具备完整 schema 输出（加载中用于稳定连线索引）。 */
+function ensureFullSchemaOutputs(node) {
+    if (!node || !Array.isArray(node.outputs)) return;
+
+    var existingByName = {};
+    var i;
+    for (i = 0; i < node.outputs.length; i++) {
+        if (node.outputs[i] && node.outputs[i].name) {
+            existingByName[node.outputs[i].name] = node.outputs[i];
+        }
+    }
+
+    var nextOutputs = [];
+    for (i = 0; i < SCHEMA_OUTPUTS.length; i++) {
+        var def = SCHEMA_OUTPUTS[i];
+        var prev = existingByName[def.name];
+        if (prev) {
+            prev.name = def.name;
+            prev.type = def.type;
+            nextOutputs.push(prev);
+        } else {
+            nextOutputs.push({
+                name: def.name,
+                type: def.type,
+                links: null,
+            });
+        }
+    }
+
+    var same = node.outputs.length === nextOutputs.length;
+    if (same) {
+        for (i = 0; i < nextOutputs.length; i++) {
+            if (node.outputs[i] !== nextOutputs[i]) {
+                same = false;
+                break;
+            }
+        }
+    }
+    if (same) {
+        rewriteAllOutputOriginSlots(node);
+        return;
+    }
+
+    if (typeof node.outputs.splice === "function") {
+        node.outputs.splice.apply(
+            node.outputs,
+            [0, node.outputs.length].concat(nextOutputs)
+        );
+    } else {
+        node.outputs.length = 0;
+        for (i = 0; i < nextOutputs.length; i++) {
+            node.outputs.push(nextOutputs[i]);
+        }
+    }
+    rewriteAllOutputOriginSlots(node);
+    refreshOutputLayout(node);
+}
+
+/**
+ * 工作流加载完成后的最终端口恢复：
+ * control_type（持久化）→ 可见端口 → 对齐连线。
+ */
+function finalizeXControllerPorts(node) {
+    if (!isXControllerNode(node)) return;
+    node.__xctrlRestoring = false;
+    node.__xctrlPortsReady = true;
+    try {
+        ensureControlType(node);
+        syncOutputVisibility(node);
+    } catch (err) {
+        console.error("[XController] finalizeXControllerPorts error:", err);
+    }
+}
+
+function finalizeAllXControllerPorts(graph) {
+    if (!graph) return;
+    var nodes = graph._nodes || graph.nodes || [];
+    for (var i = 0; i < nodes.length; i++) {
+        finalizeXControllerPorts(nodes[i]);
+    }
 }
 
 // ================================================================
@@ -2108,23 +2305,27 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (String(nodeData.name) !== NODE_CLASS) return;
 
-        // 必须在 ComfyNode.configure 的 index-zip 之前按名称重排 outputs，
-        // 否则旧工作流 BOOLEAN@0 会被 zip 成 FLOAT。
+        // configure 前按名称展开为完整 schema，避免 zip 把 BOOLEAN@0 盖成 FLOAT。
+        // 注意：此处不裁剪端口——必须等 control_type 恢复且全图连线就绪后再裁。
         var origConfigure = nodeType.prototype.configure;
         nodeType.prototype.configure = function (info) {
+            this.__xctrlRestoring = true;
+            this.__xctrlPortsReady = false;
             try {
                 remapSerializedOutputs(this, info);
+                // 在 zip 前保证 this.outputs 也是完整 schema，避免短数组 zip 丢端口
+                ensureFullSchemaOutputs(this);
             } catch (err) {
                 console.error("[XController] remapSerializedOutputs error:", err);
             }
             if (origConfigure) {
                 origConfigure.apply(this, arguments);
             }
-            // configure 后按 control_type 裁剪可见端口（保留已连线端口）
+            // 只恢复 control_type，不裁端口（连线可能仍在挂载/对齐）
             try {
-                syncOutputVisibility(this);
+                ensureControlType(this, info);
             } catch (err) {
-                console.error("[XController] syncOutputVisibility error:", err);
+                console.error("[XController] ensureControlType error:", err);
             }
         };
 
@@ -2140,26 +2341,14 @@ app.registerExtension({
                     console.error("[XController] origOnSerialize error:", err);
                 }
             }
-            var changed = false;
+            var restore = [];
             try {
-                var restore = prepareOutputsForSerialize(this, o) || [];
-                changed = restore.length > 0;
+                restore = prepareOutputsForSerialize(this, o) || [];
             } catch (err) {
                 console.error("[XController] prepareOutputsForSerialize error:", err);
             }
-            if (!changed) return;
-            var self = this;
-            setTimeout(function () {
-                try {
-                    if (!self || !Array.isArray(self.outputs)) return;
-                    for (var i = 0; i < self.outputs.length; i++) {
-                        var out = self.outputs[i];
-                        if (out && out.links) {
-                            fixLinkOriginSlots(self.graph, out.links, i);
-                        }
-                    }
-                } catch (_e) {}
-            }, 0);
+            // 无论是否改写了 link，都在写出后把运行时 origin_slot 对齐回来
+            scheduleRuntimeSlotRestore(this, restore);
         };
 
         var origOnCreated = nodeType.prototype.onNodeCreated;
@@ -2171,13 +2360,31 @@ app.registerExtension({
                     console.error("[XController] origOnCreated error:", err);
                 }
             }
-            syncOutputVisibility(this);
+            // createNode 时尚不知是否会立刻 configure。
+            // 只保完整 schema，避免默认 Knob 裁端口破坏后续 zip/连线。
+            this.__xctrlPortsReady = false;
+            ensureFullSchemaOutputs(this);
             buildXControlUI(this);
             adjustNodeSize(this, true);
+
+            // 纯新建：微任务中若未进入 restoring 再按 control_type 裁剪。
+            // 加载/粘贴：configure 会设 restoring，此处跳过，由 finalize 收尾。
+            var self = this;
+            var finishNewNode = function () {
+                if (!self || self.__xctrlRestoring) return;
+                if (self.__xctrlPortsReady) return;
+                finalizeXControllerPorts(self);
+                adjustNodeSize(self, true);
+            };
+            if (typeof queueMicrotask === "function") {
+                queueMicrotask(finishNewNode);
+            } else {
+                setTimeout(finishNewNode, 0);
+            }
         };
 
         var origOnConfigure = nodeType.prototype.onConfigure;
-        nodeType.prototype.onConfigure = function () {
+        nodeType.prototype.onConfigure = function (info) {
             if (origOnConfigure) {
                 try {
                     origOnConfigure.apply(this, arguments);
@@ -2185,29 +2392,44 @@ app.registerExtension({
                     console.error("[XController] origOnConfigure error:", err);
                 }
             }
-            // 重新隐藏 + 恢复值
             ALL_WIDGET_NAMES.forEach((name) => {
-                // V2 视图可能在 onConfigure 后重建 widgets
                 hideNativeWidget(this, name);
             });
             ensureWidgetPersistence(this);
-            // 修复旧版小写值
-            var rawType = getWidgetValue(this, W_CONTROL_TYPE, "Knob");
-            var fixedType = normalizeControlType(rawType);
-            if (String(rawType) !== fixedType) {
-                setWidgetValue(this, W_CONTROL_TYPE, fixedType);
+
+            // 1) 先恢复持久化 control_type（决定稍后显示哪些端口）
+            // 2) 保持完整 schema，等连线就绪后再裁（粘贴路径在 configure 之后才 connect）
+            try {
+                this.__xctrlRestoring = true;
+                this.__xctrlPortsReady = false;
+                ensureControlType(this, info);
+                ensureFullSchemaOutputs(this);
+            } catch (err) {
+                console.error("[XController] onConfigure prepare error:", err);
             }
-            syncOutputVisibility(this);
             syncControlTypeUI(this);
             adjustNodeSize(this, true);
+
+            // 微任务：当前调用栈（含 paste 的 connect / graph.configure 节点循环）结束后
+            // 再按 control_type 裁端口并回写 origin_slot。
+            var self = this;
+            var finishRestore = function () {
+                if (!self) return;
+                finalizeXControllerPorts(self);
+                adjustNodeSize(self, true);
+            };
+            if (typeof queueMicrotask === "function") {
+                queueMicrotask(finishRestore);
+            } else {
+                setTimeout(finishRestore, 0);
+            }
         };
     },
 
     async loadedGraphNode(node) {
-        if (String(node.comfyClass || node.type || "") !== NODE_CLASS) {
-            return;
-        }
-        syncOutputVisibility(node);
+        if (!isXControllerNode(node)) return;
+        // 全图 configure 后的显式收尾（与微任务 finalize 幂等）
+        finalizeXControllerPorts(node);
         if (!node.__xcontrolUI) {
             buildXControlUI(node);
         } else {
@@ -2215,21 +2437,23 @@ app.registerExtension({
                 hideNativeWidget(node, name);
             });
             ensureWidgetPersistence(node);
-            // 修复旧版小写值
-            var rawType = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
-            var fixedType = normalizeControlType(rawType);
-            if (String(rawType) !== fixedType) {
-                setWidgetValue(node, W_CONTROL_TYPE, fixedType);
-            }
+            ensureControlType(node);
             syncControlTypeUI(node);
         }
         adjustNodeSize(node, true);
     },
 
-    async nodeCreated(node) {
-        if (String(node.comfyClass || node.type || "") !== NODE_CLASS) {
-            return;
+    async afterConfigureGraph() {
+        // 兜底：部分路径可能不逐个触发 loadedGraphNode
+        try {
+            finalizeAllXControllerPorts(app.graph);
+        } catch (err) {
+            console.error("[XController] afterConfigureGraph error:", err);
         }
+    },
+
+    async nodeCreated(node) {
+        if (!isXControllerNode(node)) return;
         if (!node.__xcontrolUI) {
             buildXControlUI(node);
         }
