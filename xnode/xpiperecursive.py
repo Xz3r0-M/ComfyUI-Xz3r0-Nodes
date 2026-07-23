@@ -1,4 +1,4 @@
-"""从 XPipe_v2 数据束中按可配置顺序返回首个有效值。"""
+"""从 XPipe 数据束中按可配置顺序返回首个有效值。"""
 
 from typing import Any
 
@@ -12,14 +12,14 @@ except ImportError:  # pragma: no cover - 包外脚本运行兜底
 LOGGER = get_logger(__name__)
 
 PIPE_SLOTS = 50
-XPipeV2Bundle = io.Custom("xpipe_v2")
+XPipeBundle = io.Custom("xpipe")
 DEFAULT_RECURSIVE_ORDER = "-".join(
     str(index) for index in range(1, PIPE_SLOTS + 1)
 )
 
 
 class XPipeRecursive(io.ComfyNode):
-    """按可配置递归顺序返回 XPipe_v2 数据束中的首个有效值。"""
+    """按可配置递归顺序返回 XPipe 数据束中的首个有效值。"""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -28,15 +28,15 @@ class XPipeRecursive(io.ComfyNode):
             node_id="XPipeRecursive",
             display_name="XPipeRecursive",
             description=(
-                "Return the first non-None value from an XPipe_v2 bundle "
+                "Return the first non-None value from an XPipe bundle "
                 "using a customizable recursive slot order."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
-                XPipeV2Bundle.Input(
+                XPipeBundle.Input(
                     "xpipe_in",
                     tooltip=(
-                        "XPipe_v2 bundle scanned by recursive_order "
+                        "XPipe bundle scanned by recursive_order "
                         f"(slots 1-{PIPE_SLOTS})"
                     ),
                 ),
@@ -135,10 +135,9 @@ class XPipeRecursive(io.ComfyNode):
         """校验数据束，并按 recursive_order 返回首个有效值。"""
         if not (
             isinstance(xpipe_in, dict)
-            and xpipe_in.get("__xpipe_v2_bundle__") is True
-            and xpipe_in.get("__xpipe_v2_version__") == 2
+            and xpipe_in.get("__xpipe_bundle__") is True
         ):
-            raise ValueError("xpipe_in must be a valid XPipe_v2 bundle")
+            raise ValueError("xpipe_in must be a valid XPipe bundle")
 
         values = xpipe_in.get("values")
         if not isinstance(values, list):

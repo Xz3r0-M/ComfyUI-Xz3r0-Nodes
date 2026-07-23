@@ -1,10 +1,10 @@
 import { app } from "../../scripts/app.js";
 import {
-    resolveXPipeV2StateForInput,
-    resolveXPipeV2ValueMetadataForInput,
-    scheduleXPipeV2Refresh,
-    subscribeXPipeV2Metadata,
-} from "./xpipe_v2_extension.js";
+    resolveXPipeStateForInput,
+    resolveXPipeValueMetadataForInput,
+    scheduleXPipeRefresh,
+    subscribeXPipeMetadata,
+} from "./xpipe_extension.js";
 
 var NODE_CLASS = "XPipeGate";
 var GATE_SLOTS = 50;
@@ -441,7 +441,7 @@ function highestUsedChannel(node) {
 }
 
 function upstreamBundleState(node) {
-    return resolveXPipeV2StateForInput(node, BUNDLE_INPUT);
+    return resolveXPipeStateForInput(node, BUNDLE_INPUT);
 }
 
 function desiredVisibleCount(state) {
@@ -744,7 +744,7 @@ function directInputSource(state, channel) {
             );
         } catch (_error) { /* use link metadata */ }
     }
-    var metadata = resolveXPipeV2ValueMetadataForInput(
+    var metadata = resolveXPipeValueMetadataForInput(
         state.node,
         "input_" + channel,
     );
@@ -768,7 +768,7 @@ function directSourceName(direct) {
     );
     var slot = match ? parseInt(match[1], 10) : 0;
     var sourceState = direct.source && (
-        direct.source.__xpipeV2State
+        direct.source.__xpipeState
         || direct.source.__xpipeGateState
     );
     if (sourceState && slot) {
@@ -834,7 +834,7 @@ function applyChannelLabels(state) {
             slotIndexByName(state.node.inputs, "input_" + channel),
             label,
         );
-        // Match XPipe_v2: hide output name labels.
+        // Match XPipe: hide output name labels.
         replaceSlotLabel(
             state.node.outputs,
             slotIndexByName(state.node.outputs, "output_" + channel),
@@ -1098,7 +1098,7 @@ function refreshAllPipeGate() {
         anyChanged = anyChanged || changed;
         if (!changed) break;
     }
-    if (anyChanged) scheduleXPipeV2Refresh();
+    if (anyChanged) scheduleXPipeRefresh();
 }
 
 function scheduleRefresh() {
@@ -1199,7 +1199,7 @@ app.registerExtension({
         applyUiLocale();
         installLocaleSync();
         installCanvasHooks();
-        subscribeXPipeV2Metadata(scheduleRefresh);
+        subscribeXPipeMetadata(scheduleRefresh);
     },
 
     async afterConfigureGraph() {

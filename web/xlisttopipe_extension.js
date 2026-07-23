@@ -1,15 +1,15 @@
 /**
- * XListToPipe — count 端口驱动下游 XPipe_v2 槽位展开
+ * XListToPipe — count 端口驱动下游 XPipe 槽位展开
  * ==================================================
  * 与 XListPull 相同：count 连接时禁用 count_display；
- * 连线/widget 变化时刷新 XPipe_v2 元数据。
+ * 连线/widget 变化时刷新 XPipe 元数据。
  * 支持 count 来自 XListCreate 或 XListRestore。
  */
 
 import { app } from "../../scripts/app.js";
 import {
-    scheduleXPipeV2Refresh,
-} from "./xpipe_v2_extension.js";
+    scheduleXPipeRefresh,
+} from "./xpipe_extension.js";
 
 var NODE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
@@ -132,11 +132,11 @@ function syncCountWidget(node) {
 }
 
 function refreshDownstream() {
-    scheduleXPipeV2Refresh();
+    scheduleXPipeRefresh();
 }
 
 function scheduleRefreshAll(graph) {
-    // XListCreate input changes should re-expand downstream XPipe_v2.
+    // XListCreate input changes should re-expand downstream XPipe.
     if (!graph) {
         refreshDownstream();
         return;

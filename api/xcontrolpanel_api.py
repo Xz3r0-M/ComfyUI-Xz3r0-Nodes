@@ -9,9 +9,8 @@ import sys
 import threading
 from pathlib import Path
 
-from aiohttp import web
-
 import server
+from aiohttp import web
 
 try:
     from ..xz3r0_utils import get_logger

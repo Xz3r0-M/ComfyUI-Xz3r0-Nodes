@@ -1,4 +1,4 @@
-"""支持 XPipe_v2 数据束的 50 路动态 Lazy 门控节点。"""
+"""支持 XPipe 数据束的 50 路动态 Lazy 门控节点。"""
 
 import json
 from typing import Any
@@ -13,11 +13,11 @@ except ImportError:  # pragma: no cover - 包外脚本运行兜底
 LOGGER = get_logger(__name__)
 
 GATE_SLOTS = 50
-XPipeV2Bundle = io.Custom("xpipe_v2")
+XPipeBundle = io.Custom("xpipe")
 
 
 class XPipeGate(io.ComfyNode):
-    """合并 XPipe_v2 数据束与独立输入并进行逐路门控。"""
+    """合并 XPipe 数据束与独立输入并进行逐路门控。"""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -31,11 +31,11 @@ class XPipeGate(io.ComfyNode):
         ]
 
         inputs: list[Any] = [
-            XPipeV2Bundle.Input(
+            XPipeBundle.Input(
                 "xpipe_in",
                 optional=True,
                 tooltip=(
-                    "Optional XPipe_v2 bundle. Leave unconnected to start "
+                    "Optional XPipe bundle. Leave unconnected to start "
                     "from empty channels; direct channel inputs override "
                     "matching bundled values."
                 ),
@@ -86,11 +86,11 @@ class XPipeGate(io.ComfyNode):
             ),
         )
         outputs: list[Any] = [
-            XPipeV2Bundle.Output(
+            XPipeBundle.Output(
                 "xpipe_out",
                 display_name="xpipe_out",
                 tooltip=(
-                    "Always a valid XPipe_v2 bundle of merged and gated "
+                    "Always a valid XPipe bundle of merged and gated "
                     "values (empty or partial when xpipe_in is unconnected)."
                 ),
             ),
@@ -110,9 +110,9 @@ class XPipeGate(io.ComfyNode):
             node_id="XPipeGate",
             display_name="XPipeGate",
             description=(
-                "Gate an optional XPipe_v2 bundle and up to 50 direct "
+                "Gate an optional XPipe bundle and up to 50 direct "
                 "any-type inputs with per-channel switches and native Lazy "
-                "evaluation. Always emits a valid XPipe_v2 bundle on "
+                "evaluation. Always emits a valid XPipe bundle on "
                 "xpipe_out even when xpipe_in is unconnected."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
@@ -122,15 +122,14 @@ class XPipeGate(io.ComfyNode):
 
     @classmethod
     def _extract_bundle(cls, xpipe_in: Any) -> tuple[list[Any], list[str]]:
-        """校验并规范化 XPipe_v2 数据束。"""
+        """校验并规范化 XPipe 数据束。"""
         if xpipe_in is None:
             return [None] * GATE_SLOTS, [""] * GATE_SLOTS
         if not (
             isinstance(xpipe_in, dict)
-            and xpipe_in.get("__xpipe_v2_bundle__") is True
-            and xpipe_in.get("__xpipe_v2_version__") == 2
+            and xpipe_in.get("__xpipe_bundle__") is True
         ):
-            raise ValueError("xpipe_in must be a valid XPipe_v2 bundle")
+            raise ValueError("xpipe_in must be a valid XPipe bundle")
 
         raw_values = xpipe_in.get("values")
         values = list(raw_values[:GATE_SLOTS]) if isinstance(
@@ -203,8 +202,8 @@ class XPipeGate(io.ComfyNode):
             for index in range(1, GATE_SLOTS + 1)
         ]
         xpipe_out = {
-            "__xpipe_v2_bundle__": True,
-            "__xpipe_v2_version__": 2,
+            "__xpipe_bundle__": True,
+            "__xpipe_version__": 1,
             "values": outputs,
             "names": names,
         }

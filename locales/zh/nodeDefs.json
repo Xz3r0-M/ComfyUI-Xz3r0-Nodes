@@ -141,182 +141,650 @@
   },
   "XPipeGate": {
     "display_name": "XPipeGate",
-    "description": "对可选的 XPipe_v2 数据束及最多 50 路独立输入进行逐路门控，独立输入使用 ComfyUI 原生 Lazy 求值。即使未连接 xpipe_in，xpipe_out 也始终输出合法的 XPipe_v2 数据束。",
+    "description": "对可选的 XPipe 数据束及最多 50 路独立输入进行逐路门控，独立输入使用 ComfyUI 原生 Lazy 求值。即使未连接 xpipe_in，xpipe_out 也始终输出合法的 XPipe 数据束。",
     "inputs": {
-      "xpipe_in": {"name": "XPipe_v2 输入", "tooltip": "可选的 XPipe_v2 数据束。不连接时从空通道起步；独立通道输入会覆盖数据束中的对应值。"},
-      "input_1": {"name": "输入 1", "tooltip": "第 1 路 Lazy 输入（可选，支持任意数据）"},
-      "input_2": {"name": "输入 2", "tooltip": "第 2 路 Lazy 输入（可选，支持任意数据）"},
-      "input_3": {"name": "输入 3", "tooltip": "第 3 路 Lazy 输入（可选，支持任意数据）"},
-      "input_4": {"name": "输入 4", "tooltip": "第 4 路 Lazy 输入（可选，支持任意数据）"},
-      "input_5": {"name": "输入 5", "tooltip": "第 5 路 Lazy 输入（可选，支持任意数据）"},
-      "input_6": {"name": "输入 6", "tooltip": "第 6 路 Lazy 输入（可选，支持任意数据）"},
-      "input_7": {"name": "输入 7", "tooltip": "第 7 路 Lazy 输入（可选，支持任意数据）"},
-      "input_8": {"name": "输入 8", "tooltip": "第 8 路 Lazy 输入（可选，支持任意数据）"},
-      "input_9": {"name": "输入 9", "tooltip": "第 9 路 Lazy 输入（可选，支持任意数据）"},
-      "input_10": {"name": "输入 10", "tooltip": "第 10 路 Lazy 输入（可选，支持任意数据）"},
-      "input_11": {"name": "输入 11", "tooltip": "第 11 路 Lazy 输入（可选，支持任意数据）"},
-      "input_12": {"name": "输入 12", "tooltip": "第 12 路 Lazy 输入（可选，支持任意数据）"},
-      "input_13": {"name": "输入 13", "tooltip": "第 13 路 Lazy 输入（可选，支持任意数据）"},
-      "input_14": {"name": "输入 14", "tooltip": "第 14 路 Lazy 输入（可选，支持任意数据）"},
-      "input_15": {"name": "输入 15", "tooltip": "第 15 路 Lazy 输入（可选，支持任意数据）"},
-      "input_16": {"name": "输入 16", "tooltip": "第 16 路 Lazy 输入（可选，支持任意数据）"},
-      "input_17": {"name": "输入 17", "tooltip": "第 17 路 Lazy 输入（可选，支持任意数据）"},
-      "input_18": {"name": "输入 18", "tooltip": "第 18 路 Lazy 输入（可选，支持任意数据）"},
-      "input_19": {"name": "输入 19", "tooltip": "第 19 路 Lazy 输入（可选，支持任意数据）"},
-      "input_20": {"name": "输入 20", "tooltip": "第 20 路 Lazy 输入（可选，支持任意数据）"},
-      "input_21": {"name": "输入 21", "tooltip": "第 21 路 Lazy 输入（可选，支持任意数据）"},
-      "input_22": {"name": "输入 22", "tooltip": "第 22 路 Lazy 输入（可选，支持任意数据）"},
-      "input_23": {"name": "输入 23", "tooltip": "第 23 路 Lazy 输入（可选，支持任意数据）"},
-      "input_24": {"name": "输入 24", "tooltip": "第 24 路 Lazy 输入（可选，支持任意数据）"},
-      "input_25": {"name": "输入 25", "tooltip": "第 25 路 Lazy 输入（可选，支持任意数据）"},
-      "input_26": {"name": "输入 26", "tooltip": "第 26 路 Lazy 输入（可选，支持任意数据）"},
-      "input_27": {"name": "输入 27", "tooltip": "第 27 路 Lazy 输入（可选，支持任意数据）"},
-      "input_28": {"name": "输入 28", "tooltip": "第 28 路 Lazy 输入（可选，支持任意数据）"},
-      "input_29": {"name": "输入 29", "tooltip": "第 29 路 Lazy 输入（可选，支持任意数据）"},
-      "input_30": {"name": "输入 30", "tooltip": "第 30 路 Lazy 输入（可选，支持任意数据）"},
-      "input_31": {"name": "输入 31", "tooltip": "第 31 路 Lazy 输入（可选，支持任意数据）"},
-      "input_32": {"name": "输入 32", "tooltip": "第 32 路 Lazy 输入（可选，支持任意数据）"},
-      "input_33": {"name": "输入 33", "tooltip": "第 33 路 Lazy 输入（可选，支持任意数据）"},
-      "input_34": {"name": "输入 34", "tooltip": "第 34 路 Lazy 输入（可选，支持任意数据）"},
-      "input_35": {"name": "输入 35", "tooltip": "第 35 路 Lazy 输入（可选，支持任意数据）"},
-      "input_36": {"name": "输入 36", "tooltip": "第 36 路 Lazy 输入（可选，支持任意数据）"},
-      "input_37": {"name": "输入 37", "tooltip": "第 37 路 Lazy 输入（可选，支持任意数据）"},
-      "input_38": {"name": "输入 38", "tooltip": "第 38 路 Lazy 输入（可选，支持任意数据）"},
-      "input_39": {"name": "输入 39", "tooltip": "第 39 路 Lazy 输入（可选，支持任意数据）"},
-      "input_40": {"name": "输入 40", "tooltip": "第 40 路 Lazy 输入（可选，支持任意数据）"},
-      "input_41": {"name": "输入 41", "tooltip": "第 41 路 Lazy 输入（可选，支持任意数据）"},
-      "input_42": {"name": "输入 42", "tooltip": "第 42 路 Lazy 输入（可选，支持任意数据）"},
-      "input_43": {"name": "输入 43", "tooltip": "第 43 路 Lazy 输入（可选，支持任意数据）"},
-      "input_44": {"name": "输入 44", "tooltip": "第 44 路 Lazy 输入（可选，支持任意数据）"},
-      "input_45": {"name": "输入 45", "tooltip": "第 45 路 Lazy 输入（可选，支持任意数据）"},
-      "input_46": {"name": "输入 46", "tooltip": "第 46 路 Lazy 输入（可选，支持任意数据）"},
-      "input_47": {"name": "输入 47", "tooltip": "第 47 路 Lazy 输入（可选，支持任意数据）"},
-      "input_48": {"name": "输入 48", "tooltip": "第 48 路 Lazy 输入（可选，支持任意数据）"},
-      "input_49": {"name": "输入 49", "tooltip": "第 49 路 Lazy 输入（可选，支持任意数据）"},
-      "input_50": {"name": "输入 50", "tooltip": "第 50 路 Lazy 输入（可选，支持任意数据）"},
-      "enable_1": {"name": "启用 1", "tooltip": "启用第 1 路输出"},
-      "enable_2": {"name": "启用 2", "tooltip": "启用第 2 路输出"},
-      "enable_3": {"name": "启用 3", "tooltip": "启用第 3 路输出"},
-      "enable_4": {"name": "启用 4", "tooltip": "启用第 4 路输出"},
-      "enable_5": {"name": "启用 5", "tooltip": "启用第 5 路输出"},
-      "enable_6": {"name": "启用 6", "tooltip": "启用第 6 路输出"},
-      "enable_7": {"name": "启用 7", "tooltip": "启用第 7 路输出"},
-      "enable_8": {"name": "启用 8", "tooltip": "启用第 8 路输出"},
-      "enable_9": {"name": "启用 9", "tooltip": "启用第 9 路输出"},
-      "enable_10": {"name": "启用 10", "tooltip": "启用第 10 路输出"},
-      "enable_11": {"name": "启用 11", "tooltip": "启用第 11 路输出"},
-      "enable_12": {"name": "启用 12", "tooltip": "启用第 12 路输出"},
-      "enable_13": {"name": "启用 13", "tooltip": "启用第 13 路输出"},
-      "enable_14": {"name": "启用 14", "tooltip": "启用第 14 路输出"},
-      "enable_15": {"name": "启用 15", "tooltip": "启用第 15 路输出"},
-      "enable_16": {"name": "启用 16", "tooltip": "启用第 16 路输出"},
-      "enable_17": {"name": "启用 17", "tooltip": "启用第 17 路输出"},
-      "enable_18": {"name": "启用 18", "tooltip": "启用第 18 路输出"},
-      "enable_19": {"name": "启用 19", "tooltip": "启用第 19 路输出"},
-      "enable_20": {"name": "启用 20", "tooltip": "启用第 20 路输出"},
-      "enable_21": {"name": "启用 21", "tooltip": "启用第 21 路输出"},
-      "enable_22": {"name": "启用 22", "tooltip": "启用第 22 路输出"},
-      "enable_23": {"name": "启用 23", "tooltip": "启用第 23 路输出"},
-      "enable_24": {"name": "启用 24", "tooltip": "启用第 24 路输出"},
-      "enable_25": {"name": "启用 25", "tooltip": "启用第 25 路输出"},
-      "enable_26": {"name": "启用 26", "tooltip": "启用第 26 路输出"},
-      "enable_27": {"name": "启用 27", "tooltip": "启用第 27 路输出"},
-      "enable_28": {"name": "启用 28", "tooltip": "启用第 28 路输出"},
-      "enable_29": {"name": "启用 29", "tooltip": "启用第 29 路输出"},
-      "enable_30": {"name": "启用 30", "tooltip": "启用第 30 路输出"},
-      "enable_31": {"name": "启用 31", "tooltip": "启用第 31 路输出"},
-      "enable_32": {"name": "启用 32", "tooltip": "启用第 32 路输出"},
-      "enable_33": {"name": "启用 33", "tooltip": "启用第 33 路输出"},
-      "enable_34": {"name": "启用 34", "tooltip": "启用第 34 路输出"},
-      "enable_35": {"name": "启用 35", "tooltip": "启用第 35 路输出"},
-      "enable_36": {"name": "启用 36", "tooltip": "启用第 36 路输出"},
-      "enable_37": {"name": "启用 37", "tooltip": "启用第 37 路输出"},
-      "enable_38": {"name": "启用 38", "tooltip": "启用第 38 路输出"},
-      "enable_39": {"name": "启用 39", "tooltip": "启用第 39 路输出"},
-      "enable_40": {"name": "启用 40", "tooltip": "启用第 40 路输出"},
-      "enable_41": {"name": "启用 41", "tooltip": "启用第 41 路输出"},
-      "enable_42": {"name": "启用 42", "tooltip": "启用第 42 路输出"},
-      "enable_43": {"name": "启用 43", "tooltip": "启用第 43 路输出"},
-      "enable_44": {"name": "启用 44", "tooltip": "启用第 44 路输出"},
-      "enable_45": {"name": "启用 45", "tooltip": "启用第 45 路输出"},
-      "enable_46": {"name": "启用 46", "tooltip": "启用第 46 路输出"},
-      "enable_47": {"name": "启用 47", "tooltip": "启用第 47 路输出"},
-      "enable_48": {"name": "启用 48", "tooltip": "启用第 48 路输出"},
-      "enable_49": {"name": "启用 49", "tooltip": "启用第 49 路输出"},
-      "enable_50": {"name": "启用 50", "tooltip": "启用第 50 路输出"},
-      "port_names": {"name": "端口名称", "tooltip": "由 XPipeGate 前端维护的内部序列化名称"},
+      "xpipe_in": {
+        "name": "XPipe 输入",
+        "tooltip": "可选的 XPipe 数据束。不连接时从空通道起步；独立通道输入会覆盖数据束中的对应值。"
+      },
+      "input_1": {
+        "name": "输入 1",
+        "tooltip": "第 1 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_2": {
+        "name": "输入 2",
+        "tooltip": "第 2 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_3": {
+        "name": "输入 3",
+        "tooltip": "第 3 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_4": {
+        "name": "输入 4",
+        "tooltip": "第 4 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_5": {
+        "name": "输入 5",
+        "tooltip": "第 5 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_6": {
+        "name": "输入 6",
+        "tooltip": "第 6 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_7": {
+        "name": "输入 7",
+        "tooltip": "第 7 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_8": {
+        "name": "输入 8",
+        "tooltip": "第 8 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_9": {
+        "name": "输入 9",
+        "tooltip": "第 9 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_10": {
+        "name": "输入 10",
+        "tooltip": "第 10 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_11": {
+        "name": "输入 11",
+        "tooltip": "第 11 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_12": {
+        "name": "输入 12",
+        "tooltip": "第 12 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_13": {
+        "name": "输入 13",
+        "tooltip": "第 13 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_14": {
+        "name": "输入 14",
+        "tooltip": "第 14 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_15": {
+        "name": "输入 15",
+        "tooltip": "第 15 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_16": {
+        "name": "输入 16",
+        "tooltip": "第 16 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_17": {
+        "name": "输入 17",
+        "tooltip": "第 17 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_18": {
+        "name": "输入 18",
+        "tooltip": "第 18 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_19": {
+        "name": "输入 19",
+        "tooltip": "第 19 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_20": {
+        "name": "输入 20",
+        "tooltip": "第 20 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_21": {
+        "name": "输入 21",
+        "tooltip": "第 21 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_22": {
+        "name": "输入 22",
+        "tooltip": "第 22 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_23": {
+        "name": "输入 23",
+        "tooltip": "第 23 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_24": {
+        "name": "输入 24",
+        "tooltip": "第 24 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_25": {
+        "name": "输入 25",
+        "tooltip": "第 25 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_26": {
+        "name": "输入 26",
+        "tooltip": "第 26 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_27": {
+        "name": "输入 27",
+        "tooltip": "第 27 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_28": {
+        "name": "输入 28",
+        "tooltip": "第 28 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_29": {
+        "name": "输入 29",
+        "tooltip": "第 29 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_30": {
+        "name": "输入 30",
+        "tooltip": "第 30 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_31": {
+        "name": "输入 31",
+        "tooltip": "第 31 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_32": {
+        "name": "输入 32",
+        "tooltip": "第 32 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_33": {
+        "name": "输入 33",
+        "tooltip": "第 33 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_34": {
+        "name": "输入 34",
+        "tooltip": "第 34 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_35": {
+        "name": "输入 35",
+        "tooltip": "第 35 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_36": {
+        "name": "输入 36",
+        "tooltip": "第 36 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_37": {
+        "name": "输入 37",
+        "tooltip": "第 37 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_38": {
+        "name": "输入 38",
+        "tooltip": "第 38 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_39": {
+        "name": "输入 39",
+        "tooltip": "第 39 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_40": {
+        "name": "输入 40",
+        "tooltip": "第 40 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_41": {
+        "name": "输入 41",
+        "tooltip": "第 41 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_42": {
+        "name": "输入 42",
+        "tooltip": "第 42 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_43": {
+        "name": "输入 43",
+        "tooltip": "第 43 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_44": {
+        "name": "输入 44",
+        "tooltip": "第 44 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_45": {
+        "name": "输入 45",
+        "tooltip": "第 45 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_46": {
+        "name": "输入 46",
+        "tooltip": "第 46 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_47": {
+        "name": "输入 47",
+        "tooltip": "第 47 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_48": {
+        "name": "输入 48",
+        "tooltip": "第 48 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_49": {
+        "name": "输入 49",
+        "tooltip": "第 49 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "input_50": {
+        "name": "输入 50",
+        "tooltip": "第 50 路 Lazy 输入（可选，支持任意数据）"
+      },
+      "enable_1": {
+        "name": "启用 1",
+        "tooltip": "启用第 1 路输出"
+      },
+      "enable_2": {
+        "name": "启用 2",
+        "tooltip": "启用第 2 路输出"
+      },
+      "enable_3": {
+        "name": "启用 3",
+        "tooltip": "启用第 3 路输出"
+      },
+      "enable_4": {
+        "name": "启用 4",
+        "tooltip": "启用第 4 路输出"
+      },
+      "enable_5": {
+        "name": "启用 5",
+        "tooltip": "启用第 5 路输出"
+      },
+      "enable_6": {
+        "name": "启用 6",
+        "tooltip": "启用第 6 路输出"
+      },
+      "enable_7": {
+        "name": "启用 7",
+        "tooltip": "启用第 7 路输出"
+      },
+      "enable_8": {
+        "name": "启用 8",
+        "tooltip": "启用第 8 路输出"
+      },
+      "enable_9": {
+        "name": "启用 9",
+        "tooltip": "启用第 9 路输出"
+      },
+      "enable_10": {
+        "name": "启用 10",
+        "tooltip": "启用第 10 路输出"
+      },
+      "enable_11": {
+        "name": "启用 11",
+        "tooltip": "启用第 11 路输出"
+      },
+      "enable_12": {
+        "name": "启用 12",
+        "tooltip": "启用第 12 路输出"
+      },
+      "enable_13": {
+        "name": "启用 13",
+        "tooltip": "启用第 13 路输出"
+      },
+      "enable_14": {
+        "name": "启用 14",
+        "tooltip": "启用第 14 路输出"
+      },
+      "enable_15": {
+        "name": "启用 15",
+        "tooltip": "启用第 15 路输出"
+      },
+      "enable_16": {
+        "name": "启用 16",
+        "tooltip": "启用第 16 路输出"
+      },
+      "enable_17": {
+        "name": "启用 17",
+        "tooltip": "启用第 17 路输出"
+      },
+      "enable_18": {
+        "name": "启用 18",
+        "tooltip": "启用第 18 路输出"
+      },
+      "enable_19": {
+        "name": "启用 19",
+        "tooltip": "启用第 19 路输出"
+      },
+      "enable_20": {
+        "name": "启用 20",
+        "tooltip": "启用第 20 路输出"
+      },
+      "enable_21": {
+        "name": "启用 21",
+        "tooltip": "启用第 21 路输出"
+      },
+      "enable_22": {
+        "name": "启用 22",
+        "tooltip": "启用第 22 路输出"
+      },
+      "enable_23": {
+        "name": "启用 23",
+        "tooltip": "启用第 23 路输出"
+      },
+      "enable_24": {
+        "name": "启用 24",
+        "tooltip": "启用第 24 路输出"
+      },
+      "enable_25": {
+        "name": "启用 25",
+        "tooltip": "启用第 25 路输出"
+      },
+      "enable_26": {
+        "name": "启用 26",
+        "tooltip": "启用第 26 路输出"
+      },
+      "enable_27": {
+        "name": "启用 27",
+        "tooltip": "启用第 27 路输出"
+      },
+      "enable_28": {
+        "name": "启用 28",
+        "tooltip": "启用第 28 路输出"
+      },
+      "enable_29": {
+        "name": "启用 29",
+        "tooltip": "启用第 29 路输出"
+      },
+      "enable_30": {
+        "name": "启用 30",
+        "tooltip": "启用第 30 路输出"
+      },
+      "enable_31": {
+        "name": "启用 31",
+        "tooltip": "启用第 31 路输出"
+      },
+      "enable_32": {
+        "name": "启用 32",
+        "tooltip": "启用第 32 路输出"
+      },
+      "enable_33": {
+        "name": "启用 33",
+        "tooltip": "启用第 33 路输出"
+      },
+      "enable_34": {
+        "name": "启用 34",
+        "tooltip": "启用第 34 路输出"
+      },
+      "enable_35": {
+        "name": "启用 35",
+        "tooltip": "启用第 35 路输出"
+      },
+      "enable_36": {
+        "name": "启用 36",
+        "tooltip": "启用第 36 路输出"
+      },
+      "enable_37": {
+        "name": "启用 37",
+        "tooltip": "启用第 37 路输出"
+      },
+      "enable_38": {
+        "name": "启用 38",
+        "tooltip": "启用第 38 路输出"
+      },
+      "enable_39": {
+        "name": "启用 39",
+        "tooltip": "启用第 39 路输出"
+      },
+      "enable_40": {
+        "name": "启用 40",
+        "tooltip": "启用第 40 路输出"
+      },
+      "enable_41": {
+        "name": "启用 41",
+        "tooltip": "启用第 41 路输出"
+      },
+      "enable_42": {
+        "name": "启用 42",
+        "tooltip": "启用第 42 路输出"
+      },
+      "enable_43": {
+        "name": "启用 43",
+        "tooltip": "启用第 43 路输出"
+      },
+      "enable_44": {
+        "name": "启用 44",
+        "tooltip": "启用第 44 路输出"
+      },
+      "enable_45": {
+        "name": "启用 45",
+        "tooltip": "启用第 45 路输出"
+      },
+      "enable_46": {
+        "name": "启用 46",
+        "tooltip": "启用第 46 路输出"
+      },
+      "enable_47": {
+        "name": "启用 47",
+        "tooltip": "启用第 47 路输出"
+      },
+      "enable_48": {
+        "name": "启用 48",
+        "tooltip": "启用第 48 路输出"
+      },
+      "enable_49": {
+        "name": "启用 49",
+        "tooltip": "启用第 49 路输出"
+      },
+      "enable_50": {
+        "name": "启用 50",
+        "tooltip": "启用第 50 路输出"
+      },
+      "port_names": {
+        "name": "端口名称",
+        "tooltip": "由 XPipeGate 前端维护的内部序列化名称"
+      },
       "type_warning": {
         "name": "类型不兼容警告",
         "tooltip": "通道输出连接到不兼容输入类型时显示视觉警告。"
       }
     },
     "outputs": {
-      "0": {"name": "XPipe_v2 输出", "tooltip": "始终输出合法的 XPipe_v2 数据束（未连接 xpipe_in 时可为空或部分填充的合并门控结果）。"},
-      "1": {"name": "输出 1", "tooltip": "第 1 路输出"},
-      "2": {"name": "输出 2", "tooltip": "第 2 路输出"},
-      "3": {"name": "输出 3", "tooltip": "第 3 路输出"},
-      "4": {"name": "输出 4", "tooltip": "第 4 路输出"},
-      "5": {"name": "输出 5", "tooltip": "第 5 路输出"},
-      "6": {"name": "输出 6", "tooltip": "第 6 路输出"},
-      "7": {"name": "输出 7", "tooltip": "第 7 路输出"},
-      "8": {"name": "输出 8", "tooltip": "第 8 路输出"},
-      "9": {"name": "输出 9", "tooltip": "第 9 路输出"},
-      "10": {"name": "输出 10", "tooltip": "第 10 路输出"},
-      "11": {"name": "输出 11", "tooltip": "第 11 路输出"},
-      "12": {"name": "输出 12", "tooltip": "第 12 路输出"},
-      "13": {"name": "输出 13", "tooltip": "第 13 路输出"},
-      "14": {"name": "输出 14", "tooltip": "第 14 路输出"},
-      "15": {"name": "输出 15", "tooltip": "第 15 路输出"},
-      "16": {"name": "输出 16", "tooltip": "第 16 路输出"},
-      "17": {"name": "输出 17", "tooltip": "第 17 路输出"},
-      "18": {"name": "输出 18", "tooltip": "第 18 路输出"},
-      "19": {"name": "输出 19", "tooltip": "第 19 路输出"},
-      "20": {"name": "输出 20", "tooltip": "第 20 路输出"},
-      "21": {"name": "输出 21", "tooltip": "第 21 路输出"},
-      "22": {"name": "输出 22", "tooltip": "第 22 路输出"},
-      "23": {"name": "输出 23", "tooltip": "第 23 路输出"},
-      "24": {"name": "输出 24", "tooltip": "第 24 路输出"},
-      "25": {"name": "输出 25", "tooltip": "第 25 路输出"},
-      "26": {"name": "输出 26", "tooltip": "第 26 路输出"},
-      "27": {"name": "输出 27", "tooltip": "第 27 路输出"},
-      "28": {"name": "输出 28", "tooltip": "第 28 路输出"},
-      "29": {"name": "输出 29", "tooltip": "第 29 路输出"},
-      "30": {"name": "输出 30", "tooltip": "第 30 路输出"},
-      "31": {"name": "输出 31", "tooltip": "第 31 路输出"},
-      "32": {"name": "输出 32", "tooltip": "第 32 路输出"},
-      "33": {"name": "输出 33", "tooltip": "第 33 路输出"},
-      "34": {"name": "输出 34", "tooltip": "第 34 路输出"},
-      "35": {"name": "输出 35", "tooltip": "第 35 路输出"},
-      "36": {"name": "输出 36", "tooltip": "第 36 路输出"},
-      "37": {"name": "输出 37", "tooltip": "第 37 路输出"},
-      "38": {"name": "输出 38", "tooltip": "第 38 路输出"},
-      "39": {"name": "输出 39", "tooltip": "第 39 路输出"},
-      "40": {"name": "输出 40", "tooltip": "第 40 路输出"},
-      "41": {"name": "输出 41", "tooltip": "第 41 路输出"},
-      "42": {"name": "输出 42", "tooltip": "第 42 路输出"},
-      "43": {"name": "输出 43", "tooltip": "第 43 路输出"},
-      "44": {"name": "输出 44", "tooltip": "第 44 路输出"},
-      "45": {"name": "输出 45", "tooltip": "第 45 路输出"},
-      "46": {"name": "输出 46", "tooltip": "第 46 路输出"},
-      "47": {"name": "输出 47", "tooltip": "第 47 路输出"},
-      "48": {"name": "输出 48", "tooltip": "第 48 路输出"},
-      "49": {"name": "输出 49", "tooltip": "第 49 路输出"},
-      "50": {"name": "输出 50", "tooltip": "第 50 路输出"}
+      "0": {
+        "name": "XPipe 输出",
+        "tooltip": "始终输出合法的 XPipe 数据束（未连接 xpipe_in 时可为空或部分填充的合并门控结果）。"
+      },
+      "1": {
+        "name": "输出 1",
+        "tooltip": "第 1 路输出"
+      },
+      "2": {
+        "name": "输出 2",
+        "tooltip": "第 2 路输出"
+      },
+      "3": {
+        "name": "输出 3",
+        "tooltip": "第 3 路输出"
+      },
+      "4": {
+        "name": "输出 4",
+        "tooltip": "第 4 路输出"
+      },
+      "5": {
+        "name": "输出 5",
+        "tooltip": "第 5 路输出"
+      },
+      "6": {
+        "name": "输出 6",
+        "tooltip": "第 6 路输出"
+      },
+      "7": {
+        "name": "输出 7",
+        "tooltip": "第 7 路输出"
+      },
+      "8": {
+        "name": "输出 8",
+        "tooltip": "第 8 路输出"
+      },
+      "9": {
+        "name": "输出 9",
+        "tooltip": "第 9 路输出"
+      },
+      "10": {
+        "name": "输出 10",
+        "tooltip": "第 10 路输出"
+      },
+      "11": {
+        "name": "输出 11",
+        "tooltip": "第 11 路输出"
+      },
+      "12": {
+        "name": "输出 12",
+        "tooltip": "第 12 路输出"
+      },
+      "13": {
+        "name": "输出 13",
+        "tooltip": "第 13 路输出"
+      },
+      "14": {
+        "name": "输出 14",
+        "tooltip": "第 14 路输出"
+      },
+      "15": {
+        "name": "输出 15",
+        "tooltip": "第 15 路输出"
+      },
+      "16": {
+        "name": "输出 16",
+        "tooltip": "第 16 路输出"
+      },
+      "17": {
+        "name": "输出 17",
+        "tooltip": "第 17 路输出"
+      },
+      "18": {
+        "name": "输出 18",
+        "tooltip": "第 18 路输出"
+      },
+      "19": {
+        "name": "输出 19",
+        "tooltip": "第 19 路输出"
+      },
+      "20": {
+        "name": "输出 20",
+        "tooltip": "第 20 路输出"
+      },
+      "21": {
+        "name": "输出 21",
+        "tooltip": "第 21 路输出"
+      },
+      "22": {
+        "name": "输出 22",
+        "tooltip": "第 22 路输出"
+      },
+      "23": {
+        "name": "输出 23",
+        "tooltip": "第 23 路输出"
+      },
+      "24": {
+        "name": "输出 24",
+        "tooltip": "第 24 路输出"
+      },
+      "25": {
+        "name": "输出 25",
+        "tooltip": "第 25 路输出"
+      },
+      "26": {
+        "name": "输出 26",
+        "tooltip": "第 26 路输出"
+      },
+      "27": {
+        "name": "输出 27",
+        "tooltip": "第 27 路输出"
+      },
+      "28": {
+        "name": "输出 28",
+        "tooltip": "第 28 路输出"
+      },
+      "29": {
+        "name": "输出 29",
+        "tooltip": "第 29 路输出"
+      },
+      "30": {
+        "name": "输出 30",
+        "tooltip": "第 30 路输出"
+      },
+      "31": {
+        "name": "输出 31",
+        "tooltip": "第 31 路输出"
+      },
+      "32": {
+        "name": "输出 32",
+        "tooltip": "第 32 路输出"
+      },
+      "33": {
+        "name": "输出 33",
+        "tooltip": "第 33 路输出"
+      },
+      "34": {
+        "name": "输出 34",
+        "tooltip": "第 34 路输出"
+      },
+      "35": {
+        "name": "输出 35",
+        "tooltip": "第 35 路输出"
+      },
+      "36": {
+        "name": "输出 36",
+        "tooltip": "第 36 路输出"
+      },
+      "37": {
+        "name": "输出 37",
+        "tooltip": "第 37 路输出"
+      },
+      "38": {
+        "name": "输出 38",
+        "tooltip": "第 38 路输出"
+      },
+      "39": {
+        "name": "输出 39",
+        "tooltip": "第 39 路输出"
+      },
+      "40": {
+        "name": "输出 40",
+        "tooltip": "第 40 路输出"
+      },
+      "41": {
+        "name": "输出 41",
+        "tooltip": "第 41 路输出"
+      },
+      "42": {
+        "name": "输出 42",
+        "tooltip": "第 42 路输出"
+      },
+      "43": {
+        "name": "输出 43",
+        "tooltip": "第 43 路输出"
+      },
+      "44": {
+        "name": "输出 44",
+        "tooltip": "第 44 路输出"
+      },
+      "45": {
+        "name": "输出 45",
+        "tooltip": "第 45 路输出"
+      },
+      "46": {
+        "name": "输出 46",
+        "tooltip": "第 46 路输出"
+      },
+      "47": {
+        "name": "输出 47",
+        "tooltip": "第 47 路输出"
+      },
+      "48": {
+        "name": "输出 48",
+        "tooltip": "第 48 路输出"
+      },
+      "49": {
+        "name": "输出 49",
+        "tooltip": "第 49 路输出"
+      },
+      "50": {
+        "name": "输出 50",
+        "tooltip": "第 50 路输出"
+      }
     }
   },
   "XPipeRecursive": {
     "display_name": "XPipeRecursive",
-    "description": "按可自定义的递归顺序扫描 XPipe_v2 数据束，并返回首个符合条件的值。",
+    "description": "按可自定义的递归顺序扫描 XPipe 数据束，并返回首个符合条件的值。",
     "inputs": {
-      "xpipe_in": {"name": "XPipe_v2 输入", "tooltip": "按 recursive_order 扫描的 XPipe_v2 数据束（第 1 至 50 路）"},
-      "empty_string_as_none": {"name": "空字符串视为 None", "tooltip": "启用时跳过精确的空字符串并继续扫描"},
+      "xpipe_in": {
+        "name": "XPipe 输入",
+        "tooltip": "按 recursive_order 扫描的 XPipe 数据束（第 1 至 50 路）"
+      },
+      "empty_string_as_none": {
+        "name": "空字符串视为 None",
+        "tooltip": "启用时跳过精确的空字符串并继续扫描"
+      },
       "recursive_order": {
         "name": "递归顺序",
         "tooltip": "使用 - 分隔的递归顺序列表（例如：1-3-5 或 50-1-2）。仅允许 1~50 且不允许重复。"
       }
     },
     "outputs": {
-      "0": {"name": "递归输出", "tooltip": "按递归顺序与空字符串策略找到的首个非 None 值"}
+      "0": {
+        "name": "递归输出",
+        "tooltip": "按递归顺序与空字符串策略找到的首个非 None 值"
+      }
     }
   },
   "XAnyToString": {
@@ -529,56 +997,206 @@
         "name": "输入",
         "tooltip": "连接输入以将其加入列表"
       },
-      "inputs_input1": {"name": "输入 1", "tooltip": "列表槽位 1 输入。连接任意数据以加入列表。"},
-      "inputs_input2": {"name": "输入 2", "tooltip": "列表槽位 2 输入。连接任意数据以加入列表。"},
-      "inputs_input3": {"name": "输入 3", "tooltip": "列表槽位 3 输入。连接任意数据以加入列表。"},
-      "inputs_input4": {"name": "输入 4", "tooltip": "列表槽位 4 输入。连接任意数据以加入列表。"},
-      "inputs_input5": {"name": "输入 5", "tooltip": "列表槽位 5 输入。连接任意数据以加入列表。"},
-      "inputs_input6": {"name": "输入 6", "tooltip": "列表槽位 6 输入。连接任意数据以加入列表。"},
-      "inputs_input7": {"name": "输入 7", "tooltip": "列表槽位 7 输入。连接任意数据以加入列表。"},
-      "inputs_input8": {"name": "输入 8", "tooltip": "列表槽位 8 输入。连接任意数据以加入列表。"},
-      "inputs_input9": {"name": "输入 9", "tooltip": "列表槽位 9 输入。连接任意数据以加入列表。"},
-      "inputs_input10": {"name": "输入 10", "tooltip": "列表槽位 10 输入。连接任意数据以加入列表。"},
-      "inputs_input11": {"name": "输入 11", "tooltip": "列表槽位 11 输入。连接任意数据以加入列表。"},
-      "inputs_input12": {"name": "输入 12", "tooltip": "列表槽位 12 输入。连接任意数据以加入列表。"},
-      "inputs_input13": {"name": "输入 13", "tooltip": "列表槽位 13 输入。连接任意数据以加入列表。"},
-      "inputs_input14": {"name": "输入 14", "tooltip": "列表槽位 14 输入。连接任意数据以加入列表。"},
-      "inputs_input15": {"name": "输入 15", "tooltip": "列表槽位 15 输入。连接任意数据以加入列表。"},
-      "inputs_input16": {"name": "输入 16", "tooltip": "列表槽位 16 输入。连接任意数据以加入列表。"},
-      "inputs_input17": {"name": "输入 17", "tooltip": "列表槽位 17 输入。连接任意数据以加入列表。"},
-      "inputs_input18": {"name": "输入 18", "tooltip": "列表槽位 18 输入。连接任意数据以加入列表。"},
-      "inputs_input19": {"name": "输入 19", "tooltip": "列表槽位 19 输入。连接任意数据以加入列表。"},
-      "inputs_input20": {"name": "输入 20", "tooltip": "列表槽位 20 输入。连接任意数据以加入列表。"},
-      "inputs_input21": {"name": "输入 21", "tooltip": "列表槽位 21 输入。连接任意数据以加入列表。"},
-      "inputs_input22": {"name": "输入 22", "tooltip": "列表槽位 22 输入。连接任意数据以加入列表。"},
-      "inputs_input23": {"name": "输入 23", "tooltip": "列表槽位 23 输入。连接任意数据以加入列表。"},
-      "inputs_input24": {"name": "输入 24", "tooltip": "列表槽位 24 输入。连接任意数据以加入列表。"},
-      "inputs_input25": {"name": "输入 25", "tooltip": "列表槽位 25 输入。连接任意数据以加入列表。"},
-      "inputs_input26": {"name": "输入 26", "tooltip": "列表槽位 26 输入。连接任意数据以加入列表。"},
-      "inputs_input27": {"name": "输入 27", "tooltip": "列表槽位 27 输入。连接任意数据以加入列表。"},
-      "inputs_input28": {"name": "输入 28", "tooltip": "列表槽位 28 输入。连接任意数据以加入列表。"},
-      "inputs_input29": {"name": "输入 29", "tooltip": "列表槽位 29 输入。连接任意数据以加入列表。"},
-      "inputs_input30": {"name": "输入 30", "tooltip": "列表槽位 30 输入。连接任意数据以加入列表。"},
-      "inputs_input31": {"name": "输入 31", "tooltip": "列表槽位 31 输入。连接任意数据以加入列表。"},
-      "inputs_input32": {"name": "输入 32", "tooltip": "列表槽位 32 输入。连接任意数据以加入列表。"},
-      "inputs_input33": {"name": "输入 33", "tooltip": "列表槽位 33 输入。连接任意数据以加入列表。"},
-      "inputs_input34": {"name": "输入 34", "tooltip": "列表槽位 34 输入。连接任意数据以加入列表。"},
-      "inputs_input35": {"name": "输入 35", "tooltip": "列表槽位 35 输入。连接任意数据以加入列表。"},
-      "inputs_input36": {"name": "输入 36", "tooltip": "列表槽位 36 输入。连接任意数据以加入列表。"},
-      "inputs_input37": {"name": "输入 37", "tooltip": "列表槽位 37 输入。连接任意数据以加入列表。"},
-      "inputs_input38": {"name": "输入 38", "tooltip": "列表槽位 38 输入。连接任意数据以加入列表。"},
-      "inputs_input39": {"name": "输入 39", "tooltip": "列表槽位 39 输入。连接任意数据以加入列表。"},
-      "inputs_input40": {"name": "输入 40", "tooltip": "列表槽位 40 输入。连接任意数据以加入列表。"},
-      "inputs_input41": {"name": "输入 41", "tooltip": "列表槽位 41 输入。连接任意数据以加入列表。"},
-      "inputs_input42": {"name": "输入 42", "tooltip": "列表槽位 42 输入。连接任意数据以加入列表。"},
-      "inputs_input43": {"name": "输入 43", "tooltip": "列表槽位 43 输入。连接任意数据以加入列表。"},
-      "inputs_input44": {"name": "输入 44", "tooltip": "列表槽位 44 输入。连接任意数据以加入列表。"},
-      "inputs_input45": {"name": "输入 45", "tooltip": "列表槽位 45 输入。连接任意数据以加入列表。"},
-      "inputs_input46": {"name": "输入 46", "tooltip": "列表槽位 46 输入。连接任意数据以加入列表。"},
-      "inputs_input47": {"name": "输入 47", "tooltip": "列表槽位 47 输入。连接任意数据以加入列表。"},
-      "inputs_input48": {"name": "输入 48", "tooltip": "列表槽位 48 输入。连接任意数据以加入列表。"},
-      "inputs_input49": {"name": "输入 49", "tooltip": "列表槽位 49 输入。连接任意数据以加入列表。"},
-      "inputs_input50": {"name": "输入 50", "tooltip": "列表槽位 50 输入。连接任意数据以加入列表。"}
+      "inputs_input1": {
+        "name": "输入 1",
+        "tooltip": "列表槽位 1 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input2": {
+        "name": "输入 2",
+        "tooltip": "列表槽位 2 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input3": {
+        "name": "输入 3",
+        "tooltip": "列表槽位 3 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input4": {
+        "name": "输入 4",
+        "tooltip": "列表槽位 4 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input5": {
+        "name": "输入 5",
+        "tooltip": "列表槽位 5 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input6": {
+        "name": "输入 6",
+        "tooltip": "列表槽位 6 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input7": {
+        "name": "输入 7",
+        "tooltip": "列表槽位 7 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input8": {
+        "name": "输入 8",
+        "tooltip": "列表槽位 8 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input9": {
+        "name": "输入 9",
+        "tooltip": "列表槽位 9 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input10": {
+        "name": "输入 10",
+        "tooltip": "列表槽位 10 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input11": {
+        "name": "输入 11",
+        "tooltip": "列表槽位 11 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input12": {
+        "name": "输入 12",
+        "tooltip": "列表槽位 12 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input13": {
+        "name": "输入 13",
+        "tooltip": "列表槽位 13 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input14": {
+        "name": "输入 14",
+        "tooltip": "列表槽位 14 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input15": {
+        "name": "输入 15",
+        "tooltip": "列表槽位 15 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input16": {
+        "name": "输入 16",
+        "tooltip": "列表槽位 16 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input17": {
+        "name": "输入 17",
+        "tooltip": "列表槽位 17 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input18": {
+        "name": "输入 18",
+        "tooltip": "列表槽位 18 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input19": {
+        "name": "输入 19",
+        "tooltip": "列表槽位 19 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input20": {
+        "name": "输入 20",
+        "tooltip": "列表槽位 20 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input21": {
+        "name": "输入 21",
+        "tooltip": "列表槽位 21 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input22": {
+        "name": "输入 22",
+        "tooltip": "列表槽位 22 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input23": {
+        "name": "输入 23",
+        "tooltip": "列表槽位 23 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input24": {
+        "name": "输入 24",
+        "tooltip": "列表槽位 24 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input25": {
+        "name": "输入 25",
+        "tooltip": "列表槽位 25 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input26": {
+        "name": "输入 26",
+        "tooltip": "列表槽位 26 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input27": {
+        "name": "输入 27",
+        "tooltip": "列表槽位 27 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input28": {
+        "name": "输入 28",
+        "tooltip": "列表槽位 28 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input29": {
+        "name": "输入 29",
+        "tooltip": "列表槽位 29 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input30": {
+        "name": "输入 30",
+        "tooltip": "列表槽位 30 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input31": {
+        "name": "输入 31",
+        "tooltip": "列表槽位 31 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input32": {
+        "name": "输入 32",
+        "tooltip": "列表槽位 32 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input33": {
+        "name": "输入 33",
+        "tooltip": "列表槽位 33 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input34": {
+        "name": "输入 34",
+        "tooltip": "列表槽位 34 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input35": {
+        "name": "输入 35",
+        "tooltip": "列表槽位 35 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input36": {
+        "name": "输入 36",
+        "tooltip": "列表槽位 36 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input37": {
+        "name": "输入 37",
+        "tooltip": "列表槽位 37 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input38": {
+        "name": "输入 38",
+        "tooltip": "列表槽位 38 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input39": {
+        "name": "输入 39",
+        "tooltip": "列表槽位 39 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input40": {
+        "name": "输入 40",
+        "tooltip": "列表槽位 40 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input41": {
+        "name": "输入 41",
+        "tooltip": "列表槽位 41 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input42": {
+        "name": "输入 42",
+        "tooltip": "列表槽位 42 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input43": {
+        "name": "输入 43",
+        "tooltip": "列表槽位 43 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input44": {
+        "name": "输入 44",
+        "tooltip": "列表槽位 44 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input45": {
+        "name": "输入 45",
+        "tooltip": "列表槽位 45 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input46": {
+        "name": "输入 46",
+        "tooltip": "列表槽位 46 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input47": {
+        "name": "输入 47",
+        "tooltip": "列表槽位 47 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input48": {
+        "name": "输入 48",
+        "tooltip": "列表槽位 48 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input49": {
+        "name": "输入 49",
+        "tooltip": "列表槽位 49 输入。连接任意数据以加入列表。"
+      },
+      "inputs_input50": {
+        "name": "输入 50",
+        "tooltip": "列表槽位 50 输入。连接任意数据以加入列表。"
+      }
     },
     "outputs": {
       "0": {
@@ -841,11 +1459,11 @@
   },
   "XListToPipe": {
     "display_name": "XListToPipe",
-    "description": "将列表转换为合法的 XPipe_v2 数据束。列表元素依次映射到槽位 1..N（最多 50）；其余槽位为 None。名称为空字符串。槽位数量由 count 输入控制（与 XListPull 相同）。",
+    "description": "将列表转换为合法的 XPipe 数据束。列表元素依次映射到槽位 1..N（最多 50）；其余槽位为 None。名称为空字符串。槽位数量由 count 输入控制（与 XListPull 相同）。",
     "inputs": {
       "list_input": {
         "name": "列表",
-        "tooltip": "展开为 XPipe_v2 槽位的列表。可连接 XListCreate 的 list 输出或任意 list 线。不连接时输出空数据束。"
+        "tooltip": "展开为 XPipe 槽位的列表。可连接 XListCreate 的 list 输出或任意 list 线。不连接时输出空数据束。"
       },
       "count": {
         "name": "数量",
@@ -853,13 +1471,13 @@
       },
       "count_display": {
         "name": "数量",
-        "tooltip": "活跃 XPipe_v2 槽位数。数量端口连接时禁用，未连接时手动设置。"
+        "tooltip": "活跃 XPipe 槽位数。数量端口连接时禁用，未连接时手动设置。"
       }
     },
     "outputs": {
       "0": {
-        "name": "XPipe_v2 输出",
-        "tooltip": "始终输出合法的 XPipe_v2 数据束：列表元素占槽位 1..N（超过 50 截断），名称为空，其余槽位为 None。N 由 count 控制。"
+        "name": "XPipe 输出",
+        "tooltip": "始终输出合法的 XPipe 数据束：列表元素占槽位 1..N（超过 50 截断），名称为空，其余槽位为 None。N 由 count 控制。"
       }
     }
   },
@@ -951,318 +1569,426 @@
   },
   "XPipe": {
     "display_name": "XPipe",
-    "description": "管道束节点：用一根数据束在节点间传输至多 20 组任意类型数据，同时保留 Autogrow 输入与随可见输入同步的输出端口。单独输入会覆盖数据束同槽位；端口名称可自定义并随数据束向下游传递。",
+    "description": "管道束节点：通过单根数据束传输最多 50 路任意类型数据。输入/输出槽位类型经 MatchType 自动匹配；单独槽位输入覆盖数据束同槽；端口名称可自定义并随数据束向下游传递。",
     "inputs": {
       "xpipe_in": {
-        "name": "XPipe 输入(旧)",
+        "name": "XPipe 输入",
         "tooltip": "连接上游 XPipe 的整组数据束，一次接收全部槽位端口的数据和名称。若某个单独槽位也有输入，则该槽位仍以单独输入为准。"
       },
-      "values": {
-        "name": "数据",
-        "tooltip": "自动增长的数据输入。每个已连接槽位会覆盖数据束中的同槽位数据。"
-      },
       "value_1": {
-        "name": "数据 1",
-        "tooltip": "槽位 1 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 1",
+        "tooltip": "第 1 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_2": {
-        "name": "数据 2",
-        "tooltip": "槽位 2 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 2",
+        "tooltip": "第 2 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_3": {
-        "name": "数据 3",
-        "tooltip": "槽位 3 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 3",
+        "tooltip": "第 3 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_4": {
-        "name": "数据 4",
-        "tooltip": "槽位 4 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 4",
+        "tooltip": "第 4 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_5": {
-        "name": "数据 5",
-        "tooltip": "槽位 5 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 5",
+        "tooltip": "第 5 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_6": {
-        "name": "数据 6",
-        "tooltip": "槽位 6 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 6",
+        "tooltip": "第 6 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_7": {
-        "name": "数据 7",
-        "tooltip": "槽位 7 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 7",
+        "tooltip": "第 7 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_8": {
-        "name": "数据 8",
-        "tooltip": "槽位 8 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 8",
+        "tooltip": "第 8 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_9": {
-        "name": "数据 9",
-        "tooltip": "槽位 9 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 9",
+        "tooltip": "第 9 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_10": {
-        "name": "数据 10",
-        "tooltip": "槽位 10 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 10",
+        "tooltip": "第 10 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_11": {
-        "name": "数据 11",
-        "tooltip": "槽位 11 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 11",
+        "tooltip": "第 11 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_12": {
-        "name": "数据 12",
-        "tooltip": "槽位 12 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 12",
+        "tooltip": "第 12 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_13": {
-        "name": "数据 13",
-        "tooltip": "槽位 13 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 13",
+        "tooltip": "第 13 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_14": {
-        "name": "数据 14",
-        "tooltip": "槽位 14 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 14",
+        "tooltip": "第 14 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_15": {
-        "name": "数据 15",
-        "tooltip": "槽位 15 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 15",
+        "tooltip": "第 15 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_16": {
-        "name": "数据 16",
-        "tooltip": "槽位 16 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 16",
+        "tooltip": "第 16 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_17": {
-        "name": "数据 17",
-        "tooltip": "槽位 17 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 17",
+        "tooltip": "第 17 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_18": {
-        "name": "数据 18",
-        "tooltip": "槽位 18 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 18",
+        "tooltip": "第 18 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_19": {
-        "name": "数据 19",
-        "tooltip": "槽位 19 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 19",
+        "tooltip": "第 19 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "value_20": {
-        "name": "数据 20",
-        "tooltip": "槽位 20 输入（可选，接受任意数据）。连接后覆盖数据束的同槽位数据。"
+        "name": "值 20",
+        "tooltip": "第 20 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_21": {
+        "name": "值 21",
+        "tooltip": "第 21 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_22": {
+        "name": "值 22",
+        "tooltip": "第 22 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_23": {
+        "name": "值 23",
+        "tooltip": "第 23 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_24": {
+        "name": "值 24",
+        "tooltip": "第 24 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_25": {
+        "name": "值 25",
+        "tooltip": "第 25 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_26": {
+        "name": "值 26",
+        "tooltip": "第 26 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_27": {
+        "name": "值 27",
+        "tooltip": "第 27 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_28": {
+        "name": "值 28",
+        "tooltip": "第 28 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_29": {
+        "name": "值 29",
+        "tooltip": "第 29 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_30": {
+        "name": "值 30",
+        "tooltip": "第 30 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_31": {
+        "name": "值 31",
+        "tooltip": "第 31 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_32": {
+        "name": "值 32",
+        "tooltip": "第 32 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_33": {
+        "name": "值 33",
+        "tooltip": "第 33 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_34": {
+        "name": "值 34",
+        "tooltip": "第 34 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_35": {
+        "name": "值 35",
+        "tooltip": "第 35 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_36": {
+        "name": "值 36",
+        "tooltip": "第 36 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_37": {
+        "name": "值 37",
+        "tooltip": "第 37 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_38": {
+        "name": "值 38",
+        "tooltip": "第 38 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_39": {
+        "name": "值 39",
+        "tooltip": "第 39 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_40": {
+        "name": "值 40",
+        "tooltip": "第 40 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_41": {
+        "name": "值 41",
+        "tooltip": "第 41 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_42": {
+        "name": "值 42",
+        "tooltip": "第 42 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_43": {
+        "name": "值 43",
+        "tooltip": "第 43 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_44": {
+        "name": "值 44",
+        "tooltip": "第 44 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_45": {
+        "name": "值 45",
+        "tooltip": "第 45 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_46": {
+        "name": "值 46",
+        "tooltip": "第 46 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_47": {
+        "name": "值 47",
+        "tooltip": "第 47 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_48": {
+        "name": "值 48",
+        "tooltip": "第 48 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_49": {
+        "name": "值 49",
+        "tooltip": "第 49 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
+      },
+      "value_50": {
+        "name": "值 50",
+        "tooltip": "第 50 路输入（可选，接受任意类型）。若已连接，则覆盖数据束中的同槽位值。"
       },
       "port_names": {
         "name": "端口名称",
-        "tooltip": "由命名面板维护的序列化名称表，请勿手动编辑。"
+        "tooltip": "由 XPipe 命名面板维护的序列化 JSON 名称表。请勿手动编辑。"
       },
       "type_warning": {
-        "name": "类型不兼容警告",
-        "tooltip": "检测到类型不匹配时在连线和输出端口上显示视觉警告效果。关闭可隐藏警告。"
+        "name": "类型警告",
+        "tooltip": "检测到类型不匹配时，在连线和输出端口上显示视觉警告。关闭后隐藏警告效果。"
       }
     },
     "outputs": {
       "0": {
-        "name": "XPipe 输出(旧)",
-        "tooltip": "将当前全部槽位的数据和名称打包成一根 XPipe 数据束，继续传给下一个 XPipe。"
+        "name": "XPipe 输出",
+        "tooltip": "将当前分组的数据和名称作为单根 XPipe 数据束继续向下游传递。"
       },
       "1": {
-        "name": "数据 1",
-        "tooltip": "槽位 1 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 1",
+        "tooltip": "第 1 路输出（单独输入或数据束回退）"
       },
       "2": {
-        "name": "数据 2",
-        "tooltip": "槽位 2 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 2",
+        "tooltip": "第 2 路输出（单独输入或数据束回退）"
       },
       "3": {
-        "name": "数据 3",
-        "tooltip": "槽位 3 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 3",
+        "tooltip": "第 3 路输出（单独输入或数据束回退）"
       },
       "4": {
-        "name": "数据 4",
-        "tooltip": "槽位 4 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 4",
+        "tooltip": "第 4 路输出（单独输入或数据束回退）"
       },
       "5": {
-        "name": "数据 5",
-        "tooltip": "槽位 5 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 5",
+        "tooltip": "第 5 路输出（单独输入或数据束回退）"
       },
       "6": {
-        "name": "数据 6",
-        "tooltip": "槽位 6 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 6",
+        "tooltip": "第 6 路输出（单独输入或数据束回退）"
       },
       "7": {
-        "name": "数据 7",
-        "tooltip": "槽位 7 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 7",
+        "tooltip": "第 7 路输出（单独输入或数据束回退）"
       },
       "8": {
-        "name": "数据 8",
-        "tooltip": "槽位 8 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 8",
+        "tooltip": "第 8 路输出（单独输入或数据束回退）"
       },
       "9": {
-        "name": "数据 9",
-        "tooltip": "槽位 9 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 9",
+        "tooltip": "第 9 路输出（单独输入或数据束回退）"
       },
       "10": {
-        "name": "数据 10",
-        "tooltip": "槽位 10 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 10",
+        "tooltip": "第 10 路输出（单独输入或数据束回退）"
       },
       "11": {
-        "name": "数据 11",
-        "tooltip": "槽位 11 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 11",
+        "tooltip": "第 11 路输出（单独输入或数据束回退）"
       },
       "12": {
-        "name": "数据 12",
-        "tooltip": "槽位 12 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 12",
+        "tooltip": "第 12 路输出（单独输入或数据束回退）"
       },
       "13": {
-        "name": "数据 13",
-        "tooltip": "槽位 13 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 13",
+        "tooltip": "第 13 路输出（单独输入或数据束回退）"
       },
       "14": {
-        "name": "数据 14",
-        "tooltip": "槽位 14 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 14",
+        "tooltip": "第 14 路输出（单独输入或数据束回退）"
       },
       "15": {
-        "name": "数据 15",
-        "tooltip": "槽位 15 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 15",
+        "tooltip": "第 15 路输出（单独输入或数据束回退）"
       },
       "16": {
-        "name": "数据 16",
-        "tooltip": "槽位 16 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 16",
+        "tooltip": "第 16 路输出（单独输入或数据束回退）"
       },
       "17": {
-        "name": "数据 17",
-        "tooltip": "槽位 17 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 17",
+        "tooltip": "第 17 路输出（单独输入或数据束回退）"
       },
       "18": {
-        "name": "数据 18",
-        "tooltip": "槽位 18 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 18",
+        "tooltip": "第 18 路输出（单独输入或数据束回退）"
       },
       "19": {
-        "name": "数据 19",
-        "tooltip": "槽位 19 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 19",
+        "tooltip": "第 19 路输出（单独输入或数据束回退）"
       },
       "20": {
-        "name": "数据 20",
-        "tooltip": "槽位 20 输出（单独输入数据，或数据束回退数据）。"
+        "name": "值 20",
+        "tooltip": "第 20 路输出（单独输入或数据束回退）"
+      },
+      "21": {
+        "name": "值 21",
+        "tooltip": "第 21 路输出（单独输入或数据束回退）"
+      },
+      "22": {
+        "name": "值 22",
+        "tooltip": "第 22 路输出（单独输入或数据束回退）"
+      },
+      "23": {
+        "name": "值 23",
+        "tooltip": "第 23 路输出（单独输入或数据束回退）"
+      },
+      "24": {
+        "name": "值 24",
+        "tooltip": "第 24 路输出（单独输入或数据束回退）"
+      },
+      "25": {
+        "name": "值 25",
+        "tooltip": "第 25 路输出（单独输入或数据束回退）"
+      },
+      "26": {
+        "name": "值 26",
+        "tooltip": "第 26 路输出（单独输入或数据束回退）"
+      },
+      "27": {
+        "name": "值 27",
+        "tooltip": "第 27 路输出（单独输入或数据束回退）"
+      },
+      "28": {
+        "name": "值 28",
+        "tooltip": "第 28 路输出（单独输入或数据束回退）"
+      },
+      "29": {
+        "name": "值 29",
+        "tooltip": "第 29 路输出（单独输入或数据束回退）"
+      },
+      "30": {
+        "name": "值 30",
+        "tooltip": "第 30 路输出（单独输入或数据束回退）"
+      },
+      "31": {
+        "name": "值 31",
+        "tooltip": "第 31 路输出（单独输入或数据束回退）"
+      },
+      "32": {
+        "name": "值 32",
+        "tooltip": "第 32 路输出（单独输入或数据束回退）"
+      },
+      "33": {
+        "name": "值 33",
+        "tooltip": "第 33 路输出（单独输入或数据束回退）"
+      },
+      "34": {
+        "name": "值 34",
+        "tooltip": "第 34 路输出（单独输入或数据束回退）"
+      },
+      "35": {
+        "name": "值 35",
+        "tooltip": "第 35 路输出（单独输入或数据束回退）"
+      },
+      "36": {
+        "name": "值 36",
+        "tooltip": "第 36 路输出（单独输入或数据束回退）"
+      },
+      "37": {
+        "name": "值 37",
+        "tooltip": "第 37 路输出（单独输入或数据束回退）"
+      },
+      "38": {
+        "name": "值 38",
+        "tooltip": "第 38 路输出（单独输入或数据束回退）"
+      },
+      "39": {
+        "name": "值 39",
+        "tooltip": "第 39 路输出（单独输入或数据束回退）"
+      },
+      "40": {
+        "name": "值 40",
+        "tooltip": "第 40 路输出（单独输入或数据束回退）"
+      },
+      "41": {
+        "name": "值 41",
+        "tooltip": "第 41 路输出（单独输入或数据束回退）"
+      },
+      "42": {
+        "name": "值 42",
+        "tooltip": "第 42 路输出（单独输入或数据束回退）"
+      },
+      "43": {
+        "name": "值 43",
+        "tooltip": "第 43 路输出（单独输入或数据束回退）"
+      },
+      "44": {
+        "name": "值 44",
+        "tooltip": "第 44 路输出（单独输入或数据束回退）"
+      },
+      "45": {
+        "name": "值 45",
+        "tooltip": "第 45 路输出（单独输入或数据束回退）"
+      },
+      "46": {
+        "name": "值 46",
+        "tooltip": "第 46 路输出（单独输入或数据束回退）"
+      },
+      "47": {
+        "name": "值 47",
+        "tooltip": "第 47 路输出（单独输入或数据束回退）"
+      },
+      "48": {
+        "name": "值 48",
+        "tooltip": "第 48 路输出（单独输入或数据束回退）"
+      },
+      "49": {
+        "name": "值 49",
+        "tooltip": "第 49 路输出（单独输入或数据束回退）"
+      },
+      "50": {
+        "name": "值 50",
+        "tooltip": "第 50 路输出（单独输入或数据束回退）"
       }
-    }
-  },
-  "XPipe_v2": {
-    "display_name": "XPipe_v2",
-    "description": "独立的第二代管道束节点。通过隔离的 XPipe_v2 数据束传输至多 50 路任意类型数据，不影响原版 XPipe 节点。",
-    "inputs": {
-      "xpipe_in": {
-        "name": "XPipe_v2 输入",
-        "tooltip": "连接上游 XPipe_v2 数据束。单独槽位输入会覆盖数据束中的对应值。"
-      },
-      "values": {
-        "name": "数据",
-        "tooltip": "自动增长的 V2 数据输入。每个已连接槽位会覆盖数据束中的对应值。"
-      },
-      "value_1": {"name": "数据 1", "tooltip": "V2 槽位 1 输入。连接后覆盖数据束中的对应值。"},
-      "value_2": {"name": "数据 2", "tooltip": "V2 槽位 2 输入。连接后覆盖数据束中的对应值。"},
-      "value_3": {"name": "数据 3", "tooltip": "V2 槽位 3 输入。连接后覆盖数据束中的对应值。"},
-      "value_4": {"name": "数据 4", "tooltip": "V2 槽位 4 输入。连接后覆盖数据束中的对应值。"},
-      "value_5": {"name": "数据 5", "tooltip": "V2 槽位 5 输入。连接后覆盖数据束中的对应值。"},
-      "value_6": {"name": "数据 6", "tooltip": "V2 槽位 6 输入。连接后覆盖数据束中的对应值。"},
-      "value_7": {"name": "数据 7", "tooltip": "V2 槽位 7 输入。连接后覆盖数据束中的对应值。"},
-      "value_8": {"name": "数据 8", "tooltip": "V2 槽位 8 输入。连接后覆盖数据束中的对应值。"},
-      "value_9": {"name": "数据 9", "tooltip": "V2 槽位 9 输入。连接后覆盖数据束中的对应值。"},
-      "value_10": {"name": "数据 10", "tooltip": "V2 槽位 10 输入。连接后覆盖数据束中的对应值。"},
-      "value_11": {"name": "数据 11", "tooltip": "V2 槽位 11 输入。连接后覆盖数据束中的对应值。"},
-      "value_12": {"name": "数据 12", "tooltip": "V2 槽位 12 输入。连接后覆盖数据束中的对应值。"},
-      "value_13": {"name": "数据 13", "tooltip": "V2 槽位 13 输入。连接后覆盖数据束中的对应值。"},
-      "value_14": {"name": "数据 14", "tooltip": "V2 槽位 14 输入。连接后覆盖数据束中的对应值。"},
-      "value_15": {"name": "数据 15", "tooltip": "V2 槽位 15 输入。连接后覆盖数据束中的对应值。"},
-      "value_16": {"name": "数据 16", "tooltip": "V2 槽位 16 输入。连接后覆盖数据束中的对应值。"},
-      "value_17": {"name": "数据 17", "tooltip": "V2 槽位 17 输入。连接后覆盖数据束中的对应值。"},
-      "value_18": {"name": "数据 18", "tooltip": "V2 槽位 18 输入。连接后覆盖数据束中的对应值。"},
-      "value_19": {"name": "数据 19", "tooltip": "V2 槽位 19 输入。连接后覆盖数据束中的对应值。"},
-      "value_20": {"name": "数据 20", "tooltip": "V2 槽位 20 输入。连接后覆盖数据束中的对应值。"},
-      "value_21": {"name": "数据 21", "tooltip": "V2 槽位 21 输入。连接后覆盖数据束中的对应值。"},
-      "value_22": {"name": "数据 22", "tooltip": "V2 槽位 22 输入。连接后覆盖数据束中的对应值。"},
-      "value_23": {"name": "数据 23", "tooltip": "V2 槽位 23 输入。连接后覆盖数据束中的对应值。"},
-      "value_24": {"name": "数据 24", "tooltip": "V2 槽位 24 输入。连接后覆盖数据束中的对应值。"},
-      "value_25": {"name": "数据 25", "tooltip": "V2 槽位 25 输入。连接后覆盖数据束中的对应值。"},
-      "value_26": {"name": "数据 26", "tooltip": "V2 槽位 26 输入。连接后覆盖数据束中的对应值。"},
-      "value_27": {"name": "数据 27", "tooltip": "V2 槽位 27 输入。连接后覆盖数据束中的对应值。"},
-      "value_28": {"name": "数据 28", "tooltip": "V2 槽位 28 输入。连接后覆盖数据束中的对应值。"},
-      "value_29": {"name": "数据 29", "tooltip": "V2 槽位 29 输入。连接后覆盖数据束中的对应值。"},
-      "value_30": {"name": "数据 30", "tooltip": "V2 槽位 30 输入。连接后覆盖数据束中的对应值。"},
-      "value_31": {"name": "数据 31", "tooltip": "V2 槽位 31 输入。连接后覆盖数据束中的对应值。"},
-      "value_32": {"name": "数据 32", "tooltip": "V2 槽位 32 输入。连接后覆盖数据束中的对应值。"},
-      "value_33": {"name": "数据 33", "tooltip": "V2 槽位 33 输入。连接后覆盖数据束中的对应值。"},
-      "value_34": {"name": "数据 34", "tooltip": "V2 槽位 34 输入。连接后覆盖数据束中的对应值。"},
-      "value_35": {"name": "数据 35", "tooltip": "V2 槽位 35 输入。连接后覆盖数据束中的对应值。"},
-      "value_36": {"name": "数据 36", "tooltip": "V2 槽位 36 输入。连接后覆盖数据束中的对应值。"},
-      "value_37": {"name": "数据 37", "tooltip": "V2 槽位 37 输入。连接后覆盖数据束中的对应值。"},
-      "value_38": {"name": "数据 38", "tooltip": "V2 槽位 38 输入。连接后覆盖数据束中的对应值。"},
-      "value_39": {"name": "数据 39", "tooltip": "V2 槽位 39 输入。连接后覆盖数据束中的对应值。"},
-      "value_40": {"name": "数据 40", "tooltip": "V2 槽位 40 输入。连接后覆盖数据束中的对应值。"},
-      "value_41": {"name": "数据 41", "tooltip": "V2 槽位 41 输入。连接后覆盖数据束中的对应值。"},
-      "value_42": {"name": "数据 42", "tooltip": "V2 槽位 42 输入。连接后覆盖数据束中的对应值。"},
-      "value_43": {"name": "数据 43", "tooltip": "V2 槽位 43 输入。连接后覆盖数据束中的对应值。"},
-      "value_44": {"name": "数据 44", "tooltip": "V2 槽位 44 输入。连接后覆盖数据束中的对应值。"},
-      "value_45": {"name": "数据 45", "tooltip": "V2 槽位 45 输入。连接后覆盖数据束中的对应值。"},
-      "value_46": {"name": "数据 46", "tooltip": "V2 槽位 46 输入。连接后覆盖数据束中的对应值。"},
-      "value_47": {"name": "数据 47", "tooltip": "V2 槽位 47 输入。连接后覆盖数据束中的对应值。"},
-      "value_48": {"name": "数据 48", "tooltip": "V2 槽位 48 输入。连接后覆盖数据束中的对应值。"},
-      "value_49": {"name": "数据 49", "tooltip": "V2 槽位 49 输入。连接后覆盖数据束中的对应值。"},
-      "value_50": {"name": "数据 50", "tooltip": "V2 槽位 50 输入。连接后覆盖数据束中的对应值。"},
-      "port_names": {
-        "name": "端口名称",
-        "tooltip": "由前端维护的 V2 槽位名称序列。"
-      },
-      "type_warning": {
-        "name": "类型不兼容警告",
-        "tooltip": "V2 输出连接到不兼容输入类型时显示视觉警告。"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "XPipe_v2 输出",
-        "tooltip": "将当前所有值和名称作为独立的 XPipe_v2 数据束继续传递。"
-      },
-      "1": {"name": "数据 1", "tooltip": "V2 槽位 1 输出。"},
-      "2": {"name": "数据 2", "tooltip": "V2 槽位 2 输出。"},
-      "3": {"name": "数据 3", "tooltip": "V2 槽位 3 输出。"},
-      "4": {"name": "数据 4", "tooltip": "V2 槽位 4 输出。"},
-      "5": {"name": "数据 5", "tooltip": "V2 槽位 5 输出。"},
-      "6": {"name": "数据 6", "tooltip": "V2 槽位 6 输出。"},
-      "7": {"name": "数据 7", "tooltip": "V2 槽位 7 输出。"},
-      "8": {"name": "数据 8", "tooltip": "V2 槽位 8 输出。"},
-      "9": {"name": "数据 9", "tooltip": "V2 槽位 9 输出。"},
-      "10": {"name": "数据 10", "tooltip": "V2 槽位 10 输出。"},
-      "11": {"name": "数据 11", "tooltip": "V2 槽位 11 输出。"},
-      "12": {"name": "数据 12", "tooltip": "V2 槽位 12 输出。"},
-      "13": {"name": "数据 13", "tooltip": "V2 槽位 13 输出。"},
-      "14": {"name": "数据 14", "tooltip": "V2 槽位 14 输出。"},
-      "15": {"name": "数据 15", "tooltip": "V2 槽位 15 输出。"},
-      "16": {"name": "数据 16", "tooltip": "V2 槽位 16 输出。"},
-      "17": {"name": "数据 17", "tooltip": "V2 槽位 17 输出。"},
-      "18": {"name": "数据 18", "tooltip": "V2 槽位 18 输出。"},
-      "19": {"name": "数据 19", "tooltip": "V2 槽位 19 输出。"},
-      "20": {"name": "数据 20", "tooltip": "V2 槽位 20 输出。"},
-      "21": {"name": "数据 21", "tooltip": "V2 槽位 21 输出。"},
-      "22": {"name": "数据 22", "tooltip": "V2 槽位 22 输出。"},
-      "23": {"name": "数据 23", "tooltip": "V2 槽位 23 输出。"},
-      "24": {"name": "数据 24", "tooltip": "V2 槽位 24 输出。"},
-      "25": {"name": "数据 25", "tooltip": "V2 槽位 25 输出。"},
-      "26": {"name": "数据 26", "tooltip": "V2 槽位 26 输出。"},
-      "27": {"name": "数据 27", "tooltip": "V2 槽位 27 输出。"},
-      "28": {"name": "数据 28", "tooltip": "V2 槽位 28 输出。"},
-      "29": {"name": "数据 29", "tooltip": "V2 槽位 29 输出。"},
-      "30": {"name": "数据 30", "tooltip": "V2 槽位 30 输出。"},
-      "31": {"name": "数据 31", "tooltip": "V2 槽位 31 输出。"},
-      "32": {"name": "数据 32", "tooltip": "V2 槽位 32 输出。"},
-      "33": {"name": "数据 33", "tooltip": "V2 槽位 33 输出。"},
-      "34": {"name": "数据 34", "tooltip": "V2 槽位 34 输出。"},
-      "35": {"name": "数据 35", "tooltip": "V2 槽位 35 输出。"},
-      "36": {"name": "数据 36", "tooltip": "V2 槽位 36 输出。"},
-      "37": {"name": "数据 37", "tooltip": "V2 槽位 37 输出。"},
-      "38": {"name": "数据 38", "tooltip": "V2 槽位 38 输出。"},
-      "39": {"name": "数据 39", "tooltip": "V2 槽位 39 输出。"},
-      "40": {"name": "数据 40", "tooltip": "V2 槽位 40 输出。"},
-      "41": {"name": "数据 41", "tooltip": "V2 槽位 41 输出。"},
-      "42": {"name": "数据 42", "tooltip": "V2 槽位 42 输出。"},
-      "43": {"name": "数据 43", "tooltip": "V2 槽位 43 输出。"},
-      "44": {"name": "数据 44", "tooltip": "V2 槽位 44 输出。"},
-      "45": {"name": "数据 45", "tooltip": "V2 槽位 45 输出。"},
-      "46": {"name": "数据 46", "tooltip": "V2 槽位 46 输出。"},
-      "47": {"name": "数据 47", "tooltip": "V2 槽位 47 输出。"},
-      "48": {"name": "数据 48", "tooltip": "V2 槽位 48 输出。"},
-      "49": {"name": "数据 49", "tooltip": "V2 槽位 49 输出。"},
-      "50": {"name": "数据 50", "tooltip": "V2 槽位 50 输出。"}
     }
   },
   "XPrimitiveCombo": {
@@ -2143,44 +2869,152 @@
     "display_name": "XController",
     "description": "通用控制组件节点。通过下拉菜单切换控件类型：旋钮、横向滑块、竖向推子、开关、按压按钮、XY 坐标面板。",
     "inputs": {
-      "control_type": { "name": "控件类型", "tooltip": "选择显示的控制器：旋钮、横向推子、纵向推子、开关、按住按钮或 XY 坐标面板。" },
-      "value_mode": { "name": "数值模式", "tooltip": "控制 0-1 位置如何变成 FLOAT 输出：范围、档位或百分比。" },
-      "min": { "name": "最小值", "tooltip": "范围模式下 FLOAT 输出的最小值。" },
-      "max": { "name": "最大值", "tooltip": "范围模式下 FLOAT 输出的最大值。" },
-      "step": { "name": "步长", "tooltip": "范围吸附步长，也用于按住按钮的增减幅度。填 0 表示不吸附。" },
-      "default_value": { "name": "默认值", "tooltip": "范围模式默认值，用作预期的重置/初始值。" },
-      "steps": { "name": "档位值", "tooltip": "离散 FLOAT 输出值的 JSON 数组，例如 [0, 0.25, 0.5, 1]。" },
-      "default_step_index": { "name": "默认档位索引", "tooltip": "默认档位索引，从 0 开始。按钮每次重复会移动一个档位。" },
-      "base_value": { "name": "基础值", "tooltip": "应用百分比偏移前使用的基础值。" },
-      "pct_min": { "name": "百分比下限", "tooltip": "最小百分比偏移。负数会降低基础值。" },
-      "pct_max": { "name": "百分比上限", "tooltip": "最大百分比偏移。正数会提高基础值。" },
-      "default_pct": { "name": "默认百分比", "tooltip": "默认百分比偏移，用作预期的重置/初始值。" },
-      "shape": { "name": "形状", "tooltip": "旋钮的视觉形状，或横向/纵向推子的手柄形状。" },
-      "toggle_style": { "name": "开关样式", "tooltip": "布尔开关的视觉样式。它会改变 BOOLEAN，并在 FLOAT 输出 0 或 1。" },
-      "default_state": { "name": "默认状态", "tooltip": "没有保存状态时 Toggle 使用的默认布尔状态。" },
-      "button_mode": { "name": "按钮模式", "tooltip": "增加模式会在按住时升高数值；降低模式会在按住时降低数值。" },
-      "button_style": { "name": "按钮样式", "tooltip": "按住按钮的视觉形状。按钮也会在 BOOLEAN 输出按下状态。" },
-      "x_min": { "name": "X 最小值", "tooltip": "XY 面板的 X 输出最小值。" },
-      "x_max": { "name": "X 最大值", "tooltip": "XY 面板的 X 输出最大值。" },
-      "x_step": { "name": "X 步长", "tooltip": "X 输出吸附步长。填 0 表示不吸附 X。" },
-      "x_default": { "name": "X 默认值", "tooltip": "X 默认值，用作预期的重置/初始值。" },
-      "y_min": { "name": "Y 最小值", "tooltip": "XY 面板的 Y 输出最小值。" },
-      "y_max": { "name": "Y 最大值", "tooltip": "XY 面板的 Y 输出最大值。" },
-      "y_step": { "name": "Y 步长", "tooltip": "Y 输出吸附步长。填 0 表示不吸附 Y。" },
-      "y_default": { "name": "Y 默认值", "tooltip": "Y 默认值，用作预期的重置/初始值。" },
-      "crosshair_visible": { "name": "显示十字线", "tooltip": "显示穿过当前 XY 点的辅助准线。" },
-      "grid_visible": { "name": "显示网格", "tooltip": "在 XY 面板背景显示淡网格，便于定位。" },
-      "_normalized": { "name": "_normalized", "tooltip": "内部：当前归一化值" },
-      "_state": { "name": "_state", "tooltip": "内部：当前状态" },
-      "_x_normalized": { "name": "_x_normalized", "tooltip": "内部：当前 X 归一化值" },
-      "_y_normalized": { "name": "_y_normalized", "tooltip": "内部：当前 Y 归一化值" }
+      "control_type": {
+        "name": "控件类型",
+        "tooltip": "选择显示的控制器：旋钮、横向推子、纵向推子、开关、按住按钮或 XY 坐标面板。"
+      },
+      "value_mode": {
+        "name": "数值模式",
+        "tooltip": "控制 0-1 位置如何变成 FLOAT 输出：范围、档位或百分比。"
+      },
+      "min": {
+        "name": "最小值",
+        "tooltip": "范围模式下 FLOAT 输出的最小值。"
+      },
+      "max": {
+        "name": "最大值",
+        "tooltip": "范围模式下 FLOAT 输出的最大值。"
+      },
+      "step": {
+        "name": "步长",
+        "tooltip": "范围吸附步长，也用于按住按钮的增减幅度。填 0 表示不吸附。"
+      },
+      "default_value": {
+        "name": "默认值",
+        "tooltip": "范围模式默认值，用作预期的重置/初始值。"
+      },
+      "steps": {
+        "name": "档位值",
+        "tooltip": "离散 FLOAT 输出值的 JSON 数组，例如 [0, 0.25, 0.5, 1]。"
+      },
+      "default_step_index": {
+        "name": "默认档位索引",
+        "tooltip": "默认档位索引，从 0 开始。按钮每次重复会移动一个档位。"
+      },
+      "base_value": {
+        "name": "基础值",
+        "tooltip": "应用百分比偏移前使用的基础值。"
+      },
+      "pct_min": {
+        "name": "百分比下限",
+        "tooltip": "最小百分比偏移。负数会降低基础值。"
+      },
+      "pct_max": {
+        "name": "百分比上限",
+        "tooltip": "最大百分比偏移。正数会提高基础值。"
+      },
+      "default_pct": {
+        "name": "默认百分比",
+        "tooltip": "默认百分比偏移，用作预期的重置/初始值。"
+      },
+      "shape": {
+        "name": "形状",
+        "tooltip": "旋钮的视觉形状，或横向/纵向推子的手柄形状。"
+      },
+      "toggle_style": {
+        "name": "开关样式",
+        "tooltip": "布尔开关的视觉样式。它会改变 BOOLEAN，并在 FLOAT 输出 0 或 1。"
+      },
+      "default_state": {
+        "name": "默认状态",
+        "tooltip": "没有保存状态时 Toggle 使用的默认布尔状态。"
+      },
+      "button_mode": {
+        "name": "按钮模式",
+        "tooltip": "增加模式会在按住时升高数值；降低模式会在按住时降低数值。"
+      },
+      "button_style": {
+        "name": "按钮样式",
+        "tooltip": "按住按钮的视觉形状。按钮也会在 BOOLEAN 输出按下状态。"
+      },
+      "x_min": {
+        "name": "X 最小值",
+        "tooltip": "XY 面板的 X 输出最小值。"
+      },
+      "x_max": {
+        "name": "X 最大值",
+        "tooltip": "XY 面板的 X 输出最大值。"
+      },
+      "x_step": {
+        "name": "X 步长",
+        "tooltip": "X 输出吸附步长。填 0 表示不吸附 X。"
+      },
+      "x_default": {
+        "name": "X 默认值",
+        "tooltip": "X 默认值，用作预期的重置/初始值。"
+      },
+      "y_min": {
+        "name": "Y 最小值",
+        "tooltip": "XY 面板的 Y 输出最小值。"
+      },
+      "y_max": {
+        "name": "Y 最大值",
+        "tooltip": "XY 面板的 Y 输出最大值。"
+      },
+      "y_step": {
+        "name": "Y 步长",
+        "tooltip": "Y 输出吸附步长。填 0 表示不吸附 Y。"
+      },
+      "y_default": {
+        "name": "Y 默认值",
+        "tooltip": "Y 默认值，用作预期的重置/初始值。"
+      },
+      "crosshair_visible": {
+        "name": "显示十字线",
+        "tooltip": "显示穿过当前 XY 点的辅助准线。"
+      },
+      "grid_visible": {
+        "name": "显示网格",
+        "tooltip": "在 XY 面板背景显示淡网格，便于定位。"
+      },
+      "_normalized": {
+        "name": "_normalized",
+        "tooltip": "内部：当前归一化值"
+      },
+      "_state": {
+        "name": "_state",
+        "tooltip": "内部：当前状态"
+      },
+      "_x_normalized": {
+        "name": "_x_normalized",
+        "tooltip": "内部：当前 X 归一化值"
+      },
+      "_y_normalized": {
+        "name": "_y_normalized",
+        "tooltip": "内部：当前 Y 归一化值"
+      }
     },
     "outputs": {
-      "0": { "name": "FLOAT", "tooltip": "当前值（模拟控件）" },
-      "1": { "name": "INT", "tooltip": "FLOAT 输出向零截断后的整数" },
-      "2": { "name": "BOOLEAN", "tooltip": "当前状态（开关 / 按钮）" },
-      "3": { "name": "X", "tooltip": "当前 X 坐标（XY Pad）" },
-      "4": { "name": "Y", "tooltip": "当前 Y 坐标（XY Pad）" }
+      "0": {
+        "name": "FLOAT",
+        "tooltip": "当前值（模拟控件）"
+      },
+      "1": {
+        "name": "INT",
+        "tooltip": "FLOAT 输出向零截断后的整数"
+      },
+      "2": {
+        "name": "BOOLEAN",
+        "tooltip": "当前状态（开关 / 按钮）"
+      },
+      "3": {
+        "name": "X",
+        "tooltip": "当前 X 坐标（XY Pad）"
+      },
+      "4": {
+        "name": "Y",
+        "tooltip": "当前 Y 坐标（XY Pad）"
+      }
     }
   }
 }

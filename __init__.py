@@ -24,7 +24,7 @@ ComfyUI-Xz3r0-Nodes V3 扩展入口。
 
 import shutil  # noqa: I001
 
-from comfy_api.latest import ComfyExtension, io  # noqa: I001
+from comfy_api.latest import ComfyExtension, io  # type: ignore # noqa: I001
 
 # ============================================
 # Workflow-Processing
@@ -49,7 +49,6 @@ from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xpipe import XPipe
 from .xnode.xpipegate import XPipeGate
 from .xnode.xpiperecursive import XPipeRecursive
-from .xnode.xpipe_v2 import XPipeV2
 from .xnode.xprimitive import XPrimitiveCombo
 from .xnode.xresolution import XResolution
 from .xnode.xseed import XSeed
@@ -130,7 +129,6 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XPipe,
     XPipeGate,
     XPipeRecursive,
-    XPipeV2,
     XPrimitiveCombo,
     XResolution,
     XSeed,

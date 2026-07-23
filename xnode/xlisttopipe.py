@@ -1,8 +1,8 @@
 """
-列表转 XPipe_v2 数据束节点
-==========================
+列表转 XPipe 数据束节点
+======================
 
-将 ComfyUI list 数据展开为合法 XPipe_v2 管道束。
+将 ComfyUI list 数据展开为合法 XPipe 管道束。
 列表元素映射到槽位 1..N（最多 50），其余槽位为 None，名称为空字符串。
 数量由 count 端口 / count_display 控制（与 XListPull 一致）。
 """
@@ -20,12 +20,12 @@ except ImportError:  # pragma: no cover - 包外脚本运行兜底
 
 LOGGER = get_logger(__name__)
 
-XPipeV2Bundle = io.Custom("xpipe_v2")
+XPipeBundle = io.Custom("xpipe")
 PIPE_SLOTS = 50
 
 
 class XListToPipe(io.ComfyNode):
-    """将 list 展开为合法 XPipe_v2 数据束。"""
+    """将 list 展开为合法 XPipe 数据束。"""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -37,7 +37,7 @@ class XListToPipe(io.ComfyNode):
             node_id="XListToPipe",
             display_name="XListToPipe",
             description=(
-                "Convert a list into a valid XPipe_v2 bundle. "
+                "Convert a list into a valid XPipe bundle. "
                 "List items map to slots 1..N (max 50); remaining "
                 "slots are None. Names are empty strings. Port count "
                 "follows the count input (same pattern as XListPull)."
@@ -50,7 +50,7 @@ class XListToPipe(io.ComfyNode):
                     template=template,
                     optional=True,
                     tooltip=(
-                        "List to expand into XPipe_v2 slots. "
+                        "List to expand into XPipe slots. "
                         "Connect XListCreate list output or any "
                         "list-type wire. Leave unconnected for an "
                         "empty bundle."
@@ -62,7 +62,7 @@ class XListToPipe(io.ComfyNode):
                     min=1,
                     max=PIPE_SLOTS,
                     tooltip=(
-                        "Number of active XPipe_v2 slots. "
+                        "Number of active XPipe slots. "
                         "When count port is connected, disabled; "
                         "when not connected, manually set here."
                     ),
@@ -82,11 +82,11 @@ class XListToPipe(io.ComfyNode):
                 ),
             ],
             outputs=[
-                XPipeV2Bundle.Output(
+                XPipeBundle.Output(
                     "xpipe_out",
                     display_name="xpipe_out",
                     tooltip=(
-                        "Always a valid XPipe_v2 bundle: list items "
+                        "Always a valid XPipe bundle: list items "
                         "in slots 1..N (truncated at 50), empty names, "
                         "None-padded. N is controlled by count."
                     ),
@@ -101,7 +101,7 @@ class XListToPipe(io.ComfyNode):
         count_display: Any = 1,
         count: Any = 0,
     ) -> io.NodeOutput:
-        """将 list 按 count 展开为 50 槽合法 XPipe_v2 数据束。"""
+        """将 list 按 count 展开为 50 槽合法 XPipe 数据束。"""
 
         def _unwrap(value: Any) -> Any:
             if value is None:
@@ -132,8 +132,8 @@ class XListToPipe(io.ComfyNode):
         values = active + [None] * (PIPE_SLOTS - len(active))
         names = [""] * PIPE_SLOTS
         xpipe_out = {
-            "__xpipe_v2_bundle__": True,
-            "__xpipe_v2_version__": 2,
+            "__xpipe_bundle__": True,
+            "__xpipe_version__": 1,
             "values": values,
             "names": names,
         }

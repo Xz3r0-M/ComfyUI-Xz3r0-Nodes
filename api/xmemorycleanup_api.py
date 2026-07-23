@@ -9,10 +9,9 @@ import gc
 import json
 import threading
 
-from aiohttp import web
-
 import execution
 import server
+from aiohttp import web
 
 try:
     import comfy.model_management as comfy_model_management
