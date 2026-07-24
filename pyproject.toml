@@ -6,6 +6,21 @@ license = { file = "LICENSE" }
 
 dependencies = ["ffmpeg-python"]
 
+[project.optional-dependencies]
+test = [
+    "aiohttp",
+    "av",
+    "numpy",
+    "pillow",
+    "pytest",
+    "ruff",
+    "safetensors",
+    "scipy",
+]
+
+[tool.setuptools]
+packages = ["api", "xnode", "xz3r0_utils"]
+
 [project.urls]
 Repository = "https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes"
 #  Used by Comfy Registry https://registry.comfy.org

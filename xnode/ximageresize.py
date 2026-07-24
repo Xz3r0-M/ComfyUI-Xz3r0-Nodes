@@ -94,6 +94,7 @@ class XImageResize(io.ComfyNode):
         divisible_mode: 整除模式 (STRING)
         width_offset: 宽度偏移 (INT, 范围 -128 到 128)
         height_offset: 高度偏移 (INT, 范围 -128 到 128)
+        skip_on_empty: 无输入时输出 None (BOOLEAN，默认关闭)
 
     输出：
         Processed_Data: 缩放后的图像或遮罩张量
@@ -264,6 +265,15 @@ class XImageResize(io.ComfyNode):
                     tooltip="Add offset to output height "
                     "(positive=increase, negative=decrease, default=0)",
                 ),
+                io.Boolean.Input(
+                    "skip_on_empty",
+                    default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip="When enabled, outputs None for all ports "
+                    "if no input image is connected, "
+                    "instead of raising an error.",
+                ),
             ],
             outputs=[
                 io.MatchType.Output(
@@ -293,7 +303,7 @@ class XImageResize(io.ComfyNode):
     @classmethod
     def validate_inputs(
         cls,
-        image_or_mask: torch.Tensor,
+        image_or_mask: Any,
         scale_mode: str,
         edge_mode: str,
         resize_condition: str,
@@ -307,6 +317,7 @@ class XImageResize(io.ComfyNode):
         resize_settings_in: Any = None,
         use_passed_settings: bool = True,
         output_resize_settings: bool = True,
+        skip_on_empty: bool = False,
     ) -> bool | str:
         """
         验证输入参数的有效性。
@@ -314,21 +325,35 @@ class XImageResize(io.ComfyNode):
         Returns:
             True if valid, or error message string if invalid
         """
-        if edge_mode == "Megapixels" and megapixels <= 0:
-            return "Megapixels mode requires megapixels > 0"
-
-        if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
-            return "Scale Multiplier mode requires scale_multiplier > 0"
-
+        if scale_mode not in VALID_SCALE_MODES:
+            return "Invalid scale_mode value"
+        if edge_mode not in VALID_EDGE_MODES:
+            return "Invalid edge_mode value"
+        if divisible_mode not in VALID_DIVISIBLE_MODES:
+            return "Invalid divisible_mode value"
         if resize_condition not in VALID_RESIZE_CONDITIONS:
             return "Invalid resize_condition value"
+
+        if not (64 <= target_edge <= 8192):
+            return "target_edge must be between 64 and 8192"
+        if not (1 <= divisible <= 128):
+            return "divisible must be between 1 and 128"
+        if not (-128 <= width_offset <= 128):
+            return "width_offset must be between -128 and 128"
+        if not (-128 <= height_offset <= 128):
+            return "height_offset must be between -128 and 128"
+
+        if edge_mode == "Megapixels" and megapixels <= 0:
+            return "Megapixels mode requires megapixels > 0"
+        if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
+            return "Scale Multiplier mode requires scale_multiplier > 0"
 
         return True
 
     @classmethod
     def execute(
         cls,
-        image_or_mask: torch.Tensor,
+        image_or_mask: Any,
         scale_mode: str,
         edge_mode: str,
         resize_condition: str,
@@ -342,10 +367,49 @@ class XImageResize(io.ComfyNode):
         resize_settings_in: Any = None,
         use_passed_settings: bool = True,
         output_resize_settings: bool = True,
+        skip_on_empty: bool = False,
     ) -> io.NodeOutput:
         """
         批次统一处理图像或遮罩缩放。
         """
+        # 前置解析：当启用上游设置时，从 passed settings 继承
+        # skip_on_empty（放在早返检查之前，确保上游的
+        # skip_on_empty=True 对 None 输入也生效）
+        if use_passed_settings and isinstance(resize_settings_in, dict):
+            upstream_skip = resize_settings_in.get("skip_on_empty")
+            if isinstance(upstream_skip, bool):
+                skip_on_empty = upstream_skip
+
+        # 当 skip_on_empty 开启且输入为空时，直接输出 None 跳过报错
+        if image_or_mask is None and skip_on_empty:
+            LOGGER.info(
+                "Input is None and skip_on_empty enabled, "
+                "returning None"
+            )
+            panel_settings = cls._build_settings(
+                scale_mode=scale_mode,
+                edge_mode=edge_mode,
+                resize_condition=resize_condition,
+                target_edge=target_edge,
+                scale_multiplier=scale_multiplier,
+                megapixels=megapixels,
+                divisible_mode=divisible_mode,
+                divisible=divisible,
+                width_offset=width_offset,
+                height_offset=height_offset,
+                skip_on_empty=skip_on_empty,
+            )
+            passed_settings = cls._parse_settings_input(
+                resize_settings_in
+            )
+            settings_for_output = panel_settings
+            if passed_settings is not None:
+                settings_for_output = passed_settings
+            settings_out: dict[str, Any] | None = settings_for_output
+            if not output_resize_settings:
+                settings_out = None
+            return io.NodeOutput(None, None, None, settings_out)
+
         tensor, input_kind, original_dims = cls._normalize_input_tensor(
             image_or_mask
         )
@@ -361,6 +425,7 @@ class XImageResize(io.ComfyNode):
             divisible=divisible,
             width_offset=width_offset,
             height_offset=height_offset,
+            skip_on_empty=skip_on_empty,
         )
         passed_settings = cls._parse_settings_input(resize_settings_in)
 
@@ -373,6 +438,9 @@ class XImageResize(io.ComfyNode):
         effective_settings = panel_settings
         if use_passed_settings and passed_settings is not None:
             effective_settings = passed_settings
+
+        # 从 effective_settings 同步 skip_on_empty，使上游开关可继承
+        skip_on_empty = bool(effective_settings.get("skip_on_empty", False))
 
         scale_mode = effective_settings["scale_mode"]
         edge_mode = effective_settings["edge_mode"]
@@ -540,6 +608,7 @@ class XImageResize(io.ComfyNode):
         divisible: int,
         width_offset: int,
         height_offset: int,
+        skip_on_empty: bool = False,
     ) -> dict[str, Any]:
         """
         统一构建设置字典，保证输出结构稳定。
@@ -555,6 +624,7 @@ class XImageResize(io.ComfyNode):
             "divisible": divisible,
             "width_offset": width_offset,
             "height_offset": height_offset,
+            "skip_on_empty": skip_on_empty,
         }
 
     @classmethod
@@ -581,6 +651,7 @@ class XImageResize(io.ComfyNode):
         divisible = resize_settings_in["divisible"]
         width_offset = resize_settings_in["width_offset"]
         height_offset = resize_settings_in["height_offset"]
+        skip_on_empty = resize_settings_in["skip_on_empty"]
 
         if scale_mode not in VALID_SCALE_MODES:
             return None
@@ -601,6 +672,9 @@ class XImageResize(io.ComfyNode):
         if not cls._is_real_number(scale_multiplier):
             return None
         if not cls._is_real_number(megapixels):
+            return None
+
+        if not isinstance(skip_on_empty, bool):
             return None
 
         if target_edge < 64 or target_edge > 8192:
@@ -627,6 +701,7 @@ class XImageResize(io.ComfyNode):
             divisible=divisible,
             width_offset=width_offset,
             height_offset=height_offset,
+            skip_on_empty=skip_on_empty,
         )
 
     @staticmethod

@@ -2445,6 +2445,9 @@ class MediaStore:
                 pass
 
     def clear_thumbs(self, media_type: str | None) -> int:
+        # 安全：调用方 api_media_clear / api_thumbs_clear 已通过
+        # MEDIA_TYPE_EXT 白名单校验，值域仅限于
+        # {"image","video","audio"}
         target = (
             self.thumb_root / media_type if media_type else self.thumb_root
         )
@@ -2595,7 +2598,7 @@ class LoraStore:
         finally:
             conn.close()
 
-        LOGGER.info(
+        LOGGER.debug(
             "[xdatahub-lora] scan complete: scanned=%d, added=%d, updated=%d",
             scanned,
             added,
@@ -2955,7 +2958,7 @@ class LoraStore:
             result = conn.execute("DELETE FROM lora_items WHERE valid=0")
             conn.commit()
             count = result.rowcount
-            LOGGER.info(
+            LOGGER.debug(
                 "[xdatahub-lora] cleanup: deleted %d invalid records", count
             )
             return count
@@ -3004,7 +3007,7 @@ class LoraStore:
                 }
             conn.execute("DELETE FROM lora_items")
             conn.commit()
-            LOGGER.info(
+            LOGGER.debug(
                 "[xdatahub-lora] rebuild: cleared %d records,"
                 " preserved user data for %d items",
                 len(rows),
@@ -3064,7 +3067,7 @@ class LoraStore:
                             (old_ref, new_ref),
                         )
                 conn.commit()
-                LOGGER.info(
+                LOGGER.debug(
                     "[xdatahub-lora] rebuild: restored user data"
                     " for %d items",
                     len(preserved),
@@ -6212,7 +6215,7 @@ async def api_lora_rebuild(request: web.Request) -> web.Response:
         return denied
     try:
         result = LORA_STORE.rebuild()
-        LOGGER.info(
+        LOGGER.debug(
             "[xdatahub-lora] rebuild requested: %s",
             result,
         )

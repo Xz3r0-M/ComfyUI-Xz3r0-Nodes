@@ -24,22 +24,32 @@ ComfyUI-Xz3r0-Nodes V3 扩展入口。
 
 import shutil  # noqa: I001
 
-from comfy_api.latest import ComfyExtension, io  # noqa: I001
+from comfy_api.latest import ComfyExtension, io  # type: ignore # noqa: I001
 
 # ============================================
 # Workflow-Processing
 
 from .xnode.xanygate10 import XAnyGate10
 from .xnode.xanytostring import XAnyToString
+from .xnode.xcontroller import XController
 from .xnode.xcontrolpanel import XControlPanel
 from .xnode.xdatetimestring import XDateTimeString
 from .xnode.ximagecompare import XImageCompare
+from .xnode.ximagepreview import XImagePreview
 from .xnode.ximageresize import XImageResize
 from .xnode.xkleinrefconditioning import XKleinRefConditioning
+from .xnode.xkleinreflistconditioning import XKleinRefListConditioning
 from .xnode.xlinker import XLinker
+from .xnode.xlistcreate import XListCreate
+from .xnode.xlistpull import XListPull
+from .xnode.xlistrestore import XListRestore
+from .xnode.xlisttopipe import XListToPipe
 from .xnode.xmath import XMath
 from .xnode.xmemorycleanup import XMemoryCleanup
 from .xnode.xpipe import XPipe
+from .xnode.xpipegate import XPipeGate
+from .xnode.xpiperecursive import XPipeRecursive
+from .xnode.xprimitive import XPrimitiveCombo
 from .xnode.xresolution import XResolution
 from .xnode.xseed import XSeed
 from .xnode.xstringgroup import XStringGroup
@@ -101,15 +111,25 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     # Workflow-Processing
     XAnyGate10,
     XAnyToString,
+    XController,
     XControlPanel,
     XDateTimeString,
     XImageCompare,
+    XImagePreview,
     XImageResize,
     XKleinRefConditioning,
+    XKleinRefListConditioning,
     XLinker,
+    XListCreate,
+    XListPull,
+    XListRestore,
+    XListToPipe,
     XMath,
     XMemoryCleanup,
     XPipe,
+    XPipeGate,
+    XPipeRecursive,
+    XPrimitiveCombo,
     XResolution,
     XSeed,
     XStringGroup,

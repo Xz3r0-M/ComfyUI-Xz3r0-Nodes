@@ -64,6 +64,15 @@ class XLinker(io.ComfyNode):
                         "workflow — the value is ignored during execution."
                     ),
                 ),
+                io.Boolean.Input(
+                    "type_warning",
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip="Show visual warning on links and output "
+                    "ports when a type mismatch is detected. "
+                    "Disable to hide the warning effect.",
+                ),
             ],
             outputs=[
                 io.MatchType.Output(
@@ -79,6 +88,7 @@ class XLinker(io.ComfyNode):
         cls,
         any_input: Any = None,
         note_text: str = "",
+        type_warning: bool = True,
     ) -> io.NodeOutput:
-        """透传输入值，笔记文本不参与计算。"""
+        """透传输入值，笔记文本与类型警告开关不参与计算。"""
         return io.NodeOutput(any_input)

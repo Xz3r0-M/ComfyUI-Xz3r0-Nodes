@@ -119,18 +119,28 @@ function ensureStyles() {
         "  width: 100%; height: 100%;",
         "  display: flex;",
         "  flex-direction: column;",
-        "  gap: 8px;",
-        "  padding: 10px;",
+        "  gap: 6px;",
+        "  padding: 6px;",
         "  box-sizing: border-box;",
-        "  border: 1px solid var(--xdh-clr-hairline, #333);",
-        "  background: var(--comfy-menu-bg, #1a1a1a);",
         "  overflow: hidden;",
+        "}",
+        ".xcontrolpanel-fieldset {",
+        "  flex: 1 1 auto;",
+        "  min-height: 0;",
+        "  margin: 0;",
+        "  padding: 5px 6px 6px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 4px;",
+        "  display: flex;",
+        "  flex-direction: column;",
+        "  gap: 6px;",
         "}",
         ".xcontrolpanel-title {",
         "  font: var(--xdh-font-ui-md, 12px sans-serif);",
-        "  color: var(--input-text, #ddd);",
+        "  color: var(--descrip-text, #999);",
         "  font-weight: 600;",
         "  line-height: 1.3;",
+        "  padding: 0 4px;",
         "}",
         ".xcontrolpanel-subtitle {",
         "  font: var(--xdh-font-caption-sm, 11px sans-serif);",
@@ -408,10 +418,13 @@ function createControlPanelUI(node) {
     var wrap = document.createElement("div");
     wrap.className = "xcontrolpanel-wrap";
 
-    var title = document.createElement("div");
+    var fieldset = document.createElement("fieldset");
+    fieldset.className = "xcontrolpanel-fieldset";
+
+    var title = document.createElement("legend");
     title.className = "xcontrolpanel-title";
     title.textContent = tk("title", "Control Panel");
-    wrap.appendChild(title);
+    fieldset.appendChild(title);
 
     var subtitle = document.createElement("div");
     subtitle.className = "xcontrolpanel-subtitle";
@@ -419,18 +432,20 @@ function createControlPanelUI(node) {
         "subtitle",
         "Run immediate control actions without queueing the workflow."
     );
-    wrap.appendChild(subtitle);
+    fieldset.appendChild(subtitle);
 
     var restartButton = document.createElement("button");
     restartButton.className = "xcontrolpanel-button";
     restartButton.type = "button";
     restartButton.textContent = tk("btn.restart", "Restart ComfyUI");
-    wrap.appendChild(restartButton);
+    fieldset.appendChild(restartButton);
 
     var statusEl = document.createElement("div");
     statusEl.className = "xcontrolpanel-status";
     statusEl.textContent = tk("status.idle", "Idle");
-    wrap.appendChild(statusEl);
+    fieldset.appendChild(statusEl);
+
+    wrap.appendChild(fieldset);
 
     var state = {
         node: node,

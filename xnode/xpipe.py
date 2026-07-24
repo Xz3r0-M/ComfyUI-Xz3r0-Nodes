@@ -3,11 +3,11 @@
 ==============
 
 这个模块提供 XPipe 管道束节点：把多路任意类型数据收束成一根线传输，
-同时保留 20 路独立输入与对应输出端口。
+同时保留最多 50 路独立输入与对应输出端口。
 
 设计要点：
     1. 1 路数据束（xpipe_out -> xpipe_in）在管道束节点之间传输全部数据组
-    2. 20 路固定 MatchType 输入端口与对应输出端口，类型自动同步
+    2. 50 路固定 MatchType 输入端口与对应输出端口，类型自动同步
     3. 合并语义为「单独输入覆盖束」：某槽位连了单独输入就用它，
        否则回退到数据束里的同槽位值
     4. port_names 为序列化的 JSON 名称表，由前端命名面板管理，
@@ -27,14 +27,14 @@ except ImportError:  # pragma: no cover - 包外脚本运行兜底
 LOGGER = get_logger(__name__)
 
 XPipeBundle = io.Custom("xpipe")
-PIPE_SLOTS = 20
+PIPE_SLOTS = 50
 
 
 class XPipe(io.ComfyNode):
     """
     管道束节点
 
-    通过一根数据束在节点间传输全部数据组，同时提供最多 20 路
+    通过一根数据束在节点间传输全部数据组，同时提供最多 50 路
     任意类型输入端口和对应输出端口。端口名称由前端面板维护，可自动读取
     上游端口名、手动改名，并随数据束继续向下游传递。
     """
@@ -61,7 +61,6 @@ class XPipe(io.ComfyNode):
                 ),
             ),
         ]
-        # 20 路固定 MatchType 输入，复用同名 templates 以自动同步输出类型
         for index, template in enumerate(templates, start=1):
             inputs.append(
                 io.MatchType.Input(
@@ -85,7 +84,18 @@ class XPipe(io.ComfyNode):
                     "Serialized JSON list of slot names, managed by the "
                     "XPipe naming panel. Do not edit by hand."
                 ),
-            )
+            ),
+        )
+        inputs.append(
+            io.Boolean.Input(
+                "type_warning",
+                default=True,
+                label_on="Enabled",
+                label_off="Disabled",
+                tooltip="Show visual warning on links and output "
+                "ports when a type mismatch is detected. "
+                "Disable to hide the warning effect.",
+            ),
         )
 
         outputs: list[Any] = [
@@ -111,7 +121,7 @@ class XPipe(io.ComfyNode):
             node_id="XPipe",
             display_name="XPipe",
             description=(
-                "Pipe bundle node: route up to 20 any-type data groups "
+                "Pipe bundle node: route up to 50 any-type data groups "
                 "through a single bundle wire. Input/output slot types "
                 "auto-match via MatchType; per-slot inputs override the "
                 "bundle; port names are customizable and travel with "
@@ -128,7 +138,7 @@ class XPipe(io.ComfyNode):
         解析序列化名称表，始终返回恰好 PIPE_SLOTS 个名称。
 
         规则：
-            非法 JSON、非列表或缺失一律兜底为空名，再截断/补齐到 20。
+            非法 JSON、非列表或缺失一律兜底为空名，再截断/补齐到槽位数。
         """
         try:
             data = json.loads(port_names) if port_names else []
@@ -149,7 +159,7 @@ class XPipe(io.ComfyNode):
 
         格式：{
             "__xpipe_bundle__": True,
-            "__xpipe_version__": 1,
+            "__xpipe_version__": <version>,
             "values": [...],
             "names": [...]
         }
@@ -160,9 +170,7 @@ class XPipe(io.ComfyNode):
 
     @classmethod
     def _extract_base_values(cls, pipe_in: Any) -> list[Any]:
-        """
-        从数据束取出 20 个槽位的回退值，缺失补 None。
-        """
+        """从数据束取出 PIPE_SLOTS 个槽位的回退值，缺失补 None。"""
         values: list[Any] = []
         if cls._is_xpipe_bundle(pipe_in):
             raw = pipe_in.get("values")
@@ -173,9 +181,7 @@ class XPipe(io.ComfyNode):
 
     @classmethod
     def _extract_base_names(cls, pipe_in: Any) -> list[str]:
-        """
-        从数据束取出 20 个槽位的回退名称，缺失补空字符串。
-        """
+        """从数据束取出 PIPE_SLOTS 个槽位的回退名称，缺失补空字符串。"""
         names: list[str] = []
         if cls._is_xpipe_bundle(pipe_in):
             raw = pipe_in.get("names")
@@ -199,10 +205,10 @@ class XPipe(io.ComfyNode):
 
         工作流程：
             1. 解析名称表与 xpipe_in 数据束回退值
-            2. 逐槽合并：单独输入（value_1..value_20）非 None 则覆盖，
+            2. 逐槽合并：单独输入（value_1..value_N）非 None 则覆盖，
                否则取数据束同槽位值
             3. 打包新的数据束（values + names）
-            4. 返回数据束 + 20 路个体输出
+            4. 返回数据束 + N 路个体输出
         """
         local_names = cls._parse_port_names(port_names)
         base_names = cls._extract_base_names(xpipe_in)
@@ -218,8 +224,8 @@ class XPipe(io.ComfyNode):
             for index in range(PIPE_SLOTS)
         ]
         pipe_out = {
-            "__xpipe_bundle__": True,  # XPipe 格式标识
-            "__xpipe_version__": 1,  # 格式版本号
+            "__xpipe_bundle__": True,
+            "__xpipe_version__": 1,
             "values": outs,
             "names": names,
         }

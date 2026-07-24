@@ -1,0 +1,215 @@
+"""支持 XPipe 数据束的 50 路动态 Lazy 门控节点。"""
+
+import json
+from typing import Any
+
+from comfy_api.latest import io
+
+try:
+    from ..xz3r0_utils import get_logger
+except ImportError:  # pragma: no cover - 包外脚本运行兜底
+    from xz3r0_utils import get_logger
+
+LOGGER = get_logger(__name__)
+
+GATE_SLOTS = 50
+XPipeBundle = io.Custom("xpipe")
+
+
+class XPipeGate(io.ComfyNode):
+    """合并 XPipe 数据束与独立输入并进行逐路门控。"""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        """定义 50 路固定后端槽位，由前端动态收缩可见部分。"""
+        templates = [
+            io.MatchType.Template(
+                f"pipe_gate_slot_{index}",
+                allowed_types=[io.AnyType],
+            )
+            for index in range(1, GATE_SLOTS + 1)
+        ]
+
+        inputs: list[Any] = [
+            XPipeBundle.Input(
+                "xpipe_in",
+                optional=True,
+                tooltip=(
+                    "Optional XPipe bundle. Leave unconnected to start "
+                    "from empty channels; direct channel inputs override "
+                    "matching bundled values."
+                ),
+            ),
+        ]
+        for index, template in enumerate(templates, start=1):
+            inputs.append(
+                io.MatchType.Input(
+                    f"input_{index}",
+                    template=template,
+                    optional=True,
+                    lazy=True,
+                    tooltip=(
+                        f"Channel {index} lazy input (optional, accepts any "
+                        "data). Disabled channels do not request this input."
+                    ),
+                ),
+            )
+        for index in range(1, GATE_SLOTS + 1):
+            inputs.append(
+                io.Boolean.Input(
+                    f"enable_{index}",
+                    default=True,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip=f"Enable channel {index} output",
+                ),
+            )
+        inputs.append(
+            io.String.Input(
+                "port_names",
+                default="[]",
+                socketless=True,
+                extra_dict={"hidden": True},
+                tooltip="Serialized slot names managed by the frontend",
+            ),
+        )
+        inputs.append(
+            io.Boolean.Input(
+                "type_warning",
+                default=True,
+                label_on="Enabled",
+                label_off="Disabled",
+                tooltip=(
+                    "Show a warning when a channel output is connected "
+                    "to an incompatible input type."
+                ),
+            ),
+        )
+        outputs: list[Any] = [
+            XPipeBundle.Output(
+                "xpipe_out",
+                display_name="xpipe_out",
+                tooltip=(
+                    "Always a valid XPipe bundle of merged and gated "
+                    "values (empty or partial when xpipe_in is unconnected)."
+                ),
+            ),
+        ]
+        for index, template in enumerate(templates, start=1):
+            outputs.append(
+                io.MatchType.Output(
+                    template=template,
+                    display_name=f"output_{index}",
+                    tooltip=(
+                        f"Channel {index} output (None when disabled or "
+                        "empty)"
+                    ),
+                ),
+            )
+        return io.Schema(
+            node_id="XPipeGate",
+            display_name="XPipeGate",
+            description=(
+                "Gate an optional XPipe bundle and up to 50 direct "
+                "any-type inputs with per-channel switches and native Lazy "
+                "evaluation. Always emits a valid XPipe bundle on "
+                "xpipe_out even when xpipe_in is unconnected."
+            ),
+            category="♾️ Xz3r0/Workflow-Processing",
+            inputs=inputs,
+            outputs=outputs,
+        )
+
+    @classmethod
+    def _extract_bundle(cls, xpipe_in: Any) -> tuple[list[Any], list[str]]:
+        """校验并规范化 XPipe 数据束。"""
+        if xpipe_in is None:
+            return [None] * GATE_SLOTS, [""] * GATE_SLOTS
+        if not (
+            isinstance(xpipe_in, dict)
+            and xpipe_in.get("__xpipe_bundle__") is True
+        ):
+            raise ValueError("xpipe_in must be a valid XPipe bundle")
+
+        raw_values = xpipe_in.get("values")
+        values = list(raw_values[:GATE_SLOTS]) if isinstance(
+            raw_values, list
+        ) else []
+        values += [None] * (GATE_SLOTS - len(values))
+
+        raw_names = xpipe_in.get("names")
+        names = [
+            str(item) if item is not None else ""
+            for item in (
+                raw_names[:GATE_SLOTS]
+                if isinstance(raw_names, list)
+                else []
+            )
+        ]
+        names += [""] * (GATE_SLOTS - len(names))
+        return values, names
+
+    @classmethod
+    def _parse_port_names(cls, port_names: str) -> list[str]:
+        """解析前端维护的最终端口名称。"""
+        try:
+            data = json.loads(port_names) if port_names else []
+        except (TypeError, ValueError):
+            data = []
+        if not isinstance(data, list):
+            data = []
+        names = [
+            str(item) if item is not None else ""
+            for item in data[:GATE_SLOTS]
+        ]
+        names += [""] * (GATE_SLOTS - len(names))
+        return names
+
+    @classmethod
+    def check_lazy_status(cls, **kwargs: Any) -> list[str]:
+        """仅请求已连接、已启用且尚未求值的通道输入。
+
+        说明：ComfyUI 内部跟踪"已求值"输入——上游合法返回
+        None 的启用通道再次被请求时会短路，不会重跑上游，
+        故此处无需区分"未求值"与"求值得 None"，也不会死循环。
+        """
+        required: list[str] = []
+        for index in range(1, GATE_SLOTS + 1):
+            input_name = f"input_{index}"
+            if not bool(kwargs.get(f"enable_{index}", True)):
+                continue
+            if input_name in kwargs and kwargs[input_name] is None:
+                required.append(input_name)
+        return required
+
+    @classmethod
+    def execute(
+        cls,
+        xpipe_in: Any = None,
+        port_names: str = "[]",
+        **kwargs: Any,
+    ) -> io.NodeOutput:
+        """合并数据束与独立输入，然后应用各通道开关。"""
+        bundled_values, bundled_names = cls._extract_bundle(xpipe_in)
+        local_names = cls._parse_port_names(port_names)
+        names = [
+            local_names[index] or bundled_names[index]
+            for index in range(GATE_SLOTS)
+        ]
+        outputs: list[Any] = []
+        for index in range(1, GATE_SLOTS + 1):
+            if not kwargs.get(f"enable_{index}", True):
+                outputs.append(None)
+                continue
+            direct = kwargs.get(f"input_{index}")
+            if direct is not None:
+                outputs.append(direct)
+            else:
+                outputs.append(bundled_values[index - 1])
+        xpipe_out = {
+            "__xpipe_bundle__": True,
+            "__xpipe_version__": 1,
+            "values": outputs,
+            "names": names,
+        }
+        return io.NodeOutput(xpipe_out, *outputs)
