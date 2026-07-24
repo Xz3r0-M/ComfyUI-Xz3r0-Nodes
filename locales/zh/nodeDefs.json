@@ -875,17 +875,17 @@
   },
   "XImagePreview": {
     "display_name": "XImagePreview",
-    "description": "基于官方 PreviewImage 的可选图像预览。无输入时可独立执行，显示文字提示；有图像时预览并透传。",
+    "description": "基于官方 PreviewImage / PreviewMask 的可选图像/遮罩预览。无输入时可独立执行，显示文字提示；有输入时预览并透传。",
     "inputs": {
       "images": {
-        "name": "图像",
-        "tooltip": "可选图像输入。未连接或接收到 None 时显示文字提示，不报错。"
+        "name": "图像或遮罩",
+        "tooltip": "可选图像或遮罩输入。未连接或接收到 None 时显示文字提示，不报错。"
       }
     },
     "outputs": {
       "0": {
-        "name": "IMAGE",
-        "tooltip": "输入图像透传；无图像时输出 None"
+        "name": "图像或遮罩",
+        "tooltip": "输入图像或遮罩透传；无输入时输出 None"
       }
     }
   },

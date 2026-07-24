@@ -875,17 +875,17 @@
   },
   "XImagePreview": {
     "display_name": "XImagePreview",
-    "description": "Preview an optional IMAGE input using the official PreviewImage UI. Runs independently when empty and shows a text notice when no image is available.",
+    "description": "Preview an optional IMAGE or MASK input using the official PreviewImage / PreviewMask UI. Runs independently when empty and shows a text notice when no input is available.",
     "inputs": {
       "images": {
-        "name": "Images",
-        "tooltip": "Optional image input. Leave unconnected or receive None to show a text notice instead of previewing an image."
+        "name": "Image or Mask",
+        "tooltip": "Optional image or mask input. Leave unconnected or receive None to show a text notice instead of previewing."
       }
     },
     "outputs": {
       "0": {
-        "name": "IMAGE",
-        "tooltip": "Passthrough of the input image, or None when no image is available"
+        "name": "Image or Mask",
+        "tooltip": "Passthrough of the input image or mask, or None when no input is available"
       }
     }
   },

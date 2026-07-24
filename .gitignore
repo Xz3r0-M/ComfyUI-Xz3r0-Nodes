@@ -212,6 +212,7 @@ __marimo__/
 .vscode/
 *.code-workspace
 ruff.toml
+node_modules
 
 # Agents
 

@@ -178,10 +178,14 @@ class XController(io.ComfyNode):
                 # ================================================
                 # XY Pad 配置
                 # ================================================
-                io.Float.Input("x_min", default=0.0, **{"step": 0.01, **_H},
-                               tooltip="Lowest X output value for the XY Pad."),
-                io.Float.Input("x_max", default=1.0, **{"step": 0.01, **_H},
-                               tooltip="Highest X output value for the XY Pad."),
+                io.Float.Input("x_min", default=0.0,
+                               **{"step": 0.01, **_H},
+                               tooltip="Lowest X output value "
+                                        "for the XY Pad."),
+                io.Float.Input("x_max", default=1.0,
+                               **{"step": 0.01, **_H},
+                               tooltip="Highest X output value "
+                                        "for the XY Pad."),
                 io.Float.Input("x_step", default=0.01, **{"step": 0.001, **_H},
                                tooltip=("Snap size for X output. Use 0 to "
                                         "disable X snapping.")),
@@ -190,10 +194,14 @@ class XController(io.ComfyNode):
                     **{"step": 0.01, **_H},
                     tooltip=("Default X value used as the intended "
                              "reset/start value.")),
-                io.Float.Input("y_min", default=0.0, **{"step": 0.01, **_H},
-                               tooltip="Lowest Y output value for the XY Pad."),
-                io.Float.Input("y_max", default=1.0, **{"step": 0.01, **_H},
-                               tooltip="Highest Y output value for the XY Pad."),
+                io.Float.Input("y_min", default=0.0,
+                               **{"step": 0.01, **_H},
+                               tooltip="Lowest Y output value "
+                                        "for the XY Pad."),
+                io.Float.Input("y_max", default=1.0,
+                               **{"step": 0.01, **_H},
+                               tooltip="Highest Y output value "
+                                        "for the XY Pad."),
                 io.Float.Input("y_step", default=0.01, **{"step": 0.001, **_H},
                                tooltip=("Snap size for Y output. Use 0 to "
                                         "disable Y snapping.")),

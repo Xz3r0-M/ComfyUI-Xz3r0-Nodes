@@ -71,9 +71,9 @@ class XStringGet(io.ComfyNode):
         text_value: str = "",
         title_value: str = "",
     ) -> int:
-        if not text_value and not title_value:
-            return 0
+        # 始终把 none_on_empty 纳入指纹，避免开关切换后命中旧缓存。
         return cls._fingerprint_text(
+            f"none_on_empty={none_on_empty}|"
             f"{str(title_value or '')}\n\x1f\n{str(text_value or '')}"
         )
 

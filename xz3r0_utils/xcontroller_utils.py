@@ -1,9 +1,8 @@
 """
 XController 通用控制组件共享工具模块
-========================
+======================================
 
-为 XKnob、XFaderH、XFaderV、XToggle、XButton、XYPad 等节点
-提供值映射函数和样式枚举定义。
+为 XController 节点提供值映射函数和样式枚举定义。
 """
 
 import json
@@ -19,14 +18,6 @@ class KnobShape(str, Enum):
     CIRCLE = "circle"
     ROUNDED_RECT = "rounded_rect"
     HEXAGON = "hexagon"
-
-
-class HandleShape(str, Enum):
-    """滑块 / 推子手柄形状。"""
-
-    CIRCLE = "circle"
-    SQUARE = "square"
-    DIAMOND = "diamond"
 
 
 class ToggleStyle(str, Enum):
@@ -196,15 +187,21 @@ def compute_output(
         计算后的最终输出值。
     """
     if mode == ValueMode.RANGE:
-        return map_range(normalized, out_min or 0.0, out_max or 1.0)
+        return map_range(
+            normalized,
+            out_min if out_min is not None else 0.0,
+            out_max if out_max is not None else 1.0,
+        )
     if mode == ValueMode.STEPS:
-        return snap_to_steps(normalized, steps or [0.0, 1.0])
+        return snap_to_steps(
+            normalized, steps if steps is not None else [0.0, 1.0]
+        )
     if mode == ValueMode.PERCENTAGE:
         return apply_percentage(
             normalized,
-            base or 1.0,
-            pct_min or -100.0,
-            pct_max or 100.0,
+            base if base is not None else 1.0,
+            pct_min if pct_min is not None else -100.0,
+            pct_max if pct_max is not None else 100.0,
         )
     # fallback — 不应到达
     return normalized
@@ -257,7 +254,7 @@ def normalize_to_unit(
         return best_idx / denom
 
     if mode == ValueMode.PERCENTAGE:
-        if base and base != 0.0:
+        if base is not None and base != 0.0:
             pct = (value / base - 1.0) * 100.0
         else:
             pct = 0.0

@@ -262,14 +262,13 @@ class XStringGroup(io.ComfyNode):
         separation_method_4_5: str = "none",
         string_5: str = "",
     ) -> int:
-        if none_on_empty and not any(
-            [string_1, string_2, string_3, string_4, string_5]
-        ):
-            return 0
+        # 始终把 none_on_empty 纳入指纹，避免开关切换后命中旧缓存。
         return cls._fingerprint_text(
-            f"{select_string}|{string_1}|{separation_method_1_2}|{string_2}|"
-            f"{separation_method_2_3}|{string_3}|{separation_method_3_4}|"
-            f"{string_4}|{separation_method_4_5}|{string_5}"
+            f"none_on_empty={none_on_empty}|"
+            f"{select_string}|{string_1}|{separation_method_1_2}|"
+            f"{string_2}|{separation_method_2_3}|{string_3}|"
+            f"{separation_method_3_4}|{string_4}|"
+            f"{separation_method_4_5}|{string_5}"
         )
 
     @staticmethod

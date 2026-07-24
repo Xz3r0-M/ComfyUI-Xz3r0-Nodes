@@ -303,7 +303,7 @@ class XImageResize(io.ComfyNode):
     @classmethod
     def validate_inputs(
         cls,
-        image_or_mask: torch.Tensor,
+        image_or_mask: Any,
         scale_mode: str,
         edge_mode: str,
         resize_condition: str,
@@ -325,21 +325,35 @@ class XImageResize(io.ComfyNode):
         Returns:
             True if valid, or error message string if invalid
         """
-        if edge_mode == "Megapixels" and megapixels <= 0:
-            return "Megapixels mode requires megapixels > 0"
-
-        if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
-            return "Scale Multiplier mode requires scale_multiplier > 0"
-
+        if scale_mode not in VALID_SCALE_MODES:
+            return "Invalid scale_mode value"
+        if edge_mode not in VALID_EDGE_MODES:
+            return "Invalid edge_mode value"
+        if divisible_mode not in VALID_DIVISIBLE_MODES:
+            return "Invalid divisible_mode value"
         if resize_condition not in VALID_RESIZE_CONDITIONS:
             return "Invalid resize_condition value"
+
+        if not (64 <= target_edge <= 8192):
+            return "target_edge must be between 64 and 8192"
+        if not (1 <= divisible <= 128):
+            return "divisible must be between 1 and 128"
+        if not (-128 <= width_offset <= 128):
+            return "width_offset must be between -128 and 128"
+        if not (-128 <= height_offset <= 128):
+            return "height_offset must be between -128 and 128"
+
+        if edge_mode == "Megapixels" and megapixels <= 0:
+            return "Megapixels mode requires megapixels > 0"
+        if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
+            return "Scale Multiplier mode requires scale_multiplier > 0"
 
         return True
 
     @classmethod
     def execute(
         cls,
-        image_or_mask: torch.Tensor,
+        image_or_mask: Any,
         scale_mode: str,
         edge_mode: str,
         resize_condition: str,
@@ -358,8 +372,9 @@ class XImageResize(io.ComfyNode):
         """
         批次统一处理图像或遮罩缩放。
         """
-        # 前置解析：当启用上游设置时，从 passed settings 继承 skip_on_empty
-        # （放在早返检查之前，确保上游的 skip_on_empty=True 对 None 输入也生效）
+        # 前置解析：当启用上游设置时，从 passed settings 继承
+        # skip_on_empty（放在早返检查之前，确保上游的
+        # skip_on_empty=True 对 None 输入也生效）
         if use_passed_settings and isinstance(resize_settings_in, dict):
             upstream_skip = resize_settings_in.get("skip_on_empty")
             if isinstance(upstream_skip, bool):

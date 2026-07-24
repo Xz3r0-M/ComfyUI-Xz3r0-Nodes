@@ -82,7 +82,3 @@ class XPrimitiveCombo(io.ComfyNode):
         LOGGER.debug("XPrimitiveCombo execute combo_string=%r", combo_string)
         value = str(combo_string)
         return io.NodeOutput(value, value)
-
-
-def NODE_CLASS_MAPPINGS():
-    return [XPrimitiveCombo]

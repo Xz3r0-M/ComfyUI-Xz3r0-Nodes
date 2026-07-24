@@ -17,7 +17,6 @@ from .path_component_sanitizer import sanitize_path_component
 from .xcontroller_utils import (
     ButtonMode,
     ButtonStyle,
-    HandleShape,
     KnobShape,
     ToggleStyle,
     ValueMode,
@@ -46,7 +45,6 @@ __all__ = [
     "sanitize_path_component",
     "ButtonMode",
     "ButtonStyle",
-    "HandleShape",
     "KnobShape",
     "ToggleStyle",
     "ValueMode",

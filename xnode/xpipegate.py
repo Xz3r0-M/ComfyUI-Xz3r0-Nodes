@@ -167,7 +167,12 @@ class XPipeGate(io.ComfyNode):
 
     @classmethod
     def check_lazy_status(cls, **kwargs: Any) -> list[str]:
-        """仅请求已连接、已启用且尚未求值的通道输入。"""
+        """仅请求已连接、已启用且尚未求值的通道输入。
+
+        说明：ComfyUI 内部跟踪"已求值"输入——上游合法返回
+        None 的启用通道再次被请求时会短路，不会重跑上游，
+        故此处无需区分"未求值"与"求值得 None"，也不会死循环。
+        """
         required: list[str] = []
         for index in range(1, GATE_SLOTS + 1):
             input_name = f"input_{index}"
@@ -191,16 +196,16 @@ class XPipeGate(io.ComfyNode):
             local_names[index] or bundled_names[index]
             for index in range(GATE_SLOTS)
         ]
-        outputs = [
-            (
-                kwargs.get(f"input_{index}")
-                if kwargs.get(f"input_{index}") is not None
-                else bundled_values[index - 1]
-            )
-            if kwargs.get(f"enable_{index}", True)
-            else None
-            for index in range(1, GATE_SLOTS + 1)
-        ]
+        outputs: list[Any] = []
+        for index in range(1, GATE_SLOTS + 1):
+            if not kwargs.get(f"enable_{index}", True):
+                outputs.append(None)
+                continue
+            direct = kwargs.get(f"input_{index}")
+            if direct is not None:
+                outputs.append(direct)
+            else:
+                outputs.append(bundled_values[index - 1])
         xpipe_out = {
             "__xpipe_bundle__": True,
             "__xpipe_version__": 1,

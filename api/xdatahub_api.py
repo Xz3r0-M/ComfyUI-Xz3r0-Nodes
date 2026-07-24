@@ -2446,7 +2446,8 @@ class MediaStore:
 
     def clear_thumbs(self, media_type: str | None) -> int:
         # 安全：调用方 api_media_clear / api_thumbs_clear 已通过
-        # MEDIA_TYPE_EXT 白名单校验 media_type，值域仅限于 {"image","video","audio"}
+        # MEDIA_TYPE_EXT 白名单校验，值域仅限于
+        # {"image","video","audio"}
         target = (
             self.thumb_root / media_type if media_type else self.thumb_root
         )
