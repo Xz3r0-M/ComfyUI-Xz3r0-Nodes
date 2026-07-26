@@ -657,8 +657,7 @@ function computeXControlMinSize(node) {
     var collapsedExtraH = node.__xcontrolCollapsed ? 20 : 0;
     // 经验校准：手算高度低于真实 DOM——控件 host 的 min-height/padding、
     // legend、数值输入框行高、设置区每行真实行盒均未完全计入。
-    // 实测展开态少 66px、折叠态少 36px（差值 30 来自设置区展开时的行高漏算）。
-    var sizeCalibration = node.__xcontrolCollapsed ? 36 : 66;
+    var sizeCalibration = node.__xcontrolCollapsed ? 46 : 76;
     return [minW, bodyH + NODE_CHROME_H + collapsedExtraH + sizeCalibration];
 }
 
@@ -732,9 +731,9 @@ function clampNodeSize(node, minW, minH) {
 // 4. 裁剪后按当前可见顺序回写 link.origin_slot
 //
 // 序列化：
-// - outputs 展开为固定 schema 顺序
-// - 临时把 link.origin_slot 改成 schema 索引，供 graph 写出 links
-// - 写出后立刻恢复为运行时可见索引
+// - outputs 展开为固定 schema 顺序（带 name）
+// - 不活体改写 link.origin_slot（避免 mouseup 撤销快照瞬间闪线）
+// - 加载时 remapSerializedOutputs 按 name 重写 origin_slot
 //
 // schema: 0:FLOAT  1:INT  2:BOOLEAN  3:X  4:Y
 //
@@ -1408,6 +1407,11 @@ function buildXControlUI(node) {
 
     function rebuildControl() {
         stopButtonHold(node);
+        // 先 destroy 旧控件，注销 zoom-bus / document 监听，避免泄漏
+        if (node.__xcontrol && typeof node.__xcontrol.destroy === "function") {
+            try { node.__xcontrol.destroy(); } catch (_e) {}
+        }
+        node.__xcontrol = null;
         controlHost.innerHTML = "";
         var ctype = getCurrentType();
         var info = CONTROL_TYPES[ctype];
@@ -2084,14 +2088,18 @@ function buildXYPadConfig(panel, node) {
 function rebuildControlForNode(node) {
     if (!node.__xcontrolControlHost) return;
     stopButtonHold(node);
-    node.__xcontrolControlHost.innerHTML = "";
+    // 先 destroy 旧控件，注销 zoom-bus / document 监听，避免泄漏
+    if (node.__xcontrol && typeof node.__xcontrol.destroy === "function") {
+        try { node.__xcontrol.destroy(); } catch (_e) {}
+    }
     node.__xcontrol = null;
+    node.__xcontrolControlHost.innerHTML = "";
 
     var ctype = getWidgetValue(node, W_CONTROL_TYPE, "Knob");
     var info = CONTROL_TYPES[ctype];
     if (!info) return;
 
-        var core = getXControllerCore();
+    var core = getXControllerCore();
     if (!core) return;
 
     var ctrlConfig = {

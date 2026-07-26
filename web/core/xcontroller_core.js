@@ -89,58 +89,86 @@
     // 避免每个控件常驻 requestAnimationFrame 轮询（会与 LiteGraph 的
     // dirty-based 重绘 + Vue DOM widget 重定位在时间轴上争用，造成单帧
     // 连线闪烁）。
+    //
+    // 缩放真实落点是 DragAndScale（app.canvas.ds）：
+    // - changeScale / setZoom 最终都写 ds.scale
+    // - fitView / minimap / touch / 撤销恢复视口等会直接 ds.scale = x
+    // 因此在 ds 实例上拦截 scale 属性，比钩 LGraphCanvas 方法更完整。
     var zoomListeners = [];
-    var zoomBusInstalled = false;
+    var zoomBusDs = null;
+    var zoomFireScheduled = false;
+
+    function notifyZoomListeners() {
+        for (var i = 0; i < zoomListeners.length; i++) {
+            var fn = zoomListeners[i];
+            try { fn(); } catch (_e) {}
+        }
+    }
+
+    function fireZoomChanged() {
+        if (zoomFireScheduled) return;
+        zoomFireScheduled = true;
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(function () {
+                zoomFireScheduled = false;
+                notifyZoomListeners();
+            });
+        } else {
+            zoomFireScheduled = false;
+            notifyZoomListeners();
+        }
+    }
+
+    function hookDragAndScale(ds) {
+        if (!ds || ds.__xctrlScaleHooked) return;
+
+        // 1) 实例属性遮蔽原型 getter/setter：捕获 ds.scale = x
+        //    （fitView / minimap / touch / 撤销恢复视口等直写路径）
+        Object.defineProperty(ds, "scale", {
+            configurable: true,
+            enumerable: true,
+            get: function () {
+                return this.state ? this.state.scale : 1;
+            },
+            set: function (value) {
+                if (!this.state) return;
+                if (this.state.scale === value) return;
+                this.state.scale = value;
+                fireZoomChanged();
+            },
+        });
+
+        // 2) 包装 changeScale：滚轮/快捷键/setZoom 主路径。
+        //    changeScale 内部虽写 this.scale，但双钩可防实现变动。
+        if (typeof ds.changeScale === "function") {
+            var origChangeScale = ds.changeScale.bind(ds);
+            ds.changeScale = function () {
+                var before = ds.state ? ds.state.scale : null;
+                var r = origChangeScale.apply(ds, arguments);
+                var after = ds.state ? ds.state.scale : null;
+                if (before !== after) fireZoomChanged();
+                return r;
+            };
+        }
+
+        ds.__xctrlScaleHooked = true;
+    }
 
     function installZoomBus(app) {
-        if (zoomBusInstalled) return;
         var canvas = app && app.canvas;
-        // 画布未就绪：暂不置位，等下次 createControl 再重试
-        if (!canvas) return;
-        zoomBusInstalled = true;
+        var ds = canvas && canvas.ds;
+        // 画布/ds 未就绪：暂不置位，等下次 createControl 再重试
+        if (!ds) return;
+        // 已钩在同一 ds 上：幂等
+        if (zoomBusDs === ds && ds.__xctrlScaleHooked) return;
+        // canvas 热重建时 ds 会换新实例，需重新挂钩
+        zoomBusDs = ds;
+        hookDragAndScale(ds);
+
+        // 3) wheel 兜底：即使某条缩放路径漏钩，也能在下一帧校对
         var gc = canvas && canvas.canvas;
-
-        // 通用递：触发一次缩放同步（节流到下一帧，避免 wheel 连发）
-        var scheduled = false;
-        function fireZoomChanged() {
-            if (scheduled) return;
-            scheduled = true;
-            if (typeof requestAnimationFrame === "function") {
-                requestAnimationFrame(function () {
-                    scheduled = false;
-                    for (var i = 0; i < zoomListeners.length; i++) {
-                        var fn = zoomListeners[i];
-                        try { fn(); } catch (_e) {}
-                    }
-                });
-            } else {
-                scheduled = false;
-                for (var j = 0; j < zoomListeners.length; j++) {
-                    var g = zoomListeners[j];
-                    try { g(); } catch (_e2) {}
-                }
-            }
-        }
-
-        // 1) 直接钩 LGraphCanvas 的缩放方法（litegraph 标准 API）
-        var origChangeScale = canvas && canvas.changeScale;
-        if (canvas && typeof origChangeScale === "function") {
-            canvas.changeScale = function (value, center) {
-                var r = origChangeScale.apply(this, arguments);
-                fireZoomChanged();
-                return r;
-            };
-        }
-        var origSetZoom = canvas && canvas.setZoom;
-        if (canvas && typeof origSetZoom === "function") {
-            canvas.setZoom = function (value, center) {
-                var r = origSetZoom.apply(this, arguments);
-                fireZoomChanged();
-                return r;
-            };
-        }
-        // 2) 兜底：画布 wheel 事件（换平台或自定义 zoom 路径会走这里）
-        if (gc && gc.addEventListener) {
+        if (gc && gc.addEventListener && !gc.__xctrlZoomWheelHooked) {
+            gc.__xctrlZoomWheelHooked = true;
             gc.addEventListener(
                 "wheel",
                 function () { fireZoomChanged(); },
@@ -731,6 +759,7 @@
         var type = config.type;
         var W = config.width || defaultSize(type).w;
         var H = config.height || defaultSize(type).h;
+        var app = config.app;
 
         var wrap = document.createElement("div");
         wrap.style.cssText =
@@ -743,6 +772,7 @@
         wrap.appendChild(canvas);
 
         var ctx = canvas.getContext("2d");
+        // app 必须先于 readCanvasZoom 赋值，否则首帧恒按 zoom=1 建 backing store
         var currentZoom = readCanvasZoom(app);
         // 先按当前缩放设一次 backing store；随后的 syncZoom() 做幂等校对
         // （实际超采样倍率在 setupHiDPI 内被 SS_CAP 限制）。
@@ -753,7 +783,7 @@
         var currentBool = false; // toggle / button
         var currentX = 0.5;
         var currentY = 0.5;
-        var app = config.app;
+        var destroyed = false;
 
         switch (type) {
             case "knob":
@@ -886,13 +916,13 @@
             }
         }
 
-        document.addEventListener("mousemove", function (e) {
-            if (!dragging) return;
+        function onDocMouseMove(e) {
+            if (destroyed || !dragging) return;
             handleDrag(e);
-        });
+        }
 
-        document.addEventListener("mouseup", function (e) {
-            if (!dragging) return;
+        function onDocMouseUp() {
+            if (destroyed || !dragging) return;
             dragging = false;
 
             if (type === "button" && !buttonToggleMode) {
@@ -900,7 +930,10 @@
                 renderControl();
                 if (config.onButtonChange) config.onButtonChange(false);
             }
-        });
+        }
+
+        document.addEventListener("mousemove", onDocMouseMove);
+        document.addEventListener("mouseup", onDocMouseUp);
 
         // 触摸支持
         canvas.addEventListener("touchstart", function (e) {
@@ -1017,14 +1050,24 @@
             },
 
             destroy: function () {
+                if (destroyed) return;
+                destroyed = true;
+                dragging = false;
                 // 从单例 zoom-bus 注销，停止缩放同步
                 removeZoomListener(syncZoom);
+                document.removeEventListener("mousemove", onDocMouseMove);
+                document.removeEventListener("mouseup", onDocMouseUp);
             },
         };
 
         // ── 按需重设 backing store：canvas 与上一次缩放差超过阈值才动 ──
+        // 注意：createControl 返回时 wrap 往往尚未 append 到 DOM
+        // （extension 稍后 controlHost.appendChild）。切勿在
+        // !isConnected 时 removeZoomListener——那会把刚注册的
+        // 同步回调立刻卸掉，导致后续缩放永远不超采样（控件发糊）。
+        // 注销只走 destroy()；rebuild 路径已保证先 destroy。
         function syncZoom() {
-            if (!wrap.isConnected) {
+            if (destroyed) {
                 removeZoomListener(syncZoom);
                 return;
             }
