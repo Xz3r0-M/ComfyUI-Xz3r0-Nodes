@@ -37,27 +37,137 @@
         return Math.max(lo, Math.min(hi, v));
     }
 
-    /** 将浏览器坐标映射回 Canvas 的逻辑像素坐标。 */
+    /**
+     * 在 (cx, cy) 处绘制视觉上真正居中的文字。
+     * textBaseline="middle" 对齐的是字体 em-box 中线，对无降部的大写
+     * 字母（如 ON/OFF）会偏高约 1~2px。这里改用 measureText 的实际
+     * 字形边界 (actualBoundingBoxAscent/Descent) 配合 alphabetic 基线
+     * 计算偏移，让字形几何中心精确落在 cy。浏览器不支持时回退到 middle。
+     */
+    function fillTextCentered(c, text, cx, cy) {
+        var m = c.measureText(text);
+        var asc = m && m.actualBoundingBoxAscent;
+        var desc = m && m.actualBoundingBoxDescent;
+        if (typeof asc === "number" && typeof desc === "number"
+            && (asc > 0 || desc > 0)) {
+            c.textBaseline = "alphabetic";
+            c.fillText(text, cx, cy + (asc - desc) / 2);
+        } else {
+            c.textBaseline = "middle";
+            c.fillText(text, cx, cy);
+        }
+    }
+
+    /**
+     * 将浏览器坐标映射回 Canvas 的逻辑绘制坐标（不受画布缩放/
+     * backing store 超采样影响）。用 canvas.style.width/height 作为
+     * 逻辑尺寸，getBoundingClientRect().width 是经过 ComfyUI transform
+     * scale 后的屏幕尺寸，两者之比正好抵消缩放。
+     */
     function canvasPoint(canvas, event) {
         var rect = canvas.getBoundingClientRect();
-        var dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
-        var logicalW = canvas.width / dpr;
-        var logicalH = canvas.height / dpr;
+        var logicalW = parseFloat(canvas.style.width) || rect.width || 1;
+        var logicalH = parseFloat(canvas.style.height) || rect.height || 1;
         return {
             x: rect.width ? (event.clientX - rect.left) * logicalW / rect.width : 0,
             y: rect.height ? (event.clientY - rect.top) * logicalH / rect.height : 0,
         };
     }
 
-    /** 高 DPI 适配：设置 Canvas 物理像素。 */
-    function setupHiDPI(canvas, ctx, cssW, cssH) {
+    /**
+     * 高 DPI 适配：设置 Canvas 物理像素。
+     * zoom 为 ComfyUI 画布当前缩放（app.canvas.ds.scale）。按 dpr*zoom
+     * 超采样 backing store，使得 CSS transform:scale(zoom) 放大后依然
+     * 像素对齐、不模糊。canvas.style.width/height 始终是逻辑 cssW/cssH。
+     */
+    // 超采样倍率上限：防止极端缩放下 backing store 过大（例如 XYPad
+    // 160px 在 10x 缩放 + dpr2 会要 3200px 画布）。3x 已足以覆盖常见缩放，
+    // 超出部分交给浏览器轻微上采样。
+    var SS_CAP = 3;
+
+    // 单例 zoom-bus：把画布缩放事件分发给所有存活的 XController 控件，
+    // 避免每个控件常驻 requestAnimationFrame 轮询（会与 LiteGraph 的
+    // dirty-based 重绘 + Vue DOM widget 重定位在时间轴上争用，造成单帧
+    // 连线闪烁）。
+    var zoomListeners = [];
+    var zoomBusInstalled = false;
+
+    function installZoomBus(app) {
+        if (zoomBusInstalled) return;
+        var canvas = app && app.canvas;
+        // 画布未就绪：暂不置位，等下次 createControl 再重试
+        if (!canvas) return;
+        zoomBusInstalled = true;
+        var gc = canvas && canvas.canvas;
+
+        // 通用递：触发一次缩放同步（节流到下一帧，避免 wheel 连发）
+        var scheduled = false;
+        function fireZoomChanged() {
+            if (scheduled) return;
+            scheduled = true;
+            if (typeof requestAnimationFrame === "function") {
+                requestAnimationFrame(function () {
+                    scheduled = false;
+                    for (var i = 0; i < zoomListeners.length; i++) {
+                        var fn = zoomListeners[i];
+                        try { fn(); } catch (_e) {}
+                    }
+                });
+            } else {
+                scheduled = false;
+                for (var j = 0; j < zoomListeners.length; j++) {
+                    var g = zoomListeners[j];
+                    try { g(); } catch (_e2) {}
+                }
+            }
+        }
+
+        // 1) 直接钩 LGraphCanvas 的缩放方法（litegraph 标准 API）
+        var origChangeScale = canvas && canvas.changeScale;
+        if (canvas && typeof origChangeScale === "function") {
+            canvas.changeScale = function (value, center) {
+                var r = origChangeScale.apply(this, arguments);
+                fireZoomChanged();
+                return r;
+            };
+        }
+        var origSetZoom = canvas && canvas.setZoom;
+        if (canvas && typeof origSetZoom === "function") {
+            canvas.setZoom = function (value, center) {
+                var r = origSetZoom.apply(this, arguments);
+                fireZoomChanged();
+                return r;
+            };
+        }
+        // 2) 兜底：画布 wheel 事件（换平台或自定义 zoom 路径会走这里）
+        if (gc && gc.addEventListener) {
+            gc.addEventListener(
+                "wheel",
+                function () { fireZoomChanged(); },
+                { passive: true }
+            );
+        }
+    }
+
+    function addZoomListener(fn) {
+        if (typeof fn === "function") zoomListeners.push(fn);
+    }
+
+    function removeZoomListener(fn) {
+        var i = zoomListeners.indexOf(fn);
+        if (i >= 0) zoomListeners.splice(i, 1);
+    }
+
+    function setupHiDPI(canvas, ctx, cssW, cssH, zoom) {
         var dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
-        canvas.width = cssW * dpr;
-        canvas.height = cssH * dpr;
+        zoom = zoom > 0 ? zoom : 1;
+        var ss = Math.min(zoom, SS_CAP);
+        canvas.width = Math.round(cssW * dpr * ss);
+        canvas.height = Math.round(cssH * dpr * ss);
         canvas.style.width = cssW + "px";
         canvas.style.height = cssH + "px";
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(dpr, dpr);
+        ctx.scale(dpr * ss, dpr * ss);
     }
 
     // ================================================================
@@ -459,8 +569,7 @@
                 ? "#fff"
                 : cssVar("--input-text", "#ddd");
             ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(pressed ? labelOn : labelOff, W / 2, H / 2);
+            fillTextCentered(ctx, pressed ? labelOn : labelOff, W / 2, H / 2);
         };
     }
 
@@ -634,7 +743,10 @@
         wrap.appendChild(canvas);
 
         var ctx = canvas.getContext("2d");
-        setupHiDPI(canvas, ctx, W, H);
+        var currentZoom = readCanvasZoom(app);
+        // 先按当前缩放设一次 backing store；随后的 syncZoom() 做幂等校对
+        // （实际超采样倍率在 setupHiDPI 内被 SS_CAP 限制）。
+        setupHiDPI(canvas, ctx, W, H, currentZoom);
 
         var renderer;
         var currentValue = 0.5; // 归一化值
@@ -905,11 +1017,42 @@
             },
 
             destroy: function () {
-                // 清理事件由 DOM 移除处理
+                // 从单例 zoom-bus 注销，停止缩放同步
+                removeZoomListener(syncZoom);
             },
         };
 
+        // ── 按需重设 backing store：canvas 与上一次缩放差超过阈值才动 ──
+        function syncZoom() {
+            if (!wrap.isConnected) {
+                removeZoomListener(syncZoom);
+                return;
+            }
+            var z = readCanvasZoom(app);
+            if (Math.abs(z - currentZoom) > 0.001) {
+                currentZoom = z;
+                setupHiDPI(canvas, ctx, W, H, z);
+                renderControl();
+            }
+        }
+
+        installZoomBus(app);
+        addZoomListener(syncZoom);
+        // 初始一次：处理创建时画布缩放已非 1 的情况（避免首帧用了错误倍率）
+        syncZoom();
+
         return self;
+    }
+
+    /** 读取 ComfyUI 当前画布缩放（app.canvas.ds.scale），失败回退 1。 */
+    function readCanvasZoom(app) {
+        try {
+            var ds = app && app.canvas && app.canvas.ds;
+            if (ds && typeof ds.scale === "number" && ds.scale > 0) {
+                return ds.scale;
+            }
+        } catch (e) { /* noop */ }
+        return 1;
     }
 
     function defaultSize(type) {

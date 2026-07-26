@@ -655,7 +655,11 @@ function computeXControlMinSize(node) {
     var controlSecH = 64 + controlVisualHeight(node);
     var bodyH = rootPadH + typeRowH + sectionGapH + configSecH + controlSecH;
     var collapsedExtraH = node.__xcontrolCollapsed ? 20 : 0;
-    return [minW, bodyH + NODE_CHROME_H + collapsedExtraH];
+    // 经验校准：手算高度低于真实 DOM——控件 host 的 min-height/padding、
+    // legend、数值输入框行高、设置区每行真实行盒均未完全计入。
+    // 实测展开态少 66px、折叠态少 36px（差值 30 来自设置区展开时的行高漏算）。
+    var sizeCalibration = node.__xcontrolCollapsed ? 36 : 66;
+    return [minW, bodyH + NODE_CHROME_H + collapsedExtraH + sizeCalibration];
 }
 
 function adjustNodeSize(node, fitContent) {
@@ -924,11 +928,22 @@ function remapSerializedOutputs(node, info) {
 }
 
 /**
- * 序列化时写入完整 schema outputs，并把 link.origin_slot 临时改为 schema 索引。
- * 返回 restore 列表，序列化结束后必须立刻恢复运行时索引。
+ * 序列化时把 outputs 写成完整 schema 顺序（5 个固定端口），
+ * 保证保存的工作流始终有稳定索引，供加载时 remap。
+ *
+ * 重要：本函数【不再】活体改写 link.origin_slot。原本为了把保存的
+ * origin_slot 写成 schema 索引，会临时改运行时 link 再异步恢复；而
+ * ComfyUI 每次画布 mouseup 都会同步 graph.serialize() 做撤销快照——这一
+ * 瞬态（schema 索引可能指向当前可见 outputs 里不存在的槽，例如 Toggle 的
+ * BOOLEAN）会让连线短暂画错位置，肉眼可见为「连线闪烁」。
+ *
+ * 保存的 origin_slot 索引无关紧要：加载时 remapSerializedOutputs() 会用
+ * fixLinkOriginSlots() 按 schema 名重写为 schema 索引 k，随后
+ * syncOutputVisibility + rewriteAllOutputOriginSlots 再转为可见索引。
+ * 因此保存值必被覆盖，活体改写是纯冗余。
  */
 function prepareOutputsForSerialize(node, serialised) {
-    if (!node || !serialised || !Array.isArray(node.outputs)) return [];
+    if (!node || !serialised || !Array.isArray(node.outputs)) return;
 
     var byName = {};
     for (var i = 0; i < node.outputs.length; i++) {
@@ -938,7 +953,6 @@ function prepareOutputsForSerialize(node, serialised) {
     }
 
     var expanded = [];
-    var restore = [];
     for (var k = 0; k < SCHEMA_OUTPUTS.length; k++) {
         var def = SCHEMA_OUTPUTS[k];
         var existing = byName[def.name];
@@ -951,14 +965,6 @@ function prepareOutputsForSerialize(node, serialised) {
                 label: existing.label,
                 shape: existing.shape,
             });
-            if (existing.links && existing.links.length && node.graph) {
-                for (var j = 0; j < existing.links.length; j++) {
-                    var link = getGraphLink(node.graph, existing.links[j]);
-                    if (!link) continue;
-                    restore.push({ link: link, slot: link.origin_slot });
-                    link.origin_slot = k;
-                }
-            }
         } else {
             expanded.push({
                 name: def.name,
@@ -968,33 +974,6 @@ function prepareOutputsForSerialize(node, serialised) {
         }
     }
     serialised.outputs = expanded;
-    return restore;
-}
-
-function restoreLinkOriginSlots(restoreList) {
-    if (!Array.isArray(restoreList)) return;
-    for (var i = 0; i < restoreList.length; i++) {
-        var item = restoreList[i];
-        if (item && item.link) item.link.origin_slot = item.slot;
-    }
-}
-
-function scheduleRuntimeSlotRestore(node, restoreList) {
-    var self = node;
-    var list = restoreList;
-    var restore = function () {
-        try {
-            // 优先用序列化前快照恢复，避免连续 serialize 把运行时索引粘在 schema 上
-            restoreLinkOriginSlots(list);
-            // 再按当前可见端口顺序对齐一次（幂等）
-            rewriteAllOutputOriginSlots(self);
-        } catch (_e) {}
-    };
-    if (typeof queueMicrotask === "function") {
-        queueMicrotask(restore);
-    } else {
-        setTimeout(restore, 0);
-    }
 }
 
 function refreshOutputLayout(node) {
@@ -2329,9 +2308,10 @@ app.registerExtension({
             }
         };
 
-        // 序列化时展开为完整 schema + 临时修正 origin_slot，避免刷新错线。
-        // graph.asSerialisable 顺序：先 node.serialize，再 links 序列化，
-        // 因此临时改 origin_slot 会进入保存的 links；之后再恢复运行时索引。
+        // 序列化时展开为完整 schema outputs（5 个固定端口）。
+        // 不活体改写 origin_slot：加载时 remapSerializedOutputs 会重写为
+        // schema 索引，保存值无关紧要；改写反会在画布 mouseup 触发的
+        // 撤销快照 graph.serialize() 中造成连线闪烁。
         var origOnSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (o) {
             if (origOnSerialize) {
@@ -2341,14 +2321,11 @@ app.registerExtension({
                     console.error("[XController] origOnSerialize error:", err);
                 }
             }
-            var restore = [];
             try {
-                restore = prepareOutputsForSerialize(this, o) || [];
+                prepareOutputsForSerialize(this, o);
             } catch (err) {
                 console.error("[XController] prepareOutputsForSerialize error:", err);
             }
-            // 无论是否改写了 link，都在写出后把运行时 origin_slot 对齐回来
-            scheduleRuntimeSlotRestore(this, restore);
         };
 
         var origOnCreated = nodeType.prototype.onNodeCreated;
