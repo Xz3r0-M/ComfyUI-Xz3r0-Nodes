@@ -10,6 +10,7 @@ import { app } from "../../scripts/app.js";
 import {
     scheduleXPipeRefresh,
 } from "./xpipe_extension.js";
+import { forEachNodeByComfyClass } from "./x_subgraph_utils.js";
 
 var NODE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
@@ -148,14 +149,11 @@ app.registerExtension({
     name: "Xz3r0.XListToPipe",
 
     afterConfigureGraph: function () {
-        var graph = app.graph;
-        if (!graph) return;
-        var nodes = graph._nodes || graph.nodes || [];
-        for (var index = 0; index < nodes.length; index++) {
-            if (nodes[index] && nodes[index].comfyClass === NODE_CLASS) {
-                syncCountWidget(nodes[index]);
-            }
-        }
+        // Full graph tree so ToPipe nodes inside subgraphs sync too.
+        if (!app.graph) return;
+        forEachNodeByComfyClass(app.graph, NODE_CLASS, function (node) {
+            syncCountWidget(node);
+        });
         refreshDownstream();
     },
 

@@ -1,4 +1,26 @@
 import { app } from "../../scripts/app.js";
+import {
+    applyVisibleSlotWindow,
+    fitNodeSizeToVisibleSlots,
+    installStableSlotView,
+    refreshInputLinkTargets as stableRefreshInputLinkTargets,
+    refreshOutputLinkSources as stableRefreshOutputLinkSources,
+    setSlotHidden,
+} from "./x_stable_slots.js";
+import {
+    findLinkInGraphTree as sgFindLinkInGraphTree,
+    findLinkToNodeInput,
+    findMatchingSlotIndex,
+    findParentSubgraphNode as sgFindParentSubgraphNode,
+    findSlotOwner as sgFindSlotOwner,
+    findSubgraphOutputNode,
+    forEachNodeByComfyClass,
+    getLinkInfo,
+    getNodeById,
+    graphKey,
+    isSubgraphInputNode,
+    slotAt,
+} from "./x_subgraph_utils.js";
 
 var NODE_CLASS = "XPipe";
 var PIPE_TYPE = "xpipe";
@@ -34,8 +56,6 @@ var canvasHooked = false;
 var graphRefreshTimer = null;
 var xpipeNodeCount = 0;
 var metadataListeners = [];
-var graphIds = new WeakMap();
-var nextGraphId = 1;
 
 function cleanName(value) {
     return value == null ? "" : String(value).trim();
@@ -85,219 +105,17 @@ function slotLinkIds(slot) {
     return [];
 }
 
-function graphNodes(graph) {
-    return graph ? (graph._nodes || graph.nodes || []) : [];
-}
-
-function graphKey(graph) {
-    if (!graph) return "root";
-    if (!graphIds.has(graph)) graphIds.set(graph, String(nextGraphId++));
-    return graphIds.get(graph);
-}
-
-function normalizedNodeType(node) {
-    return String(
-        node && (node.comfyClass || node.type || node.title
-            || (node.constructor && node.constructor.name)) || "",
-    ).toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function isSubgraphInputNode(node, graph) {
-    return !!(
-        node
-        && (node === (graph && graph.inputNode)
-            || normalizedNodeType(node).indexOf("subgraphinput") >= 0)
-    );
-}
-
-function isSubgraphOutputNode(node, graph) {
-    return !!(
-        node
-        && (node === (graph && graph.outputNode)
-            || normalizedNodeType(node).indexOf("subgraphoutput") >= 0)
-    );
-}
-
-function findSubgraphInputNode(graph) {
-    if (!graph) return null;
-    if (graph.inputNode) return graph.inputNode;
-    var nodes = graphNodes(graph);
-    for (var index = 0; index < nodes.length; index++) {
-        if (isSubgraphInputNode(nodes[index], graph)) return nodes[index];
-    }
-    return null;
-}
-
-function findSubgraphOutputNode(graph) {
-    if (!graph) return null;
-    if (graph.outputNode) return graph.outputNode;
-    var nodes = graphNodes(graph);
-    for (var index = 0; index < nodes.length; index++) {
-        if (isSubgraphOutputNode(nodes[index], graph)) return nodes[index];
-    }
-    return null;
-}
-
+// Thin wrappers keep call sites stable; rootGraph defaults to app.graph.
 function findParentSubgraphNode(childGraph) {
-    if (!childGraph || !app.graph) return null;
-    var found = null;
-    var visited = new WeakSet();
-    var walk = function (graph) {
-        if (!graph || found || visited.has(graph)) return;
-        visited.add(graph);
-        var nodes = graphNodes(graph);
-        for (var index = 0; index < nodes.length; index++) {
-            var node = nodes[index];
-            if (node && node.subgraph === childGraph) {
-                found = node;
-                return;
-            }
-            if (node && node.subgraph) walk(node.subgraph);
-        }
-    };
-    walk(app.graph);
-    return found;
-}
-
-function slotKeyNames(slot) {
-    var names = [];
-    var add = function (value) {
-        var name = cleanName(value);
-        if (name && names.indexOf(name) < 0) names.push(name);
-    };
-    if (!slot) return names;
-    add(slot.name);
-    add(slot.label);
-    add(slot.localized_name);
-    return names;
-}
-
-function slotAt(slots, index) {
-    return slots && index != null && index >= 0 ? slots[index] || null : null;
-}
-
-function findMatchingSlotIndex(slots, reference, fallbackIndex) {
-    if (!slots) return -1;
-    if (slotAt(slots, fallbackIndex)) return fallbackIndex;
-    var names = slotKeyNames(reference);
-    var entries = Array.isArray(slots)
-        ? slots.map(function (slot, index) {
-            return { index: index, slot: slot };
-        })
-        : Object.keys(slots).map(function (key) {
-            return { index: parseInt(key, 10), slot: slots[key] };
-        });
-    for (var nameIndex = 0; nameIndex < names.length; nameIndex++) {
-        for (var index = 0; index < entries.length; index++) {
-            if (slotKeyNames(entries[index].slot).indexOf(
-                names[nameIndex],
-            ) >= 0) return entries[index].index;
-        }
-    }
-    return -1;
-}
-
-function findLinkToNodeInput(graph, node, inputIndex) {
-    if (!graph || !node) return null;
-    var links = graph.links || graph._links;
-    if (!links) return null;
-    if (links instanceof Map) {
-        var found = null;
-        links.forEach(function (link) {
-            if (!found && link && link.target_id === node.id
-                && link.target_slot === inputIndex) found = link;
-        });
-        return found;
-    }
-    for (var key in links) {
-        if (!Object.prototype.hasOwnProperty.call(links, key)) continue;
-        var link = links[key];
-        if (link && link.target_id === node.id
-            && link.target_slot === inputIndex) return link;
-    }
-    return null;
-}
-
-function getNodeById(graph, nodeId) {
-    if (!graph || nodeId == null) return null;
-    if (typeof graph.getNodeById === "function") {
-        var found = graph.getNodeById(nodeId);
-        if (found) return found;
-    }
-    var nodes = graphNodes(graph);
-    for (var index = 0; index < nodes.length; index++) {
-        if (String(nodes[index] && nodes[index].id) === String(nodeId)) {
-            return nodes[index];
-        }
-    }
-    return null;
-}
-
-function getLinkInfo(graph, linkId) {
-    if (!graph || linkId == null) return null;
-    if (typeof graph.getLink === "function") {
-        var graphLink = graph.getLink(linkId);
-        if (graphLink) return graphLink;
-    }
-    if (graph.links && graph.links[linkId]) return graph.links[linkId];
-    if (graph._links instanceof Map) return graph._links.get(linkId) || null;
-    return graph._links && graph._links[linkId] || null;
+    return sgFindParentSubgraphNode(childGraph, app.graph);
 }
 
 function findLinkInGraphTree(linkId, preferredGraph) {
-    var direct = getLinkInfo(preferredGraph, linkId);
-    if (direct) return { graph: preferredGraph, link: direct };
-    var found = null;
-    var visited = new WeakSet();
-    var walk = function (graph) {
-        if (!graph || found || visited.has(graph)) return;
-        visited.add(graph);
-        var link = getLinkInfo(graph, linkId);
-        if (link) {
-            found = { graph: graph, link: link };
-            return;
-        }
-        var nodes = graphNodes(graph);
-        for (var index = 0; index < nodes.length; index++) {
-            if (nodes[index] && nodes[index].subgraph) {
-                walk(nodes[index].subgraph);
-            }
-        }
-    };
-    walk(app.graph);
-    return found;
+    return sgFindLinkInGraphTree(linkId, preferredGraph, app.graph);
 }
 
 function findSlotOwner(slot, direction, preferredGraph) {
-    if (!slot) return null;
-    var found = null;
-    var visited = new WeakSet();
-    var walk = function (graph) {
-        if (!graph || found || visited.has(graph)) return;
-        visited.add(graph);
-        var nodes = graphNodes(graph);
-        for (var index = 0; index < nodes.length; index++) {
-            var node = nodes[index];
-            var slots = direction === "input" ? node.inputs : node.outputs;
-            if (Array.isArray(slots)) {
-                for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
-                    if (slots[slotIndex] === slot) {
-                        found = {
-                            graph: graph,
-                            index: slotIndex,
-                            node: node,
-                            slot: slot,
-                        };
-                        return;
-                    }
-                }
-            }
-            if (node && node.subgraph) walk(node.subgraph);
-        }
-    };
-    walk(preferredGraph);
-    if (!found) walk(app.graph);
-    return found;
+    return sgFindSlotOwner(slot, direction, preferredGraph, app.graph);
 }
 
 function isXPipe(node) {
@@ -453,19 +271,9 @@ function ensureXListToPipeState(node) {
 }
 
 function forEachXPipe(rootGraph, visitor) {
-    if (!rootGraph || typeof visitor !== "function") return;
-    var visited = new WeakSet();
-    var walk = function (graph) {
-        if (!graph || visited.has(graph)) return;
-        visited.add(graph);
-        var nodes = graphNodes(graph);
-        for (var index = 0; index < nodes.length; index++) {
-            var node = nodes[index];
-            if (isXPipe(node)) visitor(node);
-            if (node && node.subgraph) walk(node.subgraph);
-        }
-    };
-    walk(rootGraph);
+    forEachNodeByComfyClass(rootGraph, NODE_CLASS, function (node) {
+        if (typeof visitor === "function") visitor(node);
+    });
 }
 
 function markCanvasDirty() {
@@ -825,22 +633,77 @@ function captureSlotDefs(node) {
 }
 
 function refreshInputLinkTargets(node) {
-    if (!node || !node.graph || !Array.isArray(node.inputs)) return;
-    for (var index = 0; index < node.inputs.length; index++) {
-        var ids = slotLinkIds(node.inputs[index]);
-        for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
-            var link = getLinkInfo(node.graph, ids[linkIndex]);
-            if (link) link.target_slot = index;
-        }
-    }
+    stableRefreshInputLinkTargets(node, getLinkInfo);
+}
+
+function refreshOutputLinkSources(node) {
+    stableRefreshOutputLinkSources(node, getLinkInfo);
 }
 
 function ensureInputOrder(node) {
-    var bundleIndex = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
-    if (bundleIndex <= 0) return;
-    var bundle = node.inputs.splice(bundleIndex, 1)[0];
-    node.inputs.unshift(bundle);
+    if (!node || !Array.isArray(node.inputs)) return;
+    var channels = [];
+    var bundle = null;
+    var others = [];
+    for (var index = 0; index < node.inputs.length; index++) {
+        var input = node.inputs[index];
+        if (input && input.name === BUNDLE_INPUT_NAME) bundle = input;
+        else if (valueSlotNumber(input && input.name)) channels.push(input);
+        else others.push(input);
+    }
+    channels.sort(function (left, right) {
+        return valueSlotNumber(left.name) - valueSlotNumber(right.name);
+    });
+    var ordered = bundle ? [bundle] : [];
+    ordered = ordered.concat(channels, others);
+    var changed = ordered.length !== node.inputs.length;
+    if (!changed) {
+        for (var other = 0; other < ordered.length; other++) {
+            if (ordered[other] !== node.inputs[other]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (!changed) return;
+    node.inputs.splice.apply(
+        node.inputs,
+        [0, node.inputs.length].concat(ordered),
+    );
     refreshInputLinkTargets(node);
+}
+
+function ensureOutputOrder(node) {
+    if (!node || !Array.isArray(node.outputs)) return;
+    var channels = [];
+    var bundle = null;
+    var others = [];
+    for (var index = 0; index < node.outputs.length; index++) {
+        var output = node.outputs[index];
+        if (output && output.name === BUNDLE_OUTPUT_NAME) bundle = output;
+        else if (valueSlotNumber(output && output.name)) channels.push(output);
+        else others.push(output);
+    }
+    channels.sort(function (left, right) {
+        return valueSlotNumber(left.name) - valueSlotNumber(right.name);
+    });
+    var ordered = bundle ? [bundle] : [];
+    ordered = ordered.concat(channels, others);
+    var changed = ordered.length !== node.outputs.length;
+    if (!changed) {
+        for (var other = 0; other < ordered.length; other++) {
+            if (ordered[other] !== node.outputs[other]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (!changed) return;
+    node.outputs.splice.apply(
+        node.outputs,
+        [0, node.outputs.length].concat(ordered),
+    );
+    refreshOutputLinkSources(node);
 }
 
 function normalizeValueInputs(node) {
@@ -873,28 +736,26 @@ function addValueOutput(state, slot) {
     if (index >= 0) Object.assign(node.outputs[index], def);
 }
 
-function removeValueInput(node, slot) {
-    var index = slotIndexOfName(node.inputs, "value_" + slot);
-    if (index < 0 || slotLinkIds(node.inputs[index]).length) return;
-    if (typeof node.removeInput === "function") node.removeInput(index);
-    else node.inputs.splice(index, 1);
-    refreshInputLinkTargets(node);
-}
-
-function removeValueOutput(node, slot) {
-    var index = slotIndexOfName(node.outputs, "value_" + slot);
-    if (index < 0 || slotLinkIds(node.outputs[index]).length) return;
-    if (typeof node.removeOutput === "function") node.removeOutput(index);
-    else node.outputs.splice(index, 1);
-}
-
 function highestConnectedValueSlot(node) {
     var highest = 0;
-    if (!node || !Array.isArray(node.inputs)) return highest;
-    for (var index = 0; index < node.inputs.length; index++) {
-        var slot = valueSlotNumber(node.inputs[index] && node.inputs[index].name);
-        if (slot && slotLinkIds(node.inputs[index]).length) {
-            highest = Math.max(highest, slot);
+    if (node && Array.isArray(node.inputs)) {
+        for (var index = 0; index < node.inputs.length; index++) {
+            var slot = valueSlotNumber(
+                node.inputs[index] && node.inputs[index].name,
+            );
+            if (slot && slotLinkIds(node.inputs[index]).length) {
+                highest = Math.max(highest, slot);
+            }
+        }
+    }
+    if (node && Array.isArray(node.outputs)) {
+        for (var outIndex = 0; outIndex < node.outputs.length; outIndex++) {
+            var outSlot = valueSlotNumber(
+                node.outputs[outIndex] && node.outputs[outIndex].name,
+            );
+            if (outSlot && slotLinkIds(node.outputs[outIndex]).length) {
+                highest = Math.max(highest, outSlot);
+            }
         }
     }
     return highest;
@@ -1353,27 +1214,40 @@ function upstreamVisibleCount(node) {
 }
 
 function syncDynamicSlots(state) {
+    // Scheme A: keep value_1..50 in the arrays forever. visibleCount only
+    // drives layout/draw hiding — never removeInput/removeOutput.
     var node = state.node;
+    installStableSlotView(node);
     normalizeValueInputs(node);
-    ensureInputOrder(node);
-    var count = Math.max(
-        desiredDirectVisibleCount(node),
-        upstreamVisibleCount(node),
-    );
-    count = Math.max(1, Math.min(PIPE_SLOTS, count));
-    for (var slot = 1; slot <= count; slot++) {
+    for (var slot = 1; slot <= PIPE_SLOTS; slot++) {
         if (slotIndexOfName(node.inputs, "value_" + slot) < 0) {
             addValueInput(state, slot);
         }
         if (slotIndexOfName(node.outputs, "value_" + slot) < 0) {
             addValueOutput(state, slot);
         }
+        var outIndex = slotIndexOfName(node.outputs, "value_" + slot);
+        if (outIndex >= 0) node.outputs[outIndex].name = "value_" + slot;
     }
-    for (var unused = PIPE_SLOTS; unused > count; unused--) {
-        removeValueInput(node, unused);
-        removeValueOutput(node, unused);
-    }
+    ensureInputOrder(node);
+    ensureOutputOrder(node);
+    var count = Math.max(
+        desiredDirectVisibleCount(node),
+        upstreamVisibleCount(node),
+    );
+    count = Math.max(1, Math.min(PIPE_SLOTS, count));
     state.visibleCount = count;
+    applyVisibleSlotWindow(node.inputs, function (input) {
+        return valueSlotNumber(input && input.name);
+    }, count);
+    applyVisibleSlotWindow(node.outputs, function (output) {
+        return valueSlotNumber(output && output.name);
+    }, count);
+    // Bundle ports stay visible.
+    var bundleIn = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
+    if (bundleIn >= 0) setSlotHidden(node.inputs[bundleIn], false);
+    var bundleOut = slotIndexOfName(node.outputs, BUNDLE_OUTPUT_NAME);
+    if (bundleOut >= 0) setSlotHidden(node.outputs[bundleOut], false);
 }
 
 function directInputSource(node, slot) {
@@ -1495,9 +1369,15 @@ function syncPortLabels(state) {
 function visibleValueSlots(node) {
     var visible = {};
     if (!node || !Array.isArray(node.inputs)) return visible;
+    var limit = node.__xpipeState && node.__xpipeState.visibleCount
+        ? node.__xpipeState.visibleCount
+        : PIPE_SLOTS;
     for (var index = 0; index < node.inputs.length; index++) {
-        var slot = valueSlotNumber(node.inputs[index] && node.inputs[index].name);
-        if (slot) visible[slot] = true;
+        var input = node.inputs[index];
+        var slot = valueSlotNumber(input && input.name);
+        if (slot && slot <= limit && !(input && input._xzr0Hidden)) {
+            visible[slot] = true;
+        }
     }
     return visible;
 }
@@ -1637,6 +1517,9 @@ function refreshNodeLayout(node) {
         }
         if (typeof node.arrange === "function") node.arrange();
     } catch (_error) { /* keep current layout */ }
+    // arrange/_setConcreteSlots can re-inflate height if hidden slots leak
+    // into widgetStartY; snap back to Scheme-A content size.
+    fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA);
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
     markCanvasDirty();
 }
@@ -1649,22 +1532,31 @@ function resolveInitialNodeSize(node) {
         : [0, 0];
     var computedWidth = Number(computed && computed[0]) || 0;
     var computedHeight = Number(computed && computed[1]) || 0;
-    var width = computedWidth || Number(current[0]) || 0;
-    var height = computedHeight || Number(current[1]) || 0;
+    var currentWidth = Number(current[0]) || 0;
+    // Content height is authoritative (Scheme A hides extras).
+    // Width may keep a larger saved/current size.
+    var minWidth = Math.max(1, Math.ceil(
+        (computedWidth || currentWidth || 1) + INITIAL_WIDTH_EXTRA,
+    ));
+    var height = Math.max(1, Math.ceil(computedHeight || 1));
     return [
-        Math.max(1, Math.ceil(width + INITIAL_WIDTH_EXTRA)),
-        Math.max(1, Math.ceil(height)),
+        Math.max(minWidth, currentWidth || minWidth),
+        height,
     ];
 }
 
 function applyInitialNodeSize(node) {
-    if (!node || node.__xpipeInitialSizeApplied) return;
-    var size = resolveInitialNodeSize(node);
+    if (!node) return;
+    // Always re-fit height to visible content. Construction-time
+    // setInitialSize() and arrange() can leave a 50-slot inflated height
+    // before Scheme A visibility windows are applied.
+    var size = fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA)
+        || resolveInitialNodeSize(node);
     if (!size) return;
     node.min_size = size.slice();
-    if (typeof node.setSize === "function") node.setSize(size.slice());
-    else node.size = size.slice();
-    node.__xpipeInitialSizeApplied = true;
+    if (!node.__xpipeInitialSizeApplied) {
+        node.__xpipeInitialSizeApplied = true;
+    }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 
@@ -1695,6 +1587,7 @@ function syncNode(state) {
 
 function ensureXPipe(node) {
     if (!isXPipe(node)) return null;
+    installStableSlotView(node);
     ensureControlWidgets(node);
     var state = createState(node);
     hideBackingWidget(findWidget(node, NAMES_WIDGET));

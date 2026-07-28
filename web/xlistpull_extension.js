@@ -1,7 +1,8 @@
 /**
- * XListPull — 动态输出端口可见性控制
- * =====================================
- * 根据 count 值自动增减输出端口。
+ * XListPull — 固定 50 路 Data 输出 + 视图显隐（方案 A）
+ * ====================================================
+ * 后端始终 50 路输出；前端不再 removeOutput。count 只控制
+ * 可见窗口与高度，保证 origin_slot 与 Data N 身份稳定。
  *
  * 触发时机：
  * - count / list_input 连线变化
@@ -11,6 +12,15 @@
  */
 
 import { app } from "../../scripts/app.js";
+import {
+    applyVisibleSlotWindow,
+    installStableSlotView,
+    refreshOutputLinkSources,
+} from "./x_stable_slots.js";
+import {
+    forEachNodeByComfyClass,
+    getLinkInfo as subgraphGetLinkInfo,
+} from "./x_subgraph_utils.js";
 
 var NODE_CLASS = "XListPull";
 var LIST_CREATE_CLASS = "XListCreate";
@@ -64,7 +74,79 @@ function isXListCreateAutogrowInput(name) {
 function outputLinkCount(node, index) {
     if (!node || index < 0 || index >= node.outputs.length) return 0;
     var output = node.outputs[index];
-    return (output && output.links && output.links.length) || 0;
+    if (!output) return 0;
+    if (Array.isArray(output.linkIds)) return output.linkIds.length;
+    if (Array.isArray(output.links)) return output.links.length;
+    if (output.linkId != null || output.link != null) return 1;
+    return 0;
+}
+
+function dataSlotNumber(name) {
+    var raw = String(name || "");
+    var match = raw.match(/(?:^|[._])(?:data|Data)[ _]?(\d+)$/)
+        || raw.match(/^Data\s+(\d+)$/)
+        || raw.match(/^data_(\d+)$/);
+    if (!match) {
+        // Localized labels e.g. "数据 3" still map via trailing digits.
+        match = raw.match(/(\d+)\s*$/);
+        if (!match || !/数据|Data|data/i.test(raw)) return 0;
+    }
+    var num = parseInt(match[1], 10);
+    return Number.isFinite(num) && num > 0 && num <= MAX_OUTPUTS ? num : 0;
+}
+
+function stableDataName(num) {
+    return "data_" + num;
+}
+
+function getLinkInfo(graph, linkId) {
+    return subgraphGetLinkInfo(graph, linkId);
+}
+
+function ensureOutputOrder(node) {
+    if (!node || !Array.isArray(node.outputs)) return;
+    var channels = [];
+    var others = [];
+    for (var index = 0; index < node.outputs.length; index++) {
+        var output = node.outputs[index];
+        var num = dataSlotNumber(output && output.name)
+            || dataSlotNumber(output && output.label)
+            || dataSlotNumber(output && output.localized_name);
+        if (num > 0) {
+            output.__xlistDataNum = num;
+            channels.push(output);
+        } else {
+            others.push(output);
+        }
+    }
+    channels.sort(function (left, right) {
+        return (left.__xlistDataNum || 0) - (right.__xlistDataNum || 0);
+    });
+    // Deduplicate by channel number; keep first.
+    var seen = {};
+    var unique = [];
+    for (var c = 0; c < channels.length; c++) {
+        var n = channels[c].__xlistDataNum;
+        if (seen[n]) continue;
+        seen[n] = true;
+        unique.push(channels[c]);
+    }
+    var ordered = unique.concat(others);
+    var changed = ordered.length !== node.outputs.length;
+    if (!changed) {
+        for (var o = 0; o < ordered.length; o++) {
+            if (ordered[o] !== node.outputs[o]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (!changed) return;
+    node.outputs.splice.apply(
+        node.outputs,
+        [0, node.outputs.length].concat(ordered),
+    );
+    refreshOutputLinkSources(node, getLinkInfo);
 }
 
 function getUpstreamNode(graph, linkId) {
@@ -199,52 +281,108 @@ function getListInputType(node) {
     return "*";
 }
 
+function findDataOutputIndex(node, num) {
+    if (!node || !Array.isArray(node.outputs)) return -1;
+    var want = stableDataName(num);
+    for (var i = 0; i < node.outputs.length; i++) {
+        var output = node.outputs[i];
+        if (!output) continue;
+        if (output.name === want) return i;
+        var n = dataSlotNumber(output.name)
+            || dataSlotNumber(output.label)
+            || dataSlotNumber(output.localized_name);
+        if (n === num) return i;
+    }
+    return -1;
+}
+
 function syncOutputs(node, count) {
+    // Scheme A: keep Data 1..50 outputs forever; count only hides extras.
     if (!node || !Array.isArray(node.outputs)) return;
 
+    installStableSlotView(node);
     count = Math.max(1, Math.min(Math.floor(count) || 1, MAX_OUTPUTS));
     var linkType = getListInputType(node);
 
-    // 删除多余端口（仅未连接的）
-    while (node.outputs.length > count) {
-        var idx = node.outputs.length - 1;
-        if (outputLinkCount(node, idx) > 0) break;
-        if (typeof node.removeOutput === "function") {
-            node.removeOutput(idx);
-        } else {
-            node.outputs.splice(idx, 1);
+    for (var num = 1; num <= MAX_OUTPUTS; num++) {
+        var idx = findDataOutputIndex(node, num);
+        if (idx < 0) {
+            if (typeof node.addOutput === "function") {
+                node.addOutput(stableDataName(num), linkType || "*");
+            } else {
+                node.outputs.push({
+                    name: stableDataName(num),
+                    type: linkType || "*",
+                    links: null,
+                });
+            }
+            idx = findDataOutputIndex(node, num);
         }
+        if (idx < 0) continue;
+        var output = node.outputs[idx];
+        output.name = stableDataName(num);
+        output.label = dataCountLabel(num);
+        output.localized_name = output.label;
     }
 
-    // 添加不足端口
-    while (node.outputs.length < count) {
-        var num = node.outputs.length + 1;
-        node.addOutput(dataCountLabel(num), linkType);
-    }
+    ensureOutputOrder(node);
 
-    // 用 LiteGraph 的 setOutputType 传播类型到所有 * 输出
-    if (linkType !== "*" && typeof node.setOutputType === "function") {
-        for (var oi = 0; oi < node.outputs.length; oi++) {
-            var ot = node.outputs[oi] && node.outputs[oi].type;
-            if (!ot || ot === "*") {
+    // Keep any linked slot visible even if count shrank (old removeOutput
+    // refused to delete linked tails; preserve that UX without dropping ids).
+    var highestLinked = 0;
+    for (var li = 0; li < node.outputs.length; li++) {
+        if (outputLinkCount(node, li) <= 0) continue;
+        var linkedNum = dataSlotNumber(node.outputs[li] && node.outputs[li].name)
+            || dataSlotNumber(node.outputs[li] && node.outputs[li].label)
+            || dataSlotNumber(
+                node.outputs[li] && node.outputs[li].localized_name,
+            );
+        if (linkedNum > highestLinked) highestLinked = linkedNum;
+    }
+    var visible = Math.max(count, highestLinked);
+    visible = Math.max(1, Math.min(MAX_OUTPUTS, visible));
+    node.__xlistPullVisibleCount = visible;
+
+    applyVisibleSlotWindow(node.outputs, function (slot) {
+        return dataSlotNumber(slot && slot.name)
+            || dataSlotNumber(slot && slot.label)
+            || dataSlotNumber(slot && slot.localized_name);
+    }, visible);
+
+    // Type propagation for visible slots (and keep linked hidden slots typed).
+    for (var oi = 0; oi < node.outputs.length; oi++) {
+        var out = node.outputs[oi];
+        if (!out) continue;
+        var slotNum = dataSlotNumber(out.name) || 0;
+        if (slotNum <= 0) continue;
+        var shouldType = slotNum <= visible || outputLinkCount(node, oi) > 0;
+        if (!shouldType) continue;
+        if (linkType && linkType !== "*") {
+            if (typeof node.setOutputType === "function") {
                 node.setOutputType(oi, linkType);
+            } else {
+                out.type = linkType;
             }
         }
     }
 
-    // 重算尺寸
+    refreshOutputLinkSources(node, getLinkInfo);
+
     try {
-        if (typeof node._setConcreteSlots === "function")
+        if (typeof node._setConcreteSlots === "function") {
             node._setConcreteSlots();
+        }
         if (typeof node.arrange === "function") node.arrange();
         if (typeof node.computeSize === "function") {
             var cs = node.computeSize();
             if (cs && Array.isArray(cs)) {
                 var nw = Math.max(1, cs[0] || 1);
                 var nh = Math.max(1, cs[1] || 1);
-                if (typeof node.setSize === "function")
+                if (typeof node.setSize === "function") {
                     node.setSize([nw, nh]);
-                else node.size = [nw, nh];
+                } else {
+                    node.size = [nw, nh];
+                }
             }
         }
     } catch (_e) {
@@ -305,38 +443,35 @@ function syncXListCreateInputLabels(node) {
 }
 
 
-function fixXListCreateSizes(graph) {
-    if (!graph) return;
-    var nodes = graph._nodes || graph.nodes || [];
-    for (var i = 0; i < nodes.length; i++) {
-        if (nodes[i] && nodes[i].comfyClass === "XListCreate") {
-            syncXListCreateInputLabels(nodes[i]);
-            fixNodeSize(nodes[i]);
-        }
-    }
+function fixXListCreateSizes(rootGraph) {
+    // Walk the whole graph tree so Create nodes inside subgraphs are sized.
+    var root = rootGraph || app.graph;
+    if (!root) return;
+    forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
+        syncXListCreateInputLabels(node);
+        fixNodeSize(node);
+    });
 }
 
 // ---------------------------------------------------------------------------
-// 全局 refresh（带防抖）
+// 全局 refresh（带防抖）— 默认从 app.graph 整树刷新
 // ---------------------------------------------------------------------------
 var _refreshTimer = null;
-function scheduleRefreshAll(graph) {
+function scheduleRefreshAll(_graph) {
     if (_refreshTimer) clearTimeout(_refreshTimer);
     _refreshTimer = setTimeout(function () {
         _refreshTimer = null;
-        doRefreshAll(graph);
+        // Always refresh from the app root so nested subgraph Pulls update.
+        doRefreshAll(app.graph);
     }, 50);
 }
 
-function doRefreshAll(graph) {
-    if (!graph) return;
-    var nodes = graph._nodes || graph.nodes || [];
-    for (var i = 0; i < nodes.length; i++) {
-        var n = nodes[i];
-        if (n && n.comfyClass === NODE_CLASS) {
-            syncOutputs(n, resolveCount(n));
-        }
-    }
+function doRefreshAll(rootGraph) {
+    var root = rootGraph || app.graph;
+    if (!root) return;
+    forEachNodeByComfyClass(root, NODE_CLASS, function (node) {
+        syncOutputs(node, resolveCount(node));
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +482,7 @@ app.registerExtension({
     name: "Xz3r0.XListPull",
 
     afterConfigureGraph: function () {
+        // Full tree: Pull/Create may live inside nested subgraphs.
         doRefreshAll(app.graph);
         fixXListCreateSizes(app.graph);
     },

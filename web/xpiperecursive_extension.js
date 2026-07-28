@@ -18,22 +18,38 @@ function resolveInitialNodeSize(node) {
         : [0, 0];
     var computedWidth = Number(computed && computed[0]) || 0;
     var computedHeight = Number(computed && computed[1]) || 0;
-    var width = computedWidth || Number(current[0]) || 0;
-    var height = computedHeight || Number(current[1]) || 0;
+    var currentWidth = Number(current[0]) || 0;
+    var minWidth = Math.max(1, Math.ceil(
+        (computedWidth || currentWidth || 1) + INITIAL_WIDTH_EXTRA,
+    ));
+    var height = Math.max(1, Math.ceil(computedHeight || 1));
     return [
-        Math.max(1, Math.ceil(width + INITIAL_WIDTH_EXTRA)),
-        Math.max(1, Math.ceil(height)),
+        Math.max(minWidth, currentWidth || minWidth),
+        height,
     ];
 }
 
 function applyInitialNodeSize(node) {
-    if (!node || node.__xpipeRecursiveInitialSizeApplied) return;
+    if (!node) return;
     var size = resolveInitialNodeSize(node);
     if (!size) return;
     node.min_size = size.slice();
-    if (typeof node.setSize === "function") node.setSize(size.slice());
-    else node.size = size.slice();
-    node.__xpipeRecursiveInitialSizeApplied = true;
+    var curW = (node.size && node.size[0]) || 0;
+    var curH = (node.size && node.size[1]) || 0;
+    // Height always snaps to content; width only lifts to minimum.
+    var nextW = Math.max(curW || size[0], size[0]);
+    var nextH = size[1];
+    if (nextW !== curW || nextH !== curH) {
+        if (typeof node.setSize === "function") node.setSize([nextW, nextH]);
+        else if (!node.size || node.size.length < 2) node.size = [nextW, nextH];
+        else {
+            node.size[0] = nextW;
+            node.size[1] = nextH;
+        }
+    }
+    if (!node.__xpipeRecursiveInitialSizeApplied) {
+        node.__xpipeRecursiveInitialSizeApplied = true;
+    }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 

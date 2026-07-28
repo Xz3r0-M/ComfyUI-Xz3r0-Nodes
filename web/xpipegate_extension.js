@@ -5,6 +5,19 @@ import {
     scheduleXPipeRefresh,
     subscribeXPipeMetadata,
 } from "./xpipe_extension.js";
+import {
+    applyVisibleSlotWindow,
+    fitNodeSizeToVisibleSlots,
+    installStableSlotView,
+    refreshInputLinkTargets as stableRefreshInputLinkTargets,
+    refreshOutputLinkSources as stableRefreshOutputLinkSources,
+    setSlotHidden,
+} from "./x_stable_slots.js";
+import {
+    forEachNodeByComfyClass,
+    getLinkInfo,
+    getNodeById,
+} from "./x_subgraph_utils.js";
 
 var NODE_CLASS = "XPipeGate";
 var GATE_SLOTS = 50;
@@ -86,36 +99,6 @@ function slotLinkIds(slot) {
     return [];
 }
 
-function graphNodes(graph) {
-    return graph ? (graph._nodes || graph.nodes || []) : [];
-}
-
-function getNodeById(graph, nodeId) {
-    if (!graph || nodeId == null) return null;
-    if (typeof graph.getNodeById === "function") {
-        var found = graph.getNodeById(nodeId);
-        if (found) return found;
-    }
-    var nodes = graphNodes(graph);
-    for (var index = 0; index < nodes.length; index++) {
-        if (String(nodes[index] && nodes[index].id) === String(nodeId)) {
-            return nodes[index];
-        }
-    }
-    return null;
-}
-
-function getLinkInfo(graph, linkId) {
-    if (!graph || linkId == null) return null;
-    if (typeof graph.getLink === "function") {
-        var graphLink = graph.getLink(linkId);
-        if (graphLink) return graphLink;
-    }
-    if (graph.links && graph.links[linkId]) return graph.links[linkId];
-    if (graph._links instanceof Map) return graph._links.get(linkId) || null;
-    return graph._links && graph._links[linkId] || null;
-}
-
 function isXPipeGate(node) {
     return !!(
         node
@@ -124,19 +107,9 @@ function isXPipeGate(node) {
 }
 
 function forEachPipeGate(rootGraph, visitor) {
-    if (!rootGraph || typeof visitor !== "function") return;
-    var visited = new WeakSet();
-    var walk = function (graph) {
-        if (!graph || visited.has(graph)) return;
-        visited.add(graph);
-        var nodes = graphNodes(graph);
-        for (var index = 0; index < nodes.length; index++) {
-            var node = nodes[index];
-            if (isXPipeGate(node)) visitor(node);
-            if (node && node.subgraph) walk(node.subgraph);
-        }
-    };
-    walk(rootGraph);
+    forEachNodeByComfyClass(rootGraph, NODE_CLASS, function (node) {
+        if (typeof visitor === "function") visitor(node);
+    });
 }
 
 function markCanvasDirty() {
@@ -280,25 +253,11 @@ function captureSlotDefs(node) {
 }
 
 function refreshInputLinkTargets(node) {
-    if (!node || !node.graph || !Array.isArray(node.inputs)) return;
-    for (var index = 0; index < node.inputs.length; index++) {
-        var ids = slotLinkIds(node.inputs[index]);
-        for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
-            var link = getLinkInfo(node.graph, ids[linkIndex]);
-            if (link) link.target_slot = index;
-        }
-    }
+    stableRefreshInputLinkTargets(node, getLinkInfo);
 }
 
 function refreshOutputLinkSources(node) {
-    if (!node || !node.graph || !Array.isArray(node.outputs)) return;
-    for (var index = 0; index < node.outputs.length; index++) {
-        var ids = slotLinkIds(node.outputs[index]);
-        for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
-            var link = getLinkInfo(node.graph, ids[linkIndex]);
-            if (link) link.origin_slot = index;
-        }
-    }
+    stableRefreshOutputLinkSources(node, getLinkInfo);
 }
 
 function sortChannelInputs(node) {
@@ -383,30 +342,6 @@ function addChannelOutput(state, channel) {
     state.node.addOutput(def.name, def.type);
     var index = slotIndexByName(state.node.outputs, def.name);
     if (index >= 0) Object.assign(state.node.outputs[index], def);
-}
-
-function removeChannelInput(node, channel) {
-    var index = slotIndexByName(node.inputs, "input_" + channel);
-    if (index < 0 || slotLinkIds(node.inputs[index]).length) return;
-    if (typeof node.removeInput === "function") node.removeInput(index);
-    else node.inputs.splice(index, 1);
-    refreshInputLinkTargets(node);
-}
-
-function removeChannelEnable(node, channel) {
-    var index = slotIndexByName(node.inputs, "enable_" + channel);
-    if (index < 0 || slotLinkIds(node.inputs[index]).length) return;
-    if (typeof node.removeInput === "function") node.removeInput(index);
-    else node.inputs.splice(index, 1);
-    refreshInputLinkTargets(node);
-}
-
-function removeChannelOutput(node, channel) {
-    var index = slotIndexByName(node.outputs, "output_" + channel);
-    if (index < 0 || slotLinkIds(node.outputs[index]).length) return;
-    if (typeof node.removeOutput === "function") node.removeOutput(index);
-    else node.outputs.splice(index, 1);
-    refreshOutputLinkSources(node);
 }
 
 function highestUsedChannel(node) {
@@ -696,8 +631,11 @@ function syncSwitchVisibility(state) {
 }
 
 function syncDynamicChannels(state) {
+    // Scheme A: keep input_/output_/enable_ 1..50 forever; visibleCount only
+    // hides extras in layout/draw and enable widgets.
+    installStableSlotView(state.node);
     var count = desiredVisibleCount(state);
-    for (var channel = 1; channel <= count; channel++) {
+    for (var channel = 1; channel <= GATE_SLOTS; channel++) {
         if (slotIndexByName(
             state.node.inputs,
             "input_" + channel,
@@ -710,15 +648,39 @@ function syncDynamicChannels(state) {
             state.node.outputs,
             "output_" + channel,
         ) < 0) addChannelOutput(state, channel);
-    }
-    for (var unused = GATE_SLOTS; unused > count; unused--) {
-        removeChannelEnable(state.node, unused);
-        removeChannelInput(state.node, unused);
-        removeChannelOutput(state.node, unused);
+        var outIndex = slotIndexByName(
+            state.node.outputs,
+            "output_" + channel,
+        );
+        if (outIndex >= 0) {
+            state.node.outputs[outIndex].name = "output_" + channel;
+        }
     }
     state.visibleCount = count;
     sortChannelInputs(state.node);
     sortChannelOutputs(state.node);
+    applyVisibleSlotWindow(state.node.inputs, function (input) {
+        return channelInputNumber(input && input.name);
+    }, count);
+    applyVisibleSlotWindow(state.node.outputs, function (output) {
+        return channelOutputNumber(output && output.name);
+    }, count);
+    // enable_* inputs are widget-backed; keep them out of the vertical pack
+    // via their widget association, and hide switches past visibleCount.
+    for (var enableCh = 1; enableCh <= GATE_SLOTS; enableCh++) {
+        var enableIndex = slotIndexByName(
+            state.node.inputs,
+            "enable_" + enableCh,
+        );
+        if (enableIndex >= 0) {
+            // Never use channel hide pos on widget slots; clear flag only.
+            setSlotHidden(state.node.inputs[enableIndex], false);
+        }
+    }
+    var bundleIn = slotIndexByName(state.node.inputs, BUNDLE_INPUT);
+    if (bundleIn >= 0) setSlotHidden(state.node.inputs[bundleIn], false);
+    var bundleOut = slotIndexByName(state.node.outputs, BUNDLE_OUTPUT);
+    if (bundleOut >= 0) setSlotHidden(state.node.outputs[bundleOut], false);
     syncSwitchVisibility(state);
 }
 
@@ -987,6 +949,9 @@ function refreshNodeLayout(node) {
         }
         if (typeof node.arrange === "function") node.arrange();
     } catch (_error) { /* keep current layout */ }
+    // arrange/_setConcreteSlots can re-inflate height if hidden slots leak
+    // into widgetStartY; snap back to Scheme-A content size.
+    fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA);
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
     markCanvasDirty();
 }
@@ -999,22 +964,30 @@ function resolveInitialNodeSize(node) {
         : [0, 0];
     var computedWidth = Number(computed && computed[0]) || 0;
     var computedHeight = Number(computed && computed[1]) || 0;
-    var width = computedWidth || Number(current[0]) || 0;
-    var height = computedHeight || Number(current[1]) || 0;
+    var currentWidth = Number(current[0]) || 0;
+    // Content height is authoritative (Scheme A hides extras).
+    var minWidth = Math.max(1, Math.ceil(
+        (computedWidth || currentWidth || 1) + INITIAL_WIDTH_EXTRA,
+    ));
+    var height = Math.max(1, Math.ceil(computedHeight || 1));
     return [
-        Math.max(1, Math.ceil(width + INITIAL_WIDTH_EXTRA)),
-        Math.max(1, Math.ceil(height)),
+        Math.max(minWidth, currentWidth || minWidth),
+        height,
     ];
 }
 
 function applyInitialNodeSize(node) {
-    if (!node || node.__xpipeGateInitialSizeApplied) return;
-    var size = resolveInitialNodeSize(node);
+    if (!node) return;
+    // Always re-fit height to visible content. Construction-time
+    // setInitialSize() and arrange() can leave a 50-slot inflated height
+    // before Scheme A visibility windows are applied.
+    var size = fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA)
+        || resolveInitialNodeSize(node);
     if (!size) return;
     node.min_size = size.slice();
-    if (typeof node.setSize === "function") node.setSize(size.slice());
-    else node.size = size.slice();
-    node.__xpipeGateInitialSizeApplied = true;
+    if (!node.__xpipeGateInitialSizeApplied) {
+        node.__xpipeGateInitialSizeApplied = true;
+    }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 
@@ -1071,6 +1044,7 @@ function createState(node) {
 
 function ensurePipeGate(node) {
     if (!isXPipeGate(node)) return null;
+    installStableSlotView(node);
     ensureControlWidgets(node);
     return createState(node);
 }
