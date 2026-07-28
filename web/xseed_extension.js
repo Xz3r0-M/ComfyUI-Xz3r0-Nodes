@@ -25,8 +25,12 @@ var WIDGET_DIGITS = "digits";
 var WIDGET_RANDOM = "random_on_execute";
 var WIDGET_LAST_SEED_LOCKED = "last_seed_locked";
 var STYLE_ID = "xseed-ui-styles";
-var MIN_NODE_W = 280;
+var MIN_NODE_W = 290;
 var MIN_NODE_H = 250;
+// DOM widget 内容区最小高度（不含 margin）。
+// 与 UI 行高大致匹配：label + input + label + input + button + gaps。
+var DOM_UI_MIN_HEIGHT = 148;
+var DOM_WIDGET_MARGIN = 6;
 var LOCALE_PREFIX = "xdatahub.ui.node.xseed";
 var LOCALE_SYNC_INTERVAL = 1000;
 var uiLocalePrimary = null;
@@ -205,6 +209,8 @@ function ensureStyles() {
         ".xseed-wrap {",
         "  position: relative;",
         "  width: 100%; height: 100%;",
+        "  min-width: 0;",
+        "  min-height: 0;",
         "  display: flex;",
         "  flex-direction: column;",
         "  gap: 6px;",
@@ -214,6 +220,10 @@ function ensureStyles() {
         "}",
         ".xseed-fieldset {",
         "  flex: 1 1 auto;",
+        "  width: 100%;",
+        "  max-width: 100%;",
+        // fieldset 默认 min-width:min-content，会撑破 DOM widget 边界
+        "  min-width: 0;",
         "  min-height: 0;",
         "  margin: 0;",
         "  padding: 5px 6px 6px;",
@@ -222,6 +232,8 @@ function ensureStyles() {
         "  display: flex;",
         "  flex-direction: column;",
         "  gap: 6px;",
+        "  box-sizing: border-box;",
+        "  overflow: hidden;",
         "}",
         ".xseed-label {",
         "  font: var(--xdh-font-ui-md, 12px sans-serif);",
@@ -389,27 +401,52 @@ function writeLastSeedLocked(node, value) {
 }
 
 // ---------------------------------------------------------------------------
-// 节点尺寸约束（min_size + onResize 强制回弹）
+// 节点尺寸约束（只抬升到下限，不强制压回固定尺寸）
 // ---------------------------------------------------------------------------
 
-function clampNodeSize(node) {
-    if (!node) return;
-
+function resolveMinNodeSize(node) {
     var minW = MIN_NODE_W;
     var minH = MIN_NODE_H;
-    if (typeof node.computeSize === "function") {
+    if (node && typeof node.computeSize === "function") {
         var computed = node.computeSize();
         if (Array.isArray(computed) && computed.length >= 2) {
             minW = Math.max(minW, Number(computed[0]) || 0);
             minH = Math.max(minH, Number(computed[1]) || 0);
         }
     }
+    return [minW, minH];
+}
 
-    node.min_size = [minW, minH];
+function applyNodeSize(node, width, height) {
+    if (!node) return;
     if (typeof node.setSize === "function") {
-        node.setSize([minW, minH]);
-    } else {
-        node.size = [minW, minH];
+        node.setSize([width, height]);
+        return;
+    }
+    if (!node.size || node.size.length < 2) {
+        node.size = [width, height];
+        return;
+    }
+    node.size[0] = width;
+    node.size[1] = height;
+}
+
+function clampNodeSize(node) {
+    if (!node) return;
+
+    var mins = resolveMinNodeSize(node);
+    var minW = mins[0];
+    var minH = mins[1];
+
+    // 新版 LiteGraph 不再消费 min_size；仍写入以兼容旧路径 / 外部读取。
+    node.min_size = [minW, minH];
+
+    var curW = (node.size && node.size[0]) || 0;
+    var curH = (node.size && node.size[1]) || 0;
+    var nextW = Math.max(curW, minW);
+    var nextH = Math.max(curH, minH);
+    if (nextW !== curW || nextH !== curH) {
+        applyNodeSize(node, nextW, nextH);
     }
 
     if (node.__xseed_resize_guard) return;
@@ -417,10 +454,18 @@ function clampNodeSize(node) {
 
     var origOnResize = node.onResize;
     node.onResize = function (size) {
+        var resizeMins = resolveMinNodeSize(this);
+        this.min_size = [resizeMins[0], resizeMins[1]];
         var src = Array.isArray(size) ? size : this.size;
-        var nW = Math.max((src && src[0]) || 0, MIN_NODE_W);
-        var nH = Math.max((src && src[1]) || 0, MIN_NODE_H);
-        this.size = [nW, nH];
+        var nW = Math.max((src && src[0]) || 0, resizeMins[0]);
+        var nH = Math.max((src && src[1]) || 0, resizeMins[1]);
+        // 直接写 size，避免 setSize → onResize 递归。
+        if (!this.size || this.size.length < 2) {
+            this.size = [nW, nH];
+        } else {
+            this.size[0] = nW;
+            this.size[1] = nH;
+        }
         this.setDirtyCanvas && this.setDirtyCanvas(true, true);
         if (typeof origOnResize === "function") {
             origOnResize.apply(this, arguments);
@@ -685,9 +730,15 @@ function createSeedUI(node) {
     wrap.appendChild(fieldset);
 
     // ── 注册 DOM widget ──
+    // 显式 getMinHeight/margin：升级后默认 margin=10、minHeight=50，
+    // 会导致内容区偏小且与节点边框错位，组件看起来“溢出”节点窗口。
     if (typeof node.addDOMWidget === "function") {
         node.addDOMWidget(DOM_WIDGET_NAME, "custom", wrap, {
             serialize: false,
+            getMinHeight: function () {
+                return DOM_UI_MIN_HEIGHT;
+            },
+            margin: DOM_WIDGET_MARGIN,
         });
     }
 
