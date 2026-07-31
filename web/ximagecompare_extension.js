@@ -148,6 +148,11 @@ var PINGPONG_CURVES = [
 var DEFAULT_CW = 640;
 var DEFAULT_CH = 480;
 
+// Canvas buffer 最大边长（像素）。
+// 视图缩放由 DOM widget 层的 CSS transform scale 完成，buffer 不随 zoom 膨胀；
+// 仅当节点本身极大（×DPR）时封顶，超出部分由 CSS 拉伸，保证拖动滑块流畅。
+var MAX_CANVAS_BUF = 3072;
+
 // 工具栏高度（3行：按钮行 + 标签行 + 滑块行）
 var TOOLBAR_H = 70;
 // 底部间隔（为拉伸手柄留出触发空间）
@@ -793,10 +798,19 @@ function render(state) {
     var ctx = state.ctx;
     if (!ctx) return;
 
-    // 取 CSS 尺寸，设为缓冲像素尺寸（无 DPR 放大，避免精度问题）
-    var rect = canvas.getBoundingClientRect();
-    var bw = Math.floor(rect.width);
-    var bh = Math.floor(rect.height);
+    // 缓冲像素 = 布局尺寸 × DPR（封顶 2）。
+    // clientWidth/clientHeight 是布局尺寸，不受画布 zoom transform 影响，
+    // 因此视图放大时 buffer 保持固定大小，拖动滑块的重绘成本恒定；
+    // 视图缩放由 CSS transform 完成（DomWidget 层 scale）。
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var bw = Math.round(state.canvas.clientWidth * dpr);
+    var bh = Math.round(state.canvas.clientHeight * dpr);
+    // 超大 buffer 封顶，超出部分由 CSS 拉伸（防极端尺寸下重绘过重）
+    var bufScale = Math.min(1, MAX_CANVAS_BUF / Math.max(bw, bh));
+    if (bufScale < 1) {
+        bw = Math.round(bw * bufScale);
+        bh = Math.round(bh * bufScale);
+    }
     if (bw <= 0 || bh <= 0) return;
 
     if (canvas.width !== bw || canvas.height !== bh) {
@@ -1354,14 +1368,19 @@ function createCompareUI(node) {
     state._lastSizeW = 0;
     state._lastSizeH = 0;
     state._lastBgColor = "";
+    state._bgCheckCount = 0;
     function sizePollLoop() {
         if (!state.node || !state.canvas) return;
-        var rect = state.canvas.getBoundingClientRect();
-        var w = Math.floor(rect.width);
-        var h = Math.floor(rect.height);
-        var bg = getCanvasBg(state);
+        // 用 clientWidth/clientHeight（布局尺寸，不含 zoom transform），
+        // 与 render() 的 buffer 尺寸来源保持一致
+        var w = Math.floor(state.canvas.clientWidth);
+        var h = Math.floor(state.canvas.clientHeight);
+        // getComputedStyle 开销大（强制样式重算），低频（每 30 帧）检查主题背景色
+        state._bgCheckCount++;
+        var checkBg = (state._bgCheckCount % 30) === 1;
+        var bg = checkBg ? getCanvasBg(state) : state._lastBgColor;
         if (w !== state._lastSizeW || h !== state._lastSizeH
-            || bg !== state._lastBgColor) {
+            || (checkBg && bg !== state._lastBgColor)) {
             state._lastSizeW = w;
             state._lastSizeH = h;
             state._lastBgColor = bg;
