@@ -148,6 +148,12 @@ var PINGPONG_CURVES = [
 var DEFAULT_CW = 640;
 var DEFAULT_CH = 480;
 
+// Canvas buffer 最大边长（像素）。
+// 视图缩放由 DOM widget 层的 CSS transform scale 完成，buffer 不随 zoom 无限膨胀；
+// 仅在放大 ≤2 倍时按 zoom 提升清晰度（与 img 显示对齐），超出后封顶，
+// 由 CSS 拉伸，保证拖动滑块流畅。
+var MAX_CANVAS_BUF = 4096;
+
 // 工具栏高度（3行：按钮行 + 标签行 + 滑块行）
 var TOOLBAR_H = 70;
 // 底部间隔（为拉伸手柄留出触发空间）
@@ -729,6 +735,15 @@ function getCanvasBg(state) {
     return bg || "#1a1a1a";
 }
 
+/** 当前画布视图缩放倍数（封顶 2，用于画板清晰度）。
+ *  放大 ≤2 倍时画板像素补齐到屏幕像素，与 XImageGet 的 img 显示对齐；
+ *  再大的缩放交给 CSS 拉伸，优先保证拖动滑块流畅。 */
+function getCanvasZoom() {
+    var scale = app.canvas && app.canvas.ds && app.canvas.ds.scale;
+    if (!scale || !isFinite(scale) || scale <= 0) return 1;
+    return Math.min(scale, 2);
+}
+
 /** 当前 fit 缩放比例（基于缓冲像素） */
 function currentScale(state) {
     if (!state.imgW || !state.imgH) return 1;
@@ -793,10 +808,20 @@ function render(state) {
     var ctx = state.ctx;
     if (!ctx) return;
 
-    // 取 CSS 尺寸，设为缓冲像素尺寸（无 DPR 放大，避免精度问题）
-    var rect = canvas.getBoundingClientRect();
-    var bw = Math.floor(rect.width);
-    var bh = Math.floor(rect.height);
+    // 缓冲像素 = 布局尺寸 × DPR × 视图缩放（封顶 2）。
+    // clientWidth/clientHeight 是布局尺寸，不受 canvas zoom transform 影响；
+    // 乘以封顶 2 的 zoom 因子使放大 ≤2 倍时画板像素 ≈ 屏幕像素，
+    // 清晰度与 XImageGet 的 img 显示对齐（避免用户误以为图片被改动）；
+    // 视图缩放本身仍由 CSS transform 完成（DomWidget 层 scale）。
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var zoom = getCanvasZoom();
+    var bw = Math.round(state.canvas.clientWidth * dpr * zoom);
+    var bh = Math.round(state.canvas.clientHeight * dpr * zoom);
+    // 超大 buffer 封顶，超出部分由 CSS 拉伸（防极端尺寸下重绘过重）
+    // （bufScale ≤ 1，恒为 1 时即原尺寸，无需分支）
+    var bufScale = Math.min(1, MAX_CANVAS_BUF / Math.max(bw, bh));
+    bw = Math.round(bw * bufScale);
+    bh = Math.round(bh * bufScale);
     if (bw <= 0 || bh <= 0) return;
 
     if (canvas.width !== bw || canvas.height !== bh) {
@@ -805,6 +830,9 @@ function render(state) {
     }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // 高质量降采样，避免大图缩小时细节丢失（canvas.width 赋值会重置此状态，
+    // 故每次重画都显式设置；imageSmoothingEnabled 默认即 true，无需重设）
+    ctx.imageSmoothingQuality = "high";
     ctx.clearRect(0, 0, bw, bh);
 
     if (!state.imageA && !state.imageB) {
@@ -1350,20 +1378,29 @@ function createCompareUI(node) {
         };
     }
 
-    // --- 尺寸/主题变化自动重绘（RAF 轮询） ---
+    // --- 尺寸/主题/视图缩放变化自动重绘（RAF 轮询） ---
     state._lastSizeW = 0;
     state._lastSizeH = 0;
     state._lastBgColor = "";
+    state._bgCheckCount = 0;
+    state._lastZoom = getCanvasZoom();
     function sizePollLoop() {
         if (!state.node || !state.canvas) return;
-        var rect = state.canvas.getBoundingClientRect();
-        var w = Math.floor(rect.width);
-        var h = Math.floor(rect.height);
-        var bg = getCanvasBg(state);
+        // 用 clientWidth/clientHeight（布局尺寸，不含 zoom transform），
+        // 与 render() 的 buffer 尺寸来源保持一致
+        var w = Math.floor(state.canvas.clientWidth);
+        var h = Math.floor(state.canvas.clientHeight);
+        var zoom = getCanvasZoom();
+        // getComputedStyle 开销大（强制样式重算），低频（每 30 帧）检查主题背景色
+        state._bgCheckCount++;
+        var checkBg = (state._bgCheckCount % 30) === 1;
+        var bg = checkBg ? getCanvasBg(state) : state._lastBgColor;
         if (w !== state._lastSizeW || h !== state._lastSizeH
-            || bg !== state._lastBgColor) {
+            || zoom !== state._lastZoom
+            || (checkBg && bg !== state._lastBgColor)) {
             state._lastSizeW = w;
             state._lastSizeH = h;
+            state._lastZoom = zoom;
             state._lastBgColor = bg;
             render(state);
         }
