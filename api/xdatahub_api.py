@@ -3920,6 +3920,7 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "enable_image_thumb_cache": False,
         "enable_video_thumb_cache": False,
         "edge_peek": False,
+        "canvas_drop_enabled": True,
         "media_sort_by": "mtime",
         "media_sort_order": "desc",
     }
@@ -4083,6 +4084,10 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
                 patch["ui_locale"] = locale
     if "edge_peek" in value:
         patch["edge_peek"] = parse_bool(value.get("edge_peek"))
+    if "canvas_drop_enabled" in value:
+        patch["canvas_drop_enabled"] = parse_bool(
+            value.get("canvas_drop_enabled")
+        )
     if "media_sort_by" in value:
         sort_by = str(value.get("media_sort_by") or "").strip().lower()
         if sort_by in MEDIA_SORT_BY_VALUES:
