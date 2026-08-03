@@ -35,10 +35,12 @@ class XListRestore(io.ComfyNode):
             node_id="XListRestore",
             display_name="XListRestore",
             description=(
-                "Scatter a dense list back into a sparse list using "
-                "slot_map from XListCreate. Empty slots are None "
-                "(same as a disabled gate channel). Connect the sparse "
-                "list + count to XListPull or XListToPipe if needed."
+                "Put list items back into their original slots after "
+                "processing. XListCreate packs only the connected inputs "
+                "into a compact list; this node uses the saved slot map "
+                "to place every processed item back where it came from. ",
+                "Unused slots become None, so downstream nodes that read ",
+                "items by position stay aligned.",
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
@@ -47,16 +49,17 @@ class XListRestore(io.ComfyNode):
                     "list_input",
                     template=template,
                     tooltip=(
-                        "Dense list to scatter. Usually XListCreate "
-                        "list output (optionally after batch processing). "
-                        "Element type matches the connected list."
+                        "The compact list to restore, usually the output of ",
+                        "a batch-processing node (e.g. XImageResize). Its ",
+                        "items originally come from XListCreate.",
                     ),
                 ),
                 XListSlotMapIO.Input(
                     "slot_map",
                     tooltip=(
-                        "Structure map from XListCreate.slot_map "
-                        "(indices + width). Not media data."
+                        "The position record saved by XListCreate: which ",
+                        "item belongs to which slot. Connect XListCreate's ",
+                        "slot_map output here.",
                     ),
                 ),
             ],
@@ -66,16 +69,17 @@ class XListRestore(io.ComfyNode):
                     display_name="list",
                     is_output_list=True,
                     tooltip=(
-                        "Sparse list with None in empty slots. "
-                        "Length equals count (slot_map width). "
-                        "Element type matches list_input."
+                        "The restored list with items back in their ",
+                        "original positions. Empty slots are None. Length ",
+                        "equals the count output.",
                     ),
                 ),
                 io.Int.Output(
                     display_name="count",
                     tooltip=(
-                        "Sparse width from slot_map. Connect to "
-                        "XListPull / XListToPipe for port expansion."
+                        "Total number of slots (including empty ones). ",
+                        "Connect to XListPull / XListToPipe to expand ",
+                        "their ports.",
                     ),
                 ),
             ],
@@ -114,9 +118,7 @@ class XListRestore(io.ComfyNode):
             return io.NodeOutput([], 0)
 
         if len(items) != len(indices):
-            raise ValueError(
-                "list length must match slot_map indices length"
-            )
+            raise ValueError("list length must match slot_map indices length")
 
         sparse: list[Any] = [None] * width
         for item, slot in zip(items, indices, strict=True):

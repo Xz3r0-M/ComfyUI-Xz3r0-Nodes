@@ -56,14 +56,21 @@ function getUpstreamNode(graph, linkId) {
         : graph._nodes_by_id && graph._nodes_by_id[originId];
 }
 
+function resolveAutogrowSlotNumber(name) {
+    var raw = String(name || "");
+    var match = raw.match(/(?:^|[._])input(\d+)$/);
+    if (!match) return 0;
+    var num = parseInt(match[1], 10);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+}
+
 function countActiveInputs(node) {
     if (!node || !Array.isArray(node.inputs)) return 0;
     var count = 0;
     for (var index = 0; index < node.inputs.length; index++) {
         var input = node.inputs[index];
         if (!input || input.link == null) continue;
-        var name = String(input.name || "");
-        if (/^input\d*$/.test(name) || name.indexOf("input") === 0) {
+        if (resolveAutogrowSlotNumber(input.name) > 0) {
             count += 1;
         }
     }
@@ -136,14 +143,6 @@ function refreshDownstream() {
     scheduleXPipeRefresh();
 }
 
-function scheduleRefreshAll(graph) {
-    // XListCreate input changes should re-expand downstream XPipe.
-    if (!graph) {
-        refreshDownstream();
-        return;
-    }
-    refreshDownstream();
-}
 
 app.registerExtension({
     name: "Xz3r0.XListToPipe",
@@ -173,6 +172,16 @@ app.registerExtension({
                 }
                 var node = this;
 
+                // Fast path: skip everything for unrelated node classes so
+                // generic canvas edits never pay for slot lookups below.
+                if (
+                    node.comfyClass !== LIST_CREATE_CLASS
+                    && node.comfyClass !== LIST_RESTORE_CLASS
+                    && node.comfyClass !== NODE_CLASS
+                ) {
+                    return;
+                }
+
                 if (node.comfyClass === LIST_CREATE_CLASS) {
                     var createSlot = slotInfo
                         || (node.inputs && node.inputs[index]);
@@ -180,7 +189,9 @@ app.registerExtension({
                         (createSlot && createSlot.name) || ""
                     );
                     if (/(?:^|[._])input\d+$/.test(createName)) {
-                        scheduleRefreshAll(node.graph);
+                        // XListCreate input changes should re-expand
+                        // downstream XPipe.
+                        refreshDownstream();
                     }
                 }
 
@@ -194,7 +205,7 @@ app.registerExtension({
                             || restoreSlot.name === "list_input"
                         )
                     ) {
-                        scheduleRefreshAll(node.graph);
+                        refreshDownstream();
                     }
                 }
 

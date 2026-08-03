@@ -28,7 +28,9 @@ _SIMPLE_FORM_CONTENT_TYPES = frozenset({
 })
 
 
-def _reject_simple_form_content_type(request: web.Request) -> web.Response | None:
+def _reject_simple_form_content_type(
+    request: web.Request,
+) -> web.Response | None:
     """拒绝可由跨站普通表单直接提交的 Content-Type。"""
     if request.content_type in _SIMPLE_FORM_CONTENT_TYPES:
         return web.json_response(

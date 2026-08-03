@@ -20,6 +20,7 @@ import {
 } from "./x_subgraph_utils.js";
 
 var NODE_CLASS = "XPipeGate";
+var XPIPE_CLASS = "XPipe";
 var GATE_SLOTS = 50;
 var HIDE_NONE = 0;
 var HIDE_INPUT = 1;
@@ -43,7 +44,11 @@ var uiLocalePrimary = null;
 var uiLocaleFallback = null;
 var i18nCache = {};
 var localeSyncInstalled = false;
-var canvasHooked = false;
+var CANVAS_HOOK_RETRY_MS = 200;
+var CANVAS_HOOK_MAX_RETRIES = 50;
+var hookedCanvas = null;
+var canvasHookRetries = 0;
+var linkRenderCache = new WeakMap();
 var refreshTimer = null;
 var gateNodeCount = 0;
 
@@ -104,6 +109,25 @@ function isXPipeGate(node) {
         node
         && String(node.comfyClass || node.type || "") === NODE_CLASS
     );
+}
+
+function isXPipe(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === XPIPE_CLASS
+    );
+}
+
+function isGateFamily(node) {
+    return isXPipeGate(node) || isXPipe(node);
+}
+
+function linkTouchesGateFamily(node, link) {
+    if (isGateFamily(node)) return true;
+    if (!link) return false;
+    var graph = node.graph || app.graph;
+    return isGateFamily(getNodeById(graph, link.origin_id))
+        || isGateFamily(getNodeById(graph, link.target_id));
 }
 
 function forEachPipeGate(rootGraph, visitor) {
@@ -191,6 +215,7 @@ function applyUiLocale() {
             forEachPipeGate(app.graph, function (node) {
                 updateControlWidgets(node);
                 refreshNodeLayout(node);
+                applyInitialNodeSize(node);
             });
             markCanvasDirty();
         });
@@ -468,6 +493,7 @@ function setHiddenState(node, state) {
     updateControlWidgets(node);
     node.graph && node.graph.change && node.graph.change();
     markCanvasDirty();
+    invalidateLinkRenderCache();
 }
 
 function setValueHiddenState(node, state) {
@@ -479,6 +505,7 @@ function setValueHiddenState(node, state) {
     updateControlWidgets(node);
     node.graph && node.graph.change && node.graph.change();
     markCanvasDirty();
+    invalidateLinkRenderCache();
 }
 
 function ensureControlWidgets(node) {
@@ -949,9 +976,6 @@ function refreshNodeLayout(node) {
         }
         if (typeof node.arrange === "function") node.arrange();
     } catch (_error) { /* keep current layout */ }
-    // arrange/_setConcreteSlots can re-inflate height if hidden slots leak
-    // into widgetStartY; snap back to Scheme-A content size.
-    fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA);
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
     markCanvasDirty();
 }
@@ -966,6 +990,7 @@ function resolveInitialNodeSize(node) {
     var computedHeight = Number(computed && computed[1]) || 0;
     var currentWidth = Number(current[0]) || 0;
     // Content height is authoritative (Scheme A hides extras).
+    // Width may keep a larger saved/current size.
     var minWidth = Math.max(1, Math.ceil(
         (computedWidth || currentWidth || 1) + INITIAL_WIDTH_EXTRA,
     ));
@@ -978,16 +1003,13 @@ function resolveInitialNodeSize(node) {
 
 function applyInitialNodeSize(node) {
     if (!node) return;
-    // Always re-fit height to visible content. Construction-time
-    // setInitialSize() and arrange() can leave a 50-slot inflated height
-    // before Scheme A visibility windows are applied.
+    // arrange()/_setConcreteSlots() can leave a 50-slot inflated height
+    // before Scheme-A visibility windows apply; re-fit to visible content
+    // and keep min_size in sync so the node cannot shrink below it.
     var size = fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA)
         || resolveInitialNodeSize(node);
     if (!size) return;
     node.min_size = size.slice();
-    if (!node.__xpipeGateInitialSizeApplied) {
-        node.__xpipeGateInitialSizeApplied = true;
-    }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 
@@ -1015,12 +1037,18 @@ function syncNode(state) {
     refreshChannelMetadata(state);
     applyChannelTypes(state);
     applyChannelLabels(state);
-    persistState(state);
     hideNamesWidget(state.node);
     sortGateWidgets(state.node);
     refreshNodeLayout(state.node);
+    // applyInitialNodeSize re-fits to visible content and updates min_size;
+    // it is the single computeSize pass per sync.
     applyInitialNodeSize(state.node);
-    return before !== stateSignature(state);
+    // Persist only when the synced state actually changed; isolated
+    // mutations (enable toggles, name edits) persist through their own
+    // handlers.
+    var changed = before !== stateSignature(state);
+    if (changed) persistState(state);
+    return changed;
 }
 
 function createState(node) {
@@ -1052,7 +1080,8 @@ function ensurePipeGate(node) {
 function refreshPortStatus(node) {
     var state = ensurePipeGate(node);
     if (!state) return;
-    refreshChannelMetadata(state);
+    // syncNode refreshes channel metadata; the scheduled refresh
+    // propagates bundle metadata to dependent nodes.
     syncNode(state);
     scheduleRefresh();
 }
@@ -1073,6 +1102,9 @@ function refreshAllPipeGate() {
         if (!changed) break;
     }
     if (anyChanged) scheduleXPipeRefresh();
+    // Link render cache depends on gate state; drop it after each sync so
+    // hidden/warning visuals follow name/type changes immediately.
+    invalidateLinkRenderCache();
 }
 
 function scheduleRefresh() {
@@ -1136,32 +1168,81 @@ function linkWarning(link, graph) {
     var warningWidget = findWidget(source, "type_warning");
     return warningWidget && !warningWidget.value ? null : source;
 }
+function cachedLinkRender(link, graph) {
+    if (!link) return null;
+    var cached = linkRenderCache.get(link);
+    if (cached) return cached;
+    // Hidden/warning lookups resolve source/target nodes per link; cache the
+    // result per link object so the per-frame render hot path only pays a
+    // WeakMap get. invalidateLinkRenderCache() drops entries whenever gate
+    // state or connections change.
+    var warningSource = linkWarning(link, graph);
+    var origin = warningSource || getNodeById(graph, link.origin_id);
+    var warningWidget = origin ? findWidget(origin, "type_warning") : null;
+    var entry = {
+        bundleHidden: isHiddenBundleLink(link, graph),
+        valueHidden: isHiddenValueLink(link, graph),
+        warning: !!warningSource,
+        warningWidget: warningWidget,
+        warningOn: !warningWidget || !!warningWidget.value,
+    };
+    linkRenderCache.set(link, entry);
+    return entry;
+}
+
+function invalidateLinkRenderCache() {
+    linkRenderCache = new WeakMap();
+}
 
 function installCanvasHooks() {
-    if (canvasHooked || !app.canvas) {
-        if (!app.canvas) setTimeout(installCanvasHooks, 200);
+    var canvas = app.canvas;
+    if (canvas === hookedCanvas) return;
+    if (!canvas) {
+        canvasHookRetries++;
+        if (canvasHookRetries <= CANVAS_HOOK_MAX_RETRIES) {
+            setTimeout(installCanvasHooks, CANVAS_HOOK_RETRY_MS);
+        } else {
+            console.warn("[XPipeGate] canvas not available; renderLink hooks not installed");
+        }
         return;
     }
-    canvasHooked = true;
-    var originalRenderLink = app.canvas.renderLink;
-    app.canvas.renderLink = function (ctx, start, end, link) {
+    canvasHookRetries = 0;
+    hookedCanvas = canvas;
+    var originalRenderLink = canvas.renderLink;
+    if (typeof originalRenderLink !== "function") {
+        console.warn("[XPipeGate] canvas.renderLink missing; link hiding/warning disabled");
+        return;
+    }
+    // litegraph 新旧版 renderLink 的 color 参数位置不同：新版在 args[6]
+    // （skipBorder、flow 之后），旧版在 args[5]。按函数声明的参数个数
+    // 一次性判定，避免硬编码索引在新旧版本间静默失效。
+    var colorIndex = originalRenderLink.length >= 7 ? 6 : 5;
+    canvas.renderLink = function (ctx, start, end, link) {
         var graph = this.graph || app.graph;
-        if (isHiddenBundleLink(link, graph)
-            || isHiddenValueLink(link, graph)) return;
-        if (!linkWarning(link, graph)) {
-            return originalRenderLink
-                && originalRenderLink.apply(this, arguments);
+        var entry = cachedLinkRender(link, graph);
+        if (!entry) return originalRenderLink.apply(this, arguments);
+        if (entry.bundleHidden || entry.valueHidden) return;
+        // type_warning 开关是唯一不经刷新同步的渲染输入：widget 引用已
+        // 缓存，每帧只做一次布尔比对；开关翻转时重算 warning（linkWarning
+        // 的结果也随开关启停）。
+        if (entry.warningWidget
+            && !!entry.warningWidget.value !== entry.warningOn) {
+            entry.warningOn = !!entry.warningWidget.value;
+            entry.warning = !!linkWarning(link, graph);
+        }
+        if (!entry.warning || !entry.warningOn) {
+            return originalRenderLink.apply(this, arguments);
         }
         var args = Array.prototype.slice.call(arguments);
         ctx.save();
         ctx.shadowColor = WARNING_GLOW;
         ctx.shadowBlur = 10;
-        args[6] = "#ffffff";
-        originalRenderLink && originalRenderLink.apply(this, args);
+        args[colorIndex] = "#ffffff";
+        originalRenderLink.apply(this, args);
         ctx.shadowBlur = 0;
         ctx.setLineDash && ctx.setLineDash([8, 5]);
-        args[6] = WARNING_COLOR;
-        originalRenderLink && originalRenderLink.apply(this, args);
+        args[colorIndex] = WARNING_COLOR;
+        originalRenderLink.apply(this, args);
         ctx.restore();
     };
 }
@@ -1177,7 +1258,13 @@ app.registerExtension({
     },
 
     async afterConfigureGraph() {
+        // Undo/redo and workflow loads rebuild nodes through configure,
+        // which can bypass the incremental onNodeCreated/onRemoved count;
+        // rebuild the count from the graph so the gate stays accurate.
+        gateNodeCount = 0;
         forEachPipeGate(app.graph, function (node) {
+            node.__xpipeGateCounted = true;
+            gateNodeCount++;
             if (node.__xpipeGateEnablesReady) return;
             node.__xpipeGateEnablesReady = true;
             var state = ensurePipeGate(node);
@@ -1190,10 +1277,22 @@ app.registerExtension({
         if (!nodeType.prototype.__xpipeGateRefreshHooked) {
             nodeType.prototype.__xpipeGateRefreshHooked = true;
             var originalAnyConnections = nodeType.prototype.onConnectionsChange;
-            nodeType.prototype.onConnectionsChange = function () {
+            nodeType.prototype.onConnectionsChange = function (
+                type,
+                slotIndex,
+                isConnected,
+                link,
+            ) {
                 var result = originalAnyConnections
                     && originalAnyConnections.apply(this, arguments);
-                if (gateNodeCount > 0) scheduleRefresh();
+                // Only schedule when the change touches a Gate/XPipe node;
+                // unrelated canvas edits must not trigger a full refresh.
+                if (
+                    gateNodeCount > 0
+                    && linkTouchesGateFamily(this, link)
+                ) {
+                    scheduleRefresh();
+                }
                 return result;
             };
         }
@@ -1209,8 +1308,10 @@ app.registerExtension({
             // Do not mark enables ready here. Graph-loaded nodes call
             // onConfigure next; writing defaults first would clobber the
             // missing ENABLES_PROP case with all-true values.
-            var state = ensurePipeGate(this);
-            if (state) syncNode(state);
+            try {
+                var state = ensurePipeGate(this);
+                if (state) syncNode(state);
+            } catch (_error) { /* keep ComfyUI node creation flow intact */ }
             var node = this;
             setTimeout(function () {
                 if (node.__xpipeGateEnablesReady) return;
@@ -1221,10 +1322,15 @@ app.registerExtension({
                 if (readyState) persistState(readyState);
             }, 0);
         };
-
         var originalConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (info) {
             originalConfigure && originalConfigure.apply(this, arguments);
+            // Undo/redo and workflow loads restore nodes through configure
+            // instead of onNodeCreated; count them here too.
+            if (!this.__xpipeGateCounted) {
+                this.__xpipeGateCounted = true;
+                gateNodeCount++;
+            }
             var state = ensurePipeGate(this);
             if (!state) return;
             state.types = padArray(
@@ -1273,25 +1379,26 @@ app.registerExtension({
 
     async loadedGraphNode(node) {
         if (!isXPipeGate(node)) return;
-        var state = ensurePipeGate(node);
-        if (!state) return;
-        // Configure already restored enables when available. Still re-assert
-        // them after dynamic channel expansion.
-        if (!Array.isArray(state.enables) || !state.enables.length) {
-            state.enables = loadEnableStates(node, null);
-        }
-        node.__xpipeGateEnablesReady = true;
-        applyEnableStates(node, state.enables);
-        syncNode(state);
+        try {
+            var state = ensurePipeGate(node);
+            if (!state) return;
+            // Configure already restored enables when available. Still
+            // re-assert them after dynamic channel expansion.
+            if (!Array.isArray(state.enables) || !state.enables.length) {
+                state.enables = loadEnableStates(node, null);
+            }
+            node.__xpipeGateEnablesReady = true;
+            applyEnableStates(node, state.enables);
+            syncNode(state);
+        } catch (_error) { /* keep graph loading flow intact */ }
         scheduleRefresh();
     },
-
     nodeCreated(node) {
         if (!isXPipeGate(node)) return;
         if (!node.__xpipeGateCounted) {
             node.__xpipeGateCounted = true;
             gateNodeCount++;
         }
-        ensurePipeGate(node);
+        try { ensurePipeGate(node); } catch (_error) { /* keep node creation flow intact */ }
     },
 });

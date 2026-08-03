@@ -28,16 +28,18 @@ class XPipeRecursive(io.ComfyNode):
             node_id="XPipeRecursive",
             display_name="XPipeRecursive",
             description=(
-                "Return the first non-None value from an XPipe bundle "
-                "using a customizable recursive slot order."
+                "Scan an XPipe bundle in the slot order you define and ",
+                "return the first value found. Write the order as slot ",
+                "numbers separated by '-' (e.g. 1-3-5 or 50-1-2); the ",
+                "first non-empty slot wins.",
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
                 XPipeBundle.Input(
                     "xpipe_in",
                     tooltip=(
-                        "XPipe bundle scanned by recursive_order "
-                        f"(slots 1-{PIPE_SLOTS})"
+                        "The XPipe bundle to search through, following your ",
+                        f"recursive_order (slots 1-{PIPE_SLOTS})",
                     ),
                 ),
                 io.Boolean.Input(
@@ -54,9 +56,9 @@ class XPipeRecursive(io.ComfyNode):
                     "recursive_order",
                     default=DEFAULT_RECURSIVE_ORDER,
                     tooltip=(
-                        "Recursive slot order list using '-' separator "
-                        f"(example: 1-3-5 or 50-1-2). Only 1-{PIPE_SLOTS} "
-                        "is allowed and duplicates are forbidden."
+                        "Slot order to scan, numbers separated by '-'",
+                        " (example: 1-3-5 or 50-1-2). Only slots 1-",
+                        f"{PIPE_SLOTS} allowed; no duplicates.",
                     ),
                 ),
             ],
@@ -65,8 +67,8 @@ class XPipeRecursive(io.ComfyNode):
                     "recursive_output",
                     display_name="recursive_output",
                     tooltip=(
-                        "First accepted value found by recursive_order "
-                        f"from slots 1-{PIPE_SLOTS}"
+                        "The first non-empty value found while scanning in ",
+                        "your specified order.",
                     ),
                 ),
             ],
@@ -120,9 +122,7 @@ class XPipeRecursive(io.ComfyNode):
         if value is None:
             return True
         return bool(
-            empty_string_as_none
-            and isinstance(value, str)
-            and value == ""
+            empty_string_as_none and isinstance(value, str) and value == ""
         )
 
     @classmethod

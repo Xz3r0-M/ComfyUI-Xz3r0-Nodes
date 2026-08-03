@@ -52,7 +52,11 @@ var uiLocalePrimary = null;
 var uiLocaleFallback = null;
 var i18nCache = {};
 var localeSyncInstalled = false;
-var canvasHooked = false;
+var CANVAS_HOOK_RETRY_MS = 200;
+var CANVAS_HOOK_MAX_RETRIES = 50;
+var hookedCanvas = null;
+var canvasHookRetries = 0;
+var linkRenderCache = new WeakMap();
 var graphRefreshTimer = null;
 var xpipeNodeCount = 0;
 var metadataListeners = [];
@@ -154,6 +158,22 @@ function isXListRestore(node) {
 }
 
 
+function isXpipeFamily(node) {
+    return isXPipe(node)
+        || isXPipeGate(node)
+        || isXListToPipe(node)
+        || isXListCreate(node)
+        || isXListRestore(node);
+}
+
+function linkTouchesXpipeFamily(node, link) {
+    if (isXpipeFamily(node)) return true;
+    if (!link) return false;
+    var graph = node.graph || app.graph;
+    return isXpipeFamily(getNodeById(graph, link.origin_id))
+        || isXpipeFamily(getNodeById(graph, link.target_id));
+}
+
 function findWidgetByName(node, name) {
     if (!node || !Array.isArray(node.widgets)) return null;
     for (var index = 0; index < node.widgets.length; index++) {
@@ -181,7 +201,7 @@ function countXListCreateActiveInputs(node) {
         var input = node.inputs[index];
         if (!input || input.link == null) continue;
         var name = String(input.name || "");
-        if (/(?:^|[._])input\d+$/.test(name) || /^input\d*$/.test(name)) {
+        if (/(?:^|[._])input\d+$/.test(name)) {
             count += 1;
         }
     }
@@ -368,6 +388,7 @@ function applyUiLocale() {
                 if (node.__xpipeState) {
                     syncNameWidgets(node.__xpipeState);
                     refreshNodeLayout(node);
+                    applyInitialNodeSize(node);
                 }
             });
             markCanvasDirty();
@@ -462,6 +483,7 @@ function setHiddenState(node, state) {
     updateControlWidgets(node);
     node.graph && node.graph.change && node.graph.change();
     markCanvasDirty();
+    invalidateLinkRenderCache();
 }
 
 function setValueHiddenState(node, state) {
@@ -473,6 +495,7 @@ function setValueHiddenState(node, state) {
     updateControlWidgets(node);
     node.graph && node.graph.change && node.graph.change();
     markCanvasDirty();
+    invalidateLinkRenderCache();
 }
 
 function ensureControlWidgets(node) {
@@ -709,10 +732,13 @@ function ensureOutputOrder(node) {
 function normalizeValueInputs(node) {
     if (!node || !Array.isArray(node.inputs)) return;
     for (var index = 0; index < node.inputs.length; index++) {
-        var slot = valueSlotNumber(node.inputs[index] && node.inputs[index].name);
+        var input = node.inputs[index];
+        var slot = valueSlotNumber(input && input.name);
         if (!slot) continue;
-        node.inputs[index].name = "value_" + slot;
-        node.inputs[index].display_name = String(slot);
+        input.name = "value_" + slot;
+        // Apply the default "N" label only when the slot has none yet
+        // (fresh slot); never overwrite a port the user has renamed.
+        if (!input.display_name) input.display_name = String(slot);
     }
 }
 
@@ -1517,9 +1543,6 @@ function refreshNodeLayout(node) {
         }
         if (typeof node.arrange === "function") node.arrange();
     } catch (_error) { /* keep current layout */ }
-    // arrange/_setConcreteSlots can re-inflate height if hidden slots leak
-    // into widgetStartY; snap back to Scheme-A content size.
-    fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA);
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
     markCanvasDirty();
 }
@@ -1547,18 +1570,16 @@ function resolveInitialNodeSize(node) {
 
 function applyInitialNodeSize(node) {
     if (!node) return;
-    // Always re-fit height to visible content. Construction-time
-    // setInitialSize() and arrange() can leave a 50-slot inflated height
-    // before Scheme A visibility windows are applied.
+    // arrange()/_setConcreteSlots() can leave a 50-slot inflated height
+    // before Scheme-A visibility windows apply; re-fit to visible content
+    // and keep min_size in sync so the node cannot shrink below it.
     var size = fitNodeSizeToVisibleSlots(node, INITIAL_WIDTH_EXTRA)
         || resolveInitialNodeSize(node);
     if (!size) return;
     node.min_size = size.slice();
-    if (!node.__xpipeInitialSizeApplied) {
-        node.__xpipeInitialSizeApplied = true;
-    }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
+
 
 function stateSignature(state) {
     return JSON.stringify({
@@ -1579,10 +1600,16 @@ function syncNode(state) {
     syncPortLabels(state);
     removeBackingInputSlot(state.node);
     syncNameWidgets(state);
-    persistState(state);
     refreshNodeLayout(state.node);
+    // applyInitialNodeSize re-fits to visible content and updates min_size;
+    // it is the single computeSize pass per sync.
     applyInitialNodeSize(state.node);
-    return before !== stateSignature(state);
+    // Persist only when the synced state actually changed; isolated
+    // mutations (name edits, hidden toggles) persist through their own
+    // handlers.
+    var changed = before !== stateSignature(state);
+    if (changed) persistState(state);
+    return changed;
 }
 
 function ensureXPipe(node) {
@@ -1600,7 +1627,10 @@ function refreshAllXPipe() {
         nodes.push(node);
         ensureXPipe(node);
     });
-    var maxPasses = Math.max(1, nodes.length + 1);
+    // A constant small pass budget: sync passes only cascade when a bundle
+    // type actually propagates, and the loop exits as soon as a pass makes
+    // no further change. A per-node budget was quadratic in the worst case.
+    var maxPasses = 4;
     for (var pass = 0; pass < maxPasses; pass++) {
         var changed = false;
         for (var index = 0; index < nodes.length; index++) {
@@ -1615,6 +1645,9 @@ function refreshAllXPipe() {
         listenerIndex++) {
         try { metadataListeners[listenerIndex](); } catch (_error) { /* ignore */ }
     }
+    // Link render cache depends on XPipe state; drop it after each sync so
+    // hidden/warning visuals follow name/type changes immediately.
+    invalidateLinkRenderCache();
 }
 
 function scheduleGraphRefresh() {
@@ -1628,8 +1661,8 @@ function scheduleGraphRefresh() {
 function refreshPortStatus(node) {
     var state = ensureXPipe(node);
     if (!state) return;
-    refreshAutoNames(state);
-    refreshSlotTypes(state);
+    // syncNode refreshes auto names and slot types; the scheduled graph
+    // pass propagates bundle metadata to dependent nodes.
     syncNode(state);
     scheduleGraphRefresh();
 }
@@ -1687,32 +1720,81 @@ function linkWarning(link, graph) {
     var warningWidget = findWidget(source, "type_warning");
     return warningWidget && !warningWidget.value ? null : source;
 }
+function cachedLinkRender(link, graph) {
+    if (!link) return null;
+    var cached = linkRenderCache.get(link);
+    if (cached) return cached;
+    // Hidden/warning lookups resolve source/target nodes per link; cache the
+    // result per link object so the per-frame render hot path only pays a
+    // WeakMap get. invalidateLinkRenderCache() drops entries whenever XPipe
+    // state or connections change.
+    var warningSource = linkWarning(link, graph);
+    var origin = warningSource || getNodeById(graph, link.origin_id);
+    var warningWidget = origin ? findWidget(origin, "type_warning") : null;
+    var entry = {
+        bundleHidden: isHiddenBundleLink(link, graph),
+        valueHidden: isHiddenValueLink(link, graph),
+        warning: !!warningSource,
+        warningWidget: warningWidget,
+        warningOn: !warningWidget || !!warningWidget.value,
+    };
+    linkRenderCache.set(link, entry);
+    return entry;
+}
+
+function invalidateLinkRenderCache() {
+    linkRenderCache = new WeakMap();
+}
 
 function installCanvasHooks() {
-    if (canvasHooked || !app.canvas) {
-        if (!app.canvas) setTimeout(installCanvasHooks, 200);
+    var canvas = app.canvas;
+    if (canvas === hookedCanvas) return;
+    if (!canvas) {
+        canvasHookRetries++;
+        if (canvasHookRetries <= CANVAS_HOOK_MAX_RETRIES) {
+            setTimeout(installCanvasHooks, CANVAS_HOOK_RETRY_MS);
+        } else {
+            console.warn("[XPipe] canvas not available; renderLink hooks not installed");
+        }
         return;
     }
-    canvasHooked = true;
-    var originalRenderLink = app.canvas.renderLink;
-    app.canvas.renderLink = function (ctx, start, end, link) {
+    canvasHookRetries = 0;
+    hookedCanvas = canvas;
+    var originalRenderLink = canvas.renderLink;
+    if (typeof originalRenderLink !== "function") {
+        console.warn("[XPipe] canvas.renderLink missing; link hiding/warning disabled");
+        return;
+    }
+    // litegraph 新旧版 renderLink 的 color 参数位置不同：新版在 args[6]
+    // （skipBorder、flow 之后），旧版在 args[5]。按函数声明的参数个数
+    // 一次性判定，避免硬编码索引在新旧版本间静默失效。
+    var colorIndex = originalRenderLink.length >= 7 ? 6 : 5;
+    canvas.renderLink = function (ctx, start, end, link) {
         var graph = this.graph || app.graph;
-        if (isHiddenBundleLink(link, graph)
-            || isHiddenValueLink(link, graph)) return;
-        if (!linkWarning(link, graph)) {
-            return originalRenderLink
-                && originalRenderLink.apply(this, arguments);
+        var entry = cachedLinkRender(link, graph);
+        if (!entry) return originalRenderLink.apply(this, arguments);
+        if (entry.bundleHidden || entry.valueHidden) return;
+        // type_warning 开关是唯一不经刷新同步的渲染输入：widget 引用已
+        // 缓存，每帧只做一次布尔比对；开关翻转时重算 warning（linkWarning
+        // 的结果也随开关启停）。
+        if (entry.warningWidget
+            && !!entry.warningWidget.value !== entry.warningOn) {
+            entry.warningOn = !!entry.warningWidget.value;
+            entry.warning = !!linkWarning(link, graph);
+        }
+        if (!entry.warning || !entry.warningOn) {
+            return originalRenderLink.apply(this, arguments);
         }
         var args = Array.prototype.slice.call(arguments);
         ctx.save();
         ctx.shadowColor = WARNING_GLOW;
         ctx.shadowBlur = 10;
-        args[6] = "#ffffff";
-        originalRenderLink && originalRenderLink.apply(this, args);
+        args[colorIndex] = "#ffffff";
+        originalRenderLink.apply(this, args);
         ctx.shadowBlur = 0;
         ctx.setLineDash && ctx.setLineDash([8, 5]);
-        args[6] = WARNING_COLOR;
-        originalRenderLink && originalRenderLink.apply(this, args);
+        args[colorIndex] = WARNING_COLOR;
+        originalRenderLink.apply(this, args);
         ctx.restore();
     };
 }
@@ -1727,6 +1809,14 @@ app.registerExtension({
     },
 
     async afterConfigureGraph() {
+        // Undo/redo and workflow loads rebuild nodes through configure,
+        // which can bypass the incremental onNodeCreated/onRemoved count;
+        // rebuild the count from the graph so the gate stays accurate.
+        xpipeNodeCount = 0;
+        forEachXPipe(app.graph, function (node) {
+            node.__xpipeCounted = true;
+            xpipeNodeCount++;
+        });
         scheduleGraphRefresh();
     },
 
@@ -1734,10 +1824,23 @@ app.registerExtension({
         if (!nodeType.prototype.__xpipeGraphRefreshHooked) {
             nodeType.prototype.__xpipeGraphRefreshHooked = true;
             var originalAnyConnections = nodeType.prototype.onConnectionsChange;
-            nodeType.prototype.onConnectionsChange = function () {
+            nodeType.prototype.onConnectionsChange = function (
+                type,
+                slotIndex,
+                isConnected,
+                link,
+            ) {
                 var result = originalAnyConnections
                     && originalAnyConnections.apply(this, arguments);
-                if (xpipeNodeCount > 0) scheduleGraphRefresh();
+                // Only schedule when the change involves an XPipe-family
+                // node; unrelated canvas edits must not trigger a full
+                // graph refresh.
+                if (
+                    xpipeNodeCount > 0
+                    && linkTouchesXpipeFamily(this, link)
+                ) {
+                    scheduleGraphRefresh();
+                }
                 return result;
             };
         }
@@ -1749,12 +1852,20 @@ app.registerExtension({
                 this.__xpipeCounted = true;
                 xpipeNodeCount++;
             }
-            var state = ensureXPipe(this);
-            if (state) syncNode(state);
+            try {
+                var state = ensureXPipe(this);
+                if (state) syncNode(state);
+            } catch (_error) { /* keep ComfyUI node creation flow intact */ }
         };
         var originalConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {
             originalConfigure && originalConfigure.apply(this, arguments);
+            // Undo/redo and workflow loads restore nodes through configure
+            // instead of onNodeCreated; count them here too.
+            if (!this.__xpipeCounted) {
+                this.__xpipeCounted = true;
+                xpipeNodeCount++;
+            }
             var state = ensureXPipe(this);
             if (!state) return;
             state.names = loadNames(this);
@@ -1783,8 +1894,10 @@ app.registerExtension({
 
     async loadedGraphNode(node) {
         if (!isXPipe(node)) return;
-        var state = ensureXPipe(node);
-        if (state) syncNode(state);
+        try {
+            var state = ensureXPipe(node);
+            if (state) syncNode(state);
+        } catch (_error) { /* keep graph loading flow intact */ }
         scheduleGraphRefresh();
     },
 
@@ -1794,6 +1907,6 @@ app.registerExtension({
             node.__xpipeCounted = true;
             xpipeNodeCount++;
         }
-        ensureXPipe(node);
+        try { ensureXPipe(node); } catch (_error) { /* keep node creation flow intact */ }
     },
 });

@@ -45,43 +45,43 @@
       },
       "enable_1": {
         "name": "Enable 1",
-        "tooltip": "Enable channel 1 output"
+        "tooltip": "Whether channel 1 output is enabled"
       },
       "enable_2": {
         "name": "Enable 2",
-        "tooltip": "Enable channel 2 output"
+        "tooltip": "Whether channel 2 output is enabled"
       },
       "enable_3": {
         "name": "Enable 3",
-        "tooltip": "Enable channel 3 output"
+        "tooltip": "Whether channel 3 output is enabled"
       },
       "enable_4": {
         "name": "Enable 4",
-        "tooltip": "Enable channel 4 output"
+        "tooltip": "Whether channel 4 output is enabled"
       },
       "enable_5": {
         "name": "Enable 5",
-        "tooltip": "Enable channel 5 output"
+        "tooltip": "Whether channel 5 output is enabled"
       },
       "enable_6": {
         "name": "Enable 6",
-        "tooltip": "Enable channel 6 output"
+        "tooltip": "Whether channel 6 output is enabled"
       },
       "enable_7": {
         "name": "Enable 7",
-        "tooltip": "Enable channel 7 output"
+        "tooltip": "Whether channel 7 output is enabled"
       },
       "enable_8": {
         "name": "Enable 8",
-        "tooltip": "Enable channel 8 output"
+        "tooltip": "Whether channel 8 output is enabled"
       },
       "enable_9": {
         "name": "Enable 9",
-        "tooltip": "Enable channel 9 output"
+        "tooltip": "Whether channel 9 output is enabled"
       },
       "enable_10": {
         "name": "Enable 10",
-        "tooltip": "Enable channel 10 output"
+        "tooltip": "Whether channel 10 output is enabled"
       },
       "enable_recursive": {
         "name": "Enable Recursive",
@@ -141,411 +141,411 @@
   },
   "XPipeGate": {
     "display_name": "XPipeGate",
-    "description": "Gate an optional XPipe bundle and up to 50 direct any-type inputs with per-channel switches and native Lazy evaluation. Always emits a valid XPipe bundle on xpipe_out even when xpipe_in is unconnected.",
+    "description": "Control up to 50 channels, each with its own enable switch. A channel takes its value from the incoming XPipe bundle or from its own direct input; disabled channels output nothing. Always produces a valid XPipe bundle on xpipe_out, even when no bundle is connected.",
     "inputs": {
       "xpipe_in": {
         "name": "XPipe In",
-        "tooltip": "Optional XPipe bundle. Leave unconnected to start from empty channels; direct channel inputs override matching bundled values."
+        "tooltip": "Optional XPipe bundle to merge from. Leave unconnected to start with empty channels. A direct channel input overrides the value from the bundle."
       },
       "input_1": {
         "name": "Input 1",
-        "tooltip": "Channel 1 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 1 (any data type)"
       },
       "input_2": {
         "name": "Input 2",
-        "tooltip": "Channel 2 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 2 (any data type)"
       },
       "input_3": {
         "name": "Input 3",
-        "tooltip": "Channel 3 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 3 (any data type)"
       },
       "input_4": {
         "name": "Input 4",
-        "tooltip": "Channel 4 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 4 (any data type)"
       },
       "input_5": {
         "name": "Input 5",
-        "tooltip": "Channel 5 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 5 (any data type)"
       },
       "input_6": {
         "name": "Input 6",
-        "tooltip": "Channel 6 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 6 (any data type)"
       },
       "input_7": {
         "name": "Input 7",
-        "tooltip": "Channel 7 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 7 (any data type)"
       },
       "input_8": {
         "name": "Input 8",
-        "tooltip": "Channel 8 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 8 (any data type)"
       },
       "input_9": {
         "name": "Input 9",
-        "tooltip": "Channel 9 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 9 (any data type)"
       },
       "input_10": {
         "name": "Input 10",
-        "tooltip": "Channel 10 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 10 (any data type)"
       },
       "input_11": {
         "name": "Input 11",
-        "tooltip": "Channel 11 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 11 (any data type)"
       },
       "input_12": {
         "name": "Input 12",
-        "tooltip": "Channel 12 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 12 (any data type)"
       },
       "input_13": {
         "name": "Input 13",
-        "tooltip": "Channel 13 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 13 (any data type)"
       },
       "input_14": {
         "name": "Input 14",
-        "tooltip": "Channel 14 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 14 (any data type)"
       },
       "input_15": {
         "name": "Input 15",
-        "tooltip": "Channel 15 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 15 (any data type)"
       },
       "input_16": {
         "name": "Input 16",
-        "tooltip": "Channel 16 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 16 (any data type)"
       },
       "input_17": {
         "name": "Input 17",
-        "tooltip": "Channel 17 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 17 (any data type)"
       },
       "input_18": {
         "name": "Input 18",
-        "tooltip": "Channel 18 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 18 (any data type)"
       },
       "input_19": {
         "name": "Input 19",
-        "tooltip": "Channel 19 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 19 (any data type)"
       },
       "input_20": {
         "name": "Input 20",
-        "tooltip": "Channel 20 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 20 (any data type)"
       },
       "input_21": {
         "name": "Input 21",
-        "tooltip": "Channel 21 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 21 (any data type)"
       },
       "input_22": {
         "name": "Input 22",
-        "tooltip": "Channel 22 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 22 (any data type)"
       },
       "input_23": {
         "name": "Input 23",
-        "tooltip": "Channel 23 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 23 (any data type)"
       },
       "input_24": {
         "name": "Input 24",
-        "tooltip": "Channel 24 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 24 (any data type)"
       },
       "input_25": {
         "name": "Input 25",
-        "tooltip": "Channel 25 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 25 (any data type)"
       },
       "input_26": {
         "name": "Input 26",
-        "tooltip": "Channel 26 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 26 (any data type)"
       },
       "input_27": {
         "name": "Input 27",
-        "tooltip": "Channel 27 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 27 (any data type)"
       },
       "input_28": {
         "name": "Input 28",
-        "tooltip": "Channel 28 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 28 (any data type)"
       },
       "input_29": {
         "name": "Input 29",
-        "tooltip": "Channel 29 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 29 (any data type)"
       },
       "input_30": {
         "name": "Input 30",
-        "tooltip": "Channel 30 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 30 (any data type)"
       },
       "input_31": {
         "name": "Input 31",
-        "tooltip": "Channel 31 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 31 (any data type)"
       },
       "input_32": {
         "name": "Input 32",
-        "tooltip": "Channel 32 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 32 (any data type)"
       },
       "input_33": {
         "name": "Input 33",
-        "tooltip": "Channel 33 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 33 (any data type)"
       },
       "input_34": {
         "name": "Input 34",
-        "tooltip": "Channel 34 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 34 (any data type)"
       },
       "input_35": {
         "name": "Input 35",
-        "tooltip": "Channel 35 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 35 (any data type)"
       },
       "input_36": {
         "name": "Input 36",
-        "tooltip": "Channel 36 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 36 (any data type)"
       },
       "input_37": {
         "name": "Input 37",
-        "tooltip": "Channel 37 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 37 (any data type)"
       },
       "input_38": {
         "name": "Input 38",
-        "tooltip": "Channel 38 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 38 (any data type)"
       },
       "input_39": {
         "name": "Input 39",
-        "tooltip": "Channel 39 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 39 (any data type)"
       },
       "input_40": {
         "name": "Input 40",
-        "tooltip": "Channel 40 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 40 (any data type)"
       },
       "input_41": {
         "name": "Input 41",
-        "tooltip": "Channel 41 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 41 (any data type)"
       },
       "input_42": {
         "name": "Input 42",
-        "tooltip": "Channel 42 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 42 (any data type)"
       },
       "input_43": {
         "name": "Input 43",
-        "tooltip": "Channel 43 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 43 (any data type)"
       },
       "input_44": {
         "name": "Input 44",
-        "tooltip": "Channel 44 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 44 (any data type)"
       },
       "input_45": {
         "name": "Input 45",
-        "tooltip": "Channel 45 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 45 (any data type)"
       },
       "input_46": {
         "name": "Input 46",
-        "tooltip": "Channel 46 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 46 (any data type)"
       },
       "input_47": {
         "name": "Input 47",
-        "tooltip": "Channel 47 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 47 (any data type)"
       },
       "input_48": {
         "name": "Input 48",
-        "tooltip": "Channel 48 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 48 (any data type)"
       },
       "input_49": {
         "name": "Input 49",
-        "tooltip": "Channel 49 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 49 (any data type)"
       },
       "input_50": {
         "name": "Input 50",
-        "tooltip": "Channel 50 Lazy input (optional, accepts any data)"
+        "tooltip": "Optional direct input for channel 50 (any data type)"
       },
       "enable_1": {
         "name": "Enable 1",
-        "tooltip": "Enable channel 1 output"
+        "tooltip": "Whether channel 1 output is enabled"
       },
       "enable_2": {
         "name": "Enable 2",
-        "tooltip": "Enable channel 2 output"
+        "tooltip": "Whether channel 2 output is enabled"
       },
       "enable_3": {
         "name": "Enable 3",
-        "tooltip": "Enable channel 3 output"
+        "tooltip": "Whether channel 3 output is enabled"
       },
       "enable_4": {
         "name": "Enable 4",
-        "tooltip": "Enable channel 4 output"
+        "tooltip": "Whether channel 4 output is enabled"
       },
       "enable_5": {
         "name": "Enable 5",
-        "tooltip": "Enable channel 5 output"
+        "tooltip": "Whether channel 5 output is enabled"
       },
       "enable_6": {
         "name": "Enable 6",
-        "tooltip": "Enable channel 6 output"
+        "tooltip": "Whether channel 6 output is enabled"
       },
       "enable_7": {
         "name": "Enable 7",
-        "tooltip": "Enable channel 7 output"
+        "tooltip": "Whether channel 7 output is enabled"
       },
       "enable_8": {
         "name": "Enable 8",
-        "tooltip": "Enable channel 8 output"
+        "tooltip": "Whether channel 8 output is enabled"
       },
       "enable_9": {
         "name": "Enable 9",
-        "tooltip": "Enable channel 9 output"
+        "tooltip": "Whether channel 9 output is enabled"
       },
       "enable_10": {
         "name": "Enable 10",
-        "tooltip": "Enable channel 10 output"
+        "tooltip": "Whether channel 10 output is enabled"
       },
       "enable_11": {
         "name": "Enable 11",
-        "tooltip": "Enable channel 11 output"
+        "tooltip": "Whether channel 11 output is enabled"
       },
       "enable_12": {
         "name": "Enable 12",
-        "tooltip": "Enable channel 12 output"
+        "tooltip": "Whether channel 12 output is enabled"
       },
       "enable_13": {
         "name": "Enable 13",
-        "tooltip": "Enable channel 13 output"
+        "tooltip": "Whether channel 13 output is enabled"
       },
       "enable_14": {
         "name": "Enable 14",
-        "tooltip": "Enable channel 14 output"
+        "tooltip": "Whether channel 14 output is enabled"
       },
       "enable_15": {
         "name": "Enable 15",
-        "tooltip": "Enable channel 15 output"
+        "tooltip": "Whether channel 15 output is enabled"
       },
       "enable_16": {
         "name": "Enable 16",
-        "tooltip": "Enable channel 16 output"
+        "tooltip": "Whether channel 16 output is enabled"
       },
       "enable_17": {
         "name": "Enable 17",
-        "tooltip": "Enable channel 17 output"
+        "tooltip": "Whether channel 17 output is enabled"
       },
       "enable_18": {
         "name": "Enable 18",
-        "tooltip": "Enable channel 18 output"
+        "tooltip": "Whether channel 18 output is enabled"
       },
       "enable_19": {
         "name": "Enable 19",
-        "tooltip": "Enable channel 19 output"
+        "tooltip": "Whether channel 19 output is enabled"
       },
       "enable_20": {
         "name": "Enable 20",
-        "tooltip": "Enable channel 20 output"
+        "tooltip": "Whether channel 20 output is enabled"
       },
       "enable_21": {
         "name": "Enable 21",
-        "tooltip": "Enable channel 21 output"
+        "tooltip": "Whether channel 21 output is enabled"
       },
       "enable_22": {
         "name": "Enable 22",
-        "tooltip": "Enable channel 22 output"
+        "tooltip": "Whether channel 22 output is enabled"
       },
       "enable_23": {
         "name": "Enable 23",
-        "tooltip": "Enable channel 23 output"
+        "tooltip": "Whether channel 23 output is enabled"
       },
       "enable_24": {
         "name": "Enable 24",
-        "tooltip": "Enable channel 24 output"
+        "tooltip": "Whether channel 24 output is enabled"
       },
       "enable_25": {
         "name": "Enable 25",
-        "tooltip": "Enable channel 25 output"
+        "tooltip": "Whether channel 25 output is enabled"
       },
       "enable_26": {
         "name": "Enable 26",
-        "tooltip": "Enable channel 26 output"
+        "tooltip": "Whether channel 26 output is enabled"
       },
       "enable_27": {
         "name": "Enable 27",
-        "tooltip": "Enable channel 27 output"
+        "tooltip": "Whether channel 27 output is enabled"
       },
       "enable_28": {
         "name": "Enable 28",
-        "tooltip": "Enable channel 28 output"
+        "tooltip": "Whether channel 28 output is enabled"
       },
       "enable_29": {
         "name": "Enable 29",
-        "tooltip": "Enable channel 29 output"
+        "tooltip": "Whether channel 29 output is enabled"
       },
       "enable_30": {
         "name": "Enable 30",
-        "tooltip": "Enable channel 30 output"
+        "tooltip": "Whether channel 30 output is enabled"
       },
       "enable_31": {
         "name": "Enable 31",
-        "tooltip": "Enable channel 31 output"
+        "tooltip": "Whether channel 31 output is enabled"
       },
       "enable_32": {
         "name": "Enable 32",
-        "tooltip": "Enable channel 32 output"
+        "tooltip": "Whether channel 32 output is enabled"
       },
       "enable_33": {
         "name": "Enable 33",
-        "tooltip": "Enable channel 33 output"
+        "tooltip": "Whether channel 33 output is enabled"
       },
       "enable_34": {
         "name": "Enable 34",
-        "tooltip": "Enable channel 34 output"
+        "tooltip": "Whether channel 34 output is enabled"
       },
       "enable_35": {
         "name": "Enable 35",
-        "tooltip": "Enable channel 35 output"
+        "tooltip": "Whether channel 35 output is enabled"
       },
       "enable_36": {
         "name": "Enable 36",
-        "tooltip": "Enable channel 36 output"
+        "tooltip": "Whether channel 36 output is enabled"
       },
       "enable_37": {
         "name": "Enable 37",
-        "tooltip": "Enable channel 37 output"
+        "tooltip": "Whether channel 37 output is enabled"
       },
       "enable_38": {
         "name": "Enable 38",
-        "tooltip": "Enable channel 38 output"
+        "tooltip": "Whether channel 38 output is enabled"
       },
       "enable_39": {
         "name": "Enable 39",
-        "tooltip": "Enable channel 39 output"
+        "tooltip": "Whether channel 39 output is enabled"
       },
       "enable_40": {
         "name": "Enable 40",
-        "tooltip": "Enable channel 40 output"
+        "tooltip": "Whether channel 40 output is enabled"
       },
       "enable_41": {
         "name": "Enable 41",
-        "tooltip": "Enable channel 41 output"
+        "tooltip": "Whether channel 41 output is enabled"
       },
       "enable_42": {
         "name": "Enable 42",
-        "tooltip": "Enable channel 42 output"
+        "tooltip": "Whether channel 42 output is enabled"
       },
       "enable_43": {
         "name": "Enable 43",
-        "tooltip": "Enable channel 43 output"
+        "tooltip": "Whether channel 43 output is enabled"
       },
       "enable_44": {
         "name": "Enable 44",
-        "tooltip": "Enable channel 44 output"
+        "tooltip": "Whether channel 44 output is enabled"
       },
       "enable_45": {
         "name": "Enable 45",
-        "tooltip": "Enable channel 45 output"
+        "tooltip": "Whether channel 45 output is enabled"
       },
       "enable_46": {
         "name": "Enable 46",
-        "tooltip": "Enable channel 46 output"
+        "tooltip": "Whether channel 46 output is enabled"
       },
       "enable_47": {
         "name": "Enable 47",
-        "tooltip": "Enable channel 47 output"
+        "tooltip": "Whether channel 47 output is enabled"
       },
       "enable_48": {
         "name": "Enable 48",
-        "tooltip": "Enable channel 48 output"
+        "tooltip": "Whether channel 48 output is enabled"
       },
       "enable_49": {
         "name": "Enable 49",
-        "tooltip": "Enable channel 49 output"
+        "tooltip": "Whether channel 49 output is enabled"
       },
       "enable_50": {
         "name": "Enable 50",
-        "tooltip": "Enable channel 50 output"
+        "tooltip": "Whether channel 50 output is enabled"
       },
       "port_names": {
         "name": "Port Names",
@@ -559,7 +559,7 @@
     "outputs": {
       "0": {
         "name": "XPipe Out",
-        "tooltip": "Always a valid XPipe bundle of merged and gated values (empty or partial when xpipe_in is unconnected)."
+        "tooltip": "The XPipe bundle with all enabled channel values, ready for the next XPipe node. Empty when nothing is connected."
       },
       "1": {
         "name": "Output 1",
@@ -765,11 +765,11 @@
   },
   "XPipeRecursive": {
     "display_name": "XPipeRecursive",
-    "description": "Returns the first accepted value from an XPipe bundle using a customizable recursive slot order.",
+    "description": "Scan an XPipe bundle in the slot order you define and return the first value found. Write the order as slot numbers separated by '-' (e.g. 1-3-5 or 50-1-2); the first non-empty slot wins.",
     "inputs": {
       "xpipe_in": {
         "name": "XPipe In",
-        "tooltip": "XPipe bundle scanned by recursive_order from slots 1 through 50"
+        "tooltip": "The XPipe bundle to search through, following your recursive_order (slots 1 to 50)."
       },
       "empty_string_as_none": {
         "name": "Empty String as None",
@@ -777,13 +777,13 @@
       },
       "recursive_order": {
         "name": "Recursive Order",
-        "tooltip": "Recursive order list separated by '-' (example: 1-3-5 or 50-1-2). Only 1-50 is allowed and duplicates are forbidden."
+        "tooltip": "Slot order to scan, numbers separated by '-' (example: 1-3-5 or 50-1-2). Only slots 1-50 allowed; no duplicates."
       }
     },
     "outputs": {
       "0": {
         "name": "Recursive Output",
-        "tooltip": "First non-None value accepted by the empty-string policy using recursive_order"
+        "tooltip": "The first non-empty value found while scanning in your specified order."
       }
     }
   },
@@ -991,7 +991,7 @@
   },
   "XListCreate": {
     "display_name": "XListCreate",
-    "description": "Create a dense list from multiple inputs (None elements skipped), output the dense count, and a slot_map for restoring original input positions. Pair with XListPull for dense split, or XListRestore to scatter back with None placeholders.",
+    "description": "Pack multiple connected inputs into one compact list, skipping empty ports. Outputs list (connected values in order), count (how many), and slot_map (where each item came from, for XListRestore). Pair with XListPull to split the list back into separate ports.",
     "inputs": {
       "inputs": {
         "name": "Inputs",
@@ -1201,33 +1201,33 @@
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "Dense list of all non-None input elements (MatchType, same as inputs). Length equals count."
+        "tooltip": "The compact list holding every connected value, in port order. Length equals count."
       },
       "1": {
         "name": "Count",
-        "tooltip": "Number of elements in the dense list. Connect to XListPull to control output port expansion."
+        "tooltip": "How many values are in the list. Connect to XListPull to choose how many output ports it shows."
       },
       "2": {
         "name": "Slot Map",
-        "tooltip": "Structure only (no media). Maps each dense list index to a 1-based XListCreate input slot and records width. Connect to XListRestore to rebuild a sparse list with None in empty slots."
+        "tooltip": "Position record only (no media). Tracks which input port each list item came from. Connect to XListRestore to put items back into their original ports."
       }
     }
   },
   "XListPull": {
     "display_name": "XListPull",
-    "description": "Split a list into individual output ports. Connect from XListCreate (list + count), and each list item appears on its own output port. Port visibility is controlled by the count value.",
+    "description": "Split one list into separate output ports — each item gets its own port (Data 1, Data 2, ...). Connect a list from XListCreate (or any list), and use the count to choose how many ports show.",
     "inputs": {
       "list_input": {
         "name": "List Input",
-        "tooltip": "Input list. Connect a XListCreate or any list-type output here."
+        "tooltip": "The list to split up. Connect XListCreate's list output (or any other list) here."
       },
       "count": {
         "name": "Count",
-        "tooltip": "Number input port. Connect to auto-set; when not connected, use the widget above."
+        "tooltip": "Sets how many output ports are active. When connected it overrides the number field above; leave unconnected to set the count manually."
       },
       "count_display": {
         "name": "Count",
-        "tooltip": "Number of active output ports. When count port is connected, disabled; when not connected, manually set here."
+        "tooltip": "How many output ports to show. Auto-disabled when the count port is connected; otherwise set it manually here."
       }
     },
     "outputs": {
@@ -1435,49 +1435,49 @@
   },
   "XListRestore": {
     "display_name": "XListRestore",
-    "description": "Scatter a dense list back into a sparse list using slot_map from XListCreate. Empty slots are None (same as a disabled gate channel). Connect the sparse list + count to XListPull or XListToPipe if needed.",
+    "description": "Put list items back into their original slots after processing. XListCreate packs only the connected inputs into a compact list; this node uses the saved slot map to place every processed item back where it came from. Unused slots become None, so downstream nodes that read items by position stay aligned.",
     "inputs": {
       "list_input": {
         "name": "List Input",
-        "tooltip": "Dense list to scatter. Usually XListCreate list output (optionally after batch processing)."
+        "tooltip": "The compact list to restore, usually the output of a batch-processing node (e.g. XImageResize). Its items originally come from XListCreate."
       },
       "slot_map": {
         "name": "Slot Map",
-        "tooltip": "Structure map from XListCreate.slot_map (indices + width). Not media data."
+        "tooltip": "The position record saved by XListCreate: which item belongs to which slot. Connect XListCreate's slot_map output here."
       }
     },
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "Sparse list with None in empty slots. Length equals count (slot_map width)."
+        "tooltip": "The restored list with items back in their original positions. Empty slots are None. Length equals the count output."
       },
       "1": {
         "name": "Count",
-        "tooltip": "Sparse width from slot_map. Connect to XListPull / XListToPipe for port expansion."
+        "tooltip": "Total number of slots (including empty ones). Connect to XListPull / XListToPipe to expand their ports."
       }
     }
   },
   "XListToPipe": {
     "display_name": "XListToPipe",
-    "description": "Convert a list into a valid XPipe bundle. List items map to slots 1..N (max 50); remaining slots are None. Names are empty strings. Port count follows the count input (same pattern as XListPull).",
+    "description": "Turn a list into an XPipe bundle so it can flow through the XPipe family. Items fill slots 1..N (up to 50); unused slots stay empty (None). The count input sets how many slots the bundle has.",
     "inputs": {
       "list_input": {
         "name": "List",
-        "tooltip": "List to expand into XPipe slots. Connect XListCreate list output or any list-type wire. Leave unconnected for an empty bundle."
+        "tooltip": "The list to put into the bundle. Connect XListCreate's list output or any other list here. Leave unconnected to create an empty bundle."
       },
       "count": {
         "name": "Count",
-        "tooltip": "Number input port. Connect from XListCreate count (or any INT) to auto-set the slot count. When not connected, falls back to count_display."
+        "tooltip": "Sets how many slots the bundle has. Connect XListCreate's count (or any number) here; leave unconnected to use the number field above."
       },
       "count_display": {
         "name": "Count",
-        "tooltip": "Number of active XPipe slots. When count port is connected, disabled; when not connected, manually set here."
+        "tooltip": "How many slots the bundle has. Auto-disabled when the count port is connected; otherwise set it manually here."
       }
     },
     "outputs": {
       "0": {
         "name": "XPipe Out",
-        "tooltip": "Always a valid XPipe bundle: list items in slots 1..N (truncated at 50), empty names, None-padded. N is controlled by count."
+        "tooltip": "The XPipe bundle holding your list items in slots 1..N (max 50). Empty slots are None. N follows the count input."
       }
     }
   },

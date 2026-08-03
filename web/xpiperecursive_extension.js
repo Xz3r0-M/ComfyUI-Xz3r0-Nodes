@@ -47,9 +47,6 @@ function applyInitialNodeSize(node) {
             node.size[1] = nextH;
         }
     }
-    if (!node.__xpipeRecursiveInitialSizeApplied) {
-        node.__xpipeRecursiveInitialSizeApplied = true;
-    }
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
 }
 

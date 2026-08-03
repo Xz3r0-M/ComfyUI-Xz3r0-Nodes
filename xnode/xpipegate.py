@@ -35,9 +35,9 @@ class XPipeGate(io.ComfyNode):
                 "xpipe_in",
                 optional=True,
                 tooltip=(
-                    "Optional XPipe bundle. Leave unconnected to start "
-                    "from empty channels; direct channel inputs override "
-                    "matching bundled values."
+                    "Optional XPipe bundle to merge from. Leave ",
+                    "unconnected to start with empty channels. A direct ",
+                    "channel input overrides the value from the bundle.",
                 ),
             ),
         ]
@@ -49,8 +49,8 @@ class XPipeGate(io.ComfyNode):
                     optional=True,
                     lazy=True,
                     tooltip=(
-                        f"Channel {index} lazy input (optional, accepts any "
-                        "data). Disabled channels do not request this input."
+                        f"Optional direct input for channel {index} (any ",
+                        "data type). Disabled channels skip this input.",
                     ),
                 ),
             )
@@ -61,7 +61,7 @@ class XPipeGate(io.ComfyNode):
                     default=True,
                     label_on="Enabled",
                     label_off="Disabled",
-                    tooltip=f"Enable channel {index} output",
+                    tooltip=f"Whether channel {index} output is enabled",
                 ),
             )
         inputs.append(
@@ -90,8 +90,9 @@ class XPipeGate(io.ComfyNode):
                 "xpipe_out",
                 display_name="xpipe_out",
                 tooltip=(
-                    "Always a valid XPipe bundle of merged and gated "
-                    "values (empty or partial when xpipe_in is unconnected)."
+                    "The XPipe bundle with all enabled channel values, ",
+                    "ready for the next XPipe node. Empty when nothing ",
+                    "is connected.",
                 ),
             ),
         ]
@@ -101,8 +102,7 @@ class XPipeGate(io.ComfyNode):
                     template=template,
                     display_name=f"output_{index}",
                     tooltip=(
-                        f"Channel {index} output (None when disabled or "
-                        "empty)"
+                        f"Channel {index} output (None when disabled or empty)"
                     ),
                 ),
             )
@@ -110,10 +110,11 @@ class XPipeGate(io.ComfyNode):
             node_id="XPipeGate",
             display_name="XPipeGate",
             description=(
-                "Gate an optional XPipe bundle and up to 50 direct "
-                "any-type inputs with per-channel switches and native Lazy "
-                "evaluation. Always emits a valid XPipe bundle on "
-                "xpipe_out even when xpipe_in is unconnected."
+                "Control up to 50 channels, each with its own enable ",
+                "switch. A channel takes its value from the incoming ",
+                "XPipe bundle or from its own direct input; disabled ",
+                "channels output nothing. Always produces a valid XPipe ",
+                "bundle on xpipe_out, even when no bundle is connected.",
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=inputs,
@@ -132,18 +133,18 @@ class XPipeGate(io.ComfyNode):
             raise ValueError("xpipe_in must be a valid XPipe bundle")
 
         raw_values = xpipe_in.get("values")
-        values = list(raw_values[:GATE_SLOTS]) if isinstance(
-            raw_values, list
-        ) else []
+        values = (
+            list(raw_values[:GATE_SLOTS])
+            if isinstance(raw_values, list)
+            else []
+        )
         values += [None] * (GATE_SLOTS - len(values))
 
         raw_names = xpipe_in.get("names")
         names = [
             str(item) if item is not None else ""
             for item in (
-                raw_names[:GATE_SLOTS]
-                if isinstance(raw_names, list)
-                else []
+                raw_names[:GATE_SLOTS] if isinstance(raw_names, list) else []
             )
         ]
         names += [""] * (GATE_SLOTS - len(names))
@@ -159,8 +160,7 @@ class XPipeGate(io.ComfyNode):
         if not isinstance(data, list):
             data = []
         names = [
-            str(item) if item is not None else ""
-            for item in data[:GATE_SLOTS]
+            str(item) if item is not None else "" for item in data[:GATE_SLOTS]
         ]
         names += [""] * (GATE_SLOTS - len(names))
         return names

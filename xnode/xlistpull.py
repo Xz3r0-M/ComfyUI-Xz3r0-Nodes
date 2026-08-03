@@ -59,10 +59,10 @@ class XListPull(io.ComfyNode):
             node_id="XListPull",
             display_name="XListPull",
             description=(
-                "Split a list into individual output ports. "
-                "Connect from XListCreate (list + count), and "
-                "each list item appears on its own output. "
-                "Port visibility is controlled by the count value."
+                "Split one list into separate output ports — each item ",
+                "gets its own port (Data 1, Data 2, ...). Connect a list ",
+                "from XListCreate (or any list), and use the count to ",
+                "choose how many ports show.",
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
@@ -71,8 +71,8 @@ class XListPull(io.ComfyNode):
                     "list_input",
                     template=template,
                     tooltip=(
-                        "Input list. Connect a XListCreate or "
-                        "any list-type output here."
+                        "The list to split up. Connect XListCreate's list ",
+                        "output (or any other list) here.",
                     ),
                 ),
                 # 手动输入的数量值（始终可见的 widget）
@@ -82,9 +82,9 @@ class XListPull(io.ComfyNode):
                     min=1,
                     max=_MAX_OUTPUTS,
                     tooltip=(
-                        "Number of active output ports. "
-                        "When count port is connected, disabled; "
-                        "when not connected, manually set here."
+                        "How many output ports to show. Connect ",
+                        "XListCreate's count here to auto-set it; leave ",
+                        "unconnected to use the number field above.",
                     ),
                 ),
                 # 可连接的数量端口（force_input，无 widget）
@@ -96,9 +96,9 @@ class XListPull(io.ComfyNode):
                     force_input=True,
                     optional=True,
                     tooltip=(
-                        "Number input port. Connect from another "
-                        "node to auto-set the count. When not "
-                        "connected, falls back to count_display."
+                        "Sets how many output ports are active. When ",
+                        "connected it overrides the number field above; ",
+                        "leave unconnected to set the count manually.",
                     ),
                 ),
             ],
@@ -117,6 +117,7 @@ class XListPull(io.ComfyNode):
         count_display 为手动输入值（始终有效）。
         优先使用 count（若 > 0），否则回退到 count_display。
         """
+
         # 解包可能被列表包装的值，兼容 None（可选端口未连接）
         def _unwrap(v: Any) -> Any:
             if v is None:

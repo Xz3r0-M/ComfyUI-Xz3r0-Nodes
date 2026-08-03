@@ -212,21 +212,26 @@ __marimo__/
 .vscode/
 *.code-workspace
 ruff.toml
-node_modules
 
 # Agents
-
+.pi/
 
 # Xz3r0-Dev-WIP
 
 
+# test 测试不提到到仓库
+tests/
+web/test
+
 # Xz3r0-Project-files
 AGENTS.md
 .agents/
-tests/
-web/test
 _记录/
 _检验/
 XDataSaved/
 icons_dev/
 TESTING.md
+docs/badge.json
+docs/downloads-history.json
+docs/sparkline.svg
+tilix-work-scene.json

@@ -69,16 +69,20 @@ class XListCreate(io.ComfyNode):
             node_id="XListCreate",
             display_name="XListCreate",
             description=(
-                "Create a dense list from multiple inputs (None "
-                "elements skipped), output the dense count, and a "
-                "slot_map for restoring original input positions. "
-                "Pair with XListPull for dense split, or XListRestore "
-                "to scatter back with None placeholders."
+                "Pack multiple connected inputs into one compact list, ",
+                "skipping empty ports. Outputs list (connected values in ",
+                "order), count (how many), and slot_map (where each item ",
+                "came from, for XListRestore). Pair with XListPull to ",
+                "split the list back into separate ports.",
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
-            search_aliases=["Image Iterator", "Text Iterator",
-                             "Iterator", "List Builder"],
+            search_aliases=[
+                "Image Iterator",
+                "Text Iterator",
+                "Iterator",
+                "List Builder",
+            ],
             inputs=[
                 io.Autogrow.Input(
                     "inputs",
@@ -92,27 +96,25 @@ class XListCreate(io.ComfyNode):
                     is_output_list=True,
                     display_name="list",
                     tooltip=(
-                        "Dense list of all non-None input elements "
-                        "(MatchType, same as inputs). Length equals "
-                        "count."
+                        "The compact list holding every connected value, in ",
+                        "port order. Length equals count.",
                     ),
                 ),
                 io.Int.Output(
                     display_name="count",
                     tooltip=(
-                        "Number of elements in the dense list. "
-                        "Connect to XListPull to control output "
-                        "port expansion."
+                        "How many values are in the list. Connect to ",
+                        "XListPull to choose how many output ports it ",
+                        "shows.",
                     ),
                 ),
                 XListSlotMapIO.Output(
                     display_name="slot_map",
                     tooltip=(
-                        "Structure only (no media). Maps each dense "
-                        "list index to a 1-based XListCreate input "
-                        "slot and records width. Connect to "
-                        "XListRestore to rebuild a sparse list with "
-                        "None in empty slots."
+                        "Position record only (no media). Tracks which input ",
+                        "port each list item came from. Connect to ",
+                        "XListRestore to put items back into their ",
+                        "original ports.",
                     ),
                 ),
             ],

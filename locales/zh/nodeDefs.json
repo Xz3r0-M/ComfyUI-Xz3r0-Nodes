@@ -141,211 +141,211 @@
   },
   "XPipeGate": {
     "display_name": "XPipeGate",
-    "description": "对可选的 XPipe 数据束及最多 50 路独立输入进行逐路门控，独立输入使用 ComfyUI 原生 Lazy 求值。即使未连接 xpipe_in，xpipe_out 也始终输出合法的 XPipe 数据束。",
+    "description": "最多 50 路通道的开关面板，每路可独立启用或关闭。每路的值可以来自接入的 XPipe 数据束，也可以来自它自己的直连输入；关闭的通道不输出。即使没有接入数据束，xpipe_out 也始终输出一个合法的 XPipe 数据束。",
     "inputs": {
       "xpipe_in": {
         "name": "XPipe 输入",
-        "tooltip": "可选的 XPipe 数据束。不连接时从空通道起步；独立通道输入会覆盖数据束中的对应值。"
+        "tooltip": "可选的 XPipe 数据束，作为各通道的初始值来源。不接则从空通道开始。某路的直连输入会覆盖数据束里的对应值。"
       },
       "input_1": {
         "name": "输入 1",
-        "tooltip": "第 1 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 1 路可选直连输入（支持任意数据类型）"
       },
       "input_2": {
         "name": "输入 2",
-        "tooltip": "第 2 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 2 路可选直连输入（支持任意数据类型）"
       },
       "input_3": {
         "name": "输入 3",
-        "tooltip": "第 3 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 3 路可选直连输入（支持任意数据类型）"
       },
       "input_4": {
         "name": "输入 4",
-        "tooltip": "第 4 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 4 路可选直连输入（支持任意数据类型）"
       },
       "input_5": {
         "name": "输入 5",
-        "tooltip": "第 5 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 5 路可选直连输入（支持任意数据类型）"
       },
       "input_6": {
         "name": "输入 6",
-        "tooltip": "第 6 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 6 路可选直连输入（支持任意数据类型）"
       },
       "input_7": {
         "name": "输入 7",
-        "tooltip": "第 7 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 7 路可选直连输入（支持任意数据类型）"
       },
       "input_8": {
         "name": "输入 8",
-        "tooltip": "第 8 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 8 路可选直连输入（支持任意数据类型）"
       },
       "input_9": {
         "name": "输入 9",
-        "tooltip": "第 9 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 9 路可选直连输入（支持任意数据类型）"
       },
       "input_10": {
         "name": "输入 10",
-        "tooltip": "第 10 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 10 路可选直连输入（支持任意数据类型）"
       },
       "input_11": {
         "name": "输入 11",
-        "tooltip": "第 11 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 11 路可选直连输入（支持任意数据类型）"
       },
       "input_12": {
         "name": "输入 12",
-        "tooltip": "第 12 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 12 路可选直连输入（支持任意数据类型）"
       },
       "input_13": {
         "name": "输入 13",
-        "tooltip": "第 13 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 13 路可选直连输入（支持任意数据类型）"
       },
       "input_14": {
         "name": "输入 14",
-        "tooltip": "第 14 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 14 路可选直连输入（支持任意数据类型）"
       },
       "input_15": {
         "name": "输入 15",
-        "tooltip": "第 15 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 15 路可选直连输入（支持任意数据类型）"
       },
       "input_16": {
         "name": "输入 16",
-        "tooltip": "第 16 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 16 路可选直连输入（支持任意数据类型）"
       },
       "input_17": {
         "name": "输入 17",
-        "tooltip": "第 17 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 17 路可选直连输入（支持任意数据类型）"
       },
       "input_18": {
         "name": "输入 18",
-        "tooltip": "第 18 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 18 路可选直连输入（支持任意数据类型）"
       },
       "input_19": {
         "name": "输入 19",
-        "tooltip": "第 19 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 19 路可选直连输入（支持任意数据类型）"
       },
       "input_20": {
         "name": "输入 20",
-        "tooltip": "第 20 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 20 路可选直连输入（支持任意数据类型）"
       },
       "input_21": {
         "name": "输入 21",
-        "tooltip": "第 21 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 21 路可选直连输入（支持任意数据类型）"
       },
       "input_22": {
         "name": "输入 22",
-        "tooltip": "第 22 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 22 路可选直连输入（支持任意数据类型）"
       },
       "input_23": {
         "name": "输入 23",
-        "tooltip": "第 23 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 23 路可选直连输入（支持任意数据类型）"
       },
       "input_24": {
         "name": "输入 24",
-        "tooltip": "第 24 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 24 路可选直连输入（支持任意数据类型）"
       },
       "input_25": {
         "name": "输入 25",
-        "tooltip": "第 25 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 25 路可选直连输入（支持任意数据类型）"
       },
       "input_26": {
         "name": "输入 26",
-        "tooltip": "第 26 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 26 路可选直连输入（支持任意数据类型）"
       },
       "input_27": {
         "name": "输入 27",
-        "tooltip": "第 27 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 27 路可选直连输入（支持任意数据类型）"
       },
       "input_28": {
         "name": "输入 28",
-        "tooltip": "第 28 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 28 路可选直连输入（支持任意数据类型）"
       },
       "input_29": {
         "name": "输入 29",
-        "tooltip": "第 29 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 29 路可选直连输入（支持任意数据类型）"
       },
       "input_30": {
         "name": "输入 30",
-        "tooltip": "第 30 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 30 路可选直连输入（支持任意数据类型）"
       },
       "input_31": {
         "name": "输入 31",
-        "tooltip": "第 31 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 31 路可选直连输入（支持任意数据类型）"
       },
       "input_32": {
         "name": "输入 32",
-        "tooltip": "第 32 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 32 路可选直连输入（支持任意数据类型）"
       },
       "input_33": {
         "name": "输入 33",
-        "tooltip": "第 33 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 33 路可选直连输入（支持任意数据类型）"
       },
       "input_34": {
         "name": "输入 34",
-        "tooltip": "第 34 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 34 路可选直连输入（支持任意数据类型）"
       },
       "input_35": {
         "name": "输入 35",
-        "tooltip": "第 35 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 35 路可选直连输入（支持任意数据类型）"
       },
       "input_36": {
         "name": "输入 36",
-        "tooltip": "第 36 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 36 路可选直连输入（支持任意数据类型）"
       },
       "input_37": {
         "name": "输入 37",
-        "tooltip": "第 37 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 37 路可选直连输入（支持任意数据类型）"
       },
       "input_38": {
         "name": "输入 38",
-        "tooltip": "第 38 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 38 路可选直连输入（支持任意数据类型）"
       },
       "input_39": {
         "name": "输入 39",
-        "tooltip": "第 39 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 39 路可选直连输入（支持任意数据类型）"
       },
       "input_40": {
         "name": "输入 40",
-        "tooltip": "第 40 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 40 路可选直连输入（支持任意数据类型）"
       },
       "input_41": {
         "name": "输入 41",
-        "tooltip": "第 41 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 41 路可选直连输入（支持任意数据类型）"
       },
       "input_42": {
         "name": "输入 42",
-        "tooltip": "第 42 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 42 路可选直连输入（支持任意数据类型）"
       },
       "input_43": {
         "name": "输入 43",
-        "tooltip": "第 43 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 43 路可选直连输入（支持任意数据类型）"
       },
       "input_44": {
         "name": "输入 44",
-        "tooltip": "第 44 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 44 路可选直连输入（支持任意数据类型）"
       },
       "input_45": {
         "name": "输入 45",
-        "tooltip": "第 45 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 45 路可选直连输入（支持任意数据类型）"
       },
       "input_46": {
         "name": "输入 46",
-        "tooltip": "第 46 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 46 路可选直连输入（支持任意数据类型）"
       },
       "input_47": {
         "name": "输入 47",
-        "tooltip": "第 47 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 47 路可选直连输入（支持任意数据类型）"
       },
       "input_48": {
         "name": "输入 48",
-        "tooltip": "第 48 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 48 路可选直连输入（支持任意数据类型）"
       },
       "input_49": {
         "name": "输入 49",
-        "tooltip": "第 49 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 49 路可选直连输入（支持任意数据类型）"
       },
       "input_50": {
         "name": "输入 50",
-        "tooltip": "第 50 路 Lazy 输入（可选，支持任意数据）"
+        "tooltip": "第 50 路可选直连输入（支持任意数据类型）"
       },
       "enable_1": {
         "name": "启用 1",
@@ -559,7 +559,7 @@
     "outputs": {
       "0": {
         "name": "XPipe 输出",
-        "tooltip": "始终输出合法的 XPipe 数据束（未连接 xpipe_in 时可为空或部分填充的合并门控结果）。"
+        "tooltip": "包含所有已开启通道值的 XPipe 数据束，可直接传给下一个 XPipe 节点。什么都没接时为空。"
       },
       "1": {
         "name": "输出 1",
@@ -765,11 +765,11 @@
   },
   "XPipeRecursive": {
     "display_name": "XPipeRecursive",
-    "description": "按可自定义的递归顺序扫描 XPipe 数据束，并返回首个符合条件的值。",
+    "description": "按你自定义的槽位顺序扫描 XPipe 数据束，返回第一个找到的值。顺序用 - 分隔的槽位号写（如 1-3-5 或 50-1-2），先扫到有值就返回它。",
     "inputs": {
       "xpipe_in": {
         "name": "XPipe 输入",
-        "tooltip": "按 recursive_order 扫描的 XPipe 数据束（第 1 至 50 路）"
+        "tooltip": "要从中取数的 XPipe 数据束，按递归顺序（第 1~50 槽位）依次查找。"
       },
       "empty_string_as_none": {
         "name": "空字符串视为 None",
@@ -777,13 +777,13 @@
       },
       "recursive_order": {
         "name": "递归顺序",
-        "tooltip": "使用 - 分隔的递归顺序列表（例如：1-3-5 或 50-1-2）。仅允许 1~50 且不允许重复。"
+        "tooltip": "要扫描的槽位顺序，数字之间用 - 分隔（例如 1-3-5 或 50-1-2）。只允许 1~50，且不能重复。"
       }
     },
     "outputs": {
       "0": {
         "name": "递归输出",
-        "tooltip": "按递归顺序与空字符串策略找到的首个非 None 值"
+        "tooltip": "按你指定的顺序找到的第一个有值的结果。"
       }
     }
   },
@@ -991,7 +991,7 @@
   },
   "XListCreate": {
     "display_name": "XListCreate",
-    "description": "从多个输入创建稠密列表（跳过 None 元素），输出稠密数量与 slot_map，便于还原原始输入槽位。可搭配 XListPull 拆分稠密列表，或搭配 XListRestore 还原为含 None 占位的稀疏列表。",
+    "description": "把多个已连接的输入打包成一条紧凑列表，空端口自动跳过。输出：list（按端口顺序排列的已连接值）、count（元素个数）、slot_map（每个元素原本来自哪个端口，供 XListRestore 还原）。搭配 XListPull 可把列表拆回独立端口。",
     "inputs": {
       "inputs": {
         "name": "输入",
@@ -1201,33 +1201,33 @@
     "outputs": {
       "0": {
         "name": "列表",
-        "tooltip": "所有非 None 输入元素的稠密列表（MatchType，与输入同类型）。长度等于数量。"
+        "tooltip": "紧凑列表，包含所有已连接端口的值，按端口顺序排列。长度等于数量。"
       },
       "1": {
         "name": "数量",
-        "tooltip": "稠密列表中的元素数量。连接到 XListPull 以控制其输出端口展开。"
+        "tooltip": "列表中的元素个数。接到 XListPull 可控制它展开多少个输出端口。"
       },
       "2": {
         "name": "槽位映射",
-        "tooltip": "纯结构（无媒体数据）。记录稠密 list 每项对应的 XListCreate 输入槽位（1-based）与总宽度。连接到 XListRestore 可还原为含 None 占位的稀疏 list。"
+        "tooltip": "纯位置记录（不含媒体数据）。记下列表里每一项原本来自哪个输入端口。接到 XListRestore 可把元素放回原来的端口。"
       }
     }
   },
   "XListPull": {
     "display_name": "XListPull",
-    "description": "将列表按数据拆分到独立输出端口。从 XListCreate 连接（列表 + 数量），每个列表数据出现在各自的输出端口上。端口可见性由数量值控制。",
+    "description": "把一条列表拆成一个个独立的输出端口——每个元素都有自己单独的端口（Data 1、Data 2……）。接上列表（来自 XListCreate 或其他任意列表），用数量值决定显示多少个端口。",
     "inputs": {
       "list_input": {
         "name": "列表输入",
-        "tooltip": "输入列表。将 XListCreate 或任意列表类型输出连接至此。"
+        "tooltip": "要拆分的列表。把 XListCreate 的 list 输出（或其他任何列表）接到这里。"
       },
       "count": {
         "name": "数量",
-        "tooltip": "数量输入端口。连接时自动设置；未连接时使用上方输入栏的值。"
+        "tooltip": "控制显示多少个输出端口。接上 XListCreate 的 count 会自动覆盖上方数字框的值；不接则手动设置数量。"
       },
       "count_display": {
         "name": "数量",
-        "tooltip": "活跃输出端口数量。数量端口连接时禁用，未连接时手动设置。"
+        "tooltip": "要显示的输出端口个数。接上 count 端口时自动失效；未接时在这里手动设置。"
       }
     },
     "outputs": {
@@ -1435,49 +1435,49 @@
   },
   "XListRestore": {
     "display_name": "XListRestore",
-    "description": "使用 XListCreate 的 slot_map 将稠密列表散射回稀疏列表。空位为 None（与关闭的门控通道一致）。可将稀疏列表 + 数量接到 XListPull 或 XListToPipe。",
+    "description": "把批量处理后的列表元素放回原来的位置。先用 XListCreate 把只接通的输入压缩成紧凑列表，处理完成后再由本节点按位置记录把每个元素还原回原来的槽位；没有被占用的槽位自动变成 None，这样下游按位置读取的节点始终对齐，不会错位。",
     "inputs": {
       "list_input": {
         "name": "列表输入",
-        "tooltip": "待散射的稠密列表。通常来自 XListCreate 的列表输出（也可经批处理后）。"
+        "tooltip": "待还原的紧凑列表，通常是批处理节点（如 XImageResize）处理后的输出；列表里的数据最初来自 XListCreate。"
       },
       "slot_map": {
         "name": "槽位映射",
-        "tooltip": "来自 XListCreate.slot_map 的结构映射（indices + width）。非媒体数据。"
+        "tooltip": "XListCreate 保存的位置记录（每个元素原来在第几个槽位）。把 XListCreate 的 slot_map 输出接到这里。"
       }
     },
     "outputs": {
       "0": {
         "name": "列表",
-        "tooltip": "含 None 空位的稀疏列表。长度等于数量（slot_map 宽度）。"
+        "tooltip": "还原后的列表，元素已放回原来的位置，空槽位为 None。长度与数量输出一致。"
       },
       "1": {
         "name": "数量",
-        "tooltip": "来自 slot_map 的稀疏宽度。可连接到 XListPull / XListToPipe 控制端口展开。"
+        "tooltip": "总槽位数（含空槽）。接到 XListPull / XListToPipe 可展开它们的端口。"
       }
     }
   },
   "XListToPipe": {
     "display_name": "XListToPipe",
-    "description": "将列表转换为合法的 XPipe 数据束。列表元素依次映射到槽位 1..N（最多 50）；其余槽位为 None。名称为空字符串。槽位数量由 count 输入控制（与 XListPull 相同）。",
+    "description": "把列表装进 XPipe 数据束，让它能接入 XPipe 家族节点继续传递。列表元素依次填入第 1..N 个槽位（最多 50 个），没填的槽位保持为空（None）。数量输入决定数据束有多少个槽位。",
     "inputs": {
       "list_input": {
         "name": "列表",
-        "tooltip": "展开为 XPipe 槽位的列表。可连接 XListCreate 的 list 输出或任意 list 线。不连接时输出空数据束。"
+        "tooltip": "要装入数据束的列表。接 XListCreate 的 list 输出或其他任意列表即可。不接则生成一个空数据束。"
       },
       "count": {
         "name": "数量",
-        "tooltip": "数量输入端口。可连接 XListCreate 的 count（或任意 INT）自动设置槽位数。未连接时使用上方输入栏的值。"
+        "tooltip": "决定数据束有多少个槽位。接 XListCreate 的 count（或任意数字）自动设置；不接则用上方数字框的值。"
       },
       "count_display": {
         "name": "数量",
-        "tooltip": "活跃 XPipe 槽位数。数量端口连接时禁用，未连接时手动设置。"
+        "tooltip": "数据束的槽位个数。接上 count 端口时自动失效；未接时在这里手动设置。"
       }
     },
     "outputs": {
       "0": {
         "name": "XPipe 输出",
-        "tooltip": "始终输出合法的 XPipe 数据束：列表元素占槽位 1..N（超过 50 截断），名称为空，其余槽位为 None。N 由 count 控制。"
+        "tooltip": "装着列表元素的数据束：元素依次占第 1..N 个槽位（最多 50 个），空槽位为 None。N 跟随数量输入。"
       }
     }
   },
