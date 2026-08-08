@@ -215,6 +215,7 @@ ruff.toml
 
 # Agents
 .pi/
+brainstorms/
 
 # Xz3r0-Dev-WIP
 
