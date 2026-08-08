@@ -235,6 +235,8 @@ function applyThemeContext(context, options = {}) {
             effective_mode: normalizeEffectiveThemeMode(context),
             vars: {},
         };
+    const prevEffective = currentThemeContext.effective_mode;
+    const prevThemeMode = currentThemeContext.theme_mode;
     currentThemeContext = nextContext;
     document.body.dataset.theme = nextContext.effective_mode;
     document.body.dataset.themeSource = getThemeSourceMode(
@@ -247,7 +249,14 @@ function applyThemeContext(context, options = {}) {
     if (options.notifyHost !== false) {
         postThemeModeToHost(nextContext.theme_mode);
     }
-    refreshGlobalUi();
+    // 仅当 effective_mode 或 theme_mode 实际变化时才触发全局重绘，
+    // 避免非主题相关设置变更导致组件闪烁与滚动条重置。
+    if (
+        prevEffective !== nextContext.effective_mode
+        || prevThemeMode !== nextContext.theme_mode
+    ) {
+        refreshGlobalUi();
+    }
 }
 
 function postToggleWindowRequest() {
@@ -1387,9 +1396,17 @@ document.addEventListener("xdh:menu-action", (event) => {
 });
 
 // ── 主题响应：xdatahubSettings.theme_mode 变化时即时更新 body dataset ──────
+let _prevSettingsThemeMode = "dark";
 appStore.subscribe((state, key) => {
     if (key !== "xdatahubSettings") return;
-    applyThemeV2(state.xdatahubSettings?.theme_mode || "dark");
+    const nextMode = state.xdatahubSettings?.theme_mode || "dark";
+    if (nextMode === _prevSettingsThemeMode) {
+        // theme_mode 未变化（非主题设置变更），只更新执行遮罩
+        updateExecOverlay();
+        return;
+    }
+    _prevSettingsThemeMode = nextMode;
+    applyThemeV2(nextMode);
     updateExecOverlay();
 });
 

@@ -18,7 +18,8 @@ class XControlPanel(io.ComfyNode):
             display_name="XControlPanel",
             description=(
                 "Panel-only control node for immediate ComfyUI actions. "
-                "Currently provides a manual restart button."
+                "Shows the current ComfyUI version, switches to any official "
+                "version (release or dev) with one click, and restarts."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_output_node=False,

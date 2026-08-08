@@ -45,43 +45,43 @@
       },
       "enable_1": {
         "name": "Enable 1",
-        "tooltip": "Enable channel 1 output"
+        "tooltip": "Whether channel 1 output is enabled"
       },
       "enable_2": {
         "name": "Enable 2",
-        "tooltip": "Enable channel 2 output"
+        "tooltip": "Whether channel 2 output is enabled"
       },
       "enable_3": {
         "name": "Enable 3",
-        "tooltip": "Enable channel 3 output"
+        "tooltip": "Whether channel 3 output is enabled"
       },
       "enable_4": {
         "name": "Enable 4",
-        "tooltip": "Enable channel 4 output"
+        "tooltip": "Whether channel 4 output is enabled"
       },
       "enable_5": {
         "name": "Enable 5",
-        "tooltip": "Enable channel 5 output"
+        "tooltip": "Whether channel 5 output is enabled"
       },
       "enable_6": {
         "name": "Enable 6",
-        "tooltip": "Enable channel 6 output"
+        "tooltip": "Whether channel 6 output is enabled"
       },
       "enable_7": {
         "name": "Enable 7",
-        "tooltip": "Enable channel 7 output"
+        "tooltip": "Whether channel 7 output is enabled"
       },
       "enable_8": {
         "name": "Enable 8",
-        "tooltip": "Enable channel 8 output"
+        "tooltip": "Whether channel 8 output is enabled"
       },
       "enable_9": {
         "name": "Enable 9",
-        "tooltip": "Enable channel 9 output"
+        "tooltip": "Whether channel 9 output is enabled"
       },
       "enable_10": {
         "name": "Enable 10",
-        "tooltip": "Enable channel 10 output"
+        "tooltip": "Whether channel 10 output is enabled"
       },
       "enable_recursive": {
         "name": "Enable Recursive",
@@ -139,6 +139,654 @@
       }
     }
   },
+  "XPipeGate": {
+    "display_name": "XPipeGate",
+    "description": "Control up to 50 channels, each with its own enable switch. A channel takes its value from the incoming XPipe bundle or from its own direct input; disabled channels output nothing. Always produces a valid XPipe bundle on xpipe_out, even when no bundle is connected.",
+    "inputs": {
+      "xpipe_in": {
+        "name": "XPipe In",
+        "tooltip": "Optional XPipe bundle to merge from. Leave unconnected to start with empty channels. A direct channel input overrides the value from the bundle."
+      },
+      "input_1": {
+        "name": "Input 1",
+        "tooltip": "Optional direct input for channel 1 (any data type)"
+      },
+      "input_2": {
+        "name": "Input 2",
+        "tooltip": "Optional direct input for channel 2 (any data type)"
+      },
+      "input_3": {
+        "name": "Input 3",
+        "tooltip": "Optional direct input for channel 3 (any data type)"
+      },
+      "input_4": {
+        "name": "Input 4",
+        "tooltip": "Optional direct input for channel 4 (any data type)"
+      },
+      "input_5": {
+        "name": "Input 5",
+        "tooltip": "Optional direct input for channel 5 (any data type)"
+      },
+      "input_6": {
+        "name": "Input 6",
+        "tooltip": "Optional direct input for channel 6 (any data type)"
+      },
+      "input_7": {
+        "name": "Input 7",
+        "tooltip": "Optional direct input for channel 7 (any data type)"
+      },
+      "input_8": {
+        "name": "Input 8",
+        "tooltip": "Optional direct input for channel 8 (any data type)"
+      },
+      "input_9": {
+        "name": "Input 9",
+        "tooltip": "Optional direct input for channel 9 (any data type)"
+      },
+      "input_10": {
+        "name": "Input 10",
+        "tooltip": "Optional direct input for channel 10 (any data type)"
+      },
+      "input_11": {
+        "name": "Input 11",
+        "tooltip": "Optional direct input for channel 11 (any data type)"
+      },
+      "input_12": {
+        "name": "Input 12",
+        "tooltip": "Optional direct input for channel 12 (any data type)"
+      },
+      "input_13": {
+        "name": "Input 13",
+        "tooltip": "Optional direct input for channel 13 (any data type)"
+      },
+      "input_14": {
+        "name": "Input 14",
+        "tooltip": "Optional direct input for channel 14 (any data type)"
+      },
+      "input_15": {
+        "name": "Input 15",
+        "tooltip": "Optional direct input for channel 15 (any data type)"
+      },
+      "input_16": {
+        "name": "Input 16",
+        "tooltip": "Optional direct input for channel 16 (any data type)"
+      },
+      "input_17": {
+        "name": "Input 17",
+        "tooltip": "Optional direct input for channel 17 (any data type)"
+      },
+      "input_18": {
+        "name": "Input 18",
+        "tooltip": "Optional direct input for channel 18 (any data type)"
+      },
+      "input_19": {
+        "name": "Input 19",
+        "tooltip": "Optional direct input for channel 19 (any data type)"
+      },
+      "input_20": {
+        "name": "Input 20",
+        "tooltip": "Optional direct input for channel 20 (any data type)"
+      },
+      "input_21": {
+        "name": "Input 21",
+        "tooltip": "Optional direct input for channel 21 (any data type)"
+      },
+      "input_22": {
+        "name": "Input 22",
+        "tooltip": "Optional direct input for channel 22 (any data type)"
+      },
+      "input_23": {
+        "name": "Input 23",
+        "tooltip": "Optional direct input for channel 23 (any data type)"
+      },
+      "input_24": {
+        "name": "Input 24",
+        "tooltip": "Optional direct input for channel 24 (any data type)"
+      },
+      "input_25": {
+        "name": "Input 25",
+        "tooltip": "Optional direct input for channel 25 (any data type)"
+      },
+      "input_26": {
+        "name": "Input 26",
+        "tooltip": "Optional direct input for channel 26 (any data type)"
+      },
+      "input_27": {
+        "name": "Input 27",
+        "tooltip": "Optional direct input for channel 27 (any data type)"
+      },
+      "input_28": {
+        "name": "Input 28",
+        "tooltip": "Optional direct input for channel 28 (any data type)"
+      },
+      "input_29": {
+        "name": "Input 29",
+        "tooltip": "Optional direct input for channel 29 (any data type)"
+      },
+      "input_30": {
+        "name": "Input 30",
+        "tooltip": "Optional direct input for channel 30 (any data type)"
+      },
+      "input_31": {
+        "name": "Input 31",
+        "tooltip": "Optional direct input for channel 31 (any data type)"
+      },
+      "input_32": {
+        "name": "Input 32",
+        "tooltip": "Optional direct input for channel 32 (any data type)"
+      },
+      "input_33": {
+        "name": "Input 33",
+        "tooltip": "Optional direct input for channel 33 (any data type)"
+      },
+      "input_34": {
+        "name": "Input 34",
+        "tooltip": "Optional direct input for channel 34 (any data type)"
+      },
+      "input_35": {
+        "name": "Input 35",
+        "tooltip": "Optional direct input for channel 35 (any data type)"
+      },
+      "input_36": {
+        "name": "Input 36",
+        "tooltip": "Optional direct input for channel 36 (any data type)"
+      },
+      "input_37": {
+        "name": "Input 37",
+        "tooltip": "Optional direct input for channel 37 (any data type)"
+      },
+      "input_38": {
+        "name": "Input 38",
+        "tooltip": "Optional direct input for channel 38 (any data type)"
+      },
+      "input_39": {
+        "name": "Input 39",
+        "tooltip": "Optional direct input for channel 39 (any data type)"
+      },
+      "input_40": {
+        "name": "Input 40",
+        "tooltip": "Optional direct input for channel 40 (any data type)"
+      },
+      "input_41": {
+        "name": "Input 41",
+        "tooltip": "Optional direct input for channel 41 (any data type)"
+      },
+      "input_42": {
+        "name": "Input 42",
+        "tooltip": "Optional direct input for channel 42 (any data type)"
+      },
+      "input_43": {
+        "name": "Input 43",
+        "tooltip": "Optional direct input for channel 43 (any data type)"
+      },
+      "input_44": {
+        "name": "Input 44",
+        "tooltip": "Optional direct input for channel 44 (any data type)"
+      },
+      "input_45": {
+        "name": "Input 45",
+        "tooltip": "Optional direct input for channel 45 (any data type)"
+      },
+      "input_46": {
+        "name": "Input 46",
+        "tooltip": "Optional direct input for channel 46 (any data type)"
+      },
+      "input_47": {
+        "name": "Input 47",
+        "tooltip": "Optional direct input for channel 47 (any data type)"
+      },
+      "input_48": {
+        "name": "Input 48",
+        "tooltip": "Optional direct input for channel 48 (any data type)"
+      },
+      "input_49": {
+        "name": "Input 49",
+        "tooltip": "Optional direct input for channel 49 (any data type)"
+      },
+      "input_50": {
+        "name": "Input 50",
+        "tooltip": "Optional direct input for channel 50 (any data type)"
+      },
+      "enable_1": {
+        "name": "Enable 1",
+        "tooltip": "Whether channel 1 output is enabled"
+      },
+      "enable_2": {
+        "name": "Enable 2",
+        "tooltip": "Whether channel 2 output is enabled"
+      },
+      "enable_3": {
+        "name": "Enable 3",
+        "tooltip": "Whether channel 3 output is enabled"
+      },
+      "enable_4": {
+        "name": "Enable 4",
+        "tooltip": "Whether channel 4 output is enabled"
+      },
+      "enable_5": {
+        "name": "Enable 5",
+        "tooltip": "Whether channel 5 output is enabled"
+      },
+      "enable_6": {
+        "name": "Enable 6",
+        "tooltip": "Whether channel 6 output is enabled"
+      },
+      "enable_7": {
+        "name": "Enable 7",
+        "tooltip": "Whether channel 7 output is enabled"
+      },
+      "enable_8": {
+        "name": "Enable 8",
+        "tooltip": "Whether channel 8 output is enabled"
+      },
+      "enable_9": {
+        "name": "Enable 9",
+        "tooltip": "Whether channel 9 output is enabled"
+      },
+      "enable_10": {
+        "name": "Enable 10",
+        "tooltip": "Whether channel 10 output is enabled"
+      },
+      "enable_11": {
+        "name": "Enable 11",
+        "tooltip": "Whether channel 11 output is enabled"
+      },
+      "enable_12": {
+        "name": "Enable 12",
+        "tooltip": "Whether channel 12 output is enabled"
+      },
+      "enable_13": {
+        "name": "Enable 13",
+        "tooltip": "Whether channel 13 output is enabled"
+      },
+      "enable_14": {
+        "name": "Enable 14",
+        "tooltip": "Whether channel 14 output is enabled"
+      },
+      "enable_15": {
+        "name": "Enable 15",
+        "tooltip": "Whether channel 15 output is enabled"
+      },
+      "enable_16": {
+        "name": "Enable 16",
+        "tooltip": "Whether channel 16 output is enabled"
+      },
+      "enable_17": {
+        "name": "Enable 17",
+        "tooltip": "Whether channel 17 output is enabled"
+      },
+      "enable_18": {
+        "name": "Enable 18",
+        "tooltip": "Whether channel 18 output is enabled"
+      },
+      "enable_19": {
+        "name": "Enable 19",
+        "tooltip": "Whether channel 19 output is enabled"
+      },
+      "enable_20": {
+        "name": "Enable 20",
+        "tooltip": "Whether channel 20 output is enabled"
+      },
+      "enable_21": {
+        "name": "Enable 21",
+        "tooltip": "Whether channel 21 output is enabled"
+      },
+      "enable_22": {
+        "name": "Enable 22",
+        "tooltip": "Whether channel 22 output is enabled"
+      },
+      "enable_23": {
+        "name": "Enable 23",
+        "tooltip": "Whether channel 23 output is enabled"
+      },
+      "enable_24": {
+        "name": "Enable 24",
+        "tooltip": "Whether channel 24 output is enabled"
+      },
+      "enable_25": {
+        "name": "Enable 25",
+        "tooltip": "Whether channel 25 output is enabled"
+      },
+      "enable_26": {
+        "name": "Enable 26",
+        "tooltip": "Whether channel 26 output is enabled"
+      },
+      "enable_27": {
+        "name": "Enable 27",
+        "tooltip": "Whether channel 27 output is enabled"
+      },
+      "enable_28": {
+        "name": "Enable 28",
+        "tooltip": "Whether channel 28 output is enabled"
+      },
+      "enable_29": {
+        "name": "Enable 29",
+        "tooltip": "Whether channel 29 output is enabled"
+      },
+      "enable_30": {
+        "name": "Enable 30",
+        "tooltip": "Whether channel 30 output is enabled"
+      },
+      "enable_31": {
+        "name": "Enable 31",
+        "tooltip": "Whether channel 31 output is enabled"
+      },
+      "enable_32": {
+        "name": "Enable 32",
+        "tooltip": "Whether channel 32 output is enabled"
+      },
+      "enable_33": {
+        "name": "Enable 33",
+        "tooltip": "Whether channel 33 output is enabled"
+      },
+      "enable_34": {
+        "name": "Enable 34",
+        "tooltip": "Whether channel 34 output is enabled"
+      },
+      "enable_35": {
+        "name": "Enable 35",
+        "tooltip": "Whether channel 35 output is enabled"
+      },
+      "enable_36": {
+        "name": "Enable 36",
+        "tooltip": "Whether channel 36 output is enabled"
+      },
+      "enable_37": {
+        "name": "Enable 37",
+        "tooltip": "Whether channel 37 output is enabled"
+      },
+      "enable_38": {
+        "name": "Enable 38",
+        "tooltip": "Whether channel 38 output is enabled"
+      },
+      "enable_39": {
+        "name": "Enable 39",
+        "tooltip": "Whether channel 39 output is enabled"
+      },
+      "enable_40": {
+        "name": "Enable 40",
+        "tooltip": "Whether channel 40 output is enabled"
+      },
+      "enable_41": {
+        "name": "Enable 41",
+        "tooltip": "Whether channel 41 output is enabled"
+      },
+      "enable_42": {
+        "name": "Enable 42",
+        "tooltip": "Whether channel 42 output is enabled"
+      },
+      "enable_43": {
+        "name": "Enable 43",
+        "tooltip": "Whether channel 43 output is enabled"
+      },
+      "enable_44": {
+        "name": "Enable 44",
+        "tooltip": "Whether channel 44 output is enabled"
+      },
+      "enable_45": {
+        "name": "Enable 45",
+        "tooltip": "Whether channel 45 output is enabled"
+      },
+      "enable_46": {
+        "name": "Enable 46",
+        "tooltip": "Whether channel 46 output is enabled"
+      },
+      "enable_47": {
+        "name": "Enable 47",
+        "tooltip": "Whether channel 47 output is enabled"
+      },
+      "enable_48": {
+        "name": "Enable 48",
+        "tooltip": "Whether channel 48 output is enabled"
+      },
+      "enable_49": {
+        "name": "Enable 49",
+        "tooltip": "Whether channel 49 output is enabled"
+      },
+      "enable_50": {
+        "name": "Enable 50",
+        "tooltip": "Whether channel 50 output is enabled"
+      },
+      "port_names": {
+        "name": "Port Names",
+        "tooltip": "Internal serialized names managed by the XPipeGate frontend"
+      },
+      "type_warning": {
+        "name": "Type Mismatch Warning",
+        "tooltip": "Show a visual warning when a channel output is connected to an incompatible input type."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XPipe Out",
+        "tooltip": "The XPipe bundle with all enabled channel values, ready for the next XPipe node. Empty when nothing is connected."
+      },
+      "1": {
+        "name": "Output 1",
+        "tooltip": "Channel 1 output"
+      },
+      "2": {
+        "name": "Output 2",
+        "tooltip": "Channel 2 output"
+      },
+      "3": {
+        "name": "Output 3",
+        "tooltip": "Channel 3 output"
+      },
+      "4": {
+        "name": "Output 4",
+        "tooltip": "Channel 4 output"
+      },
+      "5": {
+        "name": "Output 5",
+        "tooltip": "Channel 5 output"
+      },
+      "6": {
+        "name": "Output 6",
+        "tooltip": "Channel 6 output"
+      },
+      "7": {
+        "name": "Output 7",
+        "tooltip": "Channel 7 output"
+      },
+      "8": {
+        "name": "Output 8",
+        "tooltip": "Channel 8 output"
+      },
+      "9": {
+        "name": "Output 9",
+        "tooltip": "Channel 9 output"
+      },
+      "10": {
+        "name": "Output 10",
+        "tooltip": "Channel 10 output"
+      },
+      "11": {
+        "name": "Output 11",
+        "tooltip": "Channel 11 output"
+      },
+      "12": {
+        "name": "Output 12",
+        "tooltip": "Channel 12 output"
+      },
+      "13": {
+        "name": "Output 13",
+        "tooltip": "Channel 13 output"
+      },
+      "14": {
+        "name": "Output 14",
+        "tooltip": "Channel 14 output"
+      },
+      "15": {
+        "name": "Output 15",
+        "tooltip": "Channel 15 output"
+      },
+      "16": {
+        "name": "Output 16",
+        "tooltip": "Channel 16 output"
+      },
+      "17": {
+        "name": "Output 17",
+        "tooltip": "Channel 17 output"
+      },
+      "18": {
+        "name": "Output 18",
+        "tooltip": "Channel 18 output"
+      },
+      "19": {
+        "name": "Output 19",
+        "tooltip": "Channel 19 output"
+      },
+      "20": {
+        "name": "Output 20",
+        "tooltip": "Channel 20 output"
+      },
+      "21": {
+        "name": "Output 21",
+        "tooltip": "Channel 21 output"
+      },
+      "22": {
+        "name": "Output 22",
+        "tooltip": "Channel 22 output"
+      },
+      "23": {
+        "name": "Output 23",
+        "tooltip": "Channel 23 output"
+      },
+      "24": {
+        "name": "Output 24",
+        "tooltip": "Channel 24 output"
+      },
+      "25": {
+        "name": "Output 25",
+        "tooltip": "Channel 25 output"
+      },
+      "26": {
+        "name": "Output 26",
+        "tooltip": "Channel 26 output"
+      },
+      "27": {
+        "name": "Output 27",
+        "tooltip": "Channel 27 output"
+      },
+      "28": {
+        "name": "Output 28",
+        "tooltip": "Channel 28 output"
+      },
+      "29": {
+        "name": "Output 29",
+        "tooltip": "Channel 29 output"
+      },
+      "30": {
+        "name": "Output 30",
+        "tooltip": "Channel 30 output"
+      },
+      "31": {
+        "name": "Output 31",
+        "tooltip": "Channel 31 output"
+      },
+      "32": {
+        "name": "Output 32",
+        "tooltip": "Channel 32 output"
+      },
+      "33": {
+        "name": "Output 33",
+        "tooltip": "Channel 33 output"
+      },
+      "34": {
+        "name": "Output 34",
+        "tooltip": "Channel 34 output"
+      },
+      "35": {
+        "name": "Output 35",
+        "tooltip": "Channel 35 output"
+      },
+      "36": {
+        "name": "Output 36",
+        "tooltip": "Channel 36 output"
+      },
+      "37": {
+        "name": "Output 37",
+        "tooltip": "Channel 37 output"
+      },
+      "38": {
+        "name": "Output 38",
+        "tooltip": "Channel 38 output"
+      },
+      "39": {
+        "name": "Output 39",
+        "tooltip": "Channel 39 output"
+      },
+      "40": {
+        "name": "Output 40",
+        "tooltip": "Channel 40 output"
+      },
+      "41": {
+        "name": "Output 41",
+        "tooltip": "Channel 41 output"
+      },
+      "42": {
+        "name": "Output 42",
+        "tooltip": "Channel 42 output"
+      },
+      "43": {
+        "name": "Output 43",
+        "tooltip": "Channel 43 output"
+      },
+      "44": {
+        "name": "Output 44",
+        "tooltip": "Channel 44 output"
+      },
+      "45": {
+        "name": "Output 45",
+        "tooltip": "Channel 45 output"
+      },
+      "46": {
+        "name": "Output 46",
+        "tooltip": "Channel 46 output"
+      },
+      "47": {
+        "name": "Output 47",
+        "tooltip": "Channel 47 output"
+      },
+      "48": {
+        "name": "Output 48",
+        "tooltip": "Channel 48 output"
+      },
+      "49": {
+        "name": "Output 49",
+        "tooltip": "Channel 49 output"
+      },
+      "50": {
+        "name": "Output 50",
+        "tooltip": "Channel 50 output"
+      }
+    }
+  },
+  "XPipeRecursive": {
+    "display_name": "XPipeRecursive",
+    "description": "Scan an XPipe bundle in the slot order you define and return the first value found. Write the order as slot numbers separated by '-' (e.g. 1-3-5 or 50-1-2); the first non-empty slot wins.",
+    "inputs": {
+      "xpipe_in": {
+        "name": "XPipe In",
+        "tooltip": "The XPipe bundle to search through, following your recursive_order (slots 1 to 50)."
+      },
+      "empty_string_as_none": {
+        "name": "Empty String as None",
+        "tooltip": "When Enabled, skip an exact empty string and continue scanning"
+      },
+      "recursive_order": {
+        "name": "Recursive Order",
+        "tooltip": "Slot order to scan, numbers separated by '-' (example: 1-3-5 or 50-1-2). Only slots 1-50 allowed; no duplicates."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Recursive Output",
+        "tooltip": "The first non-empty value found while scanning in your specified order."
+      }
+    }
+  },
   "XAnyToString": {
     "display_name": "XAnyToString",
     "description": "Converts any input data to a string while passing the original input through to downstream nodes.",
@@ -160,6 +808,84 @@
       "2": {
         "name": "xdata String",
         "tooltip": "xdata_string payload for XDataSave"
+      }
+    }
+  },
+  "XAudioProcess": {
+    "display_name": "XAudioProcess",
+    "description": "Apply one audio effect at a time — or chain them all at once. Resample, compress, normalize, or limit peaks. Use Chain mode to combine multiple steps in a single node.",
+    "inputs": {
+      "audio": {
+        "name": "Audio",
+        "tooltip": "Input audio to process"
+      },
+      "mode": {
+        "name": "Processing Mode",
+        "tooltip": "Choose a single processing step, or pick Chain to enable multiple steps at once with individual on/off switches.",
+        "options": {
+          "Resample": "Resample",
+          "Compress": "Compress",
+          "Normalize": "Normalize",
+          "Limit": "Limit",
+          "Chain": "Chain"
+        }
+      },
+      "mode_sample_rate": {
+        "name": "Sample Rate",
+        "tooltip": "Target sample rate in Hz. Common choices: 44100 (CD quality), 48000 (video standard), 96000 or 192000 (high-res).",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "mode_compression_mode": {
+        "name": "Compression Mode",
+        "tooltip": "Compression preset. Fast: quick response, good for voice. Balanced: all-purpose, works for most music. Slow: smooth and gentle, for mastering.",
+        "options": {
+          "Fast": "Fast",
+          "Balanced": "Balanced",
+          "Slow": "Slow"
+        }
+      },
+      "mode_use_custom_ratio": {
+        "name": "Use Custom Ratio",
+        "tooltip": "When Enabled, use your own compression ratio instead of the preset's default."
+      },
+      "mode_custom_ratio": {
+        "name": "Custom Ratio",
+        "tooltip": "Your custom compression ratio (1.0 to 20.0). Only used when custom ratio is Enabled. Higher = stronger compression. Set to 1.0 for no compression."
+      },
+      "mode_target_lufs": {
+        "name": "Target LUFS",
+        "tooltip": "Target loudness in LUFS. -14 LUFS is the common streaming standard. Lower = quieter. Set to -70 to skip."
+      },
+      "mode_peak_limit": {
+        "name": "Peak Limit",
+        "tooltip": "Maximum peak level in dB. The limiter stops any audio from going above this level. -1.0 dB is a safe default to prevent clipping."
+      },
+      "mode_chain_resample": {
+        "name": "Resample",
+        "tooltip": "When Enabled, change the sample rate before other processing steps."
+      },
+      "mode_chain_compress": {
+        "name": "Compress",
+        "tooltip": "When Enabled, apply dynamic range compression to even out loudness differences."
+      },
+      "mode_chain_normalize": {
+        "name": "Normalize",
+        "tooltip": "When Enabled, adjust overall loudness to the target LUFS level."
+      },
+      "mode_chain_limit": {
+        "name": "Peak Limit",
+        "tooltip": "When Enabled, cap audio peaks to prevent clipping."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Processed Audio",
+        "tooltip": "Audio after the selected processing step (32-bit float, same format as input)"
       }
     }
   },
@@ -225,6 +951,22 @@
       }
     }
   },
+  "XImagePreview": {
+    "display_name": "XImagePreview",
+    "description": "Preview an optional IMAGE or MASK input using the official PreviewImage / PreviewMask UI. Runs independently when empty and shows a text notice when no input is available.",
+    "inputs": {
+      "images": {
+        "name": "Image or Mask",
+        "tooltip": "Optional image or mask input. Leave unconnected or receive None to show a text notice instead of previewing."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Image or Mask",
+        "tooltip": "Passthrough of the input image or mask, or None when no input is available"
+      }
+    }
+  },
   "XKleinRefConditioning": {
     "display_name": "XKleinRefConditioning",
     "description": "Automatically encodes connected reference images and appends reference latents to both positive and negative conditioning chains.",
@@ -269,6 +1011,38 @@
       }
     }
   },
+  "XKleinRefListConditioning": {
+    "display_name": "XKleinRefListConditioning",
+    "description": "Encode an IMAGE list into FLUX.2-klein reference latents and append them to both positive and negative conditioning. Each list item is processed in order; IMAGE batches are split along the batch dimension into single frames. At most 50 reference frames are applied.",
+    "inputs": {
+      "positive_conditioning": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning input"
+      },
+      "negative_conditioning": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning input"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "VAE used to encode reference images"
+      },
+      "image_list": {
+        "name": "Image List",
+        "tooltip": "IMAGE list of reference images. Connect XListCreate list output (or any IMAGE list wire). Leave unconnected for passthrough conditioning."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Positive Conditioning",
+        "tooltip": "Positive conditioning with reference latents"
+      },
+      "1": {
+        "name": "Negative Conditioning",
+        "tooltip": "Negative conditioning with reference latents"
+      }
+    }
+  },
   "XLinker": {
     "display_name": "XLinker",
     "description": "Passthrough node with a note text area. One any-type input passes directly to one any-type output. Node widget buttons toggle link visibility and link highlighting.",
@@ -280,12 +1054,508 @@
       "note_text": {
         "name": "Note Text",
         "tooltip": "Freeform note text. Use this to annotate the workflow — the value is ignored during execution."
+      },
+      "type_warning": {
+        "name": "Type Mismatch Warning",
+        "tooltip": "Show visual warning on links and output ports when a type mismatch is detected. Disable to hide the warning effect."
       }
     },
     "outputs": {
       "0": {
         "name": "Any output",
         "tooltip": "Passthrough output (same data type as input)."
+      }
+    }
+  },
+  "XListCreate": {
+    "display_name": "XListCreate",
+    "description": "Pack multiple connected inputs into one compact list, skipping empty ports. Outputs list (connected values in order), count (how many), and slot_map (where each item came from, for XListRestore). Pair with XListPull to split the list back into separate ports.",
+    "inputs": {
+      "inputs": {
+        "name": "Inputs",
+        "tooltip": "Connect inputs to add them to the list"
+      },
+      "inputs_input1": {
+        "name": "Input 1",
+        "tooltip": "List slot 1 input. Connect any data to add it to the list."
+      },
+      "inputs_input2": {
+        "name": "Input 2",
+        "tooltip": "List slot 2 input. Connect any data to add it to the list."
+      },
+      "inputs_input3": {
+        "name": "Input 3",
+        "tooltip": "List slot 3 input. Connect any data to add it to the list."
+      },
+      "inputs_input4": {
+        "name": "Input 4",
+        "tooltip": "List slot 4 input. Connect any data to add it to the list."
+      },
+      "inputs_input5": {
+        "name": "Input 5",
+        "tooltip": "List slot 5 input. Connect any data to add it to the list."
+      },
+      "inputs_input6": {
+        "name": "Input 6",
+        "tooltip": "List slot 6 input. Connect any data to add it to the list."
+      },
+      "inputs_input7": {
+        "name": "Input 7",
+        "tooltip": "List slot 7 input. Connect any data to add it to the list."
+      },
+      "inputs_input8": {
+        "name": "Input 8",
+        "tooltip": "List slot 8 input. Connect any data to add it to the list."
+      },
+      "inputs_input9": {
+        "name": "Input 9",
+        "tooltip": "List slot 9 input. Connect any data to add it to the list."
+      },
+      "inputs_input10": {
+        "name": "Input 10",
+        "tooltip": "List slot 10 input. Connect any data to add it to the list."
+      },
+      "inputs_input11": {
+        "name": "Input 11",
+        "tooltip": "List slot 11 input. Connect any data to add it to the list."
+      },
+      "inputs_input12": {
+        "name": "Input 12",
+        "tooltip": "List slot 12 input. Connect any data to add it to the list."
+      },
+      "inputs_input13": {
+        "name": "Input 13",
+        "tooltip": "List slot 13 input. Connect any data to add it to the list."
+      },
+      "inputs_input14": {
+        "name": "Input 14",
+        "tooltip": "List slot 14 input. Connect any data to add it to the list."
+      },
+      "inputs_input15": {
+        "name": "Input 15",
+        "tooltip": "List slot 15 input. Connect any data to add it to the list."
+      },
+      "inputs_input16": {
+        "name": "Input 16",
+        "tooltip": "List slot 16 input. Connect any data to add it to the list."
+      },
+      "inputs_input17": {
+        "name": "Input 17",
+        "tooltip": "List slot 17 input. Connect any data to add it to the list."
+      },
+      "inputs_input18": {
+        "name": "Input 18",
+        "tooltip": "List slot 18 input. Connect any data to add it to the list."
+      },
+      "inputs_input19": {
+        "name": "Input 19",
+        "tooltip": "List slot 19 input. Connect any data to add it to the list."
+      },
+      "inputs_input20": {
+        "name": "Input 20",
+        "tooltip": "List slot 20 input. Connect any data to add it to the list."
+      },
+      "inputs_input21": {
+        "name": "Input 21",
+        "tooltip": "List slot 21 input. Connect any data to add it to the list."
+      },
+      "inputs_input22": {
+        "name": "Input 22",
+        "tooltip": "List slot 22 input. Connect any data to add it to the list."
+      },
+      "inputs_input23": {
+        "name": "Input 23",
+        "tooltip": "List slot 23 input. Connect any data to add it to the list."
+      },
+      "inputs_input24": {
+        "name": "Input 24",
+        "tooltip": "List slot 24 input. Connect any data to add it to the list."
+      },
+      "inputs_input25": {
+        "name": "Input 25",
+        "tooltip": "List slot 25 input. Connect any data to add it to the list."
+      },
+      "inputs_input26": {
+        "name": "Input 26",
+        "tooltip": "List slot 26 input. Connect any data to add it to the list."
+      },
+      "inputs_input27": {
+        "name": "Input 27",
+        "tooltip": "List slot 27 input. Connect any data to add it to the list."
+      },
+      "inputs_input28": {
+        "name": "Input 28",
+        "tooltip": "List slot 28 input. Connect any data to add it to the list."
+      },
+      "inputs_input29": {
+        "name": "Input 29",
+        "tooltip": "List slot 29 input. Connect any data to add it to the list."
+      },
+      "inputs_input30": {
+        "name": "Input 30",
+        "tooltip": "List slot 30 input. Connect any data to add it to the list."
+      },
+      "inputs_input31": {
+        "name": "Input 31",
+        "tooltip": "List slot 31 input. Connect any data to add it to the list."
+      },
+      "inputs_input32": {
+        "name": "Input 32",
+        "tooltip": "List slot 32 input. Connect any data to add it to the list."
+      },
+      "inputs_input33": {
+        "name": "Input 33",
+        "tooltip": "List slot 33 input. Connect any data to add it to the list."
+      },
+      "inputs_input34": {
+        "name": "Input 34",
+        "tooltip": "List slot 34 input. Connect any data to add it to the list."
+      },
+      "inputs_input35": {
+        "name": "Input 35",
+        "tooltip": "List slot 35 input. Connect any data to add it to the list."
+      },
+      "inputs_input36": {
+        "name": "Input 36",
+        "tooltip": "List slot 36 input. Connect any data to add it to the list."
+      },
+      "inputs_input37": {
+        "name": "Input 37",
+        "tooltip": "List slot 37 input. Connect any data to add it to the list."
+      },
+      "inputs_input38": {
+        "name": "Input 38",
+        "tooltip": "List slot 38 input. Connect any data to add it to the list."
+      },
+      "inputs_input39": {
+        "name": "Input 39",
+        "tooltip": "List slot 39 input. Connect any data to add it to the list."
+      },
+      "inputs_input40": {
+        "name": "Input 40",
+        "tooltip": "List slot 40 input. Connect any data to add it to the list."
+      },
+      "inputs_input41": {
+        "name": "Input 41",
+        "tooltip": "List slot 41 input. Connect any data to add it to the list."
+      },
+      "inputs_input42": {
+        "name": "Input 42",
+        "tooltip": "List slot 42 input. Connect any data to add it to the list."
+      },
+      "inputs_input43": {
+        "name": "Input 43",
+        "tooltip": "List slot 43 input. Connect any data to add it to the list."
+      },
+      "inputs_input44": {
+        "name": "Input 44",
+        "tooltip": "List slot 44 input. Connect any data to add it to the list."
+      },
+      "inputs_input45": {
+        "name": "Input 45",
+        "tooltip": "List slot 45 input. Connect any data to add it to the list."
+      },
+      "inputs_input46": {
+        "name": "Input 46",
+        "tooltip": "List slot 46 input. Connect any data to add it to the list."
+      },
+      "inputs_input47": {
+        "name": "Input 47",
+        "tooltip": "List slot 47 input. Connect any data to add it to the list."
+      },
+      "inputs_input48": {
+        "name": "Input 48",
+        "tooltip": "List slot 48 input. Connect any data to add it to the list."
+      },
+      "inputs_input49": {
+        "name": "Input 49",
+        "tooltip": "List slot 49 input. Connect any data to add it to the list."
+      },
+      "inputs_input50": {
+        "name": "Input 50",
+        "tooltip": "List slot 50 input. Connect any data to add it to the list."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "List",
+        "tooltip": "The compact list holding every connected value, in port order. Length equals count."
+      },
+      "1": {
+        "name": "Count",
+        "tooltip": "How many values are in the list. Connect to XListPull to choose how many output ports it shows."
+      },
+      "2": {
+        "name": "Slot Map",
+        "tooltip": "Position record only (no media). Tracks which input port each list item came from. Connect to XListRestore to put items back into their original ports."
+      }
+    }
+  },
+  "XListPull": {
+    "display_name": "XListPull",
+    "description": "Split one list into separate output ports — each item gets its own port (Data 1, Data 2, ...). Connect a list from XListCreate (or any list), and use the count to choose how many ports show.",
+    "inputs": {
+      "list_input": {
+        "name": "List Input",
+        "tooltip": "The list to split up. Connect XListCreate's list output (or any other list) here."
+      },
+      "count": {
+        "name": "Count",
+        "tooltip": "Sets how many output ports are active. When connected it overrides the number field above; leave unconnected to set the count manually."
+      },
+      "count_display": {
+        "name": "Count",
+        "tooltip": "How many output ports to show. Auto-disabled when the count port is connected; otherwise set it manually here."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Data 1",
+        "tooltip": "Data 1 from the list (only active when count >= 1)"
+      },
+      "1": {
+        "name": "Data 2",
+        "tooltip": "Data 2 from the list (only active when count >= 2)"
+      },
+      "2": {
+        "name": "Data 3",
+        "tooltip": "Data 3 from the list (only active when count >= 3)"
+      },
+      "3": {
+        "name": "Data 4",
+        "tooltip": "Data 4 from the list (only active when count >= 4)"
+      },
+      "4": {
+        "name": "Data 5",
+        "tooltip": "Data 5 from the list (only active when count >= 5)"
+      },
+      "5": {
+        "name": "Data 6",
+        "tooltip": "Data 6 from the list (only active when count >= 6)"
+      },
+      "6": {
+        "name": "Data 7",
+        "tooltip": "Data 7 from the list (only active when count >= 7)"
+      },
+      "7": {
+        "name": "Data 8",
+        "tooltip": "Data 8 from the list (only active when count >= 8)"
+      },
+      "8": {
+        "name": "Data 9",
+        "tooltip": "Data 9 from the list (only active when count >= 9)"
+      },
+      "9": {
+        "name": "Data 10",
+        "tooltip": "Data 10 from the list (only active when count >= 10)"
+      },
+      "10": {
+        "name": "Data 11",
+        "tooltip": "Data 11 from the list (only active when count >= 11)"
+      },
+      "11": {
+        "name": "Data 12",
+        "tooltip": "Data 12 from the list (only active when count >= 12)"
+      },
+      "12": {
+        "name": "Data 13",
+        "tooltip": "Data 13 from the list (only active when count >= 13)"
+      },
+      "13": {
+        "name": "Data 14",
+        "tooltip": "Data 14 from the list (only active when count >= 14)"
+      },
+      "14": {
+        "name": "Data 15",
+        "tooltip": "Data 15 from the list (only active when count >= 15)"
+      },
+      "15": {
+        "name": "Data 16",
+        "tooltip": "Data 16 from the list (only active when count >= 16)"
+      },
+      "16": {
+        "name": "Data 17",
+        "tooltip": "Data 17 from the list (only active when count >= 17)"
+      },
+      "17": {
+        "name": "Data 18",
+        "tooltip": "Data 18 from the list (only active when count >= 18)"
+      },
+      "18": {
+        "name": "Data 19",
+        "tooltip": "Data 19 from the list (only active when count >= 19)"
+      },
+      "19": {
+        "name": "Data 20",
+        "tooltip": "Data 20 from the list (only active when count >= 20)"
+      },
+      "20": {
+        "name": "Data 21",
+        "tooltip": "Data 21 from the list (only active when count >= 21)"
+      },
+      "21": {
+        "name": "Data 22",
+        "tooltip": "Data 22 from the list (only active when count >= 22)"
+      },
+      "22": {
+        "name": "Data 23",
+        "tooltip": "Data 23 from the list (only active when count >= 23)"
+      },
+      "23": {
+        "name": "Data 24",
+        "tooltip": "Data 24 from the list (only active when count >= 24)"
+      },
+      "24": {
+        "name": "Data 25",
+        "tooltip": "Data 25 from the list (only active when count >= 25)"
+      },
+      "25": {
+        "name": "Data 26",
+        "tooltip": "Data 26 from the list (only active when count >= 26)"
+      },
+      "26": {
+        "name": "Data 27",
+        "tooltip": "Data 27 from the list (only active when count >= 27)"
+      },
+      "27": {
+        "name": "Data 28",
+        "tooltip": "Data 28 from the list (only active when count >= 28)"
+      },
+      "28": {
+        "name": "Data 29",
+        "tooltip": "Data 29 from the list (only active when count >= 29)"
+      },
+      "29": {
+        "name": "Data 30",
+        "tooltip": "Data 30 from the list (only active when count >= 30)"
+      },
+      "30": {
+        "name": "Data 31",
+        "tooltip": "Data 31 from the list (only active when count >= 31)"
+      },
+      "31": {
+        "name": "Data 32",
+        "tooltip": "Data 32 from the list (only active when count >= 32)"
+      },
+      "32": {
+        "name": "Data 33",
+        "tooltip": "Data 33 from the list (only active when count >= 33)"
+      },
+      "33": {
+        "name": "Data 34",
+        "tooltip": "Data 34 from the list (only active when count >= 34)"
+      },
+      "34": {
+        "name": "Data 35",
+        "tooltip": "Data 35 from the list (only active when count >= 35)"
+      },
+      "35": {
+        "name": "Data 36",
+        "tooltip": "Data 36 from the list (only active when count >= 36)"
+      },
+      "36": {
+        "name": "Data 37",
+        "tooltip": "Data 37 from the list (only active when count >= 37)"
+      },
+      "37": {
+        "name": "Data 38",
+        "tooltip": "Data 38 from the list (only active when count >= 38)"
+      },
+      "38": {
+        "name": "Data 39",
+        "tooltip": "Data 39 from the list (only active when count >= 39)"
+      },
+      "39": {
+        "name": "Data 40",
+        "tooltip": "Data 40 from the list (only active when count >= 40)"
+      },
+      "40": {
+        "name": "Data 41",
+        "tooltip": "Data 41 from the list (only active when count >= 41)"
+      },
+      "41": {
+        "name": "Data 42",
+        "tooltip": "Data 42 from the list (only active when count >= 42)"
+      },
+      "42": {
+        "name": "Data 43",
+        "tooltip": "Data 43 from the list (only active when count >= 43)"
+      },
+      "43": {
+        "name": "Data 44",
+        "tooltip": "Data 44 from the list (only active when count >= 44)"
+      },
+      "44": {
+        "name": "Data 45",
+        "tooltip": "Data 45 from the list (only active when count >= 45)"
+      },
+      "45": {
+        "name": "Data 46",
+        "tooltip": "Data 46 from the list (only active when count >= 46)"
+      },
+      "46": {
+        "name": "Data 47",
+        "tooltip": "Data 47 from the list (only active when count >= 47)"
+      },
+      "47": {
+        "name": "Data 48",
+        "tooltip": "Data 48 from the list (only active when count >= 48)"
+      },
+      "48": {
+        "name": "Data 49",
+        "tooltip": "Data 49 from the list (only active when count >= 49)"
+      },
+      "49": {
+        "name": "Data 50",
+        "tooltip": "Data 50 from the list (only active when count >= 50)"
+      }
+    }
+  },
+  "XListRestore": {
+    "display_name": "XListRestore",
+    "description": "Put list items back into their original slots after processing. XListCreate packs only the connected inputs into a compact list; this node uses the saved slot map to place every processed item back where it came from. Unused slots become None, so downstream nodes that read items by position stay aligned.",
+    "inputs": {
+      "list_input": {
+        "name": "List Input",
+        "tooltip": "The compact list to restore, usually the output of a batch-processing node (e.g. XImageResize). Its items originally come from XListCreate."
+      },
+      "slot_map": {
+        "name": "Slot Map",
+        "tooltip": "The position record saved by XListCreate: which item belongs to which slot. Connect XListCreate's slot_map output here."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "List",
+        "tooltip": "The restored list with items back in their original positions. Empty slots are None. Length equals the count output."
+      },
+      "1": {
+        "name": "Count",
+        "tooltip": "Total number of slots (including empty ones). Connect to XListPull / XListToPipe to expand their ports."
+      }
+    }
+  },
+  "XListToPipe": {
+    "display_name": "XListToPipe",
+    "description": "Turn a list into an XPipe bundle so it can flow through the XPipe family. Items fill slots 1..N (up to 50); unused slots stay empty (None). The count input sets how many slots the bundle has.",
+    "inputs": {
+      "list_input": {
+        "name": "List",
+        "tooltip": "The list to put into the bundle. Connect XListCreate's list output or any other list here. Leave unconnected to create an empty bundle."
+      },
+      "count": {
+        "name": "Count",
+        "tooltip": "Sets how many slots the bundle has. Connect XListCreate's count (or any number) here; leave unconnected to use the number field above."
+      },
+      "count_display": {
+        "name": "Count",
+        "tooltip": "How many slots the bundle has. Auto-disabled when the count port is connected; otherwise set it manually here."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XPipe Out",
+        "tooltip": "The XPipe bundle holding your list items in slots 1..N (max 50). Empty slots are None. N follows the count input."
       }
     }
   },
@@ -377,185 +1647,439 @@
   },
   "XPipe": {
     "display_name": "XPipe",
-    "description": "Pipe bundle node: route up to 20 any-type data groups through one bundle wire while keeping autogrowing inputs and matching visible outputs. Per-slot inputs override the bundle; port names are customizable and travel with the bundle.",
+    "description": "Pipe bundle node: route up to 50 any-type data groups through a single bundle wire. Input/output slot types auto-match via MatchType; per-slot inputs override the bundle; port names are customizable and travel with the bundle.",
     "inputs": {
       "xpipe_in": {
         "name": "XPipe In",
         "tooltip": "Connect an upstream XPipe bundle to receive the full set of slot data and names at once. If a direct slot input is also connected, that slot still uses the direct input."
       },
-      "values": {
-        "name": "Data",
-        "tooltip": "Autogrowing data inputs. Each connected slot overrides the same slot from the bundle."
-      },
       "value_1": {
-        "name": "Data 1",
-        "tooltip": "Slot 1 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 1",
+        "tooltip": "Slot 1 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_2": {
-        "name": "Data 2",
-        "tooltip": "Slot 2 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 2",
+        "tooltip": "Slot 2 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_3": {
-        "name": "Data 3",
-        "tooltip": "Slot 3 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 3",
+        "tooltip": "Slot 3 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_4": {
-        "name": "Data 4",
-        "tooltip": "Slot 4 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 4",
+        "tooltip": "Slot 4 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_5": {
-        "name": "Data 5",
-        "tooltip": "Slot 5 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 5",
+        "tooltip": "Slot 5 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_6": {
-        "name": "Data 6",
-        "tooltip": "Slot 6 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 6",
+        "tooltip": "Slot 6 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_7": {
-        "name": "Data 7",
-        "tooltip": "Slot 7 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 7",
+        "tooltip": "Slot 7 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_8": {
-        "name": "Data 8",
-        "tooltip": "Slot 8 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 8",
+        "tooltip": "Slot 8 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_9": {
-        "name": "Data 9",
-        "tooltip": "Slot 9 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 9",
+        "tooltip": "Slot 9 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_10": {
-        "name": "Data 10",
-        "tooltip": "Slot 10 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 10",
+        "tooltip": "Slot 10 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_11": {
-        "name": "Data 11",
-        "tooltip": "Slot 11 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 11",
+        "tooltip": "Slot 11 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_12": {
-        "name": "Data 12",
-        "tooltip": "Slot 12 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 12",
+        "tooltip": "Slot 12 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_13": {
-        "name": "Data 13",
-        "tooltip": "Slot 13 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 13",
+        "tooltip": "Slot 13 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_14": {
-        "name": "Data 14",
-        "tooltip": "Slot 14 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 14",
+        "tooltip": "Slot 14 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_15": {
-        "name": "Data 15",
-        "tooltip": "Slot 15 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 15",
+        "tooltip": "Slot 15 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_16": {
-        "name": "Data 16",
-        "tooltip": "Slot 16 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 16",
+        "tooltip": "Slot 16 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_17": {
-        "name": "Data 17",
-        "tooltip": "Slot 17 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 17",
+        "tooltip": "Slot 17 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_18": {
-        "name": "Data 18",
-        "tooltip": "Slot 18 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 18",
+        "tooltip": "Slot 18 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_19": {
-        "name": "Data 19",
-        "tooltip": "Slot 19 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 19",
+        "tooltip": "Slot 19 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "value_20": {
-        "name": "Data 20",
-        "tooltip": "Slot 20 input (optional, accepts any data). Overrides the bundle slot when present."
+        "name": "Value 20",
+        "tooltip": "Slot 20 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_21": {
+        "name": "Value 21",
+        "tooltip": "Slot 21 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_22": {
+        "name": "Value 22",
+        "tooltip": "Slot 22 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_23": {
+        "name": "Value 23",
+        "tooltip": "Slot 23 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_24": {
+        "name": "Value 24",
+        "tooltip": "Slot 24 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_25": {
+        "name": "Value 25",
+        "tooltip": "Slot 25 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_26": {
+        "name": "Value 26",
+        "tooltip": "Slot 26 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_27": {
+        "name": "Value 27",
+        "tooltip": "Slot 27 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_28": {
+        "name": "Value 28",
+        "tooltip": "Slot 28 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_29": {
+        "name": "Value 29",
+        "tooltip": "Slot 29 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_30": {
+        "name": "Value 30",
+        "tooltip": "Slot 30 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_31": {
+        "name": "Value 31",
+        "tooltip": "Slot 31 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_32": {
+        "name": "Value 32",
+        "tooltip": "Slot 32 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_33": {
+        "name": "Value 33",
+        "tooltip": "Slot 33 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_34": {
+        "name": "Value 34",
+        "tooltip": "Slot 34 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_35": {
+        "name": "Value 35",
+        "tooltip": "Slot 35 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_36": {
+        "name": "Value 36",
+        "tooltip": "Slot 36 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_37": {
+        "name": "Value 37",
+        "tooltip": "Slot 37 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_38": {
+        "name": "Value 38",
+        "tooltip": "Slot 38 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_39": {
+        "name": "Value 39",
+        "tooltip": "Slot 39 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_40": {
+        "name": "Value 40",
+        "tooltip": "Slot 40 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_41": {
+        "name": "Value 41",
+        "tooltip": "Slot 41 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_42": {
+        "name": "Value 42",
+        "tooltip": "Slot 42 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_43": {
+        "name": "Value 43",
+        "tooltip": "Slot 43 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_44": {
+        "name": "Value 44",
+        "tooltip": "Slot 44 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_45": {
+        "name": "Value 45",
+        "tooltip": "Slot 45 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_46": {
+        "name": "Value 46",
+        "tooltip": "Slot 46 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_47": {
+        "name": "Value 47",
+        "tooltip": "Slot 47 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_48": {
+        "name": "Value 48",
+        "tooltip": "Slot 48 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_49": {
+        "name": "Value 49",
+        "tooltip": "Slot 49 input (optional, accepts any data). Overrides the same slot from the bundle when present."
+      },
+      "value_50": {
+        "name": "Value 50",
+        "tooltip": "Slot 50 input (optional, accepts any data). Overrides the same slot from the bundle when present."
       },
       "port_names": {
         "name": "Port Names",
-        "tooltip": "Serialized slot names managed by the naming panel. Do not edit by hand."
+        "tooltip": "Serialized JSON list of slot names, managed by the XPipe naming panel. Do not edit by hand."
+      },
+      "type_warning": {
+        "name": "Type Warning",
+        "tooltip": "Show visual warning on links and output ports when a type mismatch is detected. Disable to hide the warning effect."
       }
     },
     "outputs": {
       "0": {
         "name": "XPipe Out",
-        "tooltip": "Send the current full set of slot data and names onward as a single XPipe bundle."
+        "tooltip": "Send the current grouped data and names onward as a single XPipe bundle connection."
       },
       "1": {
-        "name": "Data 1",
-        "tooltip": "Slot 1 output (per-slot data, or bundle fallback)."
+        "name": "Value 1",
+        "tooltip": "Slot 1 output (data or bundle fallback)"
       },
       "2": {
-        "name": "Data 2",
-        "tooltip": "Slot 2 output (per-slot data, or bundle fallback)."
+        "name": "Value 2",
+        "tooltip": "Slot 2 output (data or bundle fallback)"
       },
       "3": {
-        "name": "Data 3",
-        "tooltip": "Slot 3 output (per-slot data, or bundle fallback)."
+        "name": "Value 3",
+        "tooltip": "Slot 3 output (data or bundle fallback)"
       },
       "4": {
-        "name": "Data 4",
-        "tooltip": "Slot 4 output (per-slot data, or bundle fallback)."
+        "name": "Value 4",
+        "tooltip": "Slot 4 output (data or bundle fallback)"
       },
       "5": {
-        "name": "Data 5",
-        "tooltip": "Slot 5 output (per-slot data, or bundle fallback)."
+        "name": "Value 5",
+        "tooltip": "Slot 5 output (data or bundle fallback)"
       },
       "6": {
-        "name": "Data 6",
-        "tooltip": "Slot 6 output (per-slot data, or bundle fallback)."
+        "name": "Value 6",
+        "tooltip": "Slot 6 output (data or bundle fallback)"
       },
       "7": {
-        "name": "Data 7",
-        "tooltip": "Slot 7 output (per-slot data, or bundle fallback)."
+        "name": "Value 7",
+        "tooltip": "Slot 7 output (data or bundle fallback)"
       },
       "8": {
-        "name": "Data 8",
-        "tooltip": "Slot 8 output (per-slot data, or bundle fallback)."
+        "name": "Value 8",
+        "tooltip": "Slot 8 output (data or bundle fallback)"
       },
       "9": {
-        "name": "Data 9",
-        "tooltip": "Slot 9 output (per-slot data, or bundle fallback)."
+        "name": "Value 9",
+        "tooltip": "Slot 9 output (data or bundle fallback)"
       },
       "10": {
-        "name": "Data 10",
-        "tooltip": "Slot 10 output (per-slot data, or bundle fallback)."
+        "name": "Value 10",
+        "tooltip": "Slot 10 output (data or bundle fallback)"
       },
       "11": {
-        "name": "Data 11",
-        "tooltip": "Slot 11 output (per-slot data, or bundle fallback)."
+        "name": "Value 11",
+        "tooltip": "Slot 11 output (data or bundle fallback)"
       },
       "12": {
-        "name": "Data 12",
-        "tooltip": "Slot 12 output (per-slot data, or bundle fallback)."
+        "name": "Value 12",
+        "tooltip": "Slot 12 output (data or bundle fallback)"
       },
       "13": {
-        "name": "Data 13",
-        "tooltip": "Slot 13 output (per-slot data, or bundle fallback)."
+        "name": "Value 13",
+        "tooltip": "Slot 13 output (data or bundle fallback)"
       },
       "14": {
-        "name": "Data 14",
-        "tooltip": "Slot 14 output (per-slot data, or bundle fallback)."
+        "name": "Value 14",
+        "tooltip": "Slot 14 output (data or bundle fallback)"
       },
       "15": {
-        "name": "Data 15",
-        "tooltip": "Slot 15 output (per-slot data, or bundle fallback)."
+        "name": "Value 15",
+        "tooltip": "Slot 15 output (data or bundle fallback)"
       },
       "16": {
-        "name": "Data 16",
-        "tooltip": "Slot 16 output (per-slot data, or bundle fallback)."
+        "name": "Value 16",
+        "tooltip": "Slot 16 output (data or bundle fallback)"
       },
       "17": {
-        "name": "Data 17",
-        "tooltip": "Slot 17 output (per-slot data, or bundle fallback)."
+        "name": "Value 17",
+        "tooltip": "Slot 17 output (data or bundle fallback)"
       },
       "18": {
-        "name": "Data 18",
-        "tooltip": "Slot 18 output (per-slot data, or bundle fallback)."
+        "name": "Value 18",
+        "tooltip": "Slot 18 output (data or bundle fallback)"
       },
       "19": {
-        "name": "Data 19",
-        "tooltip": "Slot 19 output (per-slot data, or bundle fallback)."
+        "name": "Value 19",
+        "tooltip": "Slot 19 output (data or bundle fallback)"
       },
       "20": {
-        "name": "Data 20",
-        "tooltip": "Slot 20 output (per-slot data, or bundle fallback)."
+        "name": "Value 20",
+        "tooltip": "Slot 20 output (data or bundle fallback)"
+      },
+      "21": {
+        "name": "Value 21",
+        "tooltip": "Slot 21 output (data or bundle fallback)"
+      },
+      "22": {
+        "name": "Value 22",
+        "tooltip": "Slot 22 output (data or bundle fallback)"
+      },
+      "23": {
+        "name": "Value 23",
+        "tooltip": "Slot 23 output (data or bundle fallback)"
+      },
+      "24": {
+        "name": "Value 24",
+        "tooltip": "Slot 24 output (data or bundle fallback)"
+      },
+      "25": {
+        "name": "Value 25",
+        "tooltip": "Slot 25 output (data or bundle fallback)"
+      },
+      "26": {
+        "name": "Value 26",
+        "tooltip": "Slot 26 output (data or bundle fallback)"
+      },
+      "27": {
+        "name": "Value 27",
+        "tooltip": "Slot 27 output (data or bundle fallback)"
+      },
+      "28": {
+        "name": "Value 28",
+        "tooltip": "Slot 28 output (data or bundle fallback)"
+      },
+      "29": {
+        "name": "Value 29",
+        "tooltip": "Slot 29 output (data or bundle fallback)"
+      },
+      "30": {
+        "name": "Value 30",
+        "tooltip": "Slot 30 output (data or bundle fallback)"
+      },
+      "31": {
+        "name": "Value 31",
+        "tooltip": "Slot 31 output (data or bundle fallback)"
+      },
+      "32": {
+        "name": "Value 32",
+        "tooltip": "Slot 32 output (data or bundle fallback)"
+      },
+      "33": {
+        "name": "Value 33",
+        "tooltip": "Slot 33 output (data or bundle fallback)"
+      },
+      "34": {
+        "name": "Value 34",
+        "tooltip": "Slot 34 output (data or bundle fallback)"
+      },
+      "35": {
+        "name": "Value 35",
+        "tooltip": "Slot 35 output (data or bundle fallback)"
+      },
+      "36": {
+        "name": "Value 36",
+        "tooltip": "Slot 36 output (data or bundle fallback)"
+      },
+      "37": {
+        "name": "Value 37",
+        "tooltip": "Slot 37 output (data or bundle fallback)"
+      },
+      "38": {
+        "name": "Value 38",
+        "tooltip": "Slot 38 output (data or bundle fallback)"
+      },
+      "39": {
+        "name": "Value 39",
+        "tooltip": "Slot 39 output (data or bundle fallback)"
+      },
+      "40": {
+        "name": "Value 40",
+        "tooltip": "Slot 40 output (data or bundle fallback)"
+      },
+      "41": {
+        "name": "Value 41",
+        "tooltip": "Slot 41 output (data or bundle fallback)"
+      },
+      "42": {
+        "name": "Value 42",
+        "tooltip": "Slot 42 output (data or bundle fallback)"
+      },
+      "43": {
+        "name": "Value 43",
+        "tooltip": "Slot 43 output (data or bundle fallback)"
+      },
+      "44": {
+        "name": "Value 44",
+        "tooltip": "Slot 44 output (data or bundle fallback)"
+      },
+      "45": {
+        "name": "Value 45",
+        "tooltip": "Slot 45 output (data or bundle fallback)"
+      },
+      "46": {
+        "name": "Value 46",
+        "tooltip": "Slot 46 output (data or bundle fallback)"
+      },
+      "47": {
+        "name": "Value 47",
+        "tooltip": "Slot 47 output (data or bundle fallback)"
+      },
+      "48": {
+        "name": "Value 48",
+        "tooltip": "Slot 48 output (data or bundle fallback)"
+      },
+      "49": {
+        "name": "Value 49",
+        "tooltip": "Slot 49 output (data or bundle fallback)"
+      },
+      "50": {
+        "name": "Value 50",
+        "tooltip": "Slot 50 output (data or bundle fallback)"
+      }
+    }
+  },
+  "XPrimitiveCombo": {
+    "display_name": "XPrimitiveCombo",
+    "description": "Bridge to any node's COMBO widget input and output the selected value as a STRING. Connect the COMBO output to a target widget, then use the STRING output downstream.",
+    "outputs": {
+      "0": {
+        "name": "COMBO",
+        "tooltip": "Connect to a target node's COMBO widget to pass the selected value"
+      },
+      "1": {
+        "name": "STRING",
+        "tooltip": "The selected widget value as a string"
       }
     }
   },
@@ -623,25 +2147,25 @@
   },
   "XSeed": {
     "display_name": "XSeed",
-    "description": "Generate non-negative seed values with native seed control, then apply max-digit truncation and optional trailing zero-padding.",
+    "description": "Generate non-negative seed values with custom seed UI, then apply max-digit truncation.",
     "inputs": {
       "digits": {
         "name": "Digit Limit",
         "tooltip": "Max output digit limit (1 to 20). Truncation is applied only when seed length exceeds this limit."
       },
-      "pad_to_limit": {
-        "name": "Pad With Zeros",
-        "tooltip": "When enabled, seeds shorter than the digit limit are padded with trailing zeros to the limit length. Because random seeds in the 64-bit range are usually high-digit values, this option is rarely triggered in practice."
-      },
-      "seed_value": {
+      "seed_string": {
         "name": "Seed Value",
-        "tooltip": "Base non-negative seed value with native generate control. Final output applies digit-limit rules."
+        "tooltip": "Internal: seed value from custom UI. Managed by the frontend extension."
+      },
+      "last_seed_string": {
+        "name": "Last Seed",
+        "tooltip": "Internal: last applied seed value. Written by the frontend on execution."
       }
     },
     "outputs": {
       "0": {
         "name": "Seed Int",
-        "tooltip": "Final non-negative integer seed after limit and padding rules."
+        "tooltip": "Final non-negative integer seed after digit-limit truncation."
       },
       "1": {
         "name": "xdata Seed",
@@ -735,6 +2259,10 @@
       "string_5": {
         "name": "String 5",
         "tooltip": "Fifth multiline string input"
+      },
+      "none_on_empty": {
+        "name": "None on Empty",
+        "tooltip": "When enabled, output None if all strings are empty; when disabled, output empty string instead"
       }
     },
     "outputs": {
@@ -814,6 +2342,10 @@
           "period": "Period",
           "period_space": "Period + Space"
         }
+      },
+      "none_on_empty": {
+        "name": "None on Empty",
+        "tooltip": "When enabled, output None if text is empty; when disabled, output empty string instead"
       }
     },
     "outputs": {
@@ -1077,6 +2609,10 @@
       "height_offset": {
         "name": "Height Offset",
         "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
+      },
+      "skip_on_empty": {
+        "name": "Skip on Empty",
+        "tooltip": "When enabled, outputs None for all ports if no input image is connected, instead of raising an error."
       }
     },
     "outputs": {
@@ -1290,6 +2826,10 @@
     "display_name": "XStringGet",
     "description": "Load the latest text sent from XDataHub.",
     "inputs": {
+      "none_on_empty": {
+        "name": "None on Empty",
+        "tooltip": "When enabled, output None if no content; when disabled, output empty string instead"
+      },
       "text_value": {
         "name": "Content",
         "tooltip": "Latest body text received from XDataHub"
@@ -1402,6 +2942,157 @@
         "tooltip": "Workflow information summary including save status, node count, data overview and file path. Useful for debugging and verification."
       }
     }
+  },
+  "XController": {
+    "display_name": "XController",
+    "description": "Universal control node. Select control type via dropdown: Knob, Horizontal Fader, Vertical Fader, Toggle, Button, or XY Pad.",
+    "inputs": {
+      "control_type": {
+        "name": "Control Type",
+        "tooltip": "Select the visible controller: Knob, horizontal fader, vertical fader, Toggle, hold Button, or XY Pad."
+      },
+      "value_mode": {
+        "name": "Value Mode",
+        "tooltip": "Controls how a 0-1 position becomes FLOAT output: Range, Steps, or Percentage."
+      },
+      "min": {
+        "name": "Min",
+        "tooltip": "Lowest FLOAT output in Range mode."
+      },
+      "max": {
+        "name": "Max",
+        "tooltip": "Highest FLOAT output in Range mode."
+      },
+      "step": {
+        "name": "Step",
+        "tooltip": "Range snap size and hold-button increment. Use 0 to disable snapping."
+      },
+      "default_value": {
+        "name": "Default Value",
+        "tooltip": "Default Range value used as the intended reset/start value."
+      },
+      "steps": {
+        "name": "Steps",
+        "tooltip": "JSON array of discrete FLOAT outputs, for example [0, 0.25, 0.5, 1]."
+      },
+      "default_step_index": {
+        "name": "Default Step Index",
+        "tooltip": "Default step index, starting at 0. The button moves one index per repeat."
+      },
+      "base_value": {
+        "name": "Base Value",
+        "tooltip": "Base value used before applying the percentage offset."
+      },
+      "pct_min": {
+        "name": "Pct Min",
+        "tooltip": "Minimum percentage offset. Negative values reduce the base value."
+      },
+      "pct_max": {
+        "name": "Pct Max",
+        "tooltip": "Maximum percentage offset. Positive values increase the base value."
+      },
+      "default_pct": {
+        "name": "Default Pct",
+        "tooltip": "Default percentage offset used as the intended reset/start value."
+      },
+      "shape": {
+        "name": "Shape",
+        "tooltip": "Visual shape for knobs, or handle shape for horizontal/vertical faders."
+      },
+      "toggle_style": {
+        "name": "Toggle Style",
+        "tooltip": "Visual style of the boolean toggle. It changes BOOLEAN and outputs 0 or 1 on FLOAT."
+      },
+      "default_state": {
+        "name": "Default State",
+        "tooltip": "Default boolean state for Toggle when no saved state exists."
+      },
+      "button_mode": {
+        "name": "Button Mode",
+        "tooltip": "Increase raises the value while held; Decrease lowers the value while held."
+      },
+      "button_style": {
+        "name": "Button Style",
+        "tooltip": "Visual shape of the hold button. The button also reports pressed state on BOOLEAN."
+      },
+      "x_min": {
+        "name": "X Min",
+        "tooltip": "Lowest X output value for the XY Pad."
+      },
+      "x_max": {
+        "name": "X Max",
+        "tooltip": "Highest X output value for the XY Pad."
+      },
+      "x_step": {
+        "name": "X Step",
+        "tooltip": "Snap size for X output. Use 0 to disable X snapping."
+      },
+      "x_default": {
+        "name": "X Default",
+        "tooltip": "Default X value used as the intended reset/start value."
+      },
+      "y_min": {
+        "name": "Y Min",
+        "tooltip": "Lowest Y output value for the XY Pad."
+      },
+      "y_max": {
+        "name": "Y Max",
+        "tooltip": "Highest Y output value for the XY Pad."
+      },
+      "y_step": {
+        "name": "Y Step",
+        "tooltip": "Snap size for Y output. Use 0 to disable Y snapping."
+      },
+      "y_default": {
+        "name": "Y Default",
+        "tooltip": "Default Y value used as the intended reset/start value."
+      },
+      "crosshair_visible": {
+        "name": "Crosshair Visible",
+        "tooltip": "Show guide lines through the current XY point."
+      },
+      "grid_visible": {
+        "name": "Grid Visible",
+        "tooltip": "Show a subtle grid behind the XY Pad for easier positioning."
+      },
+      "_normalized": {
+        "name": "_normalized",
+        "tooltip": "Internal: current normalized value"
+      },
+      "_state": {
+        "name": "_state",
+        "tooltip": "Internal: current state"
+      },
+      "_x_normalized": {
+        "name": "_x_normalized",
+        "tooltip": "Internal: current normalized X"
+      },
+      "_y_normalized": {
+        "name": "_y_normalized",
+        "tooltip": "Internal: current normalized Y"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "FLOAT",
+        "tooltip": "Current value (analog controls)"
+      },
+      "1": {
+        "name": "INT",
+        "tooltip": "FLOAT output truncated toward zero"
+      },
+      "2": {
+        "name": "BOOLEAN",
+        "tooltip": "Current state (toggle / button)"
+      },
+      "3": {
+        "name": "X",
+        "tooltip": "Current X coordinate (XY Pad)"
+      },
+      "4": {
+        "name": "Y",
+        "tooltip": "Current Y coordinate (XY Pad)"
+      }
+    }
   }
 }
-

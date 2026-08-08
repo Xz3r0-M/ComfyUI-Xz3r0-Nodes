@@ -7,7 +7,7 @@
 
 from typing import Any
 
-from comfy_api.latest import io
+from comfy_api.latest import io, ui
 
 XDataStringType = io.Custom("xdata_string")
 
@@ -50,6 +50,7 @@ class XAnyToString(io.ComfyNode):
                 "while also passing the original data through"
             ),
             category="♾️ Xz3r0/Workflow-Processing",
+            is_output_node=True,
             inputs=[
                 io.MatchType.Input(
                     "anything",
@@ -101,4 +102,9 @@ class XAnyToString(io.ComfyNode):
             "text": string_value,
             "source": "XAnyToString",
         }
-        return io.NodeOutput(anything, string_value, payload)
+        return io.NodeOutput(
+            anything,
+            string_value,
+            payload,
+            ui=ui.PreviewText(string_value),
+        )

@@ -5,7 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260428-1";
+import { t } from "../core/i18n.js?v=20260620-1";
 
 const DEFAULT_HOTKEY_SPEC = "Alt + X";
 const HOST_CONTROLLED_SETTING_KEYS = new Set([
@@ -13,6 +13,7 @@ const HOST_CONTROLLED_SETTING_KEYS = new Set([
     "default_open_layout",
     "close_behavior",
     "edge_peek",
+    "canvas_drop_enabled",
 ]);
 const OPEN_LAYOUT_OPTIONS = [
     ["last", "settings.default_open_layout.last"],
@@ -589,6 +590,12 @@ export class XdhSettingsDialog extends BaseElement {
                         this._renderTextInput(
                             "hover_locate_debounce_ms", "300", "number"),
                         "settings.hover_locate_debounce_ms_tooltip"
+                    ),
+                    this._renderRow(
+                        "settings.canvas_drop_enabled",
+                        this._renderToggle(
+                            "canvas_drop_enabled", true),
+                        "settings.canvas_drop_enabled_tooltip"
                     ),
                 ])}
                 ${this._renderSection("settings.sect.thumb_cache", [
