@@ -13,6 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import av
 import comfy.utils
 import ffmpeg
 import numpy as np
@@ -140,6 +141,14 @@ class XAudioSave(io.ComfyNode):
     AUDIO_SAVE_ERROR = "Audio file saving failed"
     FILE_SAVE_VALIDATION_ERROR = "Saved audio file validation failed"
     INVALID_FORMAT_ERROR = "format must be either WAV or FLAC"
+
+    # 声道数 → PyAV 音频布局名（FLAC 常用布局）。
+    AUDIO_LAYOUTS = {1: "mono", 2: "stereo", 4: "quad", 6: "5.1", 8: "7.1"}
+    UNSUPPORTED_CHANNELS_ERROR = (
+        "FLAC encoding does not support {channels} channels. "
+        "Supported layouts: {supported}. Mono or stereo audio is "
+        "recommended."
+    )
 
     @classmethod
     def define_schema(cls):
@@ -929,7 +938,7 @@ class XAudioSave(io.ComfyNode):
         sample_rate: int,
     ):
         """
-        保存为 32-bit float WAV 文件（使用 FFmpeg）
+        保存为 32-bit float WAV 文件（scipy 直接写入，无需 FFmpeg）
         仅负责音频数据保存，不包含工作流 metadata。
 
         Args:
@@ -939,43 +948,11 @@ class XAudioSave(io.ComfyNode):
         """
         audio_np = cls._prepare_waveform_for_io(waveform)
 
-        ffmpeg_path = shutil.which("ffmpeg")
-        if not ffmpeg_path:
-            raise RuntimeError(
-                "FFmpeg executable not found. "
-                "Please install FFmpeg and add it to your system PATH."
-            )
-
-        with tempfile.NamedTemporaryFile(
-            suffix=".wav", delete=False
-        ) as temp_file:
-            temp_path = temp_file.name
-
         try:
-            audio_data = np.transpose(audio_np, (1, 0))
-            wavfile.write(temp_path, sample_rate, audio_data)
-
-            with open(temp_path, "ab") as f:
-                os.fsync(f.fileno())
-
-            (
-                ffmpeg.input(temp_path)
-                .output(
-                    str(path),
-                    acodec="pcm_f32le",
-                    **{"loglevel": "error"},
-                )
-                .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
-            )
-        except (ffmpeg.Error, OSError, ValueError) as exc:
+            audio_data = np.transpose(audio_np, (1, 0)).astype(np.float32)
+            wavfile.write(str(path), sample_rate, audio_data)
+        except (OSError, ValueError) as exc:
             raise RuntimeError(cls.AUDIO_SAVE_ERROR) from exc
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
 
     @classmethod
     def _save_flac_from_waveform(
@@ -1017,25 +994,75 @@ class XAudioSave(io.ComfyNode):
         metadata: dict | None = None,
     ) -> None:
         """
-        将源音频编码为 FLAC，并写入工作流元数据。
+        将源音频编码为 FLAC(s32 无损)，并写入工作流元数据。
+
+        使用 PyAV（FFmpeg 的 Python 库）在进程内完成编码：
+        元数据直接赋给容器对象，不经过命令行参数，
+        因此不受 Windows 命令行长度（32767 字符）限制，
+        工作流元数据再大也能完整写入。
         """
-        output_kwargs = {
-            "acodec": "flac",
-            "sample_fmt": "s32",
-            **{"loglevel": "error"},
-        }
-        output_kwargs.update(
-            cls._build_ffmpeg_metadata_options(metadata)
-        )
         try:
-            (
-                ffmpeg.input(str(source_path))
-                .output(str(target_path), **output_kwargs)
-                .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
-            )
-        except (ffmpeg.Error, OSError, ValueError) as exc:
+            with av.open(str(source_path)) as source_container:
+                audio_stream = source_container.streams.audio[0]
+                sample_rate = audio_stream.sample_rate
+                channels = audio_stream.layout.nb_channels
+                layout = cls._audio_layout_name(channels)
+
+                # PyAV 的 to_ndarray() 返回交错数组 (1, S*C)，
+                # 数值按 [ch0, ch1, ch2...] 排列；分帧拼接。
+                frame_chunks = []
+                for frame in source_container.decode(audio_stream):
+                    frame_chunks.append(frame.to_ndarray())
+                if frame_chunks:
+                    interleaved = np.concatenate(frame_chunks, axis=1)
+                else:
+                    interleaved = np.empty((1, 0), dtype=np.float32)
+
+            with av.open(str(target_path), mode="w", format="flac") as out:
+                if metadata:
+                    for key, value in metadata.items():
+                        out.metadata[key] = str(value)
+
+                out_stream = out.add_stream(
+                    "flac", rate=sample_rate, layout=layout
+                )
+                # FLAC 无损，用 32-bit 采样保持精度。
+                out_stream.codec_context.format = "s32"
+
+                # 分块编码，避免长音频一次性占用双倍内存。
+                chunk_size = 4096 * channels
+                for start in range(0, interleaved.shape[1], chunk_size):
+                    frame = av.AudioFrame.from_ndarray(
+                        interleaved[:, start : start + chunk_size],
+                        format="flt",
+                        layout=layout,
+                    )
+                    frame.sample_rate = sample_rate
+                    frame.pts = start // channels
+                    for packet in out_stream.encode(frame):
+                        out.mux(packet)
+                for packet in out_stream.encode(None):
+                    out.mux(packet)
+        except (av.Error, OSError, ValueError) as exc:
             raise RuntimeError(cls.AUDIO_SAVE_ERROR) from exc
+
+    @classmethod
+    def _audio_layout_name(cls, channels: int) -> str:
+        """
+        将声道数转为 PyAV 支持的音频布局名。
+        """
+        layout = cls.AUDIO_LAYOUTS.get(channels)
+        if layout is not None:
+            return layout
+        supported = ", ".join(
+            f"{n}ch({name})" for n, name in sorted(cls.AUDIO_LAYOUTS.items())
+        )
+        raise ValueError(
+            cls.UNSUPPORTED_CHANNELS_ERROR.format(
+                channels=channels,
+                supported=supported,
+            )
+        )
 
     @classmethod
     def _generate_metadata(cls, prompt, extra_pnginfo):
@@ -1052,21 +1079,6 @@ class XAudioSave(io.ComfyNode):
             for key, value in extra_pnginfo.items():
                 metadata[key] = json.dumps(value)
         return metadata
-
-    @classmethod
-    def _build_ffmpeg_metadata_options(
-        cls, metadata: dict | None
-    ) -> dict[str, str]:
-        """
-        将元数据转为 FFmpeg metadata 参数。
-        """
-        if not metadata:
-            return {}
-
-        options = {}
-        for index, (key, value) in enumerate(metadata.items()):
-            options[f"metadata:g:{index}"] = f"{key}={value}"
-        return options
 
     @classmethod
     def _prepare_waveform_for_io(cls, waveform: torch.Tensor) -> np.ndarray:
