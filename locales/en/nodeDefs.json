@@ -811,6 +811,84 @@
       }
     }
   },
+  "XAudioProcess": {
+    "display_name": "XAudioProcess",
+    "description": "Apply one audio effect at a time — or chain them all at once. Resample, compress, normalize, or limit peaks. Use Chain mode to combine multiple steps in a single node.",
+    "inputs": {
+      "audio": {
+        "name": "Audio",
+        "tooltip": "Input audio to process"
+      },
+      "mode": {
+        "name": "Processing Mode",
+        "tooltip": "Choose a single processing step, or pick Chain to enable multiple steps at once with individual on/off switches.",
+        "options": {
+          "Resample": "Resample",
+          "Compress": "Compress",
+          "Normalize": "Normalize",
+          "Limit": "Limit",
+          "Chain": "Chain"
+        }
+      },
+      "mode_sample_rate": {
+        "name": "Sample Rate",
+        "tooltip": "Target sample rate in Hz. Common choices: 44100 (CD quality), 48000 (video standard), 96000 or 192000 (high-res).",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "mode_compression_mode": {
+        "name": "Compression Mode",
+        "tooltip": "Compression preset. Fast: quick response, good for voice. Balanced: all-purpose, works for most music. Slow: smooth and gentle, for mastering.",
+        "options": {
+          "Fast": "Fast",
+          "Balanced": "Balanced",
+          "Slow": "Slow"
+        }
+      },
+      "mode_use_custom_ratio": {
+        "name": "Use Custom Ratio",
+        "tooltip": "When Enabled, use your own compression ratio instead of the preset's default."
+      },
+      "mode_custom_ratio": {
+        "name": "Custom Ratio",
+        "tooltip": "Your custom compression ratio (1.0 to 20.0). Only used when custom ratio is Enabled. Higher = stronger compression. Set to 1.0 for no compression."
+      },
+      "mode_target_lufs": {
+        "name": "Target LUFS",
+        "tooltip": "Target loudness in LUFS. -14 LUFS is the common streaming standard. Lower = quieter. Set to -70 to skip."
+      },
+      "mode_peak_limit": {
+        "name": "Peak Limit",
+        "tooltip": "Maximum peak level in dB. The limiter stops any audio from going above this level. -1.0 dB is a safe default to prevent clipping."
+      },
+      "mode_chain_resample": {
+        "name": "Resample",
+        "tooltip": "When Enabled, change the sample rate before other processing steps."
+      },
+      "mode_chain_compress": {
+        "name": "Compress",
+        "tooltip": "When Enabled, apply dynamic range compression to even out loudness differences."
+      },
+      "mode_chain_normalize": {
+        "name": "Normalize",
+        "tooltip": "When Enabled, adjust overall loudness to the target LUFS level."
+      },
+      "mode_chain_limit": {
+        "name": "Peak Limit",
+        "tooltip": "When Enabled, cap audio peaks to prevent clipping."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Processed Audio",
+        "tooltip": "Audio after the selected processing step (32-bit float, same format as input)"
+      }
+    }
+  },
   "XControlPanel": {
     "display_name": "XControlPanel",
     "description": "Panel-only control node for immediate ComfyUI actions. Currently provides a manual restart button.",

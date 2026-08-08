@@ -811,6 +811,84 @@
       }
     }
   },
+  "XAudioProcess": {
+    "display_name": "XAudioProcess",
+    "description": "一个节点搞定单个处理环节或完整处理链。可重采样、压缩、标准化或限制峰值，也可以选「完整链」模式一次性组合多个步骤。",
+    "inputs": {
+      "audio": {
+        "name": "音频",
+        "tooltip": "要处理的音频输入"
+      },
+      "mode": {
+        "name": "处理模式",
+        "tooltip": "选单个处理环节，只显示该环节的参数；选「完整链」则一次性打开所有步骤的独立开关。",
+        "options": {
+          "Resample": "重采样",
+          "Compress": "压缩",
+          "Normalize": "标准化",
+          "Limit": "限制",
+          "Chain": "完整链"
+        }
+      },
+      "mode_sample_rate": {
+        "name": "采样率",
+        "tooltip": "目标采样率 (Hz)。常用：44100（CD 音质）、48000（视频标准）、96000 或 192000（高解析度）。",
+        "options": {
+          "44100": "44100 Hz",
+          "48000": "48000 Hz",
+          "96000": "96000 Hz",
+          "192000": "192000 Hz"
+        }
+      },
+      "mode_compression_mode": {
+        "name": "压缩模式",
+        "tooltip": "压缩预设。快速：响应快，适合语音。平衡：通用，适合大多数音乐。缓慢：平滑温和，适合母带处理。",
+        "options": {
+          "Fast": "快速",
+          "Balanced": "平衡",
+          "Slow": "缓慢"
+        }
+      },
+      "mode_use_custom_ratio": {
+        "name": "使用自定义压缩比",
+        "tooltip": "启用后使用你设定的压缩比，而不是预设的默认值。"
+      },
+      "mode_custom_ratio": {
+        "name": "自定义压缩比",
+        "tooltip": "你的自定义压缩比（1.0 到 20.0）。只在启用自定义压缩比时生效。数值越大压缩越强。设为 1.0 则不压缩。"
+      },
+      "mode_target_lufs": {
+        "name": "目标 LUFS",
+        "tooltip": "目标响度 (LUFS)。-14 LUFS 是主流流媒体标准。数值越低越安静。设为 -70 可跳过处理。"
+      },
+      "mode_peak_limit": {
+        "name": "峰值上限",
+        "tooltip": "最大峰值电平 (dB)。限制器会把任何超过这个值的音频压下来。-1.0 dB 是安全默认值，能防止削波。"
+      },
+      "mode_chain_resample": {
+        "name": "重采样",
+        "tooltip": "启用后先改变采样率，再做后续处理。"
+      },
+      "mode_chain_compress": {
+        "name": "压缩",
+        "tooltip": "启用后应用动态范围压缩，让声音大小更均匀。"
+      },
+      "mode_chain_normalize": {
+        "name": "标准化",
+        "tooltip": "启用后把整体响度调整到目标 LUFS 水平。"
+      },
+      "mode_chain_limit": {
+        "name": "限制峰值",
+        "tooltip": "启用后把音频峰值压在你设定的上限以下，防止削波。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "处理后的音频",
+        "tooltip": "经过所选处理环节后的音频（32-bit float，格式与输入一致）"
+      }
+    }
+  },
   "XControlPanel": {
     "display_name": "XControlPanel",
     "description": "纯面板控制节点，用于手动执行 ComfyUI 即时控制操作。目前提供重启 ComfyUI 按钮。",
