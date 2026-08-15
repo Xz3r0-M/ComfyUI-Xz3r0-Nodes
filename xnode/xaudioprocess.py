@@ -216,7 +216,7 @@ class XAudioProcess(io.ComfyNode):
                                 ),
                                 io.Boolean.Input(
                                     "chain_compress",
-                                    default=False,
+                                    default=True,
                                     label_on="Enabled",
                                     label_off="Disabled",
                                     tooltip=(
