@@ -210,6 +210,7 @@ __marimo__/
 
 # IDE
 .vscode/
+.github/copilot-instructions.md
 *.code-workspace
 ruff.toml
 
@@ -220,7 +221,7 @@ brainstorms/
 # Xz3r0-Dev-WIP
 
 
-# test 测试不提到到仓库
+# test 测试不提交到仓库
 tests/
 web/test
 
@@ -235,5 +236,3 @@ TESTING.md
 docs/badge.json
 docs/downloads-history.json
 docs/sparkline.svg
-tilix-work-scene.json
-.github/copilot-instructions.md
