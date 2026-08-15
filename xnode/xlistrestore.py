@@ -38,9 +38,9 @@ class XListRestore(io.ComfyNode):
                 "Put list items back into their original slots after "
                 "processing. XListCreate packs only the connected inputs "
                 "into a compact list; this node uses the saved slot map "
-                "to place every processed item back where it came from. ",
-                "Unused slots become None, so downstream nodes that read ",
-                "items by position stay aligned.",
+                "to place every processed item back where it came from. "
+                "Unused slots become None, so downstream nodes that read "
+                "items by position stay aligned."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
@@ -49,17 +49,17 @@ class XListRestore(io.ComfyNode):
                     "list_input",
                     template=template,
                     tooltip=(
-                        "The compact list to restore, usually the output of ",
-                        "a batch-processing node (e.g. XImageResize). Its ",
-                        "items originally come from XListCreate.",
+                        "The compact list to restore, usually the output of "
+                        "a batch-processing node (e.g. XImageResize). Its "
+                        "items originally come from XListCreate."
                     ),
                 ),
                 XListSlotMapIO.Input(
                     "slot_map",
                     tooltip=(
-                        "The position record saved by XListCreate: which ",
-                        "item belongs to which slot. Connect XListCreate's ",
-                        "slot_map output here.",
+                        "The position record saved by XListCreate: which "
+                        "item belongs to which slot. Connect XListCreate's "
+                        "slot_map output here."
                     ),
                 ),
             ],
@@ -69,17 +69,17 @@ class XListRestore(io.ComfyNode):
                     display_name="list",
                     is_output_list=True,
                     tooltip=(
-                        "The restored list with items back in their ",
-                        "original positions. Empty slots are None. Length ",
-                        "equals the count output.",
+                        "The restored list with items back in their "
+                        "original positions. Empty slots are None. Length "
+                        "equals the count output."
                     ),
                 ),
                 io.Int.Output(
                     display_name="count",
                     tooltip=(
-                        "Total number of slots (including empty ones). ",
-                        "Connect to XListPull / XListToPipe to expand ",
-                        "their ports.",
+                        "Total number of slots (including empty ones). "
+                        "Connect to XListPull / XListToPipe to expand "
+                        "their ports."
                     ),
                 ),
             ],

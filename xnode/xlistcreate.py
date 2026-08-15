@@ -69,11 +69,11 @@ class XListCreate(io.ComfyNode):
             node_id="XListCreate",
             display_name="XListCreate",
             description=(
-                "Pack multiple connected inputs into one compact list, ",
-                "skipping empty ports. Outputs list (connected values in ",
-                "order), count (how many), and slot_map (where each item ",
-                "came from, for XListRestore). Pair with XListPull to ",
-                "split the list back into separate ports.",
+                "Pack multiple connected inputs into one compact list, "
+                "skipping empty ports. Outputs list (connected values in "
+                "order), count (how many), and slot_map (where each item "
+                "came from, for XListRestore). Pair with XListPull to "
+                "split the list back into separate ports."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
@@ -96,25 +96,25 @@ class XListCreate(io.ComfyNode):
                     is_output_list=True,
                     display_name="list",
                     tooltip=(
-                        "The compact list holding every connected value, in ",
-                        "port order. Length equals count.",
+                        "The compact list holding every connected value, in "
+                        "port order. Length equals count."
                     ),
                 ),
                 io.Int.Output(
                     display_name="count",
                     tooltip=(
-                        "How many values are in the list. Connect to ",
-                        "XListPull to choose how many output ports it ",
-                        "shows.",
+                        "How many values are in the list. Connect to "
+                        "XListPull to choose how many output ports it "
+                        "shows."
                     ),
                 ),
                 XListSlotMapIO.Output(
                     display_name="slot_map",
                     tooltip=(
-                        "Position record only (no media). Tracks which input ",
-                        "port each list item came from. Connect to ",
-                        "XListRestore to put items back into their ",
-                        "original ports.",
+                        "Position record only (no media). Tracks which input "
+                        "port each list item came from. Connect to "
+                        "XListRestore to put items back into their "
+                        "original ports."
                     ),
                 ),
             ],

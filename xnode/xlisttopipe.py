@@ -37,10 +37,10 @@ class XListToPipe(io.ComfyNode):
             node_id="XListToPipe",
             display_name="XListToPipe",
             description=(
-                "Turn a list into an XPipe bundle so it can flow through ",
-                "the XPipe family. Items fill slots 1..N (up to 50); ",
-                "unused slots stay empty (None). The count input sets ",
-                "how many slots the bundle has.",
+                "Turn a list into an XPipe bundle so it can flow through "
+                "the XPipe family. Items fill slots 1..N (up to 50); "
+                "unused slots stay empty (None). The count input sets "
+                "how many slots the bundle has."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
@@ -50,9 +50,9 @@ class XListToPipe(io.ComfyNode):
                     template=template,
                     optional=True,
                     tooltip=(
-                        "The list to put into the bundle. Connect ",
-                        "XListCreate's list output or any other list here. ",
-                        "Leave unconnected to create an empty bundle.",
+                        "The list to put into the bundle. Connect "
+                        "XListCreate's list output or any other list here. "
+                        "Leave unconnected to create an empty bundle."
                     ),
                 ),
                 io.Int.Input(
@@ -61,9 +61,9 @@ class XListToPipe(io.ComfyNode):
                     min=1,
                     max=PIPE_SLOTS,
                     tooltip=(
-                        "How many slots the bundle has. Auto-disabled when ",
-                        "the count port is connected; otherwise set it ",
-                        "manually here.",
+                        "How many slots the bundle has. Auto-disabled when "
+                        "the count port is connected; otherwise set it "
+                        "manually here."
                     ),
                 ),
                 io.Int.Input(
@@ -74,9 +74,9 @@ class XListToPipe(io.ComfyNode):
                     force_input=True,
                     optional=True,
                     tooltip=(
-                        "Sets how many slots the bundle has. Connect ",
-                        "XListCreate's count (or any number) here; leave ",
-                        "unconnected to use the number field above.",
+                        "Sets how many slots the bundle has. Connect "
+                        "XListCreate's count (or any number) here; leave "
+                        "unconnected to use the number field above."
                     ),
                 ),
             ],
@@ -85,9 +85,9 @@ class XListToPipe(io.ComfyNode):
                     "xpipe_out",
                     display_name="xpipe_out",
                     tooltip=(
-                        "The XPipe bundle holding your list items in slots ",
-                        "1..N (max 50). Empty slots are None. N follows ",
-                        "the count input.",
+                        "The XPipe bundle holding your list items in slots "
+                        "1..N (max 50). Empty slots are None. N follows "
+                        "the count input."
                     ),
                 ),
             ],

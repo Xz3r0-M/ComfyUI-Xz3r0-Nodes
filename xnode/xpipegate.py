@@ -35,9 +35,9 @@ class XPipeGate(io.ComfyNode):
                 "xpipe_in",
                 optional=True,
                 tooltip=(
-                    "Optional XPipe bundle to merge from. Leave ",
-                    "unconnected to start with empty channels. A direct ",
-                    "channel input overrides the value from the bundle.",
+                    "Optional XPipe bundle to merge from. Leave "
+                    "unconnected to start with empty channels. A direct "
+                    "channel input overrides the value from the bundle."
                 ),
             ),
         ]
@@ -49,8 +49,8 @@ class XPipeGate(io.ComfyNode):
                     optional=True,
                     lazy=True,
                     tooltip=(
-                        f"Optional direct input for channel {index} (any ",
-                        "data type). Disabled channels skip this input.",
+                        f"Optional direct input for channel {index} (any "
+                        "data type). Disabled channels skip this input."
                     ),
                 ),
             )
@@ -90,9 +90,9 @@ class XPipeGate(io.ComfyNode):
                 "xpipe_out",
                 display_name="xpipe_out",
                 tooltip=(
-                    "The XPipe bundle with all enabled channel values, ",
-                    "ready for the next XPipe node. Empty when nothing ",
-                    "is connected.",
+                    "The XPipe bundle with all enabled channel values, "
+                    "ready for the next XPipe node. Empty when nothing "
+                    "is connected."
                 ),
             ),
         ]
@@ -110,11 +110,11 @@ class XPipeGate(io.ComfyNode):
             node_id="XPipeGate",
             display_name="XPipeGate",
             description=(
-                "Control up to 50 channels, each with its own enable ",
-                "switch. A channel takes its value from the incoming ",
-                "XPipe bundle or from its own direct input; disabled ",
-                "channels output nothing. Always produces a valid XPipe ",
-                "bundle on xpipe_out, even when no bundle is connected.",
+                "Control up to 50 channels, each with its own enable "
+                "switch. A channel takes its value from the incoming "
+                "XPipe bundle or from its own direct input; disabled "
+                "channels output nothing. Always produces a valid XPipe "
+                "bundle on xpipe_out, even when no bundle is connected."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=inputs,
