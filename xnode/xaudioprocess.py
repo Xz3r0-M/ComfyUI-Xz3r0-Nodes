@@ -346,10 +346,26 @@ class XAudioProcess(io.ComfyNode):
         original_sr = audio["sample_rate"]
 
         # 确保波形数据格式正确: (channels, samples)
+        # ComfyUI AUDIO 波形为 (batch, channels, samples)，
+        # 本节点一次只处理一段音频，batch 必须为 1
         if waveform.dim() == 3:
+            batch_size = waveform.shape[0]
+            if batch_size != 1:
+                raise ValueError(
+                    "XAudioProcess only supports one audio at a time, "
+                    f"got a batch of {batch_size}. Split the audio "
+                    "batch before this node."
+                )
             waveform = waveform.squeeze(0)
-        if waveform.dim() == 1:
+        elif waveform.dim() == 2:
+            pass  # 已经是 (channels, samples)
+        elif waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
+        else:
+            raise ValueError(
+                f"Unsupported waveform shape: {list(waveform.shape)}. "
+                "Expected (channels, samples) or (1, channels, samples)."
+            )
 
         selected_mode = mode["mode"]
 
@@ -407,6 +423,12 @@ class XAudioProcess(io.ComfyNode):
 
         使用 torchaudio 的 Resample，纯张量操作，无需 FFmpeg。
         """
+        if waveform.dim() != 2:
+            raise ValueError(
+                f"Resample expects a 2D waveform (channels, samples), "
+                f"got shape {list(waveform.shape)}"
+            )
+
         if original_sr == target_sr:
             LOGGER.info(
                 "[XAudioProcess] Resample: %d Hz → %d Hz (no change)",
@@ -630,7 +652,7 @@ class XAudioProcess(io.ComfyNode):
 
             # 步骤 6: 读回结果
             sample_rate_out, audio_data_out = wavfile.read(
-                output_path, mmap=True
+                output_path, mmap=False
             )
 
             if audio_data_out.ndim == 1:
@@ -669,6 +691,17 @@ class XAudioProcess(io.ComfyNode):
         if target_lufs <= -70:
             LOGGER.info(
                 "[XAudioProcess] Normalize: target_lufs <= -70, skipping"
+            )
+            return waveform
+
+        # 静音/近静音输入：FFmpeg loudnorm 无法测量响度，
+        # 直接原样返回，避免无意义的处理与警告
+        energy = (waveform**2).sum().item()
+        if energy < 1e-8:
+            LOGGER.warning(
+                "[XAudioProcess] Normalize: input is silent "
+                "(energy=%.2e), skipping",
+                energy,
             )
             return waveform
 
@@ -769,7 +802,7 @@ class XAudioProcess(io.ComfyNode):
 
             # 步骤 5: 读回结果
             sample_rate_out, audio_data_out = wavfile.read(
-                output_path, mmap=True
+                output_path, mmap=False
             )
 
             if audio_data_out.ndim == 1:
@@ -857,7 +890,7 @@ class XAudioProcess(io.ComfyNode):
 
             # 步骤 4: 读回结果
             sample_rate_out, audio_data_out = wavfile.read(
-                output_path, mmap=True
+                output_path, mmap=False
             )
 
             if audio_data_out.ndim == 1:
