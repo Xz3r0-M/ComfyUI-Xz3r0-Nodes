@@ -20,7 +20,11 @@ _MARKER_FILE = (
     / "settings"
     / "xcontrolpanel_update_pending.json"
 )
-_INSTALL_TIMEOUT_S = 600.0
+# 30 分钟：网络慢或依赖多时 10 分钟可能不够（审查报告 §3.2.1）
+_INSTALL_TIMEOUT_S = 1800.0
+
+# 日志前缀用节点名，让用户在启动日志里一眼看出信息来源
+_LOG_TAG = "[XControlPanel]"
 
 
 def _comfyui_root() -> Path:
@@ -77,22 +81,43 @@ def _pending_data() -> dict:
         return {}
 
 
+def _log_error(message: str) -> None:
+    """prestartup 阶段无日志框架可用（且在 torch 导入前运行），
+    直接写 stderr 供用户在启动终端中查看。
+    """
+    print(f"{_LOG_TAG} {message}", file=sys.stderr)
+
+
 def main() -> None:
-    """检测待安装标记并执行依赖安装；完成后清理标记。"""
+    """检测待安装标记并执行依赖安装；成功后才清理标记。"""
     if not _pending_data().get("pending"):
         return
 
     root = _comfyui_root()
     try:
-        subprocess.run(
+        result = subprocess.run(
             _install_command(root),
             cwd=str(root),
             capture_output=True,
             text=True,
             timeout=_INSTALL_TIMEOUT_S,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        # 失败保留标记：下次启动会自动重试，且用户能在日志中看到原因
+        _log_error(
+            "Dependency install failed: "
+            f"{exc}. The pending marker stays; it will retry on next "
+            "launch."
+        )
+        return
+    if result.returncode != 0:
+        _log_error(
+            "Dependency install failed (exit code "
+            f"{result.returncode}). The pending marker stays; it will "
+            "retry on next launch.\n--- install output ---\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+        return
 
     try:
         _MARKER_FILE.unlink()
