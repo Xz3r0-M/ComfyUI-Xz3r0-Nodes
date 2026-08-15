@@ -133,12 +133,13 @@ class XListCreate(io.ComfyNode):
             width = max(width, slot)
             if input_data is None:
                 continue
-            items = (
-                list(input_data)
-                if isinstance(input_data, (list, tuple))
-                else [input_data]
-            )
-            for item in items:
+            # is_input_list=True 时执行层把每个输入整理成列表：普通输出包成
+            # [value]，is_output_list 上游输出为展开后的元素列表；此处仅对
+            # 意外出现的标量做兜底包装，统一按列表展平（与官方 CreateList
+            # 的 output_list += input 语义一致）。
+            if not isinstance(input_data, (list, tuple)):
+                input_data = [input_data]
+            for item in input_data:
                 if item is not None:
                     output_list.append(item)
                     indices.append(slot)
