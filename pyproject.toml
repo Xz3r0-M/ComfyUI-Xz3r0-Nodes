@@ -4,6 +4,7 @@ description = "Custom ComfyUI nodes: XAudioSave, XImageSave, XLatentLoad, XLaten
 version = "2.5.1"
 license = { file = "LICENSE" }
 
+# 禁止重复声明 ComfyUI 依赖包, 先检查项目中的requirements.txt
 dependencies = ["ffmpeg-python"]
 
 [project.optional-dependencies]
