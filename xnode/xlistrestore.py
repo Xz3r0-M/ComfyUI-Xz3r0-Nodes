@@ -107,13 +107,18 @@ class XListRestore(io.ComfyNode):
                 "slot_map must be a valid xlist_slot_map from XListCreate"
             )
 
-        indices = slot_map["indices"]
+        indices = slot_map.get("indices")
         if not isinstance(indices, list):
             raise ValueError(
                 "slot_map must be a valid xlist_slot_map from XListCreate"
             )
 
-        width = max(0, min(int(slot_map["width"]), _MAX_SLOTS))
+        raw_width = slot_map.get("width")
+        if raw_width is None:
+            raise ValueError(
+                "slot_map must be a valid xlist_slot_map from XListCreate"
+            )
+        width = max(0, min(int(raw_width), _MAX_SLOTS))
         if width == 0:
             return io.NodeOutput([], 0)
 
@@ -123,9 +128,20 @@ class XListRestore(io.ComfyNode):
         sparse: list[Any] = [None] * width
         for item, slot in zip(items, indices, strict=True):
             s = int(slot)
-            if s < 1 or s > width:
+            if s < 1:
                 raise ValueError(
-                    f"slot index {s} out of range for width {width}"
+                    f"slot index must be >= 1, got {s}. "
+                    "Slot map may be corrupted."
+                )
+            if s > _MAX_SLOTS:
+                raise ValueError(
+                    f"slot index {s} exceeds maximum {_MAX_SLOTS}. "
+                    "Slot map may be corrupted."
+                )
+            if s > width:
+                raise ValueError(
+                    f"slot index {s} out of range for declared width "
+                    f"{width}"
                 )
             sparse[s - 1] = item
 
