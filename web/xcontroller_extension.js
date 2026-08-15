@@ -1541,6 +1541,9 @@ function buildXControlUI(node) {
     // ── 事件绑定 ──
     typeSelect.addEventListener("change", function () {
         setWidgetValue(node, W_CONTROL_TYPE, typeSelect.value);
+        // 切换控件类型后按新类型的 default_* 重置内部状态，
+        // 避免旧类型的值残留到新控件
+        resetStateForNewType(node, typeSelect.value);
         rebuildConfigPanel();
         rebuildControl();
     });
@@ -2084,6 +2087,47 @@ function buildXYPadConfig(panel, node) {
 // ================================================================
 // 控件重建与值恢复
 // ================================================================
+
+/**
+ * 切换控件类型时，用新类型对应的 default_* 值重置内部状态，
+ * 避免旧类型的值残留到新控件（PR40 审查 §6.4）。
+ *
+ * Knob / FaderH / FaderV / Button：从 default_value 起始，
+ * 按压状态清空；Toggle：取 default_state；XY Pad：取
+ * x_default / y_default。
+ */
+function resetStateForNewType(node, newType) {
+    if (!node) return;
+    var info = CONTROL_TYPES[newType];
+    if (!info) return;
+
+    if (info.isAnalog || newType === "Button") {
+        setWidgetValue(
+            node,
+            W_NORMALIZED,
+            getWidgetValue(node, W_DEFAULT_VALUE, 0.5)
+        );
+        setWidgetValue(node, W_STATE, false);
+    } else if (newType === "Toggle") {
+        setWidgetValue(
+            node,
+            W_STATE,
+            getWidgetValue(node, W_DEFAULT_STATE, true)
+        );
+    } else if (info.isXY) {
+        setWidgetValue(
+            node,
+            W_X_NORMALIZED,
+            getWidgetValue(node, W_X_DEFAULT, 0.5)
+        );
+        setWidgetValue(
+            node,
+            W_Y_NORMALIZED,
+            getWidgetValue(node, W_Y_DEFAULT, 0.5)
+        );
+        setWidgetValue(node, W_STATE, false);
+    }
+}
 
 function rebuildControlForNode(node) {
     if (!node.__xcontrolControlHost) return;
