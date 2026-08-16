@@ -56,11 +56,13 @@ def _cached_versions_or_error(
     code: str,
     status: int,
     retry_after: int | None = None,
+    token_configured: bool | None = None,
 ) -> web.Response:
     """
     拉取失败时优先降级返回上次缓存；无缓存则返回对应错误。
 
     retry_after 为 None 表示该错误没有重试时间（如纯网络错误）。
+    token_configured 仅在限流错误时附带，供前端引导用户配置令牌。
     """
     cached = xcontrolpanel_updater.cached_versions()
     if cached:
@@ -76,6 +78,8 @@ def _cached_versions_or_error(
     response = {"status": "error", "code": code}
     if retry_after is not None:
         response["retry_after"] = retry_after
+    if token_configured is not None:
+        response["token_configured"] = token_configured
     return web.json_response(response, status=status)
 
 
@@ -90,11 +94,10 @@ def _build_restart_args() -> list[str]:
         return [sys.executable, "-m", module_name, *sys_argv[1:]]
 
     if sys.platform.startswith("win32") and sys_argv:
-        return [
-            f'"{sys.executable}"',
-            f'"{sys_argv[0]}"',
-            *sys_argv[1:],
-        ]
+        # os.execv 不经过命令行 shell，不会剥离引号：手动给路径包
+        # 引号会把引号变成参数内容本身，导致新进程找不到文件。
+        # 含空格路径由 execv 自行处理，这里必须用原始路径。
+        return [sys.executable, sys_argv[0], *sys_argv[1:]]
 
     return [sys.executable, *sys_argv]
 
@@ -194,7 +197,12 @@ async def xcontrolpanel_update_refresh(request: web.Request) -> web.Response:
     try:
         versions = xcontrolpanel_updater.refresh_versions()
     except xcontrolpanel_updater.GitHubRateLimitError as exc:
-        return _cached_versions_or_error("rate_limit", 429, exc.retry_after)
+        return _cached_versions_or_error(
+            "rate_limit",
+            429,
+            exc.retry_after,
+            xcontrolpanel_updater.github_token_source()["source"] != "none",
+        )
     except xcontrolpanel_updater.GitHubNetworkError:
         return _cached_versions_or_error("network", 502)
     except Exception as exc:
@@ -255,10 +263,37 @@ async def xcontrolpanel_update_start(request: web.Request) -> web.Response:
 
     versions = xcontrolpanel_updater.cached_versions()
     if not versions:
+        # 缓存为空时需要现拉；拉取失败按失败类型直接报错，
+        # 不能降级成 unknown_tag（会误导用户以为版本号写错）。
         try:
             versions = xcontrolpanel_updater.cached_or_fetch_versions()
-        except xcontrolpanel_updater.UpdateError:
-            versions = []
+        except xcontrolpanel_updater.GitHubRateLimitError as exc:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "code": "rate_limit",
+                    "retry_after": exc.retry_after,
+                    "token_configured": (
+                        xcontrolpanel_updater.github_token_source()["source"]
+                        != "none"
+                    ),
+                },
+                status=429,
+            )
+        except xcontrolpanel_updater.GitHubNetworkError:
+            return web.json_response(
+                {"status": "error", "code": "network"},
+                status=502,
+            )
+        except xcontrolpanel_updater.UpdateError as exc:
+            LOGGER.warning(
+                "[XControlPanel] update start fetch failed: %s",
+                exc,
+            )
+            return web.json_response(
+                {"status": "error", "code": "unavailable"},
+                status=503,
+            )
     if not any(v["tag"] == tag for v in versions):
         return web.json_response(
             {"status": "error", "code": "unknown_tag"},
@@ -303,13 +338,15 @@ async def xcontrolpanel_update_start(request: web.Request) -> web.Response:
 async def xcontrolpanel_update_token_get(
     request: web.Request,
 ) -> web.Response:
-    """返回令牌是否已配置（不返回令牌明文）。"""
-    source = xcontrolpanel_updater.github_token_source()
+    """返回令牌配置状态（不返回令牌明文）。"""
+    info = xcontrolpanel_updater.github_token_source()
     return web.json_response(
         {
             "status": "success",
-            "configured": bool(source),
-            "source": source,
+            "configured": info["source"] != "none",
+            "source": info["source"],
+            "env_var": info["env_var"],
+            "env_var_effective": info["env_var_effective"],
         }
     )
 
@@ -318,7 +355,7 @@ async def xcontrolpanel_update_token_get(
 async def xcontrolpanel_update_token_set(
     request: web.Request,
 ) -> web.Response:
-    """保存（或传空清除）GitHub 令牌。"""
+    """保存令牌配置：mode=token 存直接令牌；mode=env_var 存环境变量名。"""
     rejected = _reject_simple_form_content_type(request)
     if rejected is not None:
         return rejected
@@ -335,19 +372,44 @@ async def xcontrolpanel_update_token_set(
             status=400,
         )
 
-    token = payload.get("token") if isinstance(payload, dict) else None
-    if token is not None and not isinstance(token, str):
-        return web.json_response(
-            {
-                "status": "error",
-                "code": "bad_request",
-                "message": "Invalid token",
-            },
-            status=400,
-        )
+    mode = payload.get("mode") if isinstance(payload, dict) else None
+    if mode is None:
+        mode = "token"  # 兼容旧请求体（只带 token 字段）
 
     try:
-        xcontrolpanel_updater.save_github_token(token or "")
+        if mode == "env_var":
+            name = payload.get("env_var")
+            if name is not None and not isinstance(name, str):
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "code": "bad_request",
+                        "message": "Invalid env_var",
+                    },
+                    status=400,
+                )
+            xcontrolpanel_updater.save_token_env_var(name or "")
+        elif mode == "token":
+            token = payload.get("token")
+            if token is not None and not isinstance(token, str):
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "code": "bad_request",
+                        "message": "Invalid token",
+                    },
+                    status=400,
+                )
+            xcontrolpanel_updater.save_github_token(token or "")
+        else:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "code": "bad_request",
+                    "message": "Invalid mode",
+                },
+                status=400,
+            )
     except Exception as exc:
         LOGGER.error(
             "[XControlPanel] save token failed: %s: %s",
@@ -363,11 +425,13 @@ async def xcontrolpanel_update_token_set(
             status=500,
         )
 
-    source = xcontrolpanel_updater.github_token_source()
+    info = xcontrolpanel_updater.github_token_source()
     return web.json_response(
         {
             "status": "success",
-            "configured": bool(source),
-            "source": source,
+            "configured": info["source"] != "none",
+            "source": info["source"],
+            "env_var": info["env_var"],
+            "env_var_effective": info["env_var_effective"],
         }
     )

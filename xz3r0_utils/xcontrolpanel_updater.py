@@ -62,52 +62,108 @@ def _token_settings_file() -> Path:
     )
 
 
-def load_github_token() -> str:
-    """读取 GitHub 令牌：优先环境变量，其次设置文件。"""
-    env_token = os.environ.get(TOKEN_ENV_VAR, "").strip()
-    if env_token:
-        return env_token
+def _load_token_data() -> dict:
+    """读取令牌设置文件内容（文件缺失或损坏时返回空字典）。"""
+    path = _token_settings_file()
+    if not path.exists():
+        return {}
     try:
-        data = json.loads(_token_settings_file().read_text(encoding="utf-8"))
-        return str(data.get("github_token") or "").strip()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
-        return ""
+        return {}
 
 
-def save_github_token(token: str) -> None:
-    """保存或清除（空串）令牌到设置文件。"""
-    token = str(token or "").strip()
+def _write_token_data(data: dict) -> None:
+    """写入令牌设置文件并收紧权限（Unix 上仅本人可读写）。"""
     path = _token_settings_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        data = (
-            json.loads(path.read_text(encoding="utf-8"))
-            if path.exists()
-            else {}
-        )
-    except json.JSONDecodeError:
-        data = {}
-    if token:
-        data["github_token"] = token
-    else:
-        data.pop("github_token", None)
     path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
-
-def github_token_source() -> str:
-    """令牌来源：env / file / 空串（未配置）。"""
-    if os.environ.get(TOKEN_ENV_VAR, "").strip():
-        return "env"
+    # 令牌属敏感凭据：Unix 上收紧为仅本人可读写（0600），
+    # 避免同机其他账号/备份同步读到明文；Windows 上 chmod 能力
+    # 有限，失败不影响功能。
     try:
-        data = json.loads(_token_settings_file().read_text(encoding="utf-8"))
-        if str(data.get("github_token") or "").strip():
-            return "file"
-    except (OSError, json.JSONDecodeError):
+        path.chmod(0o600)
+    except OSError:
         pass
-    return ""
+
+
+def _configured_env_var_name() -> str:
+    """返回已配置的环境变量名（空串表示未配置）。"""
+    return str(_load_token_data().get("github_token_env_var") or "").strip()
+
+
+def load_github_token() -> str:
+    """
+    读取 GitHub 令牌，按优先级：
+    配置的环境变量名 → 设置文件中的直接令牌 → 默认环境变量。
+    """
+    env_var = _configured_env_var_name()
+    if env_var:
+        env_token = os.environ.get(env_var, "").strip()
+        if env_token:
+            return env_token
+    token = str(_load_token_data().get("github_token") or "").strip()
+    if token:
+        return token
+    return os.environ.get(TOKEN_ENV_VAR, "").strip()
+
+
+def save_github_token(token: str) -> None:
+    """保存或清除（空串）直接令牌；同时清除环境变量名配置。"""
+    token = str(token or "").strip()
+    data = _load_token_data()
+    if token:
+        data["github_token"] = token
+    else:
+        data.pop("github_token", None)
+    data.pop("github_token_env_var", None)
+    _write_token_data(data)
+
+
+def save_token_env_var(name: str) -> None:
+    """保存或清除（空串）环境变量名；同时清除直接令牌。"""
+    name = str(name or "").strip()
+    data = _load_token_data()
+    if name:
+        data["github_token_env_var"] = name
+    else:
+        data.pop("github_token_env_var", None)
+    data.pop("github_token", None)
+    _write_token_data(data)
+
+
+def github_token_source() -> dict:
+    """
+    返回令牌来源详情。
+
+    source 取值：
+    - "env": 环境变量生效中（env_var 为实际使用的变量名）；
+    - "unset_env": 已保存变量名，但该变量在当前环境里没有值；
+    - "file": 使用设置文件中的直接令牌；
+    - "none": 未配置。
+    env_var_effective 仅 source=env 时为 True。
+    """
+    env_var = _configured_env_var_name()
+    if env_var:
+        effective = bool(os.environ.get(env_var, "").strip())
+        return {
+            "source": "env" if effective else "unset_env",
+            "env_var": env_var,
+            "env_var_effective": effective,
+        }
+    if str(_load_token_data().get("github_token") or "").strip():
+        return {"source": "file", "env_var": "", "env_var_effective": False}
+    if os.environ.get(TOKEN_ENV_VAR, "").strip():
+        return {
+            "source": "env",
+            "env_var": TOKEN_ENV_VAR,
+            "env_var_effective": True,
+        }
+    return {"source": "none", "env_var": "", "env_var_effective": False}
 
 
 def _build_headers() -> dict:
@@ -247,11 +303,12 @@ def _version_sort_key(item: RemoteVersion) -> tuple:
     生成降序排序键：基础版本号 → 版本类别 → 日期。
 
     同一基础版本内：发布版 > 预发布 > 开发版；开发版按日期新到旧。
+    未知 kind 按最末位排（防御新增 kind 时漏改 _KIND_RANK）。
     """
     date_parts = _extract_date(item.tag) or (0, 0, 0)
     return (
         parse_version_tag(item.tag),
-        -_KIND_RANK[item.kind],
+        -_KIND_RANK.get(item.kind, 99),
         date_parts,
         item.tag,
     )
@@ -678,7 +735,6 @@ _FILE_LOCK_MARKERS = (
     "拒绝访问",
     "os error 5",
     "failed to remove",
-    "permissionerror",
     "access is denied",
     "errno 5",
 )

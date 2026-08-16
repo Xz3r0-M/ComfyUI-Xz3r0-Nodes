@@ -263,6 +263,17 @@ function ensureStyles() {
         "  color: var(--input-text, #ddd);",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "}",
+        ".xcontrolpanel-token-mode {",
+        "  width: 100%;",
+        "  box-sizing: border-box;",
+        "  height: 26px;",
+        "  padding: 0 6px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 6px;",
+        "  background: var(--comfy-menu-bg, #1e1e1e);",
+        "  color: var(--input-text, #ddd);",
+        "  font: var(--xdh-font-micro-label, 11px sans-serif);",
+        "}",
         ".xcontrolpanel-manager {",
         "  display: flex;",
         "  flex-direction: column;",
@@ -597,6 +608,9 @@ function updateStartErrorMessage(payload) {
     var code = payload && payload.code;
     if (code === "busy") return tk("err.busy", "Another update is already running.");
     if (code === "rate_limit") return rateLimitMessage(payload);
+    if (code === "network") {
+        return tk("err.network", "Cannot reach GitHub. Check your network and retry.");
+    }
     if (code === "not_git") {
         return tk("err.not_git", "This ComfyUI was not installed with git.");
     }
@@ -614,14 +628,24 @@ function updateStartErrorMessage(payload) {
 
 function rateLimitMessage(payload) {
     var retryAfter = payload && payload.retry_after;
+    var hint = "";
+    if (payload && payload.token_configured === false) {
+        hint = " " + tk(
+            "err.rate_limit_token_hint",
+            "Set a GitHub token to raise the limit to 5000 requests per hour."
+        );
+    }
     if (retryAfter > 0) {
         var minutes = Math.max(1, Math.ceil(retryAfter / 60));
         return tk(
             "err.rate_limit_retry",
             "GitHub request limit reached. Try again in about {m} minute(s)."
-        ).replace("{m}", String(minutes));
+        ).replace("{m}", String(minutes)) + hint;
     }
-    return tk("err.rate_limit", "GitHub request limit reached. Wait a while and retry.");
+    return tk(
+        "err.rate_limit",
+        "GitHub request limit reached. Wait a while and retry."
+    ) + hint;
 }
 
 function applyPanelLocale(state) {
@@ -1268,11 +1292,15 @@ function openVersionManagerWindow(nodeState) {
     tokenFormEl.style.display = "none";
     var tokenStatusEl = el("div", "xcontrolpanel-dialog-text", "");
     tokenFormEl.appendChild(tokenStatusEl);
+    var tokenModeEl = createTokenModeSelect();
+    tokenFormEl.appendChild(tokenModeEl);
     var tokenInputEl = document.createElement("input");
     tokenInputEl.className = "xcontrolpanel-token-input";
     tokenInputEl.type = "password";
     tokenInputEl.placeholder = tk("token.placeholder", "Paste token here");
     tokenFormEl.appendChild(tokenInputEl);
+    var tokenHelpEl = el("div", "xcontrolpanel-dialog-text", "");
+    tokenFormEl.appendChild(tokenHelpEl);
     var tokenActionsEl = el("div", "xcontrolpanel-token-actions", "");
     var tokenSaveBtn = el("button", "xcontrolpanel-button",
         tk("token.save", "Save"));
@@ -1311,7 +1339,9 @@ function openVersionManagerWindow(nodeState) {
         tokenButtonEl: tokenButtonEl,
         tokenFormEl: tokenFormEl,
         tokenStatusEl: tokenStatusEl,
+        tokenModeEl: tokenModeEl,
         tokenInputEl: tokenInputEl,
+        tokenHelpEl: tokenHelpEl,
         refreshButton: fetchButton,
         floatToastEl: floatToastEl,
         searchEl: searchEl,
@@ -1337,11 +1367,15 @@ function openVersionManagerWindow(nodeState) {
     tokenButtonEl.addEventListener("click", function () {
         toggleTokenForm(winState);
     });
+    tokenModeEl.addEventListener("change", function () {
+        updateTokenModeUi(winState);
+    });
     tokenSaveBtn.addEventListener("click", function () {
-        saveManagerToken(winState, tokenInputEl.value, tokenStatusEl);
+        saveManagerToken(winState, tokenStatusEl);
     });
     tokenClearBtn.addEventListener("click", function () {
-        saveManagerToken(winState, "", tokenStatusEl);
+        winState.tokenInputEl.value = "";
+        saveManagerToken(winState, tokenStatusEl);
     });
     searchEl.addEventListener("input", function () {
         renderVersionList(winState);
@@ -1433,6 +1467,104 @@ function toggleTokenForm(winState) {
     }
 }
 
+// ---------------------------------------------------------------- 令牌配置（共享 UI）
+function createTokenModeSelect() {
+    var select = document.createElement("select");
+    select.className = "xcontrolpanel-token-mode";
+    var optDirect = document.createElement("option");
+    optDirect.value = "token";
+    optDirect.textContent = tk("token.mode_direct", "Direct token");
+    var optEnv = document.createElement("option");
+    optEnv.value = "env_var";
+    optEnv.textContent = tk(
+        "token.mode_env_var",
+        "Use an environment variable"
+    );
+    select.appendChild(optDirect);
+    select.appendChild(optEnv);
+    return select;
+}
+
+function updateTokenModeUi(state) {
+    if (!state || !state.tokenInputEl || !state.tokenModeEl) return;
+    var isEnv = state.tokenModeEl.value === "env_var";
+    state.tokenInputEl.type = isEnv ? "text" : "password";
+    state.tokenInputEl.placeholder = isEnv
+        ? tk(
+            "token.env_var_placeholder",
+            "Environment variable name, e.g. MY_GITHUB_TOKEN"
+        )
+        : tk("token.placeholder", "Paste token here");
+    if (state.tokenHelpEl) {
+        state.tokenHelpEl.textContent = isEnv
+            ? tk(
+                "token.env_var_help",
+                "The token itself lives in a system environment variable; "
+                + "only the name is saved here. How to create one: "
+                + "Windows: System Properties → Environment Variables "
+                + "(or run setx NAME \"token\" in a terminal, then open "
+                + "a new terminal). macOS/Linux: add export NAME=token to "
+                + "~/.bashrc or ~/.zshrc. Restart ComfyUI after setting it."
+            )
+            : tk(
+                "token.direct_help",
+                "The token is stored in a local settings file readable "
+                + "only by you. Do not sync the XDataSaved folder to "
+                + "cloud drives."
+            );
+        state.tokenHelpEl.style.display = "";
+    }
+}
+
+function applyTokenStatus(state, payload) {
+    if (!state || !payload) return;
+    var source = payload.source || "none";
+    var envVar = payload.env_var || "";
+    if (source === "env") {
+        state.tokenModeEl.value = "env_var";
+        state.tokenInputEl.value = envVar;
+        state.tokenStatusEl.textContent = tk(
+            "token.status_env",
+            "Using the {name} environment variable."
+        ).replace("{name}", envVar);
+    } else if (source === "unset_env") {
+        state.tokenModeEl.value = "env_var";
+        state.tokenInputEl.value = envVar;
+        state.tokenStatusEl.textContent = tk(
+            "token.status_unset_env",
+            "Saved environment variable name {name}, but it has no value "
+            + "here yet. Create the variable and restart ComfyUI."
+        ).replace("{name}", envVar);
+    } else if (source === "file") {
+        state.tokenModeEl.value = "token";
+        state.tokenInputEl.value = "";
+        state.tokenStatusEl.textContent = tk(
+            "token.status_file",
+            "A saved token is in use."
+        );
+    } else {
+        state.tokenModeEl.value = "token";
+        state.tokenInputEl.value = "";
+        state.tokenStatusEl.textContent = tk(
+            "token.none",
+            "No token configured."
+        );
+    }
+    updateTokenModeUi(state);
+}
+
+function buildTokenPayload(mode, value) {
+    return mode === "env_var"
+        ? JSON.stringify({
+            mode: "env_var",
+            env_var: String(value || "").trim(),
+        })
+        : JSON.stringify({
+            mode: "token",
+            token: String(value || "").trim(),
+        });
+}
+
 async function fetchTokenStatus(winState) {
     if (!winState || !winState.tokenStatusEl) return;
     try {
@@ -1443,22 +1575,17 @@ async function fetchTokenStatus(winState) {
         } catch (_error) {
             payload = {};
         }
-        if (payload && payload.configured) {
-            winState.tokenStatusEl.textContent = payload.source === "env"
-                ? tk("token.status_env", "Using the XZR3O_GITHUB_TOKEN environment variable.")
-                : tk("token.status_file", "A saved token is in use.");
-        } else {
-            winState.tokenStatusEl.textContent = tk("token.none", "No token configured.");
-        }
+        applyTokenStatus(winState, payload);
     } catch (_error) { /* ignore */ }
 }
 
-async function saveManagerToken(winState, tokenValue, statusEl) {
+async function saveManagerToken(winState, statusEl) {
     try {
+        var mode = winState.tokenModeEl ? winState.tokenModeEl.value : "token";
         var response = await api.fetchApi("/xz3r0/xcontrolpanel/update/token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token: String(tokenValue || "").trim() }),
+            body: buildTokenPayload(mode, winState.tokenInputEl.value),
         });
         var payload = {};
         try {
@@ -1473,12 +1600,15 @@ async function saveManagerToken(winState, tokenValue, statusEl) {
             toast(msg, "error");
             return;
         }
-        var okMsg = payload.configured
-            ? tk("token.saved", "Token saved.")
-            : tk("token.cleared", "Token cleared.");
+        var okMsg = mode === "env_var"
+            ? tk("token.saved_env_var", "Environment variable name saved.")
+            : (payload.configured
+                ? tk("token.saved", "Token saved.")
+                : tk("token.cleared", "Token cleared."));
         statusEl.textContent = okMsg;
         toast(okMsg, "success");
         winState.tokenInputEl.value = "";
+        updateTokenModeUi(winState);
     } catch (error) {
         var detail = (error && error.message)
             || tk("err.token_save", "Failed to save the token.");
@@ -1504,11 +1634,27 @@ async function showTokenDialog(state) {
     var statusEl = el("div", "xcontrolpanel-dialog-text", "");
     body.appendChild(statusEl);
 
+    var modeEl = createTokenModeSelect();
+    body.appendChild(modeEl);
+
     var inputEl = document.createElement("input");
     inputEl.className = "xcontrolpanel-token-input";
     inputEl.type = "password";
     inputEl.placeholder = tk("token.placeholder", "Paste token here");
     body.appendChild(inputEl);
+
+    var helpEl = el("div", "xcontrolpanel-dialog-text", "");
+    body.appendChild(helpEl);
+
+    var dialogState = {
+        tokenModeEl: modeEl,
+        tokenInputEl: inputEl,
+        tokenHelpEl: helpEl,
+        tokenStatusEl: statusEl,
+    };
+    modeEl.addEventListener("change", function () {
+        updateTokenModeUi(dialogState);
+    });
 
     try {
         var res = await api.fetchApi("/xz3r0/xcontrolpanel/update/token");
@@ -1518,11 +1664,7 @@ async function showTokenDialog(state) {
         } catch (_error) {
             payload = {};
         }
-        if (payload && payload.configured) {
-            statusEl.textContent = payload.source === "env"
-                ? tk("token.status_env", "Using the XZR3O_GITHUB_TOKEN environment variable.")
-                : tk("token.status_file", "A saved token is in use.");
-        }
+        applyTokenStatus(dialogState, payload);
     } catch (_error) { /* ignore */ }
 
     var cancelBtn = el("button", "xcontrolpanel-button",
@@ -1539,22 +1681,24 @@ async function showTokenDialog(state) {
         closeUpdateModal();
     });
     saveBtn.addEventListener("click", function () {
-        saveTokenFromDialog(inputEl.value, body, statusEl);
+        saveTokenFromDialog(modeEl, inputEl, body, statusEl);
     });
     clearBtn.addEventListener("click", function () {
-        saveTokenFromDialog("", body, statusEl);
+        inputEl.value = "";
+        saveTokenFromDialog(modeEl, inputEl, body, statusEl);
     });
 
     setDialogButtons(updateModal, [cancelBtn, saveBtn, clearBtn]);
     updateModal.show(body);
 }
 
-async function saveTokenFromDialog(tokenValue, body, statusEl) {
+async function saveTokenFromDialog(modeEl, inputEl, body, statusEl) {
     try {
+        var mode = modeEl ? modeEl.value : "token";
         var response = await api.fetchApi("/xz3r0/xcontrolpanel/update/token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token: String(tokenValue || "").trim() }),
+            body: buildTokenPayload(mode, inputEl.value),
         });
         var payload = {};
         try {
@@ -1569,9 +1713,11 @@ async function saveTokenFromDialog(tokenValue, body, statusEl) {
             toast(msg, "error");
             return;
         }
-        var okMsg = payload.configured
-            ? tk("token.saved", "Token saved.")
-            : tk("token.cleared", "Token cleared.");
+        var okMsg = mode === "env_var"
+            ? tk("token.saved_env_var", "Environment variable name saved.")
+            : (payload.configured
+                ? tk("token.saved", "Token saved.")
+                : tk("token.cleared", "Token cleared."));
         statusEl.textContent = okMsg;
         toast(okMsg, "success");
         if (body && body.parentNode) body.remove();
