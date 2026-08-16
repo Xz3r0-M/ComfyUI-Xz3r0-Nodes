@@ -15,6 +15,8 @@ var EXT_NAME = "ComfyUI.Xz3r0.XController";
 var NODE_CLASS = "XController";
 var DOM_WIDGET_NAME = "xcontrol_ui";
 var LOCALE_PREFIX = "xdatahub.ui.node.xcontrol";
+var LOCALE_SYNC_INTERVAL = 1000;
+var localeSyncInstalled = false;
 var uiLocalePrimary = null;
 var uiLocaleFallback = null;
 var i18nCache = {};
@@ -414,6 +416,19 @@ function applyUiLocale(localeOverride) {
             uiLocalePrimary = normalized === "en" ? results[0] : results[1];
             refreshAllControlLocales();
         });
+}
+
+function installLocaleSync() {
+    if (localeSyncInstalled) return;
+    localeSyncInstalled = true;
+    var lastLocale = null;
+    setInterval(function () {
+        var nextLocale = resolveComfyLocale();
+        if (nextLocale && nextLocale !== lastLocale) {
+            lastLocale = nextLocale;
+            applyUiLocale(nextLocale);
+        }
+    }, LOCALE_SYNC_INTERVAL);
 }
 
 function refreshAllControlLocales() {
@@ -2331,6 +2346,7 @@ app.registerExtension({
 
     async setup() {
         applyUiLocale();
+        installLocaleSync();
     },
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
