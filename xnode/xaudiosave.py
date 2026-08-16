@@ -1011,7 +1011,12 @@ class XAudioSave(io.ComfyNode):
                 # PyAV 的 to_ndarray() 返回交错数组 (1, S*C)，
                 # 数值按 [ch0, ch1, ch2...] 排列；分帧拼接。
                 frame_chunks = []
-                for frame in source_container.decode(audio_stream):
+                # 与 XAudioGet 保持一致：decode 的 streams 参数用流索引
+                # （int），不直接传 AudioStream 对象，避免 PyAV 把对象
+                # 当索引取流的歧义，兼容更宽版本范围。
+                for frame in source_container.decode(
+                    streams=audio_stream.index
+                ):
                     frame_chunks.append(frame.to_ndarray())
                 if frame_chunks:
                     interleaved = np.concatenate(frame_chunks, axis=1)
