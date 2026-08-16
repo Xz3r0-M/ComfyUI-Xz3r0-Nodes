@@ -20,6 +20,7 @@ from comfy_api.latest import Input, InputImpl, Types, io, ui
 try:
     from ..xz3r0_utils import (
         ensure_unique_filename,
+        get_logger,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
@@ -28,10 +29,13 @@ except ImportError:
     # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
     from xz3r0_utils import (
         ensure_unique_filename,
+        get_logger,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
     )
+
+LOGGER = get_logger(__name__)
 
 try:
     import folder_paths
@@ -482,7 +486,6 @@ class XVideoSave(io.ComfyNode):
                     pix_fmt="yuv444p10le",
                     crf=crf,
                     preset=preset,
-                    movflags="faststart",
                     **{"loglevel": "quiet"},
                 )
                 .overwrite_output()
@@ -536,7 +539,6 @@ class XVideoSave(io.ComfyNode):
                     temp_muxed_path,
                     vcodec="copy",
                     acodec="copy",
-                    movflags="faststart",
                     **{"loglevel": "quiet"},
                 )
                 .overwrite_output()
@@ -608,14 +610,31 @@ class XVideoSave(io.ComfyNode):
                         index = packet.stream.index
                         if packet.dts is None:
                             # 开头 B 帧重排时可能有无 dts 的包，
-                            # muxer 会拒绝 NOPTS，补一个单调非降 dts。
+                            # muxer 会拒绝 NOPTS，用上一个已写包的 dts
+                            # 兜底（首包用 0），保证补值非降。
                             packet.dts = max(last_dts.get(index, 0), 0)
+                        elif (
+                            index in last_dts
+                            and packet.dts < last_dts[index]
+                        ):
+                            # 真实 dts 回退：说明源流时间戳本身异常，
+                            # 或与补值冲突。强行写入会得到时间戳乱序的
+                            # 文件，直接拒绝并提示走重新编码路径。
+                            raise ValueError(
+                                "non-monotonic dts in stream "
+                                f"{index} ({packet.dts} < "
+                                f"{last_dts[index]}); re-encode the "
+                                "video instead of stream-copying"
+                            )
                         last_dts[index] = packet.dts
                         if packet.pts is None:
                             packet.pts = packet.dts
                         packet.stream = target_streams[index]
                         target_container.mux(packet)
-        except (av.Error, OSError, ValueError):
+        except ValueError as exc:
+            LOGGER.error("[XVideoSave] remux rejected: %s", exc)
+            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from exc
+        except (av.Error, OSError):
             raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
 
     @classmethod
