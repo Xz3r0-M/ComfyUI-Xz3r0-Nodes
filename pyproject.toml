@@ -1,10 +1,10 @@
 [project]
 name = "xz3r0-nodes"
 description = "Custom ComfyUI nodes: XAudioSave, XImageSave, XLatentLoad, XLatentSave, XMarkdownSave, XVideoSave, XWorkflowSave, XAnyGate10, XAnyToString, XControlPanel, XDateTimeString, XImageCompare, XImageResize, XKleinRefConditioning, XLinker, XMath, XMemoryCleanup, XPipe, XResolution, XSeed, XStringGroup, XStringWrap, XAudioGet, XDataSave, XImageGet, XLoraGet, XStringGet, XVideoGet. Custom ComfyUI extensions: XDataHub, XFitView"
-version = "2.5.1"
+version = "2.6.0"
 license = { file = "LICENSE" }
 
-# 禁止重复声明 ComfyUI 依赖包, 先检查项目中的requirements.txt
+# 禁止重复声明 ComfyUI 依赖包, 先检查项目中的 requirements.txt
 dependencies = ["ffmpeg-python"]
 
 [project.optional-dependencies]

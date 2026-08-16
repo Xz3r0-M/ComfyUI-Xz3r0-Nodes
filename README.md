@@ -110,7 +110,7 @@ https://github.com/user-attachments/assets/8cd339ab-f054-440e-a7eb-6cbd50cb76eb
 ---
 
 > [!IMPORTANT]
-> ## 👇 点击查看功能详细说明
+> ## 👇 点击查看功能详细说明（可能不是最新的）
 > - [🎁 Nodes - 节点](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/1-%E2%80%90-Nodes)
 > - [🧩 Extensions - 网页扩展](https://github.com/Xz3r0-M/ComfyUI-Xz3r0-Nodes/wiki/2-%E2%80%90-Extension)
 ---
