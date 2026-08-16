@@ -126,6 +126,7 @@ class XListRestore(io.ComfyNode):
             raise ValueError("list length must match slot_map indices length")
 
         sparse: list[Any] = [None] * width
+        seen_slots: set[int] = set()
         for item, slot in zip(items, indices, strict=True):
             s = int(slot)
             if s < 1:
@@ -143,6 +144,17 @@ class XListRestore(io.ComfyNode):
                     f"slot index {s} out of range for declared width "
                     f"{width}"
                 )
+            if s in seen_slots:
+                # 同一槽位出现多次：多值列表展平后的残留。
+                # 一个槽只能放一个元素，强行覆盖会静默丢数据，
+                # 明确报错引导用户拆分列表。
+                raise ValueError(
+                    f"slot index {s} appears more than once: one slot "
+                    "can hold only one item. An XListCreate input "
+                    "received a multi-value list; split it into single "
+                    "values before connecting."
+                )
+            seen_slots.add(s)
             sparse[s - 1] = item
 
         LOGGER.debug(

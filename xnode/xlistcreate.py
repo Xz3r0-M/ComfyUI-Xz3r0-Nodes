@@ -87,7 +87,13 @@ class XListCreate(io.ComfyNode):
                 io.Autogrow.Input(
                     "inputs",
                     template=template_autogrow,
-                    tooltip="Connect inputs to add them to the list",
+                    tooltip=(
+                        "Connect single values to add them to the list. "
+                        "A multi-value list is flattened into the output "
+                        "list, but XListRestore cannot put several items "
+                        "back into one slot — split lists into single "
+                        "values when you plan to restore positions."
+                    ),
                 ),
             ],
             outputs=[
@@ -114,7 +120,9 @@ class XListCreate(io.ComfyNode):
                         "Position record only (no media). Tracks which input "
                         "port each list item came from. Connect to "
                         "XListRestore to put items back into their "
-                        "original ports."
+                        "original ports. Each input port must carry a "
+                        "single value; multi-value lists cannot be "
+                        "restored."
                     ),
                 ),
             ],
