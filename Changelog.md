@@ -1,5 +1,371 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.6.0
+
+<details>
+
+### 1. ⭐ 新增 `XPrimitiveCombo` 下拉选择桥接节点
+`♾️ Xz3r0/Workflow-Processing`
+- 节点自带一个下拉选择框，把选中的选项直接作为文本输出
+- 用法：把本节点的 COMBO 输出端口连接到目标节点的下拉选择框控件上，选中的选项会同步到目标控件，同时通过 STRING 输出端口把选项值作为文字传给下游节点
+- 适合在想把选项通过字符串进行保存或传递给其他节点的情况下使用
+
+### 2. ⭐ 新增 `XController` 通用控制组件节点
+`♾️ Xz3r0/Workflow-Processing`
+- 一个节点提供多种手动控制组件，通过下拉菜单切换组件类型：
+    - 旋钮
+    - 横向滑块
+    - 竖向推子
+    - 开关
+    - 按压按钮
+    - XY 坐标面板
+
+### 3. ⭐ 新增 `XAudioProcess` 音频处理节点
+`♾️ Xz3r0/Workflow-Processing`
+- 提取自`XAudioSave`节点的音频处理功能
+- 对于在工作流中只需要音频处理而不需要保存为音频文件时使用
+- 支持选择的处理功能：
+    - 重采样（转换采样率）
+    - 压缩
+    - 标准化
+    - 限制峰值
+    - 完整链（`XAudioSave`节点的完整音频处理流程）
+
+### 4. ⭐ 新增 `XImagePreview` 图像/遮罩预览节点
+`♾️ Xz3r0/Workflow-Processing`
+- 查看图像或遮罩的预览效果
+- 没有图像或遮罩数据输入时（`None`）也可以正常执行（但是不刷新显示图像），不会像 ComfyUI 原生的图像预览节点执行报错
+- 有输入时预览并原样传给下游节点
+- 我原本就设计了让`XImageCompare`节点充当图像/遮罩预览节点，但是由于`XImageCompare`有自定义前端界面导致节点界面尺寸不能拉到很小，对于某些工作流场景下还是需要这样一个节点界面可以更小的节点更合适
+
+### 5. ⭐ 新增 `XKleinRefListConditioning` 多参考图 Klein 条件节点
+`♾️ Xz3r0/Workflow-Processing`
+- 把多张参考图（列表形式）转换为 FLUX.2-klein 的参考条件，并加入正面和负面条件链
+- 参考图按顺序处理，最多应用 50 张参考帧
+
+### 6. ⭐ 新增 `XListCreate` 数据列表生成节点
+`♾️ Xz3r0/Workflow-Processing`
+- 把多个已连接的输入打包成一条紧凑列表（只包含接通的内容，空端口自动跳过）
+- 输出：
+    - 列表（按端口顺序排列的已连接内容）
+    - 数量（数据个数）
+    - 位置记录（每个数据原本来自哪个端口，供 XListRestore 还原）
+- 搭配 XListPull 可以把列表拆回独立的端口数据来单独使用
+
+### 7. ⭐ 新增 `XListPull` 数据列表拉取节点
+`♾️ Xz3r0/Workflow-Processing`
+- 把一条列表拆成一个个独立的输出端口（数据 1、数据 2……），每个数据都有自己的端口
+- 接上列表（来自 XListCreate 或其他任意列表）后，用数量值决定显示多少个端口
+
+### 8. ⭐ 新增 `XListRestore` 数据列表还原节点
+`♾️ Xz3r0/Workflow-Processing`
+- 把批量处理后的列表数据放回原来的位置
+- 配合 XListCreate 使用：先打包成紧凑列表 → 批量处理 → 再按位置记录把每个数据还原回原来的端口位置
+- 没有被占用的位置自动变成空（None），下游按位置读取的节点始终对齐，不会错位
+- 使用示例: 
+    A: XListCreate 图像数据列表 → B: XImageResize 缩放后的图像数据 → 列表输入 C: XListRestore，再将 A: XListCreate 的槽位映射端口连接 C: XListRestore 的槽位映射端口
+
+### 9. ⭐ 新增 `XListToPipe` 列表转管道束节点
+`♾️ Xz3r0/Workflow-Processing`
+- 把列表装进 XPipe 数据束（数据束 = 一次打包传一整组数据+名字的容器），让它能接入 XPipe 家族节点继续传递
+- 列表元素依次填入第 1..N 个端口位置（最多 50 个），没填的位置保持为空
+- 数量输入决定数据束有多少个端口位置
+- 列表数据和数量数据从`XListCreate`或`XListRestore`节点接入即可轻松转为 XPipe 数据束来使用
+
+### 10. ⭐ 新增 `XPipeGate` 管道束门控节点
+`♾️ Xz3r0/Workflow-Processing`
+- 最多 50 路通道的开关面板，每路可以独立启用或关闭
+- 每路的值可以来自接入的 XPipe 数据束，也可以来自它自己的直连输入；关闭的通道不输出
+- 即使没有接入数据束，输出端也始终输出一个合法的数据束
+
+### 11. ⭐ 新增 `XPipeRecursive` 管道束递归节点
+`♾️ Xz3r0/Workflow-Processing`
+- 按你自定义的取数顺序扫描 XPipe 数据束，返回第一个找到的值
+- 顺序用 `-` 分隔的端口序号写（例如 `1-3-5` 或 `50-1-2`），先扫到有值就返回它
+
+### 12. 🛠️ 增强和修复 `XDataHub` 数据中心
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- 新增 拖放媒体文件到画布自动创建节点功能
+    - 把图片、视频、音频文件（Lora 除外）从 XDataHub 拖到 ComfyUI 画布空白处，自动创建对应的加载节点（XImageGet / XVideoGet / XAudioGet）
+    - 设置面板中提供开关控制，默认为：开启
+- 移除 ComfyUI 启动时自动扫描 Lora 文件的功能 | 已在v2.5.2提前更新
+- 修复 执行工作流时界面卡住的问题 | 已在v2.5.2提前更新
+- 修复 设置面板重绘异常的问题
+
+### 13. 🛠️ 增强 `XAnyToString` 任意数据转文本节点
+`♾️ Xz3r0/Workflow-Processing`
+- 新增 预览输出的字符串功能（节点界面上直接显示转换后的文本内容）
+
+### 14. 🩹 修复 `XAudioGet` 与 XDataHub 配套的 音频数据接收节点
+`♾️ Xz3r0/XDataHub`
+- 修复部分音频文件解码报错的问题
+
+### 15. 🛠️ 增强 `XAudioSave` 音频保存节点
+`♾️ Xz3r0/File-Processing`
+- 更改音频文件和工作流元数据的保存方式，更稳定可靠
+    - WAV 保存不再依赖系统中安装的 FFmpeg 程序
+    - FLAC 保存的工作流信息（元数据）不再受系统命令长度限制，能完整写入
+- FLAC 保存仅支持常见声道布局（单声道、立体声、4 声道、5.1、7.1），不支持的声道组合会给出提示
+
+### 16. 🛠️ 增强 `XControlPanel` 控制面板节点
+`♾️ Xz3r0/Workflow-Processing`
+- 新增 更换 ComfyUI 版本功能
+    - 显示当前使用的 ComfyUI 版本
+    - 一键切换到任意官方版本（从 ComfyUI 官方 Github 仓库拉取正式版或开发版数据）
+    - 切换完成后重启 ComfyUI 会自动尝试安装依赖包
+- 更改节点自定义组件的边框样式
+
+### 17. 🛠️ 增强 `XImageCompare` 图像和遮罩 A/B 对比节点
+`♾️ Xz3r0/Workflow-Processing`
+- 为显示图像区域尺寸设置上限，放大视图时预览区域不再卡顿
+
+### 18. 🛠️ 增强 `XImageResize` 图像缩放节点
+`♾️ Xz3r0/Workflow-Processing`
+- 新增 无输入时跳过 开关
+    - 开启后，没有连接输入图像时直接输出空值（None）而不是报错，方便使用 Gate 门控节点搭建可选分支
+    - 默认为：关闭
+    - 该开关可以随缩放设置链传递到下游 XImageResize 节点
+
+### 19. 🛠️ 增强 `XLinker` 数据透传节点
+`♾️ Xz3r0/Workflow-Processing`
+- 新增 类型不兼容警告 开关
+    - 关闭后隐藏连接线的类型警告效果（黑白相间 + 红色闪烁）
+    - 默认为：开启
+- 新增 端口右键菜单转换功能
+    - 在任意节点的已有连接的输入或输出端口上点击右键弹出列表中选择对应选项，可以把该端口的连接一键转换为 XLinker 节点进行中继
+
+### 20. 🪛 调整 `XMemoryCleanup` 内存显存资源占用清理节点
+`♾️ Xz3r0/Workflow-Processing`
+- 更改节点自定义组件的边框样式
+
+### 21. 🛠️ 增强 `XPipe` 高级数据管道束节点
+`♾️ Xz3r0/Workflow-Processing`
+- 数据透传端口数量从 20 路升级到 50 路
+- 新增 类型不兼容警告 开关
+    - 关闭后隐藏连接线的类型警告效果（黑白相间 + 红色闪烁）
+    - 默认为：开启
+- 更改端口名称相关的自定义界面组件为 ComfyUI 原生控件
+    - 因为动态端口和端口名称功能非常复杂并且 ComfyUI 的前端界面本身限制较多导致容易出现 Bug 继而使用原生控件来尽量减少节点界面 Bug 的出现
+
+### 22. 🛠️ 增强 `XSeed` 种子值生成节点
+`♾️ Xz3r0/Workflow-Processing`
+- 种子值改为使用自定义控件管理：
+    - 随机生成按钮
+    - 手动输入种子值
+    - 执行时随机 开关
+    - 使用上次执行的种子 按钮
+- 位数上限默认值从 20 改为 10
+
+### 23. 🛠️ 增强 `XStringGet` 与 XDataHub 配套的 文本数据接收节点
+`♾️ Xz3r0/XDataHub`
+- 新增 空内容输出 None 开关
+    - 开启时，没有内容时输出空值（None）；关闭时输出空字符串
+    - 默认为：开启
+
+### 24. 🛠️ 增强 `XStringGroup` 字符串组合节点
+`♾️ Xz3r0/Workflow-Processing`
+- 输入端口收到空值（None）时按空字符串处理，兼容上游节点关闭输出后的情况
+- 新增 空内容输出 None 开关
+    - 开启时，字符串为空输出空值（None）；关闭时输出空字符串
+    - 默认为：开启
+
+### 25. 🛠️ 增强 `XStringWrap` 字符串包装节点
+`♾️ Xz3r0/Workflow-Processing`
+- 启用输出 开关关闭时，从输出空字符串改为输出空值（None）
+- 新增 空内容输出 None 开关
+    - 开启时，文本为空输出空值（None）；关闭时输出空字符串
+    - 默认为：开启
+
+### 26. 🛠️ 增强 `XVideoSave` 视频保存节点
+`♾️ Xz3r0/File-Processing`
+- 更改文件的工作流元数据保存方式，更稳定可靠
+
+### 27. 🛠️ 增强 `XWorkflowSave` 工作流保存节点
+`♾️ Xz3r0/File-Processing`
+- 兼容子图（嵌套图）中的工作流保存，子图内的 XWorkflowSave 节点现在也能正常工作
+
+---
+
+### 1. ⭐ Added `XPrimitiveCombo` Combo Selection Bridge Node
+`♾️ Xz3r0/Workflow-Processing`
+- Provides its own dropdown list; the selected option is output as text
+- Usage: connect the COMBO output port to a target node's dropdown widget — the selection syncs to the target widget — and use the STRING output to pass the selected value downstream as text
+- Suitable when you want to save the option as a string or pass it to other nodes
+
+### 2. ⭐ Added `XController` Universal Control Components Node
+`♾️ Xz3r0/Workflow-Processing`
+- One node offering multiple manual control components, switchable via a dropdown:
+    - Knob
+    - Horizontal slider
+    - Vertical fader
+    - Toggle switch
+    - Push button
+    - XY pad
+
+### 3. ⭐ Added `XAudioProcess` Audio Processing Node
+`♾️ Xz3r0/Workflow-Processing`
+- The audio processing features extracted from the `XAudioSave` node
+- For workflows that only need audio processing without saving an audio file
+- Selectable processing features:
+    - Resampling (convert sample rate)
+    - Compression
+    - Normalization
+    - Peak limiting
+    - Full chain (the complete audio processing pipeline of the `XAudioSave` node)
+
+### 4. ⭐ Added `XImagePreview` Image/Mask Preview Node
+`♾️ Xz3r0/Workflow-Processing`
+- Preview an image or mask
+- Can execute normally without image or mask input (`None`) — the displayed image is simply not refreshed — and unlike ComfyUI's native image preview nodes, it does not raise an error
+- With input, previews and passes the data through unchanged
+- I originally designed `XImageCompare` to double as the image/mask preview node, but because `XImageCompare` has a custom frontend, its node size cannot be shrunk very small; some workflow scenarios still need a node with a smaller UI, so this node is more suitable
+
+### 5. ⭐ Added `XKleinRefListConditioning` Multi-Reference Klein Conditioning Node
+`♾️ Xz3r0/Workflow-Processing`
+- Encodes a list of reference images into FLUX.2-klein reference conditioning and appends it to both positive and negative conditioning chains
+- Images are processed in order; up to 50 reference frames
+
+### 6. ⭐ Added `XListCreate` Data List Creator Node
+`♾️ Xz3r0/Workflow-Processing`
+- Packs connected inputs into a compact list (only connected values; empty ports are skipped)
+- Outputs:
+    - list (connected values in port order)
+    - count (number of data items)
+    - position record (which port each data item came from, for XListRestore)
+- Pair with XListPull to split a list back into individual port data for separate use
+
+### 7. ⭐ Added `XListPull` Data List Pull Node
+`♾️ Xz3r0/Workflow-Processing`
+- Splits a list into individual output ports (Data 1, Data 2, ...) — one port per data item
+- Connect a list (from XListCreate or any other list) and use the count value to decide how many ports to show
+
+### 8. ⭐ Added `XListRestore` Data List Restore Node
+`♾️ Xz3r0/Workflow-Processing`
+- Puts list data back into their original positions after batch processing
+- Works with XListCreate: pack into a compact list → batch process → restore each data item to its original port position using the position record
+- Unoccupied positions become empty (None), so downstream nodes reading by position stay aligned
+- Usage example:
+    A: XListCreate image data list → B: XImageResize resized image data → list input C: XListRestore, then connect A: XListCreate's slot map port to C: XListRestore's slot map port
+
+### 9. ⭐ Added `XListToPipe` List-to-Pipe Node
+`♾️ Xz3r0/Workflow-Processing`
+- Packs a list into an XPipe bundle (a container that carries a whole group of data and names at once) so it can continue through XPipe family nodes
+- List elements fill slots 1..N (up to 50); unfilled slots stay empty
+- The count input decides how many slots the bundle has
+- Connect the list data and count data from the `XListCreate` or `XListRestore` node to easily turn them into an XPipe bundle for use
+
+### 10. ⭐ Added `XPipeGate` Pipe Bundle Gate Node
+`♾️ Xz3r0/Workflow-Processing`
+- A switch panel with up to 50 channels, each independently enabled or disabled
+- Each channel can take its value from a connected XPipe bundle or from its own direct input; disabled channels output nothing
+- xpipe_out always emits a valid bundle even without a bundle input
+
+### 11. ⭐ Added `XPipeRecursive` Pipe Bundle Recursive Node
+`♾️ Xz3r0/Workflow-Processing`
+- Scans an XPipe bundle in your custom order and returns the first value found
+- Write the order with dash-separated slot numbers (e.g. `1-3-5` or `50-1-2`); the first slot with a value wins
+
+### 12. 🛠️ Enhanced & Fixed `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Added drag-and-drop to canvas: drag media files (images, videos, audio; Lora excluded) from XDataHub onto an empty canvas area to auto-create the matching load node (XImageGet / XVideoGet / XAudioGet)
+    - Toggle in the settings panel, default: Enabled
+- Removed the automatic Lora scan at ComfyUI startup | Already shipped early in v2.5.2
+- Fixed the interface freezing when executing workflows | Already shipped early in v2.5.2
+- Fixed the settings panel redraw issue
+
+### 13. 🛠️ Enhanced `XAnyToString` Any-to-String Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added string preview — the converted text is now shown directly in the node UI
+
+### 14. 🩹 Fixed `XAudioGet` Audio Receiver Node for XDataHub
+`♾️ Xz3r0/XDataHub`
+- Fixed decoding errors on some audio files
+
+### 15. 🛠️ Enhanced `XAudioSave` Audio Save Node
+`♾️ Xz3r0/File-Processing`
+- Changed how audio files and workflow metadata are saved, for better reliability
+    - WAV saving no longer depends on FFmpeg installed on the system
+    - FLAC workflow metadata is no longer limited by system command length and is written completely
+- FLAC supports common channel layouts only (mono, stereo, quad, 5.1, 7.1); unsupported layouts show a hint
+
+### 16. 🛠️ Enhanced `XControlPanel` Control Panel Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added ComfyUI version switching
+    - Shows the current ComfyUI version
+    - Switch to any official version (fetches release or dev data from the official ComfyUI GitHub repository) with one click
+    - After switching, ComfyUI restarts and automatically tries to install dependencies
+- Changed the border style of custom UI components
+
+### 17. 🛠️ Enhanced `XImageCompare` Image & Mask A/B Comparison Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added an upper limit for the display area size, so zooming no longer makes the preview area lag
+
+### 18. 🛠️ Enhanced `XImageResize` Image Resize Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added Skip on Empty toggle
+    - When enabled, outputs None instead of an error if no input image is connected — handy for building optional branches with Gate nodes
+    - Default: Disabled
+    - The toggle also travels along the resize settings chain to downstream XImageResize nodes
+
+### 19. 🛠️ Enhanced `XLinker` Data Passthrough Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added type mismatch warning toggle
+    - Disable to hide the link warning effect (black-and-white striped with red flashing)
+    - Default: Enabled
+- Added port right-click conversion: right-click an already-connected input or output port on any node, choose the option from the popup list, and the port's connection is converted into an XLinker node for relaying with one click
+
+### 20. 🔧 Adjusted `XMemoryCleanup` Memory & VRAM Cleanup Node
+`♾️ Xz3r0/Workflow-Processing`
+- Changed the border style of custom UI components
+
+### 21. 🛠️ Enhanced `XPipe` Advanced Pipe Bundle Node
+`♾️ Xz3r0/Workflow-Processing`
+- Passthrough ports upgraded from 20 to 50
+- Added type mismatch warning toggle (hide the warning effect; default: Enabled)
+- Changed port-name custom UI components to ComfyUI native controls
+    - Because dynamic ports and port names are very complex and ComfyUI's frontend has many limitations that easily cause bugs, native controls are used to minimize node UI bugs
+
+### 22. 🛠️ Enhanced `XSeed` Seed Value Node
+`♾️ Xz3r0/Workflow-Processing`
+- Seed value is now managed by a custom control:
+    - Randomize button
+    - Manual seed input
+    - Random on execute toggle
+    - Use last applied seed button
+- Default digit limit changed from 20 to 10
+
+### 23. 🛠️ Enhanced `XStringGet` Text Receiver Node for XDataHub
+`♾️ Xz3r0/XDataHub`
+- Added None on Empty toggle
+    - Enabled: outputs None when there is no content; Disabled: outputs an empty string
+    - Default: Enabled
+
+### 24. 🛠️ Enhanced `XStringGroup` String Group Node
+`♾️ Xz3r0/Workflow-Processing`
+- Input ports receiving None are now treated as empty strings, compatible with upstream nodes that output None when disabled
+- Added None on Empty toggle
+    - Enabled: empty strings output None; Disabled: output empty strings
+    - Default: Enabled
+
+### 25. 🛠️ Enhanced `XStringWrap` String Wrap Node
+`♾️ Xz3r0/Workflow-Processing`
+- When the output enable toggle is off, output is now None instead of an empty string
+- Added None on Empty toggle
+    - Enabled: empty text outputs None; Disabled: outputs an empty string
+    - Default: Enabled
+
+### 26. 🛠️ Enhanced `XVideoSave` Video Save Node
+`♾️ Xz3r0/File-Processing`
+- Changed how file workflow metadata is saved, for better reliability
+
+### 27. 🛠️ Enhanced `XWorkflowSave` Workflow Save Node
+`♾️ Xz3r0/File-Processing`
+- Compatible with subgraphs — XWorkflowSave nodes inside nested subgraphs now work correctly
+
+</details>
+
+---
+
 ## 🎉 v2.5.1
 
 <details>

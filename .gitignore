@@ -206,27 +206,33 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# ----------------------------------------------------
 
-
-# Xz3r0
+# IDE
 .vscode/
+.github/copilot-instructions.md
+*.code-workspace
+ruff.toml
+
+# Agents
+.pi/
+brainstorms/
+
+# Xz3r0-Dev-WIP
+
+
+# test 测试不提交到仓库
 tests/
 web/test
-ruff.toml
+
+# Xz3r0-Project-files
+AGENTS.md
+.agents/
 _记录/
 _检验/
-.agents/
-AGENTS.md
 XDataSaved/
-_audit/
-node_modules/
-package-lock.json
-package.json
-skills-lock.json
 icons_dev/
-.github/instructions/
-_temp/
-CLAUDE.md
-.claude/
-REASONIX.md
-.reasonix/
+TESTING.md
+docs/badge.json
+docs/downloads-history.json
+docs/sparkline.svg

@@ -11,6 +11,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import av
 import comfy.utils
 import ffmpeg
 import torch
@@ -19,6 +20,7 @@ from comfy_api.latest import Input, InputImpl, Types, io, ui
 try:
     from ..xz3r0_utils import (
         ensure_unique_filename,
+        get_logger,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
@@ -27,10 +29,13 @@ except ImportError:
     # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
     from xz3r0_utils import (
         ensure_unique_filename,
+        get_logger,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
     )
+
+LOGGER = get_logger(__name__)
 
 try:
     import folder_paths
@@ -277,12 +282,22 @@ class XVideoSave(io.ComfyNode):
                             except OSError:
                                 pass
                 else:
-                    cls._mux_video_and_audio(
+                    temp_muxed_path = cls._mux_video_and_audio_to_temp(
                         temp_video_path=temp_video_path,
                         temp_audio_path=temp_audio_path,
-                        save_path=save_path,
-                        metadata=metadata,
                     )
+                    try:
+                        cls._write_video_with_metadata(
+                            temp_video_path=temp_muxed_path,
+                            save_path=save_path,
+                            metadata=metadata,
+                        )
+                    finally:
+                        if os.path.exists(temp_muxed_path):
+                            try:
+                                os.unlink(temp_muxed_path)
+                            except OSError:
+                                pass
             else:
                 if normalized_container == "MP4":
                     cls._save_mp4_with_official_api(
@@ -471,7 +486,6 @@ class XVideoSave(io.ComfyNode):
                     pix_fmt="yuv444p10le",
                     crf=crf,
                     preset=preset,
-                    movflags="faststart",
                     **{"loglevel": "quiet"},
                 )
                 .overwrite_output()
@@ -502,42 +516,6 @@ class XVideoSave(io.ComfyNode):
             raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
 
     @classmethod
-    def _mux_video_and_audio(
-        cls,
-        temp_video_path: str,
-        temp_audio_path: str,
-        save_path: Path,
-        metadata: dict | None = None,
-    ) -> None:
-        """
-        合并临时视频和临时音频到最终输出文件。
-        """
-        video_input = ffmpeg.input(temp_video_path)
-        audio_input = ffmpeg.input(temp_audio_path)
-        output_kwargs = {
-            "vcodec": "copy",
-            "acodec": "copy",
-            "movflags": "faststart",
-            **{"loglevel": "quiet"},
-        }
-        output_kwargs.update(
-            cls._build_ffmpeg_metadata_options(metadata)
-        )
-        try:
-            (
-                ffmpeg.output(
-                    video_input,
-                    audio_input,
-                    str(save_path),
-                    **output_kwargs,
-                )
-                .overwrite_output()
-                .run()
-            )
-        except (ffmpeg.Error, OSError):
-            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
-
-    @classmethod
     def _mux_video_and_audio_to_temp(
         cls,
         temp_video_path: str,
@@ -561,7 +539,6 @@ class XVideoSave(io.ComfyNode):
                     temp_muxed_path,
                     vcodec="copy",
                     acodec="copy",
-                    movflags="faststart",
                     **{"loglevel": "quiet"},
                 )
                 .overwrite_output()
@@ -605,28 +582,59 @@ class XVideoSave(io.ComfyNode):
         metadata: dict | None = None,
     ) -> None:
         """
-        无音频时通过 FFmpeg 复制并写入元数据。
+        将临时视频复制到最终文件，并在进程内写入工作流元数据。
+
+        使用 PyAV 在进程内直接把元数据赋给容器对象，不经过 ffmpeg
+        命令行参数，因此不受系统命令行长度限制（Windows 上为 32767
+        字符），工作流元数据再大也能完整写入。
+        仅做流拷贝，不重新编码，速度不受影响。
         """
-        video_input = ffmpeg.input(temp_video_path)
-        output_kwargs = {
-            "vcodec": "copy",
-            "movflags": "faststart",
-            **{"loglevel": "quiet"},
-        }
-        output_kwargs.update(
-            cls._build_ffmpeg_metadata_options(metadata)
-        )
         try:
-            (
-                ffmpeg.output(
-                    video_input,
-                    str(save_path),
-                    **output_kwargs,
-                )
-                .overwrite_output()
-                .run()
-            )
-        except (ffmpeg.Error, OSError):
+            with av.open(str(temp_video_path)) as source_container:
+                with av.open(
+                    str(save_path), mode="w", format="matroska"
+                ) as target_container:
+                    if metadata:
+                        for key, value in metadata.items():
+                            target_container.metadata[key] = str(value)
+
+                    target_streams = [
+                        target_container.add_stream_from_template(stream)
+                        for stream in source_container.streams
+                    ]
+
+                    last_dts = {}
+                    for packet in source_container.demux():
+                        if packet.stream is None:
+                            continue
+                        index = packet.stream.index
+                        if packet.dts is None:
+                            # 开头 B 帧重排时可能有无 dts 的包，
+                            # muxer 会拒绝 NOPTS，用上一个已写包的 dts
+                            # 兜底（首包用 0），保证补值非降。
+                            packet.dts = max(last_dts.get(index, 0), 0)
+                        elif (
+                            index in last_dts
+                            and packet.dts < last_dts[index]
+                        ):
+                            # 真实 dts 回退：说明源流时间戳本身异常，
+                            # 或与补值冲突。强行写入会得到时间戳乱序的
+                            # 文件，直接拒绝并提示走重新编码路径。
+                            raise ValueError(
+                                "non-monotonic dts in stream "
+                                f"{index} ({packet.dts} < "
+                                f"{last_dts[index]}); re-encode the "
+                                "video instead of stream-copying"
+                            )
+                        last_dts[index] = packet.dts
+                        if packet.pts is None:
+                            packet.pts = packet.dts
+                        packet.stream = target_streams[index]
+                        target_container.mux(packet)
+        except ValueError as exc:
+            LOGGER.error("[XVideoSave] remux rejected: %s", exc)
+            raise RuntimeError(cls.WRITE_VIDEO_ERROR) from exc
+        except (av.Error, OSError):
             raise RuntimeError(cls.WRITE_VIDEO_ERROR) from None
 
     @classmethod
@@ -653,21 +661,6 @@ class XVideoSave(io.ComfyNode):
                     json.dumps(value) if to_json else value
                 )
         return metadata
-
-    @classmethod
-    def _build_ffmpeg_metadata_options(
-        cls, metadata: dict | None
-    ) -> dict[str, str]:
-        """
-        将元数据转换为 FFmpeg 可识别的 metadata 参数。
-        """
-        if not metadata:
-            return {}
-
-        options = {}
-        for index, (key, value) in enumerate(metadata.items()):
-            options[f"metadata:g:{index}"] = f"{key}={value}"
-        return options
 
     @classmethod
     def _get_output_directory(cls) -> Path:

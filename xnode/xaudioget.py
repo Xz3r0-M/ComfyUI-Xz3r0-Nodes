@@ -94,7 +94,10 @@ class XAudioGet(io.ComfyNode):
             channel_count = stream.channels
 
             frames = []
-            for frame in container.decode(streams=stream):
+            # decode 的 streams 参数统一用流索引（int）；实测 PyAV 18 上
+            # 直接传 AudioStream 对象也等效，但用索引更直观，且绕开
+            # 把对象当索引取流的歧义，兼容更宽的 PyAV 版本范围。
+            for frame in container.decode(streams=stream.index):
                 array = frame.to_ndarray()
                 tensor = torch.from_numpy(array)
                 if tensor.shape[0] != channel_count:

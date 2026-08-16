@@ -64,9 +64,9 @@ class XMath(io.ComfyNode):
             node_id="XMath",
             display_name="XMath",
             description=(
-                "Mathematical operation node supporting addition, subtraction, "
-                "multiplication, division, power, and modulo operations "
-                "with dual output format."
+                "Mathematical operation node supporting addition, "
+                "subtraction, multiplication, division, power, "
+                "and modulo operations with dual output format."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
