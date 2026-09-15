@@ -1428,7 +1428,11 @@ class MediaStore:
             timeout=SQLITE_BUSY_TIMEOUT_MS / 1000,
         )
         conn.row_factory = sqlite3.Row
-        conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+        # PRAGMA statements do not support '?' parameter binding, so the
+        # integer value is validated/coerced and concatenated (not
+        # string-formatted) to avoid constructing SQL from untrusted input.
+        busy_timeout_ms = int(SQLITE_BUSY_TIMEOUT_MS)
+        conn.execute("PRAGMA busy_timeout = " + str(busy_timeout_ms))
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
@@ -3372,7 +3376,7 @@ def connect_lora_trigger_db(
         raise FileNotFoundError(f"loras_data.db not found: {db_path}")
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA busy_timeout=" + str(int(SQLITE_BUSY_TIMEOUT_MS)))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -5115,7 +5119,7 @@ def _media_favorites_conn() -> sqlite3.Connection:
     # ensures the parent directory exists.
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
-    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA busy_timeout=" + str(int(SQLITE_BUSY_TIMEOUT_MS)))
     conn.execute("PRAGMA journal_mode=WAL")
     ensure_media_favorites_schema(conn)
     return conn
