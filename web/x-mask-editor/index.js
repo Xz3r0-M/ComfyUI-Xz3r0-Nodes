@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20260412b";
-import { openMaskEditorSession } from "./session.js?v=20260412a";
-import { saveMaskArtifacts } from "./upload.js?v=20260412a";
+import { XMaskEditorController } from "./controller.js?v=20260916-4";
+import { openMaskEditorSession } from "./session.js?v=20260916-4";
+import { saveMaskArtifacts } from "./upload.js?v=20260916-4";
 
 const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
 const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -329,6 +329,12 @@ export async function openXMaskEditor(options = {}) {
     });
     session.bind(ui.invertColorBtn, "click", () => {
         controller.invertMaskPixels();
+    });
+    session.bind(ui.invertPaintRegionBtn, "click", () => {
+        controller.invertPaintRegion();
+    });
+    session.bind(ui.invertMaskRegionBtn, "click", () => {
+        controller.invertMaskRegion();
     });
     session.bind(ui.invertDisplayBtn, "click", () => {
         controller.toggleMaskDisplayInvert();

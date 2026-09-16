@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260618-1";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260916-4";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -1388,6 +1388,16 @@ function getMaskEditorTexts() {
         invertDisplayTip: t(
             key("invert_display_tip"),
             "Invert image colors in masked areas (visual only)"
+        ),
+        invertPaintRegion: t(key("invert_paint_region"), "Invert Color Area"),
+        invertPaintRegionTip: t(
+            key("invert_paint_region_tip"),
+            "Swap painted and unpainted areas on the color layer"
+        ),
+        invertMaskRegion: t(key("invert_mask_region"), "Invert Mask Area"),
+        invertMaskRegionTip: t(
+            key("invert_mask_region_tip"),
+            "Swap painted and unpainted areas on the mask layer"
         ),
         paintOpacity: t(key("paint_opacity"), "Color Opacity"),
         maskOpacity: t(key("mask_opacity"), "Mask Opacity"),
