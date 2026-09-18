@@ -5,6 +5,9 @@
 基于 ComfyUI 官方 CreateList，额外输出列表元素数量（从 1 开始计数）。
 搭配 XListPull 使用，通过数量值驱动输出端口动态展开。
 输出 slot_map 供 XListRestore 按原输入槽位还原稀疏 list。
+
+一个输入都没接通时，list 输出单元素 [None]（数量仍为 0），避免下游节点
+拿到空列表后报错。
 """
 
 from __future__ import annotations
@@ -49,6 +52,9 @@ class XListCreate(io.ComfyNode):
     与官方 CreateList 类似，通过 Autogrow 动态增加输入端口，
     将所有非 None 输入合并为稠密列表输出。额外输出 INT 类型的
     "count"（稠密长度）与 slot_map（供 XListRestore 还原稀疏槽位）。
+
+    没有任何有效输入时，list 输出 [None] 表示“空”（数量仍为 0），
+    这样下游节点依旧会运行一次并拿到 None，而不是因空列表报错。
     """
 
     @classmethod
@@ -102,8 +108,10 @@ class XListCreate(io.ComfyNode):
                     is_output_list=True,
                     display_name="list",
                     tooltip=(
-                        "The compact list holding every connected value, in "
-                        "port order. Length equals count."
+                        "Everything you connected, in port order. When "
+                        "nothing is connected, the list holds one empty "
+                        "value (None) so downstream nodes still run "
+                        "instead of failing."
                     ),
                 ),
                 io.Int.Output(
@@ -130,7 +138,13 @@ class XListCreate(io.ComfyNode):
 
     @classmethod
     def execute(cls, inputs: io.Autogrow.Type) -> io.NodeOutput:
-        """合并非 None 输入为稠密 list，并输出 slot_map。"""
+        """合并非 None 输入为稠密 list，并输出 slot_map。
+
+        一个有效元素都没有时输出 [None]：执行层要求 is_output_list 槽位
+        可迭代（它会 extend 这个值），裸 None 会直接抛 TypeError；而空列表
+        会让下游节点在分片取元素时抛 IndexError。单元素 [None] 是两者的
+        安全中间值。
+        """
         output_list: list[Any] = []
         indices: list[int] = []
         width = 0
@@ -153,6 +167,10 @@ class XListCreate(io.ComfyNode):
                     indices.append(slot)
 
         count = len(output_list)
+        if count == 0:
+            # 空值哨兵：下游拿到 None（跟输入端口没连接时的空值一致），
+            # 而不是空列表。
+            output_list = [None]
         slot_map = {
             "__xlist_slot_map__": True,
             "__xlist_slot_map_version__": 1,
