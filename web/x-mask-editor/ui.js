@@ -255,6 +255,10 @@ export function ensureMaskEditorStyles() {
             width: 104px;
             flex: 0 0 104px;
         }
+        .ximageget-mask-editor-region-btn {
+            padding: 0 8px;
+            flex: 0 0 auto;
+        }
         .ximageget-mask-editor-color {
             width: 36px;
             height: 32px;
@@ -753,6 +757,16 @@ export function createMaskEditorUi(texts = {}) {
 
     const paintOpacityGroup = document.createElement("div");
     paintOpacityGroup.className = "ximageget-mask-editor-group";
+    const invertPaintRegionBtn = createButton(
+        "ximageget-mask-editor-action ximageget-mask-editor-region-btn",
+        texts.invertPaintRegion || "Invert Color Area",
+        "contrast.svg"
+    );
+    setButtonTooltip(
+        invertPaintRegionBtn,
+        texts.invertPaintRegionTip
+            || "Swap painted and unpainted areas on the color layer"
+    );
     const paintOpacityLabel = document.createElement("span");
     paintOpacityLabel.className = "ximageget-mask-editor-label";
     paintOpacityLabel.textContent = String(
@@ -782,6 +796,7 @@ export function createMaskEditorUi(texts = {}) {
         paintVisibilityBtn,
         texts.hidePaintTip || "Hide color layer"
     );
+    paintOpacityGroup.appendChild(invertPaintRegionBtn);
     paintOpacityGroup.appendChild(paintOpacityLabel);
     paintOpacityGroup.appendChild(paintOpacityRange);
     paintOpacityGroup.appendChild(paintOpacityInput);
@@ -845,6 +860,16 @@ export function createMaskEditorUi(texts = {}) {
 
     const maskOpacityGroup = document.createElement("div");
     maskOpacityGroup.className = "ximageget-mask-editor-group";
+    const invertMaskRegionBtn = createButton(
+        "ximageget-mask-editor-action ximageget-mask-editor-region-btn",
+        texts.invertMaskRegion || "Invert Mask Area",
+        "contrast.svg"
+    );
+    setButtonTooltip(
+        invertMaskRegionBtn,
+        texts.invertMaskRegionTip
+            || "Swap painted and unpainted areas on the mask layer"
+    );
     const maskOpacityLabel = document.createElement("span");
     maskOpacityLabel.className = "ximageget-mask-editor-label";
     maskOpacityLabel.textContent = String(
@@ -874,6 +899,7 @@ export function createMaskEditorUi(texts = {}) {
         maskVisibilityBtn,
         texts.hideMaskTip || "Hide mask layer"
     );
+    maskOpacityGroup.appendChild(invertMaskRegionBtn);
     maskOpacityGroup.appendChild(maskOpacityLabel);
     maskOpacityGroup.appendChild(maskOpacityRange);
     maskOpacityGroup.appendChild(maskOpacityInput);
@@ -1149,11 +1175,13 @@ export function createMaskEditorUi(texts = {}) {
         resetTransformBtn,
         colorInput,
         paintVisibilityBtn,
+        invertPaintRegionBtn,
         paintOpacityRange,
         paintOpacityInput,
         maskBlackBtn,
         maskWhiteBtn,
         maskVisibilityBtn,
+        invertMaskRegionBtn,
         maskOpacityRange,
         maskOpacityInput,
         invertColorBtn,
