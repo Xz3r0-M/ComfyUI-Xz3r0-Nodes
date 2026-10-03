@@ -1279,7 +1279,7 @@
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "The compact list holding every connected value, in port order. Length equals count."
+        "tooltip": "Everything you connected, in port order. When nothing is connected, the list holds one empty value (None) so downstream nodes still run instead of failing."
       },
       "1": {
         "name": "Count",
@@ -1527,7 +1527,7 @@
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "The restored list with items back in their original positions. Empty slots are None. Length equals the count output."
+        "tooltip": "Every item back in its original slot. Slots you left empty are None. When nothing was connected at all, the list holds one empty value (None)."
       },
       "1": {
         "name": "Count",

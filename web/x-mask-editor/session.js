@@ -1,7 +1,7 @@
 import {
     createMaskEditorUi,
     ensureMaskEditorStyles,
-} from "./ui.js?v=20260412a";
+} from "./ui.js?v=20260916-4";
 
 let activeSession = null;
 
@@ -60,11 +60,13 @@ export function openMaskEditorSession(texts = {}) {
         ui.panBtn.disabled = disabled;
         ui.colorInput.disabled = disabled;
         ui.paintVisibilityBtn.disabled = disabled;
+        ui.invertPaintRegionBtn.disabled = disabled;
         ui.paintOpacityRange.disabled = disabled;
         ui.paintOpacityInput.disabled = disabled;
         ui.maskBlackBtn.disabled = disabled;
         ui.maskWhiteBtn.disabled = disabled;
         ui.maskVisibilityBtn.disabled = disabled;
+        ui.invertMaskRegionBtn.disabled = disabled;
         ui.maskOpacityRange.disabled = disabled;
         ui.maskOpacityInput.disabled = disabled;
         ui.invertColorBtn.disabled = disabled;

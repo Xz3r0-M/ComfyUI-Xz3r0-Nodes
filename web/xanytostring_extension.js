@@ -4,6 +4,7 @@
  *
  * 功能：
  * - 捕获节点的 string 输出并在节点 DOM 面板内显示
+ * - 上游是列表输出时逐项全部显示（带 [序号] 分隔），不再只显示第一条
  * - 支持 ComfyUI 中键平移 / 滚轮缩放转发
  * - 响应 ComfyUI 语言设置（通过 xdatahub_ui.json）
  */
@@ -547,6 +548,39 @@ function createDisplayUI(node) {
 }
 
 // ---------------------------------------------------------------------------
+// Executed output
+// ---------------------------------------------------------------------------
+
+/**
+ * 合并执行结果里的文本，得到面板要显示的内容。
+ *
+ * 上游是列表输出时，ComfyUI 会把本节点按元素执行多次，每次各产出一条
+ * 文本，这些文本统一汇总进 output.text。此前只取第 0 条，导致列表的其余
+ * 元素看不见；这里把每一条都显示出来。
+ *
+ * - 只有一条：原样显示，不加任何前缀（单值场景与旧行为一致）
+ * - 多条：每条前面加 [序号]，条目之间空一行，便于看出共有几项、边界在哪
+ *
+ * @param {*} textValue output.text，通常是字符串数组
+ * @returns {string} 面板显示的完整文本
+ */
+function buildDisplayText(textValue) {
+    if (Array.isArray(textValue)) {
+        var items = textValue.map(function (item) {
+            if (item === null || item === undefined) return "";
+            return String(item);
+        });
+        if (items.length === 0) return "";
+        if (items.length === 1) return items[0];
+        return items.map(function (item, index) {
+            return "[" + (index + 1) + "]\n" + item;
+        }).join("\n\n");
+    }
+    if (textValue === null || textValue === undefined) return "";
+    return String(textValue);
+}
+
+// ---------------------------------------------------------------------------
 // Extension registration
 // ---------------------------------------------------------------------------
 
@@ -579,12 +613,9 @@ app.registerExtension({
             origOnExecuted && origOnExecuted.apply(this, arguments);
             var state = this.__xanytostringState;
             if (!state || !state.displayEl) return;
-            var text = "";
-            if (output && output.text) {
-                text = Array.isArray(output.text)
-                    ? String(output.text[0] || "")
-                    : String(output.text);
-            }
+            var text = (output && output.text)
+                ? buildDisplayText(output.text)
+                : "";
             state.displayEl.textContent = text;
         };
     },
