@@ -1,5 +1,137 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.7.0
+
+<details>
+
+### 1. 🛠️ 增强和修复 `XAnyToString` 任意数据转文本节点
+`♾️ Xz3r0/Workflow-Processing`
+- 修复 上游接的是列表输出时，节点面板只显示第一条内容的问题
+    - 现在会按 `[序号]` 把每一条都显示出来，一眼就能看出共有几项
+- 新增 完整显示 开关
+    - 开启后节点面板里显示完整内容：张量、数组这类数据会把每个元素都打印出来，不再用 `...` 省略中间部分
+    - 只管你在节点界面里看到的文字
+    - 默认为：关闭
+- 新增 完整输出（字符串）开关
+    - 开启后 STRING 输出端口和 xdata 内容都是完整的，下游节点拿到的就是完整文本
+    - 只管传给下游节点的内容，不影响节点面板的显示
+    - 默认为：关闭
+- 内容很长时节点顶部会出现进度条，避免长时间转换看起来像卡死
+
+### 2. 🛠️ 增强和修复 `XAudioProcess` 音频处理节点
+`♾️ Xz3r0/Workflow-Processing`
+- 支持一次处理一批多条音频（例如列表数据）：每条分别处理，处理完再一起输出
+    - 输出前会检查这一批音频的长度是否一致，对不齐时会明确提示，让你改成逐条处理
+- 处理时节点会显示进度条
+- 没有声音的音频自动跳过效果处理，原样返回（重采样除外，改采样率和有没有声音无关）
+    - 「没有声音」按峰值判断，真正的静音和音量低到几乎没有声音都算
+    - 这么做是因为无声音频让 FFmpeg 量不出响度，硬要处理会直接报错
+- NaN / Inf 这类坏数值会自动清成 0，并在日志里给出提示
+    - 这种数据通常来自上游音频解码出问题，不清掉会让 FFmpeg 报错
+- 修复 半精度音频（fp16 / bf16）重采样报错的问题
+
+### 3. 🛠️ 增强 `XAudioSave` 音频保存节点
+`♾️ Xz3r0/File-Processing`
+- 支持一次保存一批多条音频（例如列表数据）
+    - 每条音频单独存成一个文件，文件名自动加序号，不会互相覆盖
+    - 「保存路径」输出改为用分号 `;` 连接全部文件路径
+- 没有声音的音频自动跳过响度处理，直接按目标格式存文件（不会再报错）
+- 存文件前会清掉 NaN / Inf 坏数值，避免文件里出现满幅爆音
+- 音频响度量不出来时会保留第一遍的处理结果，而不是让整个保存失败
+
+### 4. 🛠️ 增强 `XController` 通用控制组件节点
+`♾️ Xz3r0/Workflow-Processing`
+- 设置区的折叠 / 展开状态现在会被记住，随工作流一起保存
+    - 重新打开工作流时保持上次的样子
+    - 默认展开
+
+### 5. 🩹 修复 `XListCreate` 与 `XListRestore` 数据列表节点
+`♾️ Xz3r0/Workflow-Processing`
+- 一个输入都没接通时，「列表」输出改为一个空值 `None`（数量仍为 0），不再输出空列表
+    - 空列表会让下游节点取数据时报错，空值则让下游照常运行（和端口没连接时的空值表现一致）
+- `XListRestore` 收到的数据全是 `None` 时按「空」处理，行为与 `XListCreate` 对齐
+
+### 6. 🛠️ 增强 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet`
+- 新增 颜色区域反转 按钮
+    - 颜色层：画过的地方和没画的地方互换
+- 新增 遮罩区域反转 按钮
+    - 遮罩层：画过的地方和没画的地方互换
+- 反转会保留画笔的柔边过渡，反转后的边缘依旧平滑
+
+### 7. 🩹 修复 `XPipe` / `XPipeGate` / `XListPull` 节点的插槽连线
+`♾️ Xz3r0/Workflow-Processing`
+- 修复新版 ComfyUI 前端下，节点端口重新排序或增删后连线错位、丢失的问题
+    - 涉及 `XPipe`、`XPipeGate` 的端口排序，以及 `XListPull` 的输出端口排序
+- 原因说明：新版前端把「哪个端口连着哪条线」单独存了一份，原来直接改端口数组的做法会让这份记录和界面上看到的端口对不上
+
+---
+
+### 1. 🛠️ Enhanced & Fixed `XAnyToString` Any-to-String Node
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed: when the upstream input is a list output, the node panel showed only the first item
+    - Every item is now shown with a `[number]` prefix, so you can see how many there are at a glance
+- Added Full Display toggle
+    - When Enabled, the node panel shows long content in full: tensors and arrays print every element instead of skipping the middle with `...`
+    - Only changes what you see in the node panel
+    - Default: Disabled
+- Added Full Output (String) toggle
+    - When Enabled, the String output and the xdata payload carry the complete content for downstream nodes
+    - Only changes what downstream nodes receive; it does not change the panel
+    - Default: Disabled
+- A progress bar appears at the top of the node for long conversions, so a slow conversion does not look like a freeze
+
+### 2. 🛠️ Enhanced & Fixed `XAudioProcess` Audio Processing Node
+`♾️ Xz3r0/Workflow-Processing`
+- Several audios can now be processed at once (for example a list): each one is processed on its own and they all come out together
+    - Before outputting, the batch is checked for equal length; if they do not match you get a clear message telling you to process them one at a time
+- The node shows a progress bar while it works
+- Silent audio skips the effects and passes through unchanged (apart from Resample, which works the same whether there is sound or not)
+    - "Silent" is judged by peak level: true silence, and audio so quiet it is essentially silent, both count
+    - This is because FFmpeg cannot measure loudness on silent audio, and forcing it through ends in an error
+- NaN / Inf values are cleaned to 0, with a note in the log
+    - This usually comes from an upstream audio decode problem; leaving them in makes FFmpeg fail
+- Fixed: resampling half-precision audio (fp16 / bf16) no longer errors
+
+### 3. 🛠️ Enhanced `XAudioSave` Audio Save Node
+`♾️ Xz3r0/File-Processing`
+- Several audios can now be saved at once (for example a list)
+    - Each audio is saved as its own file, with an automatic number in the name so they do not overwrite each other
+    - The Saved Path output joins every path with a semicolon `;`
+- Silent audio skips loudness processing and is saved straight to the target format (no more errors)
+- NaN / Inf values are cleaned out before writing, so files no longer get full-scale blasts
+- When loudness cannot be measured, the first pass is kept instead of failing the whole save
+
+### 4. 🛠️ Enhanced `XController` Universal Control Components Node
+`♾️ Xz3r0/Workflow-Processing`
+- The collapsed / expanded state of the settings area is now remembered and saved with the workflow
+    - Reopening the workflow restores the last state
+    - Default: Expanded
+
+### 5. 🩹 Fixed `XListCreate` & `XListRestore` Data List Nodes
+`♾️ Xz3r0/Workflow-Processing`
+- With nothing connected, the List output is now a single empty value `None` (Count stays 0) instead of an empty list
+    - An empty list makes downstream nodes fail when they pick items; an empty value lets them run normally (same as a port with nothing connected)
+- `XListRestore` treats a payload of all `None` as empty, matching `XListCreate`
+
+### 6. 🛠️ Enhanced `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet`
+- Added an Invert Color Area button
+    - Color layer: swap painted and unpainted areas
+- Added an Invert Mask Area button
+    - Mask layer: swap painted and unpainted areas
+- Inverting keeps the soft brush edges, so the boundary stays smooth
+
+### 7. 🩹 Fixed Slot Links of `XPipe` / `XPipeGate` / `XListPull` Nodes
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed links going out of place or being lost when ports are reordered or added/removed on newer ComfyUI frontends
+    - Affects port ordering on `XPipe` and `XPipeGate`, and output port ordering on `XListPull`
+- Why it happened: newer frontends keep a separate record of "which port carries which link", and the old approach of editing the port array directly left that record out of sync with the ports you see
+
+</details>
+
+---
+
 ## 🎉 v2.6.0
 
 <details>
