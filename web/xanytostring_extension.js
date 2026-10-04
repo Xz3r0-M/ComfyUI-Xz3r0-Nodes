@@ -15,6 +15,7 @@ import { app } from "../../scripts/app.js";
 var EXT_NAME = "ComfyUI.Xz3r0.XAnyToString";
 var NODE_CLASS = "XAnyToString";
 var WIDGET_NAME = "xanytostring_display";
+var BOOL_WIDGETS = ["full_display", "full_output"];
 var STYLE_ID = "xanytostring-styles";
 var PROPERTY_COLLAPSED = "xanytostring_collapsed";
 var MIN_NODE_W = 280;
@@ -483,6 +484,7 @@ function createDisplayUI(node) {
     if (!node || node.__xanytostringState) return;
 
     ensureStyles();
+    normalizeBoolValues(node);
 
     var wrap = document.createElement("div");
     wrap.className = "xanytostring-wrap";
@@ -548,6 +550,29 @@ function createDisplayUI(node) {
 }
 
 // ---------------------------------------------------------------------------
+// 开关值兜底
+// ---------------------------------------------------------------------------
+
+/**
+ * 两个开关的值必须是真布尔值。
+ *
+ * 旧工作流按位置存 widget 值，新增开关前保存的节点只有显示面板那一个值
+ * （空字符串），加载时会错落到开关上；这里统一归位成布尔值，
+ * 空值按默认关闭处理。
+ */
+function normalizeBoolValues(node) {
+    var widgets = node && node.widgets;
+    if (!widgets) return;
+    for (var i = 0; i < widgets.length; i++) {
+        var widget = widgets[i];
+        if (!widget || BOOL_WIDGETS.indexOf(widget.name) < 0) continue;
+        if (typeof widget.value !== "boolean") {
+            widget.value = !!widget.value;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Executed output
 // ---------------------------------------------------------------------------
 
@@ -596,11 +621,13 @@ app.registerExtension({
 
         nodeType.prototype.onNodeCreated = function () {
             origOnCreated && origOnCreated.apply(this, arguments);
+            normalizeBoolValues(this);
             createDisplayUI(this);
         };
 
         nodeType.prototype.onConfigure = function () {
             origOnConfigure && origOnConfigure.apply(this, arguments);
+            normalizeBoolValues(this);
             createDisplayUI(this);
             setCollapsed(
                 this.__xanytostringState,
@@ -622,6 +649,7 @@ app.registerExtension({
 
     async loadedGraphNode(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
+        normalizeBoolValues(node);
         createDisplayUI(node);
         setCollapsed(
             node.__xanytostringState,

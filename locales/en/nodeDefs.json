@@ -794,6 +794,14 @@
       "anything": {
         "name": "Any Input",
         "tooltip": "Pass-through input. The pass-through output keeps the same data type as this input while also converting the value with Python str()"
+      },
+      "full_display": {
+        "name": "Full Display",
+        "tooltip": "When Enabled, the node panel shows long content in full: tensors and arrays print every element instead of skipping the middle with '...'. When Disabled, the panel keeps the shortened form. Only changes what you see in the node. Note: printing full content takes longer, so a large tensor can need several seconds."
+      },
+      "full_output": {
+        "name": "Full Output",
+        "tooltip": "When Enabled, the String output and the xdata payload carry the complete content. When Disabled, they keep the shortened form. Only changes what downstream nodes receive; the panel follows Full Display instead. Note: generating full content takes longer, so a large tensor can need several seconds."
       }
     },
     "outputs": {
