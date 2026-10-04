@@ -64,6 +64,7 @@
 - 修复新版 ComfyUI 前端下，节点端口重新排序或增删后连线错位、丢失的问题
     - 涉及 `XPipe`、`XPipeGate` 的端口排序，以及 `XListPull` 的输出端口排序
 - 原因说明：新版前端把「哪个端口连着哪条线」单独存了一份，原来直接改端口数组的做法会让这份记录和界面上看到的端口对不上
+- 导致此问题的改动来自 ComfyUI 前端版本 1.53.0 引入, 从 ComfyUI 0.36.0 版本 (前端版本 1.53.6) 开始
 
 ---
 
@@ -127,6 +128,7 @@
 - Fixed links going out of place or being lost when ports are reordered or added/removed on newer ComfyUI frontends
     - Affects port ordering on `XPipe` and `XPipeGate`, and output port ordering on `XListPull`
 - Why it happened: newer frontends keep a separate record of "which port carries which link", and the old approach of editing the port array directly left that record out of sync with the ports you see
+- The change causing this issue was introduced in ComfyUI frontend version 1.53.0, and it took effect starting from ComfyUI version 0.36.0 (frontend version 1.53.6).
 
 </details>
 
