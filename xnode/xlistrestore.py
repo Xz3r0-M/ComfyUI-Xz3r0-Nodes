@@ -2,6 +2,9 @@
 ====================
 
 按 XListCreate 输出的 slot_map，将稠密 list 散射回含 None 占位的稀疏 list。
+
+XListCreate 一个输入都没接通时，list 输出是单元素 [None] 空值哨兵；
+本节点会把它当空列表处理。
 """
 
 from __future__ import annotations
@@ -22,7 +25,11 @@ _MAX_SLOTS = 50  # 与 XListCreate._MAX_SLOTS / XListPull._MAX_OUTPUTS 一致
 
 
 class XListRestore(io.ComfyNode):
-    """按 slot_map 将稠密 list 还原为稀疏 list（空位 None）。"""
+    """按 slot_map 将稠密 list 还原为稀疏 list（空位 None）。
+
+    一个有效元素都没有时，list 输出 [None]（数量为 0），与 XListCreate
+    的空值哨兵保持一致，避免下游节点拿到空列表后报错。
+    """
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -69,9 +76,9 @@ class XListRestore(io.ComfyNode):
                     display_name="list",
                     is_output_list=True,
                     tooltip=(
-                        "The restored list with items back in their "
-                        "original positions. Empty slots are None. Length "
-                        "equals the count output."
+                        "Every item back in its original slot. Slots you "
+                        "left empty are None. When nothing was connected "
+                        "at all, the list holds one empty value (None)."
                     ),
                 ),
                 io.Int.Output(
@@ -119,8 +126,16 @@ class XListRestore(io.ComfyNode):
                 "slot_map must be a valid xlist_slot_map from XListCreate"
             )
         width = max(0, min(int(raw_width), _MAX_SLOTS))
+
+        # XListCreate 无有效输入时用 [None] 表示“空”（执行层要求
+        # is_output_list 槽位可迭代，裸 None 会崩）。XListCreate 本身会过滤
+        # None，所以全为 None 的 list 只可能是这个空值哨兵。
+        if items and all(item is None for item in items):
+            items = []
+
         if width == 0:
-            return io.NodeOutput([], 0)
+            # 与 XListCreate 一致：空输出用 [None] 而不是空列表。
+            return io.NodeOutput([None], 0)
 
         if len(items) != len(indices):
             raise ValueError("list length must match slot_map indices length")

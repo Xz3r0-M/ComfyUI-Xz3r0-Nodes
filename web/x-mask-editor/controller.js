@@ -648,6 +648,47 @@ export class XMaskEditorController {
         this.emitStateChange();
     }
 
+    /**
+     * 区域反转：已画区域与未画区域互换。
+     *
+     * 用 alpha 取反实现：不透明处变透明，透明处用当前颜色补齐；
+     * 柔边像素的 alpha 同样取反，反转后的边缘依旧平滑。
+     */
+    invertLayerRegion(ctx, canvas, color) {
+        const { r, g, b } = this.hexToRgb(color);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const pixels = imageData.data;
+        for (let index = 0; index < pixels.length; index += 4) {
+            pixels[index] = r;
+            pixels[index + 1] = g;
+            pixels[index + 2] = b;
+            pixels[index + 3] = 255 - pixels[index + 3];
+        }
+        ctx.putImageData(imageData, 0, 0);
+    }
+
+    invertPaintRegion() {
+        this.invertLayerRegion(
+            this.paintCtx,
+            this.paintCanvas,
+            this.paintColor
+        );
+        this.render();
+        this.commitHistory();
+        this.emitStateChange();
+    }
+
+    invertMaskRegion() {
+        this.invertLayerRegion(
+            this.maskCtx,
+            this.maskCanvas,
+            this.maskBrushColor === "black" ? "#000000" : "#ffffff"
+        );
+        this.render();
+        this.commitHistory();
+        this.emitStateChange();
+    }
+
     captureSnapshot() {
         return {
             mask: this.maskCtx.getImageData(

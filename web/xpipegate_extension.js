@@ -11,6 +11,7 @@ import {
     installStableSlotView,
     refreshInputLinkTargets as stableRefreshInputLinkTargets,
     refreshOutputLinkSources as stableRefreshOutputLinkSources,
+    reorderSlots,
     setSlotHidden,
 } from "./x_stable_slots.js";
 import {
@@ -305,11 +306,7 @@ function sortChannelInputs(node) {
         return input !== node.inputs[orderedIndex];
     });
     if (!changed) return;
-    node.inputs.splice.apply(
-        node.inputs,
-        [0, node.inputs.length].concat(ordered),
-    );
-    refreshInputLinkTargets(node);
+    reorderSlots(node, "input", ordered, getLinkInfo);
 }
 
 function sortChannelOutputs(node) {
@@ -335,11 +332,7 @@ function sortChannelOutputs(node) {
         return output !== node.outputs[orderedIndex];
     });
     if (!changed) return;
-    node.outputs.splice.apply(
-        node.outputs,
-        [0, node.outputs.length].concat(ordered),
-    );
-    refreshOutputLinkSources(node);
+    reorderSlots(node, "output", ordered, getLinkInfo);
 }
 
 function addChannelInput(state, channel) {

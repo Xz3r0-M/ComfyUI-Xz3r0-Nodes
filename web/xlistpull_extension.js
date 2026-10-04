@@ -16,6 +16,7 @@ import {
     applyVisibleSlotWindow,
     installStableSlotView,
     refreshOutputLinkSources,
+    reorderSlots,
 } from "./x_stable_slots.js";
 import {
     forEachNodeByComfyClass,
@@ -142,11 +143,11 @@ function ensureOutputOrder(node) {
         }
     }
     if (!changed) return;
-    node.outputs.splice.apply(
-        node.outputs,
-        [0, node.outputs.length].concat(ordered),
-    );
-    refreshOutputLinkSources(node, getLinkInfo);
+    // Duplicates are appended instead of dropped: removing a slot would drop
+    // the links attached to it and shift every later slot's index.
+    reorderSlots(node, "output", ordered, getLinkInfo, {
+        keepUnlisted: true,
+    });
 }
 
 function getUpstreamNode(graph, linkId) {

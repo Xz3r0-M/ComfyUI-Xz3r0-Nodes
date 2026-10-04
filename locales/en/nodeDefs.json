@@ -794,6 +794,14 @@
       "anything": {
         "name": "Any Input",
         "tooltip": "Pass-through input. The pass-through output keeps the same data type as this input while also converting the value with Python str()"
+      },
+      "full_display": {
+        "name": "Full Display",
+        "tooltip": "When Enabled, the node panel shows long content in full: tensors and arrays print every element instead of skipping the middle with '...'. When Disabled, the panel keeps the shortened form. Only changes what you see in the node. Note: printing full content takes longer, so a large tensor can need several seconds."
+      },
+      "full_output": {
+        "name": "Full Output",
+        "tooltip": "When Enabled, the String output and the xdata payload carry the complete content. When Disabled, they keep the shortened form. Only changes what downstream nodes receive; the panel follows Full Display instead. Note: generating full content takes longer, so a large tensor can need several seconds."
       }
     },
     "outputs": {
@@ -813,7 +821,7 @@
   },
   "XAudioProcess": {
     "display_name": "XAudioProcess",
-    "description": "Apply one audio effect at a time — or chain them all at once. Resample, compress, normalize, or limit peaks. Use Chain mode to combine multiple steps in a single node.",
+    "description": "Apply one audio effect at a time — or chain them all at once. Change sample rate, compress dynamics, normalize loudness, or limit peaks. Use Chain mode to combine multiple steps in a single node. When the input holds several audios, each one is processed on its own and they all come out together.",
     "inputs": {
       "audio": {
         "name": "Audio",
@@ -1279,7 +1287,7 @@
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "The compact list holding every connected value, in port order. Length equals count."
+        "tooltip": "Everything you connected, in port order. When nothing is connected, the list holds one empty value (None) so downstream nodes still run instead of failing."
       },
       "1": {
         "name": "Count",
@@ -1527,7 +1535,7 @@
     "outputs": {
       "0": {
         "name": "List",
-        "tooltip": "The restored list with items back in their original positions. Empty slots are None. Length equals the count output."
+        "tooltip": "Every item back in its original slot. Slots you left empty are None. When nothing was connected at all, the list holds one empty value (None)."
       },
       "1": {
         "name": "Count",
@@ -2441,7 +2449,7 @@
       },
       "1": {
         "name": "Saved Path",
-        "tooltip": "Saved file path relative to ComfyUI output directory"
+        "tooltip": "Saved file path relative to ComfyUI output directory. One file per audio; for a batch, all paths are joined with ';'."
       }
     }
   },

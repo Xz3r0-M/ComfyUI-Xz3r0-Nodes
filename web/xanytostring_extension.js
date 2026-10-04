@@ -4,6 +4,7 @@
  *
  * 功能：
  * - 捕获节点的 string 输出并在节点 DOM 面板内显示
+ * - 上游是列表输出时逐项全部显示（带 [序号] 分隔），不再只显示第一条
  * - 支持 ComfyUI 中键平移 / 滚轮缩放转发
  * - 响应 ComfyUI 语言设置（通过 xdatahub_ui.json）
  */
@@ -14,6 +15,7 @@ import { app } from "../../scripts/app.js";
 var EXT_NAME = "ComfyUI.Xz3r0.XAnyToString";
 var NODE_CLASS = "XAnyToString";
 var WIDGET_NAME = "xanytostring_display";
+var BOOL_WIDGETS = ["full_display", "full_output"];
 var STYLE_ID = "xanytostring-styles";
 var PROPERTY_COLLAPSED = "xanytostring_collapsed";
 var MIN_NODE_W = 280;
@@ -482,6 +484,7 @@ function createDisplayUI(node) {
     if (!node || node.__xanytostringState) return;
 
     ensureStyles();
+    normalizeBoolValues(node);
 
     var wrap = document.createElement("div");
     wrap.className = "xanytostring-wrap";
@@ -547,6 +550,62 @@ function createDisplayUI(node) {
 }
 
 // ---------------------------------------------------------------------------
+// 开关值兜底
+// ---------------------------------------------------------------------------
+
+/**
+ * 两个开关的值必须是真布尔值。
+ *
+ * 旧工作流按位置存 widget 值，新增开关前保存的节点只有显示面板那一个值
+ * （空字符串），加载时会错落到开关上；这里统一归位成布尔值，
+ * 空值按默认关闭处理。
+ */
+function normalizeBoolValues(node) {
+    var widgets = node && node.widgets;
+    if (!widgets) return;
+    for (var i = 0; i < widgets.length; i++) {
+        var widget = widgets[i];
+        if (!widget || BOOL_WIDGETS.indexOf(widget.name) < 0) continue;
+        if (typeof widget.value !== "boolean") {
+            widget.value = !!widget.value;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Executed output
+// ---------------------------------------------------------------------------
+
+/**
+ * 合并执行结果里的文本，得到面板要显示的内容。
+ *
+ * 上游是列表输出时，ComfyUI 会把本节点按元素执行多次，每次各产出一条
+ * 文本，这些文本统一汇总进 output.text。此前只取第 0 条，导致列表的其余
+ * 元素看不见；这里把每一条都显示出来。
+ *
+ * - 只有一条：原样显示，不加任何前缀（单值场景与旧行为一致）
+ * - 多条：每条前面加 [序号]，条目之间空一行，便于看出共有几项、边界在哪
+ *
+ * @param {*} textValue output.text，通常是字符串数组
+ * @returns {string} 面板显示的完整文本
+ */
+function buildDisplayText(textValue) {
+    if (Array.isArray(textValue)) {
+        var items = textValue.map(function (item) {
+            if (item === null || item === undefined) return "";
+            return String(item);
+        });
+        if (items.length === 0) return "";
+        if (items.length === 1) return items[0];
+        return items.map(function (item, index) {
+            return "[" + (index + 1) + "]\n" + item;
+        }).join("\n\n");
+    }
+    if (textValue === null || textValue === undefined) return "";
+    return String(textValue);
+}
+
+// ---------------------------------------------------------------------------
 // Extension registration
 // ---------------------------------------------------------------------------
 
@@ -562,11 +621,13 @@ app.registerExtension({
 
         nodeType.prototype.onNodeCreated = function () {
             origOnCreated && origOnCreated.apply(this, arguments);
+            normalizeBoolValues(this);
             createDisplayUI(this);
         };
 
         nodeType.prototype.onConfigure = function () {
             origOnConfigure && origOnConfigure.apply(this, arguments);
+            normalizeBoolValues(this);
             createDisplayUI(this);
             setCollapsed(
                 this.__xanytostringState,
@@ -579,18 +640,16 @@ app.registerExtension({
             origOnExecuted && origOnExecuted.apply(this, arguments);
             var state = this.__xanytostringState;
             if (!state || !state.displayEl) return;
-            var text = "";
-            if (output && output.text) {
-                text = Array.isArray(output.text)
-                    ? String(output.text[0] || "")
-                    : String(output.text);
-            }
+            var text = (output && output.text)
+                ? buildDisplayText(output.text)
+                : "";
             state.displayEl.textContent = text;
         };
     },
 
     async loadedGraphNode(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
+        normalizeBoolValues(node);
         createDisplayUI(node);
         setCollapsed(
             node.__xanytostringState,

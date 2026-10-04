@@ -24,10 +24,25 @@ import torch
 from torchaudio.transforms import Resample
 
 try:
-    from ..xz3r0_utils import get_logger
+    from ..xz3r0_utils import (
+        clamp_compressor_threshold_db,
+        get_logger,
+        is_measurable_lufs,
+        is_silent,
+        peak_amplitude,
+        sanitize_waveform,
+    )
 except ImportError:
-    from xz3r0_utils import get_logger
+    from xz3r0_utils import (
+        clamp_compressor_threshold_db,
+        get_logger,
+        is_measurable_lufs,
+        is_silent,
+        peak_amplitude,
+        sanitize_waveform,
+    )
 
+import comfy.utils
 from comfy_api.latest import io
 
 LOGGER = get_logger(__name__)
@@ -41,6 +56,8 @@ class XAudioProcess(io.ComfyNode):
     一次只做一个音频处理环节——改采样率、压缩动态范围、
     统一响度或限制峰值。把多个节点串起来就能搭出完整的
     母带处理链。
+
+    输入一批多条音频时，每条分别处理，最后一起输出。
 
     处理模式：
         Resample  — 改变采样率（44.1k / 48k / 96k / 192k Hz）
@@ -75,7 +92,9 @@ class XAudioProcess(io.ComfyNode):
                 "them all at once. Change sample rate, "
                 "compress dynamics, normalize loudness, or "
                 "limit peaks. Use 'Chain' mode to combine "
-                "multiple steps in one node."
+                "multiple steps in one node. When the input "
+                "holds several audios, each one is processed "
+                "on its own and they all come out together."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_output_node=False,
@@ -344,64 +363,122 @@ class XAudioProcess(io.ComfyNode):
         """
         waveform = audio["waveform"]
         original_sr = audio["sample_rate"]
+        selected_mode = mode["mode"]
 
-        # 确保波形数据格式正确: (channels, samples)
-        # ComfyUI AUDIO 波形为 (batch, channels, samples)，
-        # 本节点一次只处理一段音频，batch 必须为 1
+        # 统一整理成 (batch, channels, samples)。
+        # 批次里的每一条都当成一段独立音频，逐条处理后再拼回去
         if waveform.dim() == 3:
-            batch_size = waveform.shape[0]
-            if batch_size != 1:
-                raise ValueError(
-                    "XAudioProcess only supports one audio at a time, "
-                    f"got a batch of {batch_size}. Split the audio "
-                    "batch before this node."
-                )
-            waveform = waveform.squeeze(0)
+            batch = waveform
         elif waveform.dim() == 2:
-            pass  # 已经是 (channels, samples)
+            batch = waveform.unsqueeze(0)  # (channels, samples)
         elif waveform.dim() == 1:
-            waveform = waveform.unsqueeze(0)
+            batch = waveform.unsqueeze(0).unsqueeze(0)
         else:
             raise ValueError(
                 f"Unsupported waveform shape: {list(waveform.shape)}. "
-                "Expected (channels, samples) or (1, channels, samples)."
+                "Expected (samples,), (channels, samples) or "
+                "(batch, channels, samples)."
             )
 
-        selected_mode = mode["mode"]
+        if batch.shape[-1] == 0:
+            raise ValueError(
+                "XAudioProcess: input audio is empty (0 samples), "
+                "nothing to process."
+            )
 
-        if selected_mode == "Resample":
-            target_sr = cls.SAMPLE_RATES[mode["sample_rate"]]
-            waveform = cls._process_resample(waveform, original_sr, target_sr)
-            output_sr = target_sr
-        elif selected_mode == "Compress":
-            waveform = cls._process_compress(
-                waveform,
-                original_sr,
-                mode["compression_mode"],
-                mode["use_custom_ratio"],
-                mode["custom_ratio"],
-            )
-            output_sr = original_sr
-        elif selected_mode == "Normalize":
-            waveform = cls._process_normalize(
-                waveform, original_sr, mode["target_lufs"]
-            )
-            output_sr = original_sr
-        elif selected_mode == "Limit":
-            waveform = cls._process_limit(
-                waveform, original_sr, mode["peak_limit"]
-            )
-            output_sr = original_sr
-        elif selected_mode == "Chain":
-            waveform, output_sr = cls._process_chain(
-                waveform, original_sr, mode
-            )
-        else:
-            raise ValueError(f"Unknown processing mode: {selected_mode}")
+        batch_size = batch.shape[0]
+        single = batch_size == 1
+        output_sr = original_sr
+        processed_items = []
+
+        # 进度条：总步数 = 每条音频要跑的步数 × 批次数
+        steps_per_item = cls._count_steps(mode)
+        progress_bar = comfy.utils.ProgressBar(steps_per_item * batch_size)
+
+        for index in range(batch_size):
+            item = batch[index]
+            label = "" if single else f"Batch item {index + 1}/{batch_size}: "
+            base_step = index * steps_per_item
+
+            # NaN / Inf 会一路污染到 FFmpeg 的滤镜参数，先清成 0
+            item, replaced = sanitize_waveform(item)
+            if replaced:
+                LOGGER.warning(
+                    "[XAudioProcess] %sReplaced %d non-finite sample(s) "
+                    "(NaN/Inf) with 0. The upstream audio is likely "
+                    "broken (check the VAE decode precision)",
+                    label,
+                    replaced,
+                )
+
+            # 没有声音的音频无论如何处理都还是没声音，而且 FFmpeg
+            # 也量不出它的响度。直接原样返回，只保留重采样。
+            silent = is_silent(item)
+            if silent and selected_mode != "Resample":
+                LOGGER.warning(
+                    "[XAudioProcess] %sInput audio is silent "
+                    "(peak=%.2e); skipping %s processing and "
+                    "returning it unchanged",
+                    label,
+                    peak_amplitude(item),
+                    selected_mode,
+                )
+
+            if selected_mode == "Resample":
+                target_sr = cls.SAMPLE_RATES[mode["sample_rate"]]
+                item = cls._process_resample(item, original_sr, target_sr)
+                output_sr = target_sr
+            elif selected_mode == "Compress":
+                if not silent:
+                    item = cls._process_compress(
+                        item,
+                        original_sr,
+                        mode["compression_mode"],
+                        mode["use_custom_ratio"],
+                        mode["custom_ratio"],
+                    )
+            elif selected_mode == "Normalize":
+                if not silent:
+                    item = cls._process_normalize(
+                        item, original_sr, mode["target_lufs"]
+                    )
+            elif selected_mode == "Limit":
+                if not silent:
+                    item = cls._process_limit(
+                        item, original_sr, mode["peak_limit"]
+                    )
+            elif selected_mode == "Chain":
+                item, output_sr = cls._process_chain(
+                    item,
+                    original_sr,
+                    mode,
+                    skip_ffmpeg=silent,
+                    progress_bar=progress_bar,
+                    base_step=base_step,
+                )
+            else:
+                raise ValueError(f"Unknown processing mode: {selected_mode}")
+
+            # 这一条处理完了（静音跳过的也算完成）
+            cls._tick(progress_bar, base_step + steps_per_item)
+
+            processed_items.append(item)
 
         # 构建 ComfyUI 音频字典格式 (需要 batch 维度)
+        if single:
+            waveform_out = processed_items[0].unsqueeze(0)
+        else:
+            try:
+                waveform_out = torch.stack(processed_items, dim=0)
+            except RuntimeError as exc:
+                lengths = [int(item.shape[-1]) for item in processed_items]
+                raise RuntimeError(
+                    "XAudioProcess: batch items ended up with different "
+                    f"lengths {lengths}; process them one at a time."
+                ) from exc
+
         processed_audio = {
-            "waveform": waveform.unsqueeze(0),
+            "waveform": waveform_out,
             "sample_rate": output_sr,
         }
 
@@ -443,7 +520,9 @@ class XAudioProcess(io.ComfyNode):
             target_sr,
         )
         resampler = Resample(orig_freq=original_sr, new_freq=target_sr)
-        return resampler(waveform)
+        # torchaudio 的 Resample 只吃 float32（fp16/bf16/float64
+        # 在 CPU 上会直接报类型错误）
+        return resampler(waveform.to(torch.float32))
 
     @classmethod
     def _process_chain(
@@ -451,6 +530,9 @@ class XAudioProcess(io.ComfyNode):
         waveform: torch.Tensor,
         original_sr: int,
         chain_opts: dict,
+        skip_ffmpeg: bool = False,
+        progress_bar=None,
+        base_step: int = 0,
     ) -> tuple[torch.Tensor, int]:
         """
         按顺序串联多个处理环节。
@@ -465,11 +547,16 @@ class XAudioProcess(io.ComfyNode):
             waveform: 音频波形 (channels, samples)
             original_sr: 原始采样率
             chain_opts: Chain 模式的参数字典
+            skip_ffmpeg: 为 True 时跳过需要 FFmpeg 的三个环节
+                （音频没有声音时用，避免无意义的处理与报错）
+            progress_bar: 可选进度条，每个打开的环节推进一步
+            base_step: 本条音频在进度条里的起始步数
 
         Returns:
             (waveform, output_sr)
         """
         output_sr = original_sr
+        step = base_step
 
         # 1. 重采样
         if chain_opts.get("chain_resample", False):
@@ -481,31 +568,46 @@ class XAudioProcess(io.ComfyNode):
             )
             waveform = cls._process_resample(waveform, output_sr, target_sr)
             output_sr = target_sr
+            step += 1
+            cls._tick(progress_bar, step)
 
         # 2. 动态压缩
         if chain_opts.get("chain_compress", False):
-            LOGGER.info("[XAudioProcess] Chain: Compress")
-            waveform = cls._process_compress(
-                waveform,
-                output_sr,
-                chain_opts["compression_mode"],
-                chain_opts["use_custom_ratio"],
-                chain_opts["custom_ratio"],
-            )
+            if not skip_ffmpeg:
+                LOGGER.info("[XAudioProcess] Chain: Compress")
+                waveform = cls._process_compress(
+                    waveform,
+                    output_sr,
+                    chain_opts["compression_mode"],
+                    chain_opts["use_custom_ratio"],
+                    chain_opts["custom_ratio"],
+                )
+            step += 1
+            cls._tick(progress_bar, step)
 
         # 3. 响度标准化
         if chain_opts.get("chain_normalize", False):
-            LOGGER.info("[XAudioProcess] Chain: Normalize")
-            waveform = cls._process_normalize(
-                waveform, output_sr, chain_opts["target_lufs"]
-            )
+            if not skip_ffmpeg:
+                LOGGER.info("[XAudioProcess] Chain: Normalize")
+                waveform = cls._process_normalize(
+                    waveform, output_sr, chain_opts["target_lufs"]
+                )
+            step += 1
+            cls._tick(progress_bar, step)
 
         # 4. 峰值限制
         if chain_opts.get("chain_limit", False):
-            LOGGER.info("[XAudioProcess] Chain: Limit")
-            waveform = cls._process_limit(
-                waveform, output_sr, chain_opts["peak_limit"]
-            )
+            if not skip_ffmpeg:
+                LOGGER.info("[XAudioProcess] Chain: Limit")
+                waveform = cls._process_limit(
+                    waveform, output_sr, chain_opts["peak_limit"]
+                )
+            step += 1
+            cls._tick(progress_bar, step)
+
+        # 一个开关都没打开：也算一步，让进度条照常走完
+        if step == base_step:
+            cls._tick(progress_bar, base_step + 1)
 
         return waveform, output_sr
 
@@ -524,6 +626,13 @@ class XAudioProcess(io.ComfyNode):
         阈值根据音频实际 LUFS 和目标 LUFS (-14) 自动计算，
         与 XAudioSave 的自适应阈值算法保持一致。
         """
+        # 没有声音就没什么可压缩的；直接原样返回
+        if is_silent(waveform):
+            LOGGER.warning(
+                "[XAudioProcess] Compress: input is silent, skipping"
+            )
+            return waveform
+
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
             raise RuntimeError(
@@ -606,13 +715,28 @@ class XAudioProcess(io.ComfyNode):
             if stats_json is None:
                 raise RuntimeError(cls.AUDIO_PROCESS_ERROR)
 
+            # 量不出响度（静音、极短等）时不硬算阈值，
+            # 否则会给 FFmpeg 递一个 -inf 参数
+            if not is_measurable_lufs(stats_json["input_i"]):
+                LOGGER.warning(
+                    "[XAudioProcess] Compress: loudness is not "
+                    "measurable (input_i=%s); returning audio "
+                    "unchanged",
+                    stats_json["input_i"],
+                )
+                return waveform
+
             actual_lufs = float(stats_json["input_i"])
 
             # 步骤 3: 计算自适应阈值
             dynamic_offset = (actual_lufs - target_lufs) * 0.3 + config[
                 "base_offset"
             ]
-            adaptive_threshold = actual_lufs + dynamic_offset
+            # acompressor 只接受 -60 dB ~ 0 dB：极轻的音频算出来的
+            # 阈值会越界，这里兜底夹回合法范围
+            adaptive_threshold = clamp_compressor_threshold_db(
+                actual_lufs + dynamic_offset
+            )
 
             LOGGER.info(
                 "[XAudioProcess] Compress: LUFS=%.1f, "
@@ -663,9 +787,10 @@ class XAudioProcess(io.ComfyNode):
             ).float()
             waveform_out = torch.clamp(waveform_out, -1.0, 1.0)
 
-            return waveform_out.to(waveform.device)
+            return cls._cleanup_ffmpeg_output(waveform_out, waveform.device)
 
         except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
+            cls._log_ffmpeg_error(exc)
             raise RuntimeError(cls.AUDIO_PROCESS_ERROR) from exc
         finally:
             for path in files_to_cleanup:
@@ -695,13 +820,12 @@ class XAudioProcess(io.ComfyNode):
             return waveform
 
         # 静音/近静音输入：FFmpeg loudnorm 无法测量响度，
-        # 直接原样返回，避免无意义的处理与警告
-        energy = (waveform**2).sum().item()
-        if energy < 1e-8:
+        # 直接原样返回，避免无意义的处理与报错
+        if is_silent(waveform):
             LOGGER.warning(
                 "[XAudioProcess] Normalize: input is silent "
-                "(energy=%.2e), skipping",
-                energy,
+                "(peak=%.2e), skipping",
+                peak_amplitude(waveform),
             )
             return waveform
 
@@ -771,38 +895,52 @@ class XAudioProcess(io.ComfyNode):
                 raise RuntimeError(cls.AUDIO_PROCESS_ERROR)
 
             # 步骤 4: 第二遍 — 精确线性调整
-            loudnorm_filter = (
-                f"loudnorm="
-                f"I={target_lufs}:TP=0:linear=true:"
-                f"measured_I={stats_rough['input_i']}:"
-                f"measured_LRA={stats_rough['input_lra']}:"
-                f"measured_TP={stats_rough['input_tp']}:"
-                f"measured_thresh={stats_rough['input_thresh']}"
-            )
+            # loudnorm 量不出响度时（静音、极短、或全是坏数值），
+            # measured_* 会是非法的 -inf，传给滤镜会让 FFmpeg 直接失败；
+            # 这种情况下用第一遍的结果，不再做精确调整
+            result_path = rough_path
+            if is_measurable_lufs(stats_rough["input_i"]):
+                loudnorm_filter = (
+                    f"loudnorm="
+                    f"I={target_lufs}:TP=0:linear=true:"
+                    f"measured_I={stats_rough['input_i']}:"
+                    f"measured_LRA={stats_rough['input_lra']}:"
+                    f"measured_TP={stats_rough['input_tp']}:"
+                    f"measured_thresh={stats_rough['input_thresh']}"
+                )
 
-            with tempfile.NamedTemporaryFile(
-                suffix=".wav", delete=False
-            ) as tmp:
-                output_path = tmp.name
-                files_to_cleanup.append(output_path)
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav", delete=False
+                ) as tmp:
+                    output_path = tmp.name
+                    files_to_cleanup.append(output_path)
 
-            ffmpeg.input(rough_path).output(
-                output_path,
-                acodec="pcm_f32le",
-                af=loudnorm_filter,
-                ar=sample_rate,
-                **{"loglevel": "error"},
-            ).overwrite_output().run(capture_stdout=True, capture_stderr=True)
+                ffmpeg.input(rough_path).output(
+                    output_path,
+                    acodec="pcm_f32le",
+                    af=loudnorm_filter,
+                    ar=sample_rate,
+                    **{"loglevel": "error"},
+                ).overwrite_output().run(
+                    capture_stdout=True, capture_stderr=True
+                )
 
-            LOGGER.info(
-                "[XAudioProcess] Normalize: target=%.1f LUFS, input_i=%s",
-                target_lufs,
-                stats_rough["input_i"],
-            )
+                LOGGER.info(
+                    "[XAudioProcess] Normalize: target=%.1f LUFS, input_i=%s",
+                    target_lufs,
+                    stats_rough["input_i"],
+                )
+                result_path = output_path
+            else:
+                LOGGER.warning(
+                    "[XAudioProcess] Normalize: loudness is not "
+                    "measurable (input_i=%s); keeping the first pass",
+                    stats_rough["input_i"],
+                )
 
             # 步骤 5: 读回结果
             sample_rate_out, audio_data_out = wavfile.read(
-                output_path, mmap=False
+                result_path, mmap=False
             )
 
             if audio_data_out.ndim == 1:
@@ -813,9 +951,10 @@ class XAudioProcess(io.ComfyNode):
             ).float()
             waveform_out = torch.clamp(waveform_out, -1.0, 1.0)
 
-            return waveform_out.to(waveform.device)
+            return cls._cleanup_ffmpeg_output(waveform_out, waveform.device)
 
         except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
+            cls._log_ffmpeg_error(exc)
             raise RuntimeError(cls.AUDIO_PROCESS_ERROR) from exc
         finally:
             for path in files_to_cleanup:
@@ -838,6 +977,11 @@ class XAudioProcess(io.ComfyNode):
         把音频峰值压在你设定的上限以下，防止下游处理或
         导出时削波。
         """
+        # 没有声音就没有峰值可限，直接原样返回
+        if is_silent(waveform):
+            LOGGER.warning("[XAudioProcess] Limit: input is silent, skipping")
+            return waveform
+
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
             raise RuntimeError(
@@ -901,9 +1045,10 @@ class XAudioProcess(io.ComfyNode):
             ).float()
             waveform_out = torch.clamp(waveform_out, -1.0, 1.0)
 
-            return waveform_out.to(waveform.device)
+            return cls._cleanup_ffmpeg_output(waveform_out, waveform.device)
 
         except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
+            cls._log_ffmpeg_error(exc)
             raise RuntimeError(cls.AUDIO_PROCESS_ERROR) from exc
         finally:
             for path in files_to_cleanup:
@@ -916,6 +1061,72 @@ class XAudioProcess(io.ComfyNode):
     # ================================================================
     # 工具方法
     # ================================================================
+
+    @classmethod
+    def _cleanup_ffmpeg_output(
+        cls, waveform: torch.Tensor, device: torch.device
+    ) -> torch.Tensor:
+        """
+        清理 FFmpeg 处理结果里的坏数值。
+
+        FFmpeg 的 loudnorm 量不出响度时会输出 NaN（静音信号乘
+        无穷大增益），这里统一清成 0，保证输出永远是可用的音频。
+        """
+        cleaned, replaced = sanitize_waveform(waveform)
+        if replaced:
+            LOGGER.warning(
+                "[XAudioProcess] FFmpeg output contained %d non-finite "
+                "sample(s); replaced with 0",
+                replaced,
+            )
+        return cleaned.to(device)
+
+    @staticmethod
+    def _tick(progress_bar, value: int) -> None:
+        """推进进度条（没有进度条时什么都不做）。"""
+        if progress_bar is not None:
+            progress_bar.update_absolute(value)
+
+    @classmethod
+    def _count_steps(cls, mode: dict) -> int:
+        """
+        统计选中模式下，每条音频要跑几步（用于算进度条总步数）。
+
+        Chain 模式按实际打开的开关数量算（一个都没开算 1 步），
+        其它模式算 1 步。
+        """
+        if mode["mode"] != "Chain":
+            return 1
+        enabled = sum(
+            1
+            for key in (
+                "chain_resample",
+                "chain_compress",
+                "chain_normalize",
+                "chain_limit",
+            )
+            if mode.get(key, False)
+        )
+        return max(enabled, 1)
+
+    @classmethod
+    def _log_ffmpeg_error(cls, exc: Exception) -> None:
+        """
+        把 FFmpeg 的原始报错写进日志。
+
+        否则除了 “Audio processing failed” 之外什么都看不到，
+        线上排查只能靠猜。
+        """
+        stderr = getattr(exc, "stderr", None)
+        if not stderr:
+            return
+        text = stderr.decode("utf-8", "replace").strip()
+        if not text:
+            return
+        LOGGER.error(
+            "[XAudioProcess] FFmpeg: %s",
+            " | ".join(text.splitlines())[:600],
+        )
 
     @classmethod
     def _prepare_waveform_for_io(cls, waveform: torch.Tensor) -> np.ndarray:
