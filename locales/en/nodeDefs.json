@@ -821,7 +821,7 @@
   },
   "XAudioProcess": {
     "display_name": "XAudioProcess",
-    "description": "Apply one audio effect at a time — or chain them all at once. Resample, compress, normalize, or limit peaks. Use Chain mode to combine multiple steps in a single node.",
+    "description": "Apply one audio effect at a time — or chain them all at once. Change sample rate, compress dynamics, normalize loudness, or limit peaks. Use Chain mode to combine multiple steps in a single node. When the input holds several audios, each one is processed on its own and they all come out together.",
     "inputs": {
       "audio": {
         "name": "Audio",
@@ -2449,7 +2449,7 @@
       },
       "1": {
         "name": "Saved Path",
-        "tooltip": "Saved file path relative to ComfyUI output directory"
+        "tooltip": "Saved file path relative to ComfyUI output directory. One file per audio; for a batch, all paths are joined with ';'."
       }
     }
   },

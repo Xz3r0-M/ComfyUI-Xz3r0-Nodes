@@ -24,20 +24,30 @@ from torchaudio.transforms import Resample
 
 try:
     from ..xz3r0_utils import (
+        clamp_compressor_threshold_db,
         ensure_unique_filename,
         get_logger,
+        is_measurable_lufs,
+        is_silent,
+        peak_amplitude,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
+        sanitize_waveform,
     )
 except ImportError:
     # 兼容直接执行测试脚本时从仓库根目录导入 xnode 的场景。
     from xz3r0_utils import (
+        clamp_compressor_threshold_db,
         ensure_unique_filename,
         get_logger,
+        is_measurable_lufs,
+        is_silent,
+        peak_amplitude,
         replace_datetime_tokens,
         resolve_output_subpath,
         sanitize_path_component,
+        sanitize_waveform,
     )
 
 try:
@@ -280,7 +290,8 @@ class XAudioSave(io.ComfyNode):
                 io.String.Output(
                     "save_path",
                     tooltip="Saved file path relative to ComfyUI "
-                    "output directory",
+                    "output directory. One file per audio; for a "
+                    "batch, all paths are joined with ';'.",
                 ),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
@@ -351,70 +362,94 @@ class XAudioSave(io.ComfyNode):
         waveform = audio["waveform"]
         original_sr = audio["sample_rate"]
 
-        # 确保波形数据格式正确
+        # 统一整理成 (batch, channels, samples)。
+        # 批次里的每一条都当成一段独立音频，分别处理、分别存一个文件
         if waveform.dim() == 3:
-            waveform = waveform.squeeze(0)
-        if waveform.dim() == 1:
-            waveform = waveform.unsqueeze(0)
+            batch = waveform
+        elif waveform.dim() == 2:
+            batch = waveform.unsqueeze(0)
+        elif waveform.dim() == 1:
+            batch = waveform.unsqueeze(0).unsqueeze(0)
+        else:
+            raise ValueError(
+                f"Unsupported waveform shape: {list(waveform.shape)}. "
+                "Expected (samples,), (channels, samples) or "
+                "(batch, channels, samples)."
+            )
 
         # 获取目标采样率
         target_sr = cls.SAMPLE_RATES[sample_rate]
 
-        # 定义处理步骤数
-        # 步骤 1: 重采样，步骤 2: 文件名生成，步骤 3-10: 音频处理各阶段
-        total_steps = 10
+        extension = ".wav" if output_format == "WAV" else ".flac"
+        final_lufs = target_lufs if target_lufs > -70 else None
+        batch_size = batch.shape[0]
+        single = batch_size == 1
+
+        # 定义处理步骤数（每条音频 10 步：
+        # 重采样 1 步 + 文件名 1 步 + 处理各阶段 8 步）
+        steps_per_item = 10
+        total_steps = steps_per_item * batch_size
         progress_bar = comfy.utils.ProgressBar(total_steps)
 
-        # 重采样音频 (如果需要)
-        if original_sr != target_sr:
-            waveform = cls._resample_audio(waveform, original_sr, target_sr)
-        progress_bar.update_absolute(1)
+        saved_paths = []
+        processed_items = []
+        for index in range(batch_size):
+            item = batch[index]
+            label = "" if single else f"Batch item {index + 1}/{batch_size}: "
+            base_step = index * steps_per_item
 
-        # 生成文件名 (添加序列号)
-        base_filename = safe_filename_prefix
-        extension = ".wav" if output_format == "WAV" else ".flac"
-        final_filename = ensure_unique_filename(
-            save_dir, base_filename, extension
-        )
-        progress_bar.update_absolute(2)
-
-        try:
-            save_path = resolve_output_subpath(
-                output_dir,
-                Path(safe_subfolder) / final_filename,
-            )
-        except ValueError as exc:
-            raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
-
-        # 处理 LUFS 标准化和峰值限制
-        # WAV 容器在当前 FFmpeg 路径下无法稳定保留自定义工作流元数据，
-        # 因此 WAV 路径不做 metadata 注入。FLAC 路径会注入 metadata。
-        final_lufs = target_lufs if target_lufs > -70 else None
-        if final_lufs is not None:
-            if output_format == "WAV":
-                waveform = cls._normalize_audio(
-                    waveform,
-                    target_sr,
-                    final_lufs,
-                    enable_peak_limiter,
-                    peak_limit,
-                    enable_compression,
-                    compression_mode,
-                    use_custom_ratio,
-                    custom_ratio,
-                    save_path,
-                    progress_bar,
-                    current_step=2,
+            # NaN / Inf 会污染 FFmpeg 的滤镜参数，写进文件也会变成
+            # 满幅爆音（FLAC）或坏数值（WAV），先清成 0
+            item, replaced = sanitize_waveform(item)
+            if replaced:
+                LOGGER.warning(
+                    "[XAudioSave] %sReplaced %d non-finite sample(s) "
+                    "(NaN/Inf) with 0. The upstream audio is likely "
+                    "broken (check the VAE decode precision)",
+                    label,
+                    replaced,
                 )
-            else:
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav", delete=False
-                ) as temp_output:
-                    temp_output_path = temp_output.name
 
-                try:
-                    waveform = cls._normalize_audio(
-                        waveform,
+            # 没有声音的音频不做响度处理：既没有意义，FFmpeg 也量不出
+            # 它的响度（会直接报错）；直接按目标格式保存即可
+            silent = is_silent(item)
+            if silent:
+                LOGGER.warning(
+                    "[XAudioSave] %sInput audio is silent (peak=%.2e); "
+                    "saving it without loudness processing",
+                    label,
+                    peak_amplitude(item),
+                )
+
+            # 重采样音频 (如果需要)
+            if original_sr != target_sr:
+                item = cls._resample_audio(item, original_sr, target_sr)
+            progress_bar.update_absolute(base_step + 1)
+
+            # 生成文件名：批次里多加一段序号，避免互相覆盖
+            base_filename = safe_filename_prefix
+            if not single:
+                base_filename = f"{base_filename}_{index:04d}"
+            final_filename = ensure_unique_filename(
+                save_dir, base_filename, extension
+            )
+            progress_bar.update_absolute(base_step + 2)
+
+            try:
+                save_path = resolve_output_subpath(
+                    output_dir,
+                    Path(safe_subfolder) / final_filename,
+                )
+            except ValueError as exc:
+                raise RuntimeError(cls.INVALID_SAVE_PATH_ERROR) from exc
+
+            # 处理 LUFS 标准化和峰值限制
+            # WAV 容器在当前 FFmpeg 路径下无法稳定保留自定义工作流元数据，
+            # 因此 WAV 路径不做 metadata 注入。FLAC 路径会注入 metadata。
+            if final_lufs is not None and not silent:
+                if output_format == "WAV":
+                    item = cls._normalize_audio(
+                        item,
                         target_sr,
                         final_lufs,
                         enable_peak_limiter,
@@ -423,58 +458,92 @@ class XAudioSave(io.ComfyNode):
                         compression_mode,
                         use_custom_ratio,
                         custom_ratio,
-                        Path(temp_output_path),
+                        save_path,
                         progress_bar,
-                        current_step=2,
+                        current_step=base_step + 2,
                     )
+                else:
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".wav", delete=False
+                    ) as temp_output:
+                        temp_output_path = temp_output.name
+
+                    try:
+                        item = cls._normalize_audio(
+                            item,
+                            target_sr,
+                            final_lufs,
+                            enable_peak_limiter,
+                            peak_limit,
+                            enable_compression,
+                            compression_mode,
+                            use_custom_ratio,
+                            custom_ratio,
+                            Path(temp_output_path),
+                            progress_bar,
+                            current_step=base_step + 2,
+                        )
+                        metadata = cls._generate_metadata(
+                            cls.hidden.prompt,
+                            cls.hidden.extra_pnginfo,
+                        )
+                        cls._save_flac_from_source(
+                            source_path=temp_output_path,
+                            target_path=save_path,
+                            metadata=metadata,
+                        )
+                    finally:
+                        if os.path.exists(temp_output_path):
+                            try:
+                                os.remove(temp_output_path)
+                            except OSError:
+                                pass
+            else:
+                # 没有 LUFS 标准化（或音频没有声音）时按目标格式直接保存。
+                if output_format == "WAV":
+                    cls._save_wav_32bit_float(
+                        item,
+                        save_path,
+                        target_sr,
+                    )
+                else:
                     metadata = cls._generate_metadata(
                         cls.hidden.prompt,
                         cls.hidden.extra_pnginfo,
                     )
-                    cls._save_flac_from_source(
-                        source_path=temp_output_path,
-                        target_path=save_path,
+                    cls._save_flac_from_waveform(
+                        waveform=item,
+                        path=save_path,
+                        sample_rate=target_sr,
                         metadata=metadata,
                     )
-                finally:
-                    if os.path.exists(temp_output_path):
-                        try:
-                            os.remove(temp_output_path)
-                        except OSError:
-                            pass
-        else:
-            # 没有 LUFS 标准化时按目标格式直接保存。
-            if output_format == "WAV":
-                cls._save_wav_32bit_float(
-                    waveform,
-                    save_path,
-                    target_sr,
-                )
-            else:
-                metadata = cls._generate_metadata(
-                    cls.hidden.prompt,
-                    cls.hidden.extra_pnginfo,
-                )
-                cls._save_flac_from_waveform(
-                    waveform=waveform,
-                    path=save_path,
-                    sample_rate=target_sr,
-                    metadata=metadata,
-                )
-            progress_bar.update_absolute(total_steps)
 
-        cls._validate_saved_file(save_path)
+            cls._validate_saved_file(save_path)
 
-        # 记录相对路径
-        relative_path = cls._build_relative_save_path(save_path, output_dir)
+            # 记录相对路径
+            saved_paths.append(
+                cls._build_relative_save_path(save_path, output_dir)
+            )
+            processed_items.append(item)
+
+            # 这一条存好了：推进到本条末尾，保证进度条能走到 100%
+            # （响度处理内部的进度最多只到本条的第 9 步）
+            progress_bar.update_absolute(base_step + steps_per_item)
 
         # 构建 ComfyUI 音频字典格式 (需要 batch 维度)
+        if single:
+            waveform_out = processed_items[0].unsqueeze(0)
+        else:
+            waveform_out = torch.stack(processed_items, dim=0)
+
         processed_audio = {
-            "waveform": waveform.unsqueeze(0),
+            "waveform": waveform_out,
             "sample_rate": target_sr,
         }
 
-        return io.NodeOutput(processed_audio, relative_path)
+        # 批次里多条音频会存成多个文件，路径用分号分隔
+        save_path_str = ";".join(saved_paths)
+        return io.NodeOutput(processed_audio, save_path_str)
 
     @classmethod
     def _resample_audio(
@@ -642,7 +711,15 @@ class XAudioSave(io.ComfyNode):
                 target_lufs,
             )
 
-            if enable_compression:
+            lufs_measurable = is_measurable_lufs(actual_lufs)
+            if enable_compression and not lufs_measurable:
+                LOGGER.warning(
+                    "[XAudioSave] Compression skipped: loudness is not "
+                    "measurable (input_i=%s)",
+                    stats_json["input_i"],
+                )
+
+            if enable_compression and lufs_measurable:
                 preset_configs = {
                     "Fast": {
                         "base_offset": 6.0,
@@ -680,7 +757,11 @@ class XAudioSave(io.ComfyNode):
                 dynamic_offset = (actual_lufs - target_lufs) * 0.3 + config[
                     "base_offset"
                 ]
-                adaptive_threshold = actual_lufs + dynamic_offset
+                # acompressor 只接受 -60 dB ~ 0 dB：极轻的音频算出来
+                # 的阈值会越界，这里兜底夹回合法范围
+                adaptive_threshold = clamp_compressor_threshold_db(
+                    actual_lufs + dynamic_offset
+                )
 
                 LOGGER.debug(
                     "[XAudioSave] Dynamic offset: %.2f dB, "
@@ -799,30 +880,40 @@ class XAudioSave(io.ComfyNode):
             rough_tp = str(stats_rough["input_tp"])
             rough_thresh = str(stats_rough["input_thresh"])
 
-            loudnorm_filter = (
-                f"loudnorm=I={target_lufs}:TP={loudnorm_tp}:linear=true:"
-                f"measured_I={rough_i}:measured_LRA={rough_lra}:"
-                f"measured_TP={rough_tp}:measured_thresh={rough_thresh}"
-            )
-
             with tempfile.NamedTemporaryFile(
                 suffix=".wav", delete=False
             ) as lufs_file:
                 lufs_path = lufs_file.name
                 files_to_cleanup.append(lufs_path)
 
-            stdout_lufs, stderr_lufs = (
-                ffmpeg.input(rough_path)
-                .output(
-                    lufs_path,
-                    acodec="pcm_f32le",
-                    af=loudnorm_filter,
-                    ar=sample_rate,
-                    **{"loglevel": "error"},
+            if is_measurable_lufs(rough_i):
+                loudnorm_filter = (
+                    f"loudnorm=I={target_lufs}:TP={loudnorm_tp}:linear=true:"
+                    f"measured_I={rough_i}:measured_LRA={rough_lra}:"
+                    f"measured_TP={rough_tp}:measured_thresh={rough_thresh}"
                 )
-                .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
-            )
+
+                stdout_lufs, stderr_lufs = (
+                    ffmpeg.input(rough_path)
+                    .output(
+                        lufs_path,
+                        acodec="pcm_f32le",
+                        af=loudnorm_filter,
+                        ar=sample_rate,
+                        **{"loglevel": "error"},
+                    )
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True)
+                )
+            else:
+                # 量不出响度（静音、极短等）时 measured_* 是非法的
+                # -inf，直接用第一遍的结果，不让 FFmpeg 报错
+                LOGGER.warning(
+                    "[XAudioSave] Loudness is not measurable "
+                    "(input_i=%s); keeping the first pass",
+                    rough_i,
+                )
+                shutil.copy2(rough_path, lufs_path)
 
             _, stderr_after = (
                 ffmpeg.input(str(lufs_path))
@@ -886,10 +977,8 @@ class XAudioSave(io.ComfyNode):
             if progress_bar:
                 progress_bar.update_absolute(current_step + 6)
 
-            shutil.copy2(lufs_path, final_save_path)
-
             sample_rate_out, audio_data_out = wavfile.read(
-                lufs_path, mmap=True
+                lufs_path, mmap=False
             )
 
             if audio_data_out.ndim == 1:
@@ -899,6 +988,23 @@ class XAudioSave(io.ComfyNode):
                 np.transpose(audio_data_out, (1, 0))
             ).float()
             waveform_processed = torch.clamp(waveform_processed, -1.0, 1.0)
+
+            # FFmpeg 的 loudnorm 量不出响度时会输出 NaN（静音信号乘
+            # 无穷大增益）：先清成 0 并回写一份干净的结果，再复制到
+            # 最终路径，避免把坏数值写进用户文件
+            waveform_processed, replaced = cls._cleanup_non_finite(
+                waveform_processed
+            )
+            if replaced:
+                wavfile.write(
+                    lufs_path,
+                    sample_rate_out,
+                    np.transpose(waveform_processed.numpy(), (1, 0)).astype(
+                        np.float32
+                    ),
+                )
+
+            shutil.copy2(lufs_path, final_save_path)
 
             try:
                 waveform_processed = waveform_processed.to(
@@ -921,6 +1027,7 @@ class XAudioSave(io.ComfyNode):
             )
             return waveform_processed
         except (ffmpeg.Error, OSError, ValueError, RuntimeError) as exc:
+            cls._log_ffmpeg_error(exc)
             raise RuntimeError(cls.AUDIO_NORMALIZE_ERROR) from exc
         finally:
             for path in files_to_cleanup:
@@ -1084,6 +1191,47 @@ class XAudioSave(io.ComfyNode):
             for key, value in extra_pnginfo.items():
                 metadata[key] = json.dumps(value)
         return metadata
+
+    @classmethod
+    def _cleanup_non_finite(
+        cls, waveform: torch.Tensor
+    ) -> tuple[torch.Tensor, int]:
+        """
+        把波形里的 NaN / Inf 清成 0。
+
+        FFmpeg 的 loudnorm 量不出响度时会输出 NaN（静音信号乘无穷大
+        增益），这类数值写进文件会变成满幅爆音，必须清掉。
+
+        Returns:
+            (清理后的波形, 被替换的采样点个数)
+        """
+        cleaned, replaced = sanitize_waveform(waveform)
+        if replaced:
+            LOGGER.warning(
+                "[XAudioSave] FFmpeg output contained %d non-finite "
+                "sample(s); replaced with 0",
+                replaced,
+            )
+        return cleaned, replaced
+
+    @classmethod
+    def _log_ffmpeg_error(cls, exc: Exception) -> None:
+        """
+        把 FFmpeg 的原始报错写进日志。
+
+        否则除了 “Audio normalization failed” 之外什么都看不到，
+        线上排查只能靠猜。
+        """
+        stderr = getattr(exc, "stderr", None)
+        if not stderr:
+            return
+        text = stderr.decode("utf-8", "replace").strip()
+        if not text:
+            return
+        LOGGER.error(
+            "[XAudioSave] FFmpeg: %s",
+            " | ".join(text.splitlines())[:600],
+        )
 
     @classmethod
     def _prepare_waveform_for_io(cls, waveform: torch.Tensor) -> np.ndarray:

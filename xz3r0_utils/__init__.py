@@ -8,6 +8,13 @@
 一致方式导入。
 """
 
+from .audio_guard import (
+    clamp_compressor_threshold_db,
+    is_measurable_lufs,
+    is_silent,
+    peak_amplitude,
+    sanitize_waveform,
+)
 from .core_db_registry import get_critical_db_names
 from .datetime_tokens import replace_datetime_tokens
 from .filename_uniqueness import ensure_unique_filename
@@ -36,6 +43,12 @@ from .xdatahub_media_refs import (
 )
 
 __all__ = [
+    # audio_guard
+    "clamp_compressor_threshold_db",
+    "is_measurable_lufs",
+    "is_silent",
+    "peak_amplitude",
+    "sanitize_waveform",
     "replace_datetime_tokens",
     "ensure_unique_filename",
     "get_critical_db_names",
