@@ -24,35 +24,310 @@ function slotLinkIds(slot) {
 }
 
 /**
+ * Moving links when slots move
+ * ============================
+ * Newer ComfyUI frontends keep "which link is on which slot" in a registry
+ * keyed by slot index. A slot's own link field is only a read-only echo of
+ * that registry, and writing a link's target slot is validated: if the
+ * destination is still occupied the write is refused (and only logged).
+ *
+ * Consequences for this file:
+ * - capture slot -> link pairs BEFORE touching the slot arrays
+ *   ({@link captureSlotLinks}); after the arrays move, put the links back
+ *   with {@link applySlotLinks} / {@link reorderSlots}.
+ * - a plain "for each slot: link.target_slot = index" loop can neither read
+ *   the right pairing (the echo already answers by index) nor perform a
+ *   swap (the write is refused) - that is why refreshInputLinkTargets /
+ *   refreshOutputLinkSources are kept only as no-op compatibility shims.
+ */
+
+function slotLinkAt(node, direction, index, getLinkInfo) {
+    var slots = direction === "input" ? node.inputs : node.outputs;
+    var slot = slots && slots[index];
+    if (!slot) return null;
+    if (direction === "input" && typeof node.getInputLink === "function") {
+        var direct = node.getInputLink(index);
+        if (direct) return direct;
+    }
+    if (typeof getLinkInfo !== "function" || !node.graph) return null;
+    var ids = slotLinkIds(slot);
+    for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
+        var link = getLinkInfo(node.graph, ids[linkIndex]);
+        if (link) return link;
+    }
+    return null;
+}
+
+function linkSlotNumber(link, direction) {
+    if (!link) return -1;
+    var value = direction === "input" ? link.target_slot : link.origin_slot;
+    return typeof value === "number" ? value : -1;
+}
+
+/**
+ * Point a link at a slot index. Returns true when it stuck (see the store's
+ * validation note above).
+ */
+function writeLinkSlotNumber(link, direction, index) {
+    if (!link) return false;
+    if (direction === "input") link.target_slot = index;
+    else link.origin_slot = index;
+    return linkSlotNumber(link, direction) === index;
+}
+
+function slotIndexOf(node, direction, slot) {
+    var slots = direction === "input" ? node.inputs : node.outputs;
+    return slots ? slots.indexOf(slot) : -1;
+}
+
+function addParkingSlot(node, direction) {
+    var slot = null;
+    if (direction === "input") {
+        node.addInput("__xzr0_park", "*");
+        slot = node.inputs[node.inputs.length - 1];
+    } else {
+        node.addOutput("__xzr0_park", "*");
+        slot = node.outputs[node.outputs.length - 1];
+    }
+    return slot;
+}
+
+function removeTrailingSlot(node, direction, index) {
+    var slots = direction === "input" ? node.inputs : node.outputs;
+    if (!slots || index !== slots.length - 1) return;
+    if (direction === "input" && typeof node.removeInput === "function") {
+        node.removeInput(index);
+    } else if (
+        direction === "output"
+        && typeof node.removeOutput === "function"
+    ) {
+        node.removeOutput(index);
+    } else {
+        slots.splice(index, 1);
+    }
+}
+
+/**
+ * Snapshot "slot -> link" for the current array order.
+ * Call this BEFORE moving slots around.
+ * @param {object} node
+ * @param {"input"|"output"} direction
+ * @param {function(object, *): object|null} getLinkInfo
+ * @returns {Map<object, object>}
+ */
+export function captureSlotLinks(node, direction, getLinkInfo) {
+    var bindings = new Map();
+    var slots = !node
+        ? null
+        : (direction === "input" ? node.inputs : node.outputs);
+    if (!Array.isArray(slots)) return bindings;
+    for (var index = 0; index < slots.length; index++) {
+        var link = slotLinkAt(node, direction, index, getLinkInfo);
+        if (link) bindings.set(slots[index], link);
+    }
+    return bindings;
+}
+
+/**
+ * Put captured links back onto the (moved) slots they belong to.
+ *
+ * Writes that would land on an occupied slot are staged through a free slot
+ * first, so a swap of two slots cannot be refused halfway. Parking slots are
+ * appended at the tail and removed again, which never shifts other slots.
+ *
+ * @param {object} node
+ * @param {"input"|"output"} direction
+ * @param {Map<object, object>} bindings  from {@link captureSlotLinks}
+ * @param {function(object, *): object|null} getLinkInfo
+ * @returns {{moved: number, failed: number}}
+ */
+export function applySlotLinks(node, direction, bindings, getLinkInfo) {
+    var result = { moved: 0, failed: 0 };
+    if (!node || !node.graph || !bindings || !bindings.size) return result;
+    var isInput = direction === "input";
+    var pending = [];
+    bindings.forEach(function (link, slot) {
+        if (!link) return;
+        var index = slotIndexOf(node, direction, slot);
+        if (index < 0) return;
+        if (linkSlotNumber(link, direction) === index) return;
+        pending.push({ link: link, target: index, attempts: 0 });
+    });
+    if (!pending.length) return result;
+
+    var parked = [];
+    var guard = 0;
+    while (pending.length && guard++ < 200) {
+        var progressed = false;
+        for (var index = 0; index < pending.length; index++) {
+            var move = pending[index];
+            var occupant = isInput
+                ? slotLinkAt(node, direction, move.target, getLinkInfo)
+                : null;
+            // Writes on the output side are never validated, so an occupant
+            // only blocks input slots.
+            if (occupant && occupant !== move.link) continue;
+            if (writeLinkSlotNumber(move.link, direction, move.target)) {
+                pending.splice(index, 1);
+                index--;
+                result.moved++;
+                progressed = true;
+            } else {
+                move.attempts++;
+            }
+        }
+        if (progressed) continue;
+
+        // Every remaining move is blocked by another one (a swap/rotation):
+        // stage one of them in a free slot and retry.
+        var parking = findParkingIndex(node, direction, pending, getLinkInfo);
+        if (parking < 0) {
+            var extra = addParkingSlot(node, direction);
+            parking = slotIndexOf(node, direction, extra);
+            if (parking >= 0) parked.push(parking);
+        }
+        if (parking < 0) break;
+        if (!writeLinkSlotNumber(pending[0].link, direction, parking)) break;
+        pending[0].attempts++;
+    }
+
+    for (var done = parked.length - 1; done >= 0; done--) {
+        removeTrailingSlot(node, direction, parked[done]);
+    }
+    result.failed = pending.length;
+    return result;
+}
+
+function findParkingIndex(node, direction, pending, getLinkInfo) {
+    var slots = direction === "input" ? node.inputs : node.outputs;
+    if (!Array.isArray(slots)) return -1;
+    var reserved = {};
+    for (var index = 0; index < pending.length; index++) {
+        reserved[pending[index].target] = true;
+    }
+    for (var candidate = slots.length - 1; candidate >= 0; candidate--) {
+        if (reserved[candidate]) continue;
+        if (slotLinkAt(node, direction, candidate, getLinkInfo)) continue;
+        return candidate;
+    }
+    return -1;
+}
+
+/**
+ * Replace the slot order, keeping every link attached to its own slot.
+ *
+ * `orderedSlots` must be a permutation of the current slots; when
+ * `keepUnlisted` is set, slots left out of the list are appended at the end
+ * instead of being silently dropped (dropping a linked slot would lose the
+ * connection).
+ *
+ * @param {object} node
+ * @param {"input"|"output"} direction
+ * @param {Array} orderedSlots
+ * @param {function(object, *): object|null} getLinkInfo
+ * @param {{keepUnlisted?: boolean}} [options]
+ * @returns {boolean} true when the array was reordered
+ */
+export function reorderSlots(
+    node,
+    direction,
+    orderedSlots,
+    getLinkInfo,
+    options,
+) {
+    var slots = !node
+        ? null
+        : (direction === "input" ? node.inputs : node.outputs);
+    if (!Array.isArray(slots) || !Array.isArray(orderedSlots)) return false;
+    var next = orderedSlots.filter(function (slot) {
+        return slots.indexOf(slot) >= 0;
+    });
+    var unique = [];
+    for (var index = 0; index < next.length; index++) {
+        if (unique.indexOf(next[index]) < 0) unique.push(next[index]);
+    }
+    if (options && options.keepUnlisted) {
+        for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+            if (unique.indexOf(slots[slotIndex]) < 0) unique.push(slots[slotIndex]);
+        }
+    }
+    var unchanged = unique.length === slots.length
+        && unique.every(function (slot, position) {
+            return slot === slots[position];
+        });
+    if (unchanged) return false;
+
+    var bindings = captureSlotLinks(node, direction, getLinkInfo);
+    slots.splice.apply(slots, [0, slots.length].concat(unique));
+    var applied = applySlotLinks(node, direction, bindings, getLinkInfo);
+    if (applied.failed) {
+        console.warn(
+            "[XPipe] " + applied.failed + " link(s) could not follow their "
+            + "slot after reordering; reopen the workflow to resync.",
+        );
+    }
+    return true;
+}
+
+/**
+ * Remove one slot through the frontend API so the link registry stays in
+ * sync (plain array filtering shifts every later slot but not its links).
+ * @param {object} node
+ * @param {"input"|"output"} direction
+ * @param {object} slot  the slot object to remove
+ * @returns {boolean} true when the slot was removed
+ */
+export function removeSlot(node, direction, slot) {
+    var index = slotIndexOf(node, direction, slot);
+    if (index < 0) return false;
+    if (direction === "input") {
+        if (typeof node.removeInput === "function") {
+            node.removeInput(index);
+            return true;
+        }
+        return node.inputs.splice(index, 1).length > 0;
+    }
+    if (typeof node.removeOutput === "function") {
+        node.removeOutput(index);
+        return true;
+    }
+    return node.outputs.splice(index, 1).length > 0;
+}
+
+/**
+ * Compatibility shims. On newer frontends a slot's link field answers by
+ * slot index only, so a bare "re-point every linked slot" pass cannot repair
+ * anything (and a swap would be refused). They now re-anchor the links to the
+ * index each slot currently holds, which is a no-op unless slots were moved
+ * without using {@link reorderSlots}.
  * @param {object} node
  * @param {function(object, *): object|null} getLinkInfo
  */
 export function refreshInputLinkTargets(node, getLinkInfo) {
     if (!node || !node.graph || !Array.isArray(node.inputs)) return;
     if (typeof getLinkInfo !== "function") return;
-    for (var index = 0; index < node.inputs.length; index++) {
-        var ids = slotLinkIds(node.inputs[index]);
-        for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
-            var link = getLinkInfo(node.graph, ids[linkIndex]);
-            if (link) link.target_slot = index;
-        }
-    }
+    applySlotLinks(
+        node,
+        "input",
+        captureSlotLinks(node, "input", getLinkInfo),
+        getLinkInfo,
+    );
 }
 
 /**
+ * @see refreshInputLinkTargets
  * @param {object} node
  * @param {function(object, *): object|null} getLinkInfo
  */
 export function refreshOutputLinkSources(node, getLinkInfo) {
     if (!node || !node.graph || !Array.isArray(node.outputs)) return;
     if (typeof getLinkInfo !== "function") return;
-    for (var index = 0; index < node.outputs.length; index++) {
-        var ids = slotLinkIds(node.outputs[index]);
-        for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
-            var link = getLinkInfo(node.graph, ids[linkIndex]);
-            if (link) link.origin_slot = index;
-        }
-    }
+    applySlotLinks(
+        node,
+        "output",
+        captureSlotLinks(node, "output", getLinkInfo),
+        getLinkInfo,
+    );
 }
 
 /**

@@ -5,6 +5,8 @@ import {
     installStableSlotView,
     refreshInputLinkTargets as stableRefreshInputLinkTargets,
     refreshOutputLinkSources as stableRefreshOutputLinkSources,
+    removeSlot,
+    reorderSlots,
     setSlotHidden,
 } from "./x_stable_slots.js";
 import {
@@ -689,11 +691,7 @@ function ensureInputOrder(node) {
         }
     }
     if (!changed) return;
-    node.inputs.splice.apply(
-        node.inputs,
-        [0, node.inputs.length].concat(ordered),
-    );
-    refreshInputLinkTargets(node);
+    reorderSlots(node, "input", ordered, getLinkInfo);
 }
 
 function ensureOutputOrder(node) {
@@ -722,11 +720,7 @@ function ensureOutputOrder(node) {
         }
     }
     if (!changed) return;
-    node.outputs.splice.apply(
-        node.outputs,
-        [0, node.outputs.length].concat(ordered),
-    );
-    refreshOutputLinkSources(node);
+    reorderSlots(node, "output", ordered, getLinkInfo);
 }
 
 function normalizeValueInputs(node) {
@@ -1530,9 +1524,13 @@ function createState(node) {
 
 function removeBackingInputSlot(node) {
     if (!node || !Array.isArray(node.inputs)) return;
-    node.inputs = node.inputs.filter(function (input) {
-        return String(input && input.name || "") !== NAMES_WIDGET;
-    });
+    // Remove through the frontend API: filtering the array by hand shifts
+    // every later slot but leaves the links pointing at their old indexes.
+    for (var index = node.inputs.length - 1; index >= 0; index--) {
+        var input = node.inputs[index];
+        if (String(input && input.name || "") !== NAMES_WIDGET) continue;
+        removeSlot(node, "input", input);
+    }
 }
 
 function refreshNodeLayout(node) {
