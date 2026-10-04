@@ -14,6 +14,8 @@ import { app } from "../../scripts/app.js";
 var EXT_NAME = "ComfyUI.Xz3r0.XController";
 var NODE_CLASS = "XController";
 var DOM_WIDGET_NAME = "xcontrol_ui";
+/** 折叠状态存进 node.properties 的键名（随工作流存盘） */
+var PROPERTY_COLLAPSED = "xcontroller_collapsed";
 var LOCALE_PREFIX = "xdatahub.ui.node.xcontrol";
 var LOCALE_SYNC_INTERVAL = 1000;
 var localeSyncInstalled = false;
@@ -1237,6 +1239,59 @@ var MIN_NODE_W = 320;
 var NODE_CHROME_H = 90;
 
 // ================================================================
+// 设置区折叠状态的记忆（存 node.properties）
+// ================================================================
+
+/**
+ * 读回上次保存的折叠状态。没有记录时默认展开（false），
+ * 兼容旧工作流（不含该字段）。
+ */
+function resolveStoredCollapsed(node) {
+    if (node && node.properties
+        && typeof node.properties[PROPERTY_COLLAPSED] === "boolean") {
+        return node.properties[PROPERTY_COLLAPSED];
+    }
+    return false;
+}
+
+/**
+ * 把折叠状态写进 node.properties（随工作流存盘）并标记画布有改动。
+ * 值没变时不写，避免无谓地把工作流标成「已修改」。
+ */
+function persistCollapsed(node, collapsed) {
+    if (!node) return;
+    node.properties = node.properties || {};
+    if (node.properties[PROPERTY_COLLAPSED] === collapsed) return;
+    node.properties[PROPERTY_COLLAPSED] = collapsed;
+    if (node.graph && typeof node.graph.change === "function") {
+        node.graph.change();
+    }
+}
+
+/**
+ * 只更新界面：设置面板显隐 + 箭头图标。不写盘、不改尺寸。
+ */
+function applyCollapsedUI(node, collapsed) {
+    node.__xcontrolCollapsed = collapsed;
+    if (node.__xcontrolConfigPanel) {
+        node.__xcontrolConfigPanel.style.display = collapsed ? "none" : "flex";
+    }
+    if (node.__xcontrolToggleBtn) {
+        node.__xcontrolToggleBtn.textContent = collapsed ? "▶" : "▼";
+    }
+}
+
+/**
+ * 加载/撤销等恢复路径：把保存的折叠状态应用回界面（不写盘）。
+ */
+function restoreCollapsedState(node) {
+    if (!node || !node.__xcontrolUI) return false;
+    var collapsed = resolveStoredCollapsed(node);
+    applyCollapsedUI(node, collapsed);
+    return collapsed;
+}
+
+// ================================================================
 // 构建 UI
 // ================================================================
 
@@ -1392,18 +1447,14 @@ function buildXControlUI(node) {
     node.__xcontrolValueInput = valueInput;
     node.__xcontrolControlSection = controlSection;
     node.__xcontrolToggleBtn = toggleBtn;
-    node.__xcontrolCollapsed = false;
+    // 首次搭建先按已保存值定位（旧工作流无记录 → 默认展开）
+    node.__xcontrolCollapsed = resolveStoredCollapsed(node);
 
     // ── 折叠/展开（设置区） ──
+    // 只给点击用：恢复路径走 restoreCollapsedState()，不在此重复写盘/改尺寸
     function setCollapsed(collapsed) {
-        node.__xcontrolCollapsed = collapsed;
-        if (collapsed) {
-            configPanel.style.display = "none";
-            toggleBtn.textContent = "▶";
-        } else {
-            configPanel.style.display = "flex";
-            toggleBtn.textContent = "▼";
-        }
+        applyCollapsedUI(node, collapsed);
+        persistCollapsed(node, collapsed);
         adjustNodeSize(node, true);
     }
 
@@ -2453,6 +2504,7 @@ app.registerExtension({
                 console.error("[XController] onConfigure prepare error:", err);
             }
             syncControlTypeUI(this);
+            restoreCollapsedState(this);
             adjustNodeSize(this, true);
 
             // 微任务：当前调用栈（含 paste 的 connect / graph.configure 节点循环）结束后
@@ -2485,6 +2537,7 @@ app.registerExtension({
             ensureControlType(node);
             syncControlTypeUI(node);
         }
+        restoreCollapsedState(node);
         adjustNodeSize(node, true);
     },
 
