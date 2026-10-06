@@ -685,16 +685,19 @@ function syncDynamicChannels(state) {
     applyVisibleSlotWindow(state.node.outputs, function (output) {
         return channelOutputNumber(output && output.name);
     }, count);
-    // enable_* inputs are widget-backed; keep them out of the vertical pack
-    // via their widget association, and hide switches past visibleCount.
+    // enable_* 是 widget 口：超出可见范围的通道不仅要把开关藏起来，
+    // 输入槽也得一起隐藏，否则会留下一个可点的圆点（如 enable_22）。
+    // installStableSlotView 会在排版时过滤掉隐藏槽，不会撑大节点高度。
     for (var enableCh = 1; enableCh <= GATE_SLOTS; enableCh++) {
         var enableIndex = slotIndexByName(
             state.node.inputs,
             "enable_" + enableCh,
         );
         if (enableIndex >= 0) {
-            // Never use channel hide pos on widget slots; clear flag only.
-            setSlotHidden(state.node.inputs[enableIndex], false);
+            var enableSlot = state.node.inputs[enableIndex];
+            // 已连线的 enable 口保持可见（与通道口保持一致）。
+            var enableLinked = slotLinkIds(enableSlot).length > 0;
+            setSlotHidden(enableSlot, enableCh > count && !enableLinked);
         }
     }
     var bundleIn = slotIndexByName(state.node.inputs, BUNDLE_INPUT);
@@ -1258,6 +1261,8 @@ app.registerExtension({
         forEachPipeGate(app.graph, function (node) {
             node.__xpipeGateCounted = true;
             gateNodeCount++;
+            // 先去掉内部 port_names 的输入圆点，再处理 enable 状态。
+            hideNamesWidget(node);
             if (node.__xpipeGateEnablesReady) return;
             node.__xpipeGateEnablesReady = true;
             var state = ensurePipeGate(node);
@@ -1335,6 +1340,9 @@ app.registerExtension({
             this.__xpipeGateEnablesReady = true;
             applyEnableStates(this, state.enables);
             updateControlWidgets(this);
+            // configure 会重建输入槽，立即隐藏并移除 port_names 圆点，
+            // 不等待防抖刷新。
+            hideNamesWidget(this);
             scheduleRefresh();
         };
 

@@ -12,6 +12,10 @@
  */
 
 import { app } from "../../scripts/app.js";
+import {
+    applyHiddenWidgetLayers,
+    removeWidgetInput,
+} from "./core/hidden-widget.js";
 
 // =========================================================================
 // 本地化 Key 常量（参照 XImageGet2 模式）
@@ -451,6 +455,7 @@ var HIDDEN_WIDGET_NAMES = [
     "__compare_curve",
     "__compare_wheel_ctrl",
     "__compare_slide_dir",
+    "__live_preview",
 ];
 
 function findWidget(node, name) {
@@ -475,35 +480,23 @@ function ensureHiddenWidget(node, name, defaultValue) {
     if (!widget && typeof node.addWidget === "function") {
         widget = node.addWidget("text", name, String(defaultValue), function () {});
     }
+    applyHiddenWidgetLayers(widget);
     if (widget) {
-        widget.hidden = true;
-        widget.options = widget.options || {};
-        widget.options.hidden = true;
         widget.serializeValue = function () {
             return this.value;
         };
     }
+    // 内部 widget 不应该有可点的输入圆点。
+    removeWidgetInput(node, name);
     return widget || null;
 }
 
 function removeHiddenInputSlots(node) {
     if (!node || !Array.isArray(node.inputs)) return;
-    var nameSet = {};
+    // 用前端 API 移除，保持连线注册表同步；直接过滤数组会在下一次
+    // 重绘/加载时“复活”并留下圆点（见 skill comfyui-node-inputs）。
     for (var i = 0; i < HIDDEN_WIDGET_NAMES.length; i++) {
-        nameSet[HIDDEN_WIDGET_NAMES[i]] = true;
-    }
-    var filtered = [];
-    for (var j = 0; j < node.inputs.length; j++) {
-        var inp = node.inputs[j];
-        if (!inp || !nameSet[String(inp.name || "")]) {
-            filtered.push(inp);
-        }
-    }
-    if (filtered.length !== node.inputs.length) {
-        node.inputs = filtered;
-        if (node.graph && typeof node.graph.setDirtyCanvas === "function") {
-            node.graph.setDirtyCanvas(true, true);
-        }
+        removeWidgetInput(node, HIDDEN_WIDGET_NAMES[i]);
     }
 }
 
@@ -2180,6 +2173,7 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             origOnCreated && origOnCreated.apply(this, arguments);
             createCompareUI(this);
+            removeHiddenInputSlots(this);
             restoreState(this.__xcompareState);
             clampNodeSize(this);
             suppressNativePreview(this);
@@ -2188,6 +2182,8 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function () {
             origOnConfigure && origOnConfigure.apply(this, arguments);
             createCompareUI(this);
+            // configure 会重建输入槽：重新移除内部 widget 的圆点。
+            removeHiddenInputSlots(this);
             restoreState(this.__xcompareState);
             clampNodeSize(this);
             suppressNativePreview(this);
@@ -2218,6 +2214,7 @@ app.registerExtension({
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
         // 图形加载后重新应用 min-size（参照 XImageGet2）
         createCompareUI(node);
+        removeHiddenInputSlots(node);
         restoreState(node.__xcompareState);
         clampNodeSize(node);
         suppressNativePreview(node);

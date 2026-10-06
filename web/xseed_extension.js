@@ -328,6 +328,14 @@ function hideNativeWidget(node, name) {
     }
 }
 
+/** 一次性隐藏 XSeed 的四个内部 widget + 去掉它们的输入圆点。 */
+function hideAllNativeWidgets(node) {
+    hideNativeWidget(node, WIDGET_SEED);
+    hideNativeWidget(node, WIDGET_LAST_SEED);
+    hideNativeWidget(node, WIDGET_RANDOM);
+    hideNativeWidget(node, WIDGET_LAST_SEED_LOCKED);
+}
+
 // ---------------------------------------------------------------------------
 // 隐藏 widget 读写
 // ---------------------------------------------------------------------------
@@ -529,10 +537,7 @@ function createSeedUI(node) {
     if (!node || node.__xseedState) return;
 
     ensureStyles();
-    hideNativeWidget(node, WIDGET_SEED);
-    hideNativeWidget(node, WIDGET_LAST_SEED);
-    hideNativeWidget(node, WIDGET_RANDOM);
-    hideNativeWidget(node, WIDGET_LAST_SEED_LOCKED);
+    hideAllNativeWidgets(node);
 
     var state = {
         node: node,
@@ -927,6 +932,9 @@ app.registerExtension({
         var origOnConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {
             origOnConfigure && origOnConfigure.apply(this, arguments);
+            // configure 会重建输入槽：重新隐藏，否则内部 widget 的
+            // 输入圆点会“复活”（见 skill comfyui-node-inputs）。
+            hideAllNativeWidgets(this);
             applySeedLocale(this.__xseedState);
             attachBeforeQueued(this, this.__xseedState);
             refreshUIFromWidgets(this, this.__xseedState);
@@ -942,6 +950,7 @@ app.registerExtension({
 
     async loadedGraphNode(node) {
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
+        hideAllNativeWidgets(node);
         applySeedLocale(node.__xseedState);
         attachBeforeQueued(node, node.__xseedState);
         refreshUIFromWidgets(node, node.__xseedState);

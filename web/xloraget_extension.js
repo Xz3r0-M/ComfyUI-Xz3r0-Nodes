@@ -4,6 +4,10 @@ import {
     getModuloAccentIndex as getNodeAccentIndex,
     getHexAccentFromModuloId as getNodeAccentColor,
 } from "./core/node-accent.js";
+import {
+    applyHiddenWidgetLayers,
+    removeWidgetInput,
+} from "./core/hidden-widget.js";
 
 const EXT_NAME = "xz3r0.xloraget";
 const EXT_GUARD_KEY = "__xloraget_extension_registered__";
@@ -1242,12 +1246,12 @@ function ensureStorageWidget(node) {
     if (!widget && typeof node.addWidget === "function") {
         widget = node.addWidget("text", STORAGE_WIDGET, "[]", () => {});
     }
+    // 五层隐藏 + 移除输入圆点（见 skill comfyui-node-inputs）。
+    applyHiddenWidgetLayers(widget);
     if (widget) {
-        widget.hidden = true;
-        widget.options = widget.options || {};
-        widget.options.hidden = true;
         widget.serializeValue = () => widget.value;
     }
+    removeWidgetInput(node, STORAGE_WIDGET);
     return widget || null;
 }
 

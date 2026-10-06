@@ -40,6 +40,7 @@ var LIST_TO_PIPE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
 var NAMES_WIDGET = "port_names";
+var TYPE_WARNING_WIDGET = "type_warning";
 var HIDE_STATE_PROP = "xpipe_hide_links_state";
 var VALUE_HIDE_STATE_PROP = "xpipe_hide_value_links_state";
 var NAMES_PROP = "xpipe_names";
@@ -1644,9 +1645,14 @@ function removeBackingInputSlot(node) {
     if (!node || !Array.isArray(node.inputs)) return;
     // Remove through the frontend API: filtering the array by hand shifts
     // every later slot but leaves the links pointing at their old indexes.
+    //
+    // NAMES_WIDGET（port_names）和 type_warning 都只是控件：
+    // socketless 并不会真的去掉它们在前端的输入圆点，必须显式移除。
+    // 尤其是 type_warning：留着它会让它成为可被连线/被提升的插槽。
     for (var index = node.inputs.length - 1; index >= 0; index--) {
         var input = node.inputs[index];
-        if (String(input && input.name || "") !== NAMES_WIDGET) continue;
+        var name = String(input && input.name || "");
+        if (name !== NAMES_WIDGET && name !== TYPE_WARNING_WIDGET) continue;
         removeSlot(node, "input", input);
     }
 }
