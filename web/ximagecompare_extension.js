@@ -369,8 +369,42 @@ function installLocaleSync() {
 // 清除标准 ComfyUI 图片预览
 // =========================================================================
 
+/**
+ * 告诉 ComfyUI「本节点自己画预览，不要再画一份原生的」。
+ *
+ * Nodes 2.0（Vue 渲染节点）里，原生图片预览由前端组件直接读节点输出渲染，
+ * 删除 node.images / 移除 $$canvas-image-preview widget 都拦不住它；
+ * 前端为此提供了官方开关 node.hideOutputImages。
+ */
+function suppressNativePreview(node) {
+    if (!node) return;
+    node.hideOutputImages = true;
+}
+
+/**
+ * 把节点输出里的 images 抹掉。
+ *
+ * 新版前端在调用 onExecuted 之前，已把输出深拷贝进 Vue 渲染用的 store，
+ * 所以只删 onExecuted 收到的那个对象不够 —— 必须再从 app.nodeOutputs 删一次：
+ * 它是前端自己的「可变视图」，删除会同步回 store，两套预览就都拿不到图了。
+ * （旧版前端 app.nodeOutputs 是普通对象，删了也无副作用。）
+ */
+function dropStoredOutputImages(node) {
+    if (!node) return;
+    var outputs = app && app.nodeOutputs;
+    if (!outputs) return;
+    try {
+        var entry = outputs[String(node.id)];
+        if (entry && entry.images) delete entry.images;
+    } catch (e) { /* ignore */ }
+}
+
 function clearStandardPreview(node) {
     if (!node) return;
+
+    suppressNativePreview(node);
+    dropStoredOutputImages(node);
+
     delete node.images;
     delete node.imgs;
     node.imageIndex = null;
@@ -2148,6 +2182,7 @@ app.registerExtension({
             createCompareUI(this);
             restoreState(this.__xcompareState);
             clampNodeSize(this);
+            suppressNativePreview(this);
         };
 
         nodeType.prototype.onConfigure = function () {
@@ -2155,11 +2190,14 @@ app.registerExtension({
             createCompareUI(this);
             restoreState(this.__xcompareState);
             clampNodeSize(this);
+            suppressNativePreview(this);
         };
 
         nodeType.prototype.onExecuted = function (output) {
-            // 在调用原始 onExecuted 之前提取并删除 images，
-            // 阻止 ComfyUI 创建标准图片预览
+            // 先把 images 取出来存着（本节点自己画对比画布要用），
+            // 再从输出里删掉。注意：新版前端在调用 onExecuted 之前，
+            // 已经把这份输出深拷贝进了 Vue 渲染用的 store，
+            // 所以真正生效的是结尾的 clearStandardPreview（会同步清掉 store 里那份）。
             var savedImages = null;
             if (output && output.images && output.images.length >= 1) {
                 savedImages = output.images.slice();
@@ -2182,6 +2220,7 @@ app.registerExtension({
         createCompareUI(node);
         restoreState(node.__xcompareState);
         clampNodeSize(node);
+        suppressNativePreview(node);
     },
 
     async setup() {
