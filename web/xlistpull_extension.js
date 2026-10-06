@@ -16,7 +16,9 @@ import {
     applyVisibleSlotWindow,
     installStableSlotView,
     refreshOutputLinkSources,
+    removeSlot,
     reorderSlots,
+    slotLinkIdsOf,
 } from "./x_stable_slots.js";
 import {
     forEachNodeByComfyClass,
@@ -266,10 +268,29 @@ function getListInputType(node) {
             break;
         }
     }
-    if (listInp && listInp.link != null && node.graph && node.graph.links) {
-        var linkObj = node.graph.links[listInp.link];
-        if (linkObj && linkObj.type && linkObj.type !== "*") {
-            return linkObj.type;
+    if (listInp && listInp.link != null && node.graph) {
+        var linkObj = getLinkInfo(node.graph, listInp.link);
+        if (linkObj) {
+            // 上游 list 输出端口的实时类型优先。连线建立时的 link.type 可能
+            // 还是 “*”（那时 XListCreate 还没接输入、类型未确定），只读
+            // link.type 会把下游 Data 端口也卡在 “*”。
+            var upstream = getUpstreamNode(node.graph, listInp.link);
+            if (upstream && Array.isArray(upstream.outputs)) {
+                var originSlot = linkObj.origin_slot;
+                var upstreamOut = originSlot != null
+                    ? upstream.outputs[originSlot]
+                    : null;
+                if (
+                    upstreamOut
+                    && upstreamOut.type
+                    && upstreamOut.type !== "*"
+                ) {
+                    return upstreamOut.type;
+                }
+            }
+            if (linkObj.type && linkObj.type !== "*") {
+                return linkObj.type;
+            }
         }
     }
     // fallback: 从已有输出中找
@@ -420,6 +441,185 @@ function fixNodeSize(node) {
     }
 }
 
+var MAX_CREATE_INPUTS = 50;
+// 只补齐少量缺号，避免在异常状态下凭空造出一大堆空端口。
+var MAX_CREATE_GAP_FILL = 8;
+
+// LiteGraph 的槽位方向常量：输入。
+function liteGraphInputSlotType() {
+    if (typeof LiteGraph !== "undefined" && LiteGraph.INPUT != null) {
+        return LiteGraph.INPUT;
+    }
+    return 1;
+}
+
+/**
+ * XListCreate 的 Autogrow 输入按端口号排回正确顺序。
+ *
+ * 新版前端在加载工作流时会为已连接输入补出后续端口，找插入位置靠
+ * 「名字前缀匹配」：给 input2 找前一个端口时，"inputs.input1" 会同时
+ * 命中 input10…input19，于是端口被塞到错误位置，刷新后顺序变成
+ * 1、10…19、2、3… 这类乱序。这里按端口号重排，并用 reorderSlots
+ * 让连线跟着自己的端口一起移动。
+ */
+function ensureListCreateInputOrder(node) {
+    if (!node || !Array.isArray(node.inputs)) return;
+    var channels = [];
+    var others = [];
+    var seen = {};
+    var highest = 0;
+    for (var index = 0; index < node.inputs.length; index++) {
+        var input = node.inputs[index];
+        var slot = resolveAutogrowSlotNumber(input && input.name);
+        if (slot > 0) {
+            channels.push(input);
+            seen[slot] = true;
+            if (slot > highest) highest = slot;
+        } else {
+            others.push(input);
+        }
+    }
+    if (channels.length < 2) return;
+    // 缺号修复：乱序过程可能弄丢中间某个端口（如 21），这里按序号补齐空端口，
+    // 和原生 Autogrow “端口必须连续”的预期一致。补齐数量有限，不改变已有连线。
+    var missing = 0;
+    var missingNums = [];
+    for (var num = 1; num <= highest && num <= MAX_CREATE_INPUTS; num++) {
+        if (seen[num]) continue;
+        missing++;
+        missingNums.push(num);
+    }
+    if (missing > 0 && missing <= MAX_CREATE_GAP_FILL) {
+        for (var fill = 0; fill < missingNums.length; fill++) {
+            var fillNum = missingNums[fill];
+            var name = "inputs.input" + fillNum;
+            if (typeof node.addInput !== "function") break;
+            node.addInput(name, "*");
+            var added = node.inputs[node.inputs.length - 1];
+            if (!added) break;
+            added.name = name;
+            channels.push(added);
+            seen[fillNum] = true;
+        }
+    }
+    channels.sort(function (left, right) {
+        return resolveAutogrowSlotNumber(left.name)
+            - resolveAutogrowSlotNumber(right.name);
+    });
+    var ordered = channels.concat(others);
+    var changed = ordered.length !== node.inputs.length;
+    if (!changed) {
+        for (var other = 0; other < ordered.length; other++) {
+            if (ordered[other] !== node.inputs[other]) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed) {
+        // keepUnlisted：万一名单里漏了某个端口，宁可追加也不要丢掉它的连线。
+        reorderSlots(node, "input", ordered, getLinkInfo, {
+            keepUnlisted: true,
+        });
+    }
+    trimTrailingEmptyListCreateInputs(node);
+}
+
+/** 该输入端口上是否挂着连线。 */
+function listCreateInputHasLink(node, index) {
+    if (!node || !Array.isArray(node.inputs) || !node.inputs[index]) {
+        return false;
+    }
+    if (typeof node.getInputLink === "function" && node.getInputLink(index)) {
+        return true;
+    }
+    return slotLinkIdsOf(node.inputs[index]).length > 0;
+}
+
+/**
+ * 去掉末尾多余的空白输入端口。
+ *
+ * 原生 Autogrow 只会在「已连接的最大号」后面留一个空位（方便继续加端口）。
+ * 前面的乱序/补齐可能留下好几个空白尾巴，这里把多出来的删掉，只保留一个。
+ * 已连了线的端口绝不删除；什么都没接时至少保留两个空位（与原生一致）。
+ */
+function trimTrailingEmptyListCreateInputs(node) {
+    if (!node || !Array.isArray(node.inputs)) return;
+    var highestLinked = 0;
+    for (var index = 0; index < node.inputs.length; index++) {
+        var slot = resolveAutogrowSlotNumber(
+            node.inputs[index] && node.inputs[index].name,
+        );
+        if (slot <= 0) continue;
+        if (slot > highestLinked && listCreateInputHasLink(node, index)) {
+            highestLinked = slot;
+        }
+    }
+    var keepMax = Math.max(highestLinked + 1, 2);
+    if (keepMax >= MAX_CREATE_INPUTS) return;
+    for (var i = node.inputs.length - 1; i >= 0; i--) {
+        var input = node.inputs[i];
+        var num = resolveAutogrowSlotNumber(input && input.name);
+        if (num <= keepMax) continue;
+        if (listCreateInputHasLink(node, i)) continue;
+        removeSlot(node, "input", input);
+    }
+}
+
+/** 排序 + 标签 + 尺寸 + 类型刷新，XListCreate 加载后的统一收尾。 */
+function normalizeXListCreate(node) {
+    ensureListCreateInputOrder(node);
+    syncXListCreateInputLabels(node);
+    fixNodeSize(node);
+    refreshListCreateTypes(node);
+}
+
+/**
+ * 重算 XListCreate 的 MatchType 类型。
+ *
+ * 前端的类型串联（MatchType/多类型端口）只在「连线变化」时才重算，而且
+ * 在加载工作流期间（configuringGraph）会直接跳过。我们重排端口后，连线
+ * 换了位置但类型没跟着重算，于是 list 输出和各输入口的类型会停在 “*”。
+ * 这里手动触发一次节点的连线回调，让它自己按当前连线重新算一遍类型。
+ *
+ * 只触发一次即可：前端的回调会遍历整个类型组，一次就把所有输入口和
+ * 输出口的类型都重算完。选第一个（优先有连线的）输入口，避免落在末尾
+ * 的空白口上触发自动加端口。
+ */
+function refreshListCreateTypes(node) {
+    if (!node || !node.graph || !Array.isArray(node.inputs)) return;
+    if (typeof node.onConnectionsChange !== "function") return;
+    // 没连线时类型本来就是 “*”，不需要触发（也能避开前端的断线整理逻辑）。
+    var chosen = -1;
+    for (var index = 0; index < node.inputs.length; index++) {
+        var input = node.inputs[index];
+        if (!isXListCreateAutogrowInput(input && input.name)) continue;
+        if (listCreateInputHasLink(node, index)) {
+            chosen = index;
+            break;
+        }
+    }
+    if (chosen < 0) return;
+    var slot = node.inputs[chosen];
+    var link = typeof node.getInputLink === "function"
+        ? node.getInputLink(chosen)
+        : null;
+    node.__xlistCreateRefreshingTypes = true;
+    try {
+        node.onConnectionsChange(
+            liteGraphInputSlotType(),
+            chosen,
+            !!link,
+            link || undefined,
+            slot,
+        );
+    } catch (_e) {
+        /* 类型刷新失败不应打断节点排版 */
+    } finally {
+        node.__xlistCreateRefreshingTypes = false;
+    }
+}
+
 function syncXListCreateInputLabels(node) {
     if (!node || !Array.isArray(node.inputs)) return;
     var changed = false;
@@ -449,8 +649,7 @@ function fixXListCreateSizes(rootGraph) {
     var root = rootGraph || app.graph;
     if (!root) return;
     forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
-        syncXListCreateInputLabels(node);
-        fixNodeSize(node);
+        normalizeXListCreate(node);
     });
 }
 
@@ -470,6 +669,13 @@ function scheduleRefreshAll(_graph) {
 function doRefreshAll(rootGraph) {
     var root = rootGraph || app.graph;
     if (!root) return;
+    // 先把 XListCreate 的端口顺序与类型弄对，下游 XListPull 再按新类型同步。
+    forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
+        ensureListCreateInputOrder(node);
+        syncXListCreateInputLabels(node);
+        fixNodeSize(node);
+        refreshListCreateTypes(node);
+    });
     forEachNodeByComfyClass(root, NODE_CLASS, function (node) {
         syncOutputs(node, resolveCount(node));
     });
@@ -513,7 +719,11 @@ app.registerExtension({
                         slot
                         && isXListCreateAutogrowInput(slot.name || "")
                     ) {
-                        scheduleRefreshAll(node.graph);
+                        // 我们自己刷新类型时会触发这个回调，此时不要再排队
+                        // 刷新，否则会和 doRefreshAll 互相触发成死循环。
+                        if (!node.__xlistCreateRefreshingTypes) {
+                            scheduleRefreshAll(node.graph);
+                        }
                         syncXListCreateInputLabels(node);
                         fixNodeSize(node);
                     }
@@ -560,8 +770,7 @@ app.registerExtension({
                 }
                 var self = this;
                 setTimeout(function () {
-                    syncXListCreateInputLabels(self);
-                    fixNodeSize(self);
+                    normalizeXListCreate(self);
                 }, 0);
             };
             return;
