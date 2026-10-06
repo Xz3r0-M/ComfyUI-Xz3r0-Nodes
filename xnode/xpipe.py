@@ -92,6 +92,10 @@ class XPipe(io.ComfyNode):
                 default=True,
                 label_on="Enabled",
                 label_off="Disabled",
+                # Widget-only: no input socket. Otherwise the frontend can
+                # bind this toggle to a data slot when merging into a
+                # subgraph, which shows up as a stray switch on the shell.
+                socketless=True,
                 tooltip="Show visual warning on links and output "
                 "ports when a type mismatch is detected. "
                 "Disable to hide the warning effect.",

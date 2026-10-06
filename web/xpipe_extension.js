@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import {
+    applySlotLinks,
     applyVisibleSlotWindow,
     fitNodeSizeToVisibleSlots,
     installStableSlotView,
@@ -16,6 +17,7 @@ import {
     findParentSubgraphNode as sgFindParentSubgraphNode,
     findSlotOwner as sgFindSlotOwner,
     findSubgraphOutputNode,
+    forEachNode,
     forEachNodeByComfyClass,
     getLinkInfo,
     getNodeById,
@@ -667,6 +669,9 @@ function refreshOutputLinkSources(node) {
 
 function ensureInputOrder(node) {
     if (!node || !Array.isArray(node.inputs)) return;
+    // 加载/配置工作流期间连线注册表还在重建，此时挪端口会把连线
+    // 留在临时位置（例如子图转换过程中）。等配置完再整理。
+    if (app && app.configuringGraph) return;
     var channels = [];
     var bundle = null;
     var others = [];
@@ -696,6 +701,7 @@ function ensureInputOrder(node) {
 
 function ensureOutputOrder(node) {
     if (!node || !Array.isArray(node.outputs)) return;
+    if (app && app.configuringGraph) return;
     var channels = [];
     var bundle = null;
     var others = [];
@@ -733,6 +739,26 @@ function normalizeValueInputs(node) {
         // Apply the default "N" label only when the slot has none yet
         // (fresh slot); never overwrite a port the user has renamed.
         if (!input.display_name) input.display_name = String(slot);
+    }
+}
+
+/**
+ * value_N 是纯数据插槽，不应该挂任何 widget。
+ *
+ * 某些前端版本会把布尔/文本控件（如 type_warning）意外绑到数据插槽上；
+ * 一旦绑上，合并成子图时前端会把该控件“提升”到子图外壳，表现为数据口
+ * 旁边冒出一个开关。这里把 value_N 上的 widget 绑定清掉，从源头避免。
+ */
+function clearValueInputWidgetBindings(node) {
+    if (!node || !Array.isArray(node.inputs)) return;
+    for (var index = 0; index < node.inputs.length; index++) {
+        var input = node.inputs[index];
+        if (!input || !valueSlotNumber(input.name)) continue;
+        if (!input.widget && !input.widgetId && !input._widget) continue;
+        input.pos = undefined;
+        input.widget = undefined;
+        input.widgetId = undefined;
+        input._widget = undefined;
     }
 }
 
@@ -829,6 +855,26 @@ function passthroughInputIndex(node, outputIndex) {
     return -1;
 }
 
+/**
+ * 子图外壳的输出口：钻进子图，沿着它对应的内部输出线找到真正产生数据的节点。
+ * 这样 XPipe 的数据束（名字/类型）才能穿过子图继续传给下游（如 XPipeGate）。
+ */
+function resolveSubgraphBundleState(subgraphNode, outputIndex, seen) {
+    var subgraph = subgraphNode && subgraphNode.subgraph;
+    if (!subgraph) return null;
+    var outputs = subgraph.outputs;
+    var subOutput = Array.isArray(outputs) ? outputs[outputIndex] : null;
+    if (!subOutput) return null;
+    var ids = subOutput.linkIds || [];
+    for (var index = 0; index < ids.length; index++) {
+        var link = getLinkInfo(subgraph, ids[index]);
+        if (!link) continue;
+        var state = resolveBundleStateFromLink(subgraph, link, seen);
+        if (state) return state;
+    }
+    return null;
+}
+
 function resolveBundleStateFromSlot(slot, graph, seen) {
     if (!slot) return null;
     var outputOwner = findSlotOwner(slot, "output", graph);
@@ -846,6 +892,15 @@ function resolveBundleStateFromSlot(slot, graph, seen) {
         if (isXListToPipe(outputOwner.node)
             && outputOwner.slot.name === BUNDLE_OUTPUT_NAME) {
             return ensureXListToPipeState(outputOwner.node);
+        }
+        if (outputOwner.node && outputOwner.node.subgraph) {
+            // 子图外壳的输出：钻进子图，找到真正产生 bundle 的内部节点。
+            var nested = resolveSubgraphBundleState(
+                outputOwner.node,
+                outputOwner.index,
+                seen,
+            );
+            if (nested) return nested;
         }
         var inputIndex = passthroughInputIndex(
             outputOwner.node,
@@ -1239,6 +1294,7 @@ function syncDynamicSlots(state) {
     var node = state.node;
     installStableSlotView(node);
     normalizeValueInputs(node);
+    clearValueInputWidgetBindings(node);
     for (var slot = 1; slot <= PIPE_SLOTS; slot++) {
         if (slotIndexOfName(node.inputs, "value_" + slot) < 0) {
             addValueInput(state, slot);
@@ -1270,18 +1326,76 @@ function syncDynamicSlots(state) {
     if (bundleOut >= 0) setSlotHidden(node.outputs[bundleOut], false);
 }
 
+/** 去掉端口标签前面的 "[N] " 前缀，取出真正的名字。 */
+function stripPortLabel(value) {
+    var text = value == null ? "" : String(value).trim();
+    var match = text.match(/^\[\d+\]\s*(.*)$/);
+    return match ? match[1].trim() : text;
+}
+
+/**
+ * 子图输入节点没有 outputs 数组，按普通“上游节点”找不到。这里把子图的
+ * 输入槽合成一个“输出”来用；类型再从父级子图节点对应输入口的连线补回来。
+ * 否则合并为子图后，XPipe 会因为“上游消失”而把名字/类型清空。
+ */
+function subgraphInputOutput(node, link, source) {
+    if (!isSubgraphInputNode(source, node.graph)) return null;
+    var subInputs = node.graph && node.graph.inputs;
+    var subInput = Array.isArray(subInputs)
+        ? subInputs[link.origin_slot]
+        : null;
+    if (!subInput) return null;
+    var type = cleanType(subInput.type);
+    if (!type) {
+        var parent = findParentSubgraphNode(node.graph);
+        var parentInput = null;
+        if (parent && Array.isArray(parent.inputs)) {
+            // 优先按名字对上父级子图节点的输入口，其次按下标。
+            for (var i = 0; i < parent.inputs.length; i++) {
+                if (parent.inputs[i] && parent.inputs[i].name === subInput.name) {
+                    parentInput = parent.inputs[i];
+                    break;
+                }
+            }
+            if (!parentInput) {
+                parentInput = parent.inputs[link.origin_slot] || null;
+            }
+        }
+        if (parentInput && parentInput.link != null) {
+            var boundary = getLinkInfo(parent.graph, parentInput.link);
+            type = cleanType(boundary && boundary.type);
+        }
+    }
+    return {
+        name: subInput.name,
+        label: subInput.label,
+        localized_name: subInput.localized_name,
+        type: type || "*",
+        __xpipeSubgraphInput: true,
+    };
+}
+
 function directInputSource(node, slot) {
     var index = slotIndexOfName(node.inputs, "value_" + slot);
     var input = index >= 0 ? node.inputs[index] : null;
     if (!input || input.link == null) return null;
     var link = getLinkInfo(node.graph, input.link);
-    var source = link && getNodeById(node.graph, link.origin_id);
-    var output = source && source.outputs
-        ? source.outputs[link.origin_slot]
-        : null;
-    return link && source && output
-        ? { link: link, source: source, output: output }
-        : null;
+    if (!link) return null;
+    var source = getNodeById(node.graph, link.origin_id);
+    if (!source) {
+        // 子图输入节点不在普通节点表里（getNodeById 找不到），单独认领。
+        var inputNode = node.graph && node.graph.inputNode;
+        if (
+            inputNode
+            && String(link.origin_id) === String(inputNode.id)
+        ) {
+            source = inputNode;
+        }
+    }
+    if (!source) return null;
+    var output = source.outputs ? source.outputs[link.origin_slot] : null;
+    if (!output) output = subgraphInputOutput(node, link, source);
+    return output ? { link: link, source: source, output: output } : null;
 }
 
 function sourceOutputLabel(sourceInfo) {
@@ -1293,7 +1407,11 @@ function sourceOutputLabel(sourceInfo) {
         var name = state && slot ? cleanName(state.names[slot - 1]) : "";
         if (name) return name;
     }
-    return cleanName(output.label) || cleanName(output.name);
+    var label = cleanName(stripPortLabel(output.label));
+    // 子图输入：名字就在它的标签里（如 "[1] MODEL"）。标签里没有名字时
+    // 就返回空，不要拿端口名 value_1 当名字。
+    if (output.__xpipeSubgraphInput) return label;
+    return label || cleanName(output.name);
 }
 
 function refreshAutoNames(state) {
@@ -1589,9 +1707,128 @@ function stateSignature(state) {
     });
 }
 
+/**
+ * 修复子图内 XPipe 的输入连线（按名字）。
+ *
+ * 把工作流合并成子图时，子图输入端口的名字（value_1/value_2/...）就是它
+ * 当初对应的 XPipe 端口名。前端给子图内部连线重新分配 id 时，偶尔会把线
+ * 挂到错误的端口上（例如 value_2 的线挂到了 value_50）。这里按
+ * 「子图输入名 = 端口名」把连线纠正回它该在的端口，连线本身不会丢。
+ *
+ * 只在能确认目标端口没被“别的、不在本次修正范围内”的线占用时才动手；
+ * 否则说明注册表还在变动，宁可不改。
+ */
+function healSubgraphInputLinks(node) {
+    if (!node || !node.graph || !Array.isArray(node.inputs)) return;
+    var graph = node.graph;
+    var inputNode = graph.inputNode;
+    var subInputs = graph.inputs;
+    if (!inputNode || !Array.isArray(subInputs) || !subInputs.length) return;
+    var links = graph.links;
+    if (!links || typeof links.forEach !== "function") return;
+    var nodeId = node.id == null ? null : String(node.id);
+    if (nodeId == null) return;
+    var byName = {};
+    for (var index = 0; index < node.inputs.length; index++) {
+        var name = node.inputs[index] && node.inputs[index].name;
+        if (name && byName[name] === undefined) byName[name] = index;
+    }
+
+    var desired = new Map();
+    var needsFix = false;
+    links.forEach(function (link) {
+        if (!link) return;
+        if (String(link.target_id) !== nodeId) return;
+        if (String(link.origin_id) !== String(inputNode.id)) return;
+        var source = subInputs[link.origin_slot];
+        if (!source) return;
+        var want = byName[source.name];
+        if (want === undefined) return;
+        var slot = node.inputs[want];
+        if (!slot) return;
+        if (link.target_slot !== want) needsFix = true;
+        desired.set(slot, link);
+    });
+    if (!needsFix || !desired.size) return;
+
+    var moving = new Set(desired.values());
+    var blocked = false;
+    desired.forEach(function (link, slot) {
+        var index = node.inputs.indexOf(slot);
+        if (index < 0) return;
+        var occupant = typeof node.getInputLink === "function"
+            ? node.getInputLink(index)
+            : null;
+        if (occupant && occupant !== link && !moving.has(occupant)) {
+            blocked = true;
+        }
+    });
+    if (blocked) return;
+    applySlotLinks(node, "input", desired, getLinkInfo);
+}
+
+/** 子图里是否含有管道族节点（XPipe / XPipeGate）。 */
+function subgraphContainsPipe(subgraph) {
+    if (!subgraph) return false;
+    var found = false;
+    forEachNodeByComfyClass(subgraph, [NODE_CLASS, "XPipeGate"], function () {
+        found = true;
+    });
+    return found;
+}
+
+/**
+ * 去掉子图外壳上「长在数据口上的控件」。
+ *
+ * 某些前端版本在合并子图时，会把内部 XPipe 的布尔控件（如 type_warning）
+ * 错误地“提升”到外壳的 value_N 数据口上，看起来像数据口接了个开关。
+ * 这里把这类错位的控件撤下来；只处理名字就是 value_N 的输入口，且只撤
+ * 控件绑定本身，不动连线。
+ */
+function demoteValuePortWidgets(subgraphNode) {
+    if (!subgraphNode || !subgraphNode.subgraph) return;
+    if (!Array.isArray(subgraphNode.inputs)) return;
+    if (!subgraphContainsPipe(subgraphNode.subgraph)) return;
+    var changed = false;
+    for (var index = 0; index < subgraphNode.inputs.length; index++) {
+        var input = subgraphNode.inputs[index];
+        if (!input || !/^value_\d+$/.test(String(input.name || ""))) {
+            continue;
+        }
+        if (!input.widget && !input.widgetId && !input._widget) continue;
+        var widget = input._widget;
+        if (
+            widget
+            && typeof subgraphNode.ensureWidgetRemoved === "function"
+        ) {
+            try {
+                subgraphNode.ensureWidgetRemoved(widget);
+            } catch (_error) { /* ignore */ }
+        } else if (widget && Array.isArray(subgraphNode.widgets)) {
+            var at = subgraphNode.widgets.indexOf(widget);
+            if (at >= 0) subgraphNode.widgets.splice(at, 1);
+        }
+        input.pos = undefined;
+        input.widget = undefined;
+        input.widgetId = undefined;
+        input._widget = undefined;
+        changed = true;
+    }
+    if (!changed) return;
+    if (typeof subgraphNode.invalidatePromotedViews === "function") {
+        try {
+            subgraphNode.invalidatePromotedViews();
+        } catch (_error) { /* ignore */ }
+    }
+    if (typeof subgraphNode.setDirtyCanvas === "function") {
+        subgraphNode.setDirtyCanvas(true, true);
+    }
+}
+
 function syncNode(state) {
     var before = stateSignature(state);
     syncDynamicSlots(state);
+    healSubgraphInputLinks(state.node);
     refreshAutoNames(state);
     refreshSlotTypes(state);
     applySlotTypes(state);
@@ -1620,6 +1857,10 @@ function ensureXPipe(node) {
 }
 
 function refreshAllXPipe() {
+    // 先把外壳上错位的控件撤下来，再同步内部状态。
+    forEachNode(app.graph, function (node) {
+        if (node && node.subgraph) demoteValuePortWidgets(node);
+    });
     var nodes = [];
     forEachXPipe(app.graph, function (node) {
         nodes.push(node);

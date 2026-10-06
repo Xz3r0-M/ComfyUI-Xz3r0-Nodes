@@ -80,6 +80,43 @@ function slotIndexOf(node, direction, slot) {
     return slots ? slots.indexOf(slot) : -1;
 }
 
+/**
+ * How many links the graph registry says touch this node on one side.
+ * Used as a completeness check before reordering: if the slot objects cannot
+ * account for every registered link, the link store is mid-update (e.g. a
+ * subgraph conversion is remapping links) and moving slots then would strand
+ * links on temporary parking slots. Returns -1 when it cannot be counted.
+ * @param {object} node
+ * @param {"input"|"output"} direction
+ * @returns {number}
+ */
+function countRegisteredNodeLinks(node, direction) {
+    var graph = node && node.graph;
+    if (!graph || !graph.links) return -1;
+    var links = graph.links;
+    var nodeId = node.id == null ? null : String(node.id);
+    if (nodeId == null) return -1;
+    var count = 0;
+    var inspect = function (link) {
+        if (!link) return;
+        var ownerId = direction === "input"
+            ? link.target_id
+            : link.origin_id;
+        if (ownerId != null && String(ownerId) === nodeId) count++;
+    };
+    if (typeof links.forEach === "function") {
+        links.forEach(function (link) {
+            inspect(link);
+        });
+        return count;
+    }
+    for (var key in links) {
+        if (!Object.prototype.hasOwnProperty.call(links, key)) continue;
+        inspect(links[key]);
+    }
+    return count;
+}
+
 function addParkingSlot(node, direction) {
     var slot = null;
     if (direction === "input") {
@@ -257,16 +294,38 @@ export function reorderSlots(
         });
     if (unchanged) return false;
 
+    var originalOrder = slots.slice();
     var bindings = captureSlotLinks(node, direction, getLinkInfo);
+    var registered = countRegisteredNodeLinks(node, direction);
+    if (
+        direction === "input"
+        && registered >= 0
+        && bindings.size < registered
+    ) {
+        // Not every registered link is reachable from its slot yet. Do not
+        // touch the order at all: moving slots now is what strands links on
+        // parking slots during subgraph conversion.
+        console.warn(
+            "[XPipe] slot reorder skipped: " + (registered - bindings.size)
+            + " link(s) not resolvable yet.",
+        );
+        return false;
+    }
     slots.splice.apply(slots, [0, slots.length].concat(unique));
     var applied = applySlotLinks(node, direction, bindings, getLinkInfo);
-    if (applied.failed) {
-        console.warn(
-            "[XPipe] " + applied.failed + " link(s) could not follow their "
-            + "slot after reordering; reopen the workflow to resync.",
-        );
-    }
-    return true;
+    if (!applied.failed) return true;
+
+    // Roll the array back and re-anchor every link to its original slot.
+    // Keeping the previous (valid) order beats leaving links on a
+    // temporary parking slot like "port 49".
+    slots.splice.apply(slots, [0, slots.length].concat(originalOrder));
+    var restored = applySlotLinks(node, direction, bindings, getLinkInfo);
+    console.warn(
+        "[XPipe] slot reorder rolled back (" + applied.failed
+        + " link(s) could not follow, " + restored.failed
+        + " not restored).",
+    );
+    return false;
 }
 
 /**
