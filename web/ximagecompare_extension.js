@@ -12,6 +12,10 @@
  */
 
 import { app } from "../../scripts/app.js";
+import {
+    applyHiddenWidgetLayers,
+    removeWidgetInput,
+} from "./core/hidden-widget.js";
 
 // =========================================================================
 // 本地化 Key 常量（参照 XImageGet2 模式）
@@ -369,8 +373,42 @@ function installLocaleSync() {
 // 清除标准 ComfyUI 图片预览
 // =========================================================================
 
+/**
+ * 告诉 ComfyUI「本节点自己画预览，不要再画一份原生的」。
+ *
+ * Nodes 2.0（Vue 渲染节点）里，原生图片预览由前端组件直接读节点输出渲染，
+ * 删除 node.images / 移除 $$canvas-image-preview widget 都拦不住它；
+ * 前端为此提供了官方开关 node.hideOutputImages。
+ */
+function suppressNativePreview(node) {
+    if (!node) return;
+    node.hideOutputImages = true;
+}
+
+/**
+ * 把节点输出里的 images 抹掉。
+ *
+ * 新版前端在调用 onExecuted 之前，已把输出深拷贝进 Vue 渲染用的 store，
+ * 所以只删 onExecuted 收到的那个对象不够 —— 必须再从 app.nodeOutputs 删一次：
+ * 它是前端自己的「可变视图」，删除会同步回 store，两套预览就都拿不到图了。
+ * （旧版前端 app.nodeOutputs 是普通对象，删了也无副作用。）
+ */
+function dropStoredOutputImages(node) {
+    if (!node) return;
+    var outputs = app && app.nodeOutputs;
+    if (!outputs) return;
+    try {
+        var entry = outputs[String(node.id)];
+        if (entry && entry.images) delete entry.images;
+    } catch (e) { /* ignore */ }
+}
+
 function clearStandardPreview(node) {
     if (!node) return;
+
+    suppressNativePreview(node);
+    dropStoredOutputImages(node);
+
     delete node.images;
     delete node.imgs;
     node.imageIndex = null;
@@ -417,6 +455,7 @@ var HIDDEN_WIDGET_NAMES = [
     "__compare_curve",
     "__compare_wheel_ctrl",
     "__compare_slide_dir",
+    "__live_preview",
 ];
 
 function findWidget(node, name) {
@@ -441,35 +480,23 @@ function ensureHiddenWidget(node, name, defaultValue) {
     if (!widget && typeof node.addWidget === "function") {
         widget = node.addWidget("text", name, String(defaultValue), function () {});
     }
+    applyHiddenWidgetLayers(widget);
     if (widget) {
-        widget.hidden = true;
-        widget.options = widget.options || {};
-        widget.options.hidden = true;
         widget.serializeValue = function () {
             return this.value;
         };
     }
+    // 内部 widget 不应该有可点的输入圆点。
+    removeWidgetInput(node, name);
     return widget || null;
 }
 
 function removeHiddenInputSlots(node) {
     if (!node || !Array.isArray(node.inputs)) return;
-    var nameSet = {};
+    // 用前端 API 移除，保持连线注册表同步；直接过滤数组会在下一次
+    // 重绘/加载时“复活”并留下圆点（见 skill comfyui-node-inputs）。
     for (var i = 0; i < HIDDEN_WIDGET_NAMES.length; i++) {
-        nameSet[HIDDEN_WIDGET_NAMES[i]] = true;
-    }
-    var filtered = [];
-    for (var j = 0; j < node.inputs.length; j++) {
-        var inp = node.inputs[j];
-        if (!inp || !nameSet[String(inp.name || "")]) {
-            filtered.push(inp);
-        }
-    }
-    if (filtered.length !== node.inputs.length) {
-        node.inputs = filtered;
-        if (node.graph && typeof node.graph.setDirtyCanvas === "function") {
-            node.graph.setDirtyCanvas(true, true);
-        }
+        removeWidgetInput(node, HIDDEN_WIDGET_NAMES[i]);
     }
 }
 
@@ -2146,20 +2173,27 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             origOnCreated && origOnCreated.apply(this, arguments);
             createCompareUI(this);
+            removeHiddenInputSlots(this);
             restoreState(this.__xcompareState);
             clampNodeSize(this);
+            suppressNativePreview(this);
         };
 
         nodeType.prototype.onConfigure = function () {
             origOnConfigure && origOnConfigure.apply(this, arguments);
             createCompareUI(this);
+            // configure 会重建输入槽：重新移除内部 widget 的圆点。
+            removeHiddenInputSlots(this);
             restoreState(this.__xcompareState);
             clampNodeSize(this);
+            suppressNativePreview(this);
         };
 
         nodeType.prototype.onExecuted = function (output) {
-            // 在调用原始 onExecuted 之前提取并删除 images，
-            // 阻止 ComfyUI 创建标准图片预览
+            // 先把 images 取出来存着（本节点自己画对比画布要用），
+            // 再从输出里删掉。注意：新版前端在调用 onExecuted 之前，
+            // 已经把这份输出深拷贝进了 Vue 渲染用的 store，
+            // 所以真正生效的是结尾的 clearStandardPreview（会同步清掉 store 里那份）。
             var savedImages = null;
             if (output && output.images && output.images.length >= 1) {
                 savedImages = output.images.slice();
@@ -2180,8 +2214,10 @@ app.registerExtension({
         if (String(node.comfyClass || node.type || "") !== NODE_CLASS) return;
         // 图形加载后重新应用 min-size（参照 XImageGet2）
         createCompareUI(node);
+        removeHiddenInputSlots(node);
         restoreState(node.__xcompareState);
         clampNodeSize(node);
+        suppressNativePreview(node);
     },
 
     async setup() {

@@ -1,7 +1,7 @@
 [project]
 name = "xz3r0-nodes"
 description = "Custom ComfyUI nodes: XAudioSave, XImageSave, XLatentLoad, XLatentSave, XMarkdownSave, XVideoSave, XWorkflowSave, XAnyGate10, XAnyToString, XAudioProcess, XController, XControlPanel, XDateTimeString, XImageCompare, XImagePreview, XImageResize, XKleinRefConditioning, XKleinRefListConditioning, XLinker, XListCreate, XListPull, XListRestore, XListToPipe, XMath, XMemoryCleanup, XPipe, XPipeGate, XPipeRecursive, XPrimitiveCombo, XResolution, XSeed, XStringGroup, XStringWrap, XAudioGet, XDataSave, XImageGet, XLoraGet, XStringGet, XVideoGet. Custom ComfyUI extensions: XDataHub, XFitView"
-version = "2.7.0"
+version = "2.7.1"
 license = { file = "LICENSE" }
 
 # 禁止重复声明 ComfyUI 依赖包, 先检查项目中的 requirements.txt

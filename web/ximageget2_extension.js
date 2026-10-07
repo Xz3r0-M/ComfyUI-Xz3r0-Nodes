@@ -5,6 +5,10 @@ import {
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
 import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260916-4";
+import {
+    applyHiddenWidgetLayers,
+    removeWidgetInput,
+} from "./core/hidden-widget.js";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -1018,9 +1022,7 @@ function ensureHiddenWidget(node, widgetName) {
         widget = node.addWidget("text", widgetName, "", () => {});
     }
     if (widget) {
-        widget.hidden = true;
-        widget.options = widget.options || {};
-        widget.options.hidden = true;
+        applyHiddenWidgetLayers(widget);
         widget.serializeValue = () => widget.value;
     }
     return widget || null;
@@ -1054,20 +1056,12 @@ function removeStorageInputSlot(node) {
     if (!node || !Array.isArray(node.inputs)) {
         return;
     }
-    const hiddenNames = new Set([
-        MEDIA_REF_WIDGET,
-        X_MASK_REF_WIDGET,
-        X_PAINT_REF_WIDGET,
-        X_TRANSFORM_STATE_WIDGET,
-    ]);
-    const nextInputs = node.inputs.filter((input) => {
-        const name = String(input?.name || "");
-        return !hiddenNames.has(name);
-    });
-    if (nextInputs.length !== node.inputs.length) {
-        node.inputs = nextInputs;
-        node?.graph?.setDirtyCanvas?.(true, true);
-    }
+    // 用前端 API 移除，保持连线注册表同步；直接过滤数组会在下一次
+    // configure/重绘时“复活”并留下圆点（见 skill comfyui-node-inputs）。
+    removeWidgetInput(node, MEDIA_REF_WIDGET);
+    removeWidgetInput(node, X_MASK_REF_WIDGET);
+    removeWidgetInput(node, X_PAINT_REF_WIDGET);
+    removeWidgetInput(node, X_TRANSFORM_STATE_WIDGET);
 }
 
 function getStoredNodeValue(node) {

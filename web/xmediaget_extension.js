@@ -5,6 +5,10 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
+import {
+    applyHiddenWidgetLayers,
+    removeWidgetInput,
+} from "./core/hidden-widget.js";
 
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
@@ -3042,11 +3046,11 @@ function ensureHiddenWidget(node, widgetName, onChange = null) {
         widget.callback = onChange;
     }
     if (widget) {
-        widget.hidden = true;
-        widget.options = widget.options || {};
-        widget.options.hidden = true;
+        applyHiddenWidgetLayers(widget);
         widget.serializeValue = () => widget.value;
     }
+    // 内部 widget 不应该有可点的输入圆点。
+    removeWidgetInput(node, widgetName);
     return widget || null;
 }
 
@@ -3085,23 +3089,16 @@ function removeStorageInputSlot(node) {
     if (!Array.isArray(node?.inputs)) {
         return;
     }
-    const hiddenNames = new Set([getStorageWidgetName(node)]);
+    // 用前端 API 逐个移除，保持连线注册表同步；直接过滤数组会在下一次
+    // configure/重绘时“复活”并留下圆点（见 skill comfyui-node-inputs）。
+    removeWidgetInput(node, getStorageWidgetName(node));
     const textTitleWidgetName = getTextTitleWidgetName(node);
     if (textTitleWidgetName) {
-        hiddenNames.add(textTitleWidgetName);
+        removeWidgetInput(node, textTitleWidgetName);
     }
     if (String(node?.comfyClass || "") === "XImageGet") {
-        hiddenNames.add(MASK_IMAGE_REF_WIDGET);
+        removeWidgetInput(node, MASK_IMAGE_REF_WIDGET);
     }
-    const nextInputs = node.inputs.filter((input) => {
-        const name = String(input?.name || "");
-        return !hiddenNames.has(name);
-    });
-    if (nextInputs.length === node.inputs.length) {
-        return;
-    }
-    node.inputs = nextInputs;
-    node?.graph?.setDirtyCanvas?.(true, true);
 }
 
 function getStoredNodeValue(node) {
