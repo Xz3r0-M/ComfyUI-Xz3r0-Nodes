@@ -1,5 +1,103 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.7.1
+
+<details>
+
+### 1. 🩹 修复 `XListCreate` 数据列表生成节点
+`♾️ Xz3r0/Workflow-Processing`
+- 修复新版 ComfyUI 前端下，刷新网页或重新打开工作流后输入端口顺序错乱的问题
+    - 现象举例：原本连接了 1–20 号输入端口，刷新后变成 1、10…19、2、3…，中间的 21 还会不见
+    - 原因：前端的「自动加端口」在找插入位置时用名字前缀匹配，`input1` 会同时命中 `input10`…`input19`
+    - 现在加载完成后、以及每次连接变化后，都会按端口号把顺序排回来，并把末尾多余的空白端口收成一个
+- 修复端口类型没有正确还原的问题
+    - 端口重排后会重新按当前连线计算一次类型，输入端口和「列表」输出不再停在 `*`
+    - 下游 `XListPull` 的「数据 N」输出端口改为读取上游端口的实时类型，不再被建立连线时记下的旧值卡住
+
+### 2. 🩹 修复 `XPipe` / `XPipeGate` 合并成子图后的端口错位
+`♾️ Xz3r0/Workflow-Processing`
+- 修复把节点合并进子图后，外壳与子图内部的连线挂错端口、丢线的问题
+    - 现象举例：合并后某个数据口跑到很靠后的端口（如 49/50），另一个端口没有连接
+    - 原因：合并的一瞬间前端还在重建连线，此时去重排端口，会把某根线临时停在一个空闲端口上而没能挪回去
+    - 现在：连线记录还没稳定时不做重排；万一重排失败会回滚，不再把线留在临时位置
+- 修复子图内部的连线映射
+    - 按「子图输入的名字 = 端口名」把连线搬回它该在的端口
+- 修复合并后端口名字和类型丢失
+    - 子图内部的 `XPipe` 端口重新显示 `[1] MODEL` 这类名字，类型也不会丢
+    - 数据束（名字/类型）现在能穿过子图外壳继续传给下游节点（如 `XPipeGate`）
+- 修复子图外壳的数据口上冒出的「开关」
+    - 那是内部的 `type_warning` 控件被前端错误地提升到了数据口上，现在已经从源头和现场两头堵住
+
+### 3. 🩹 修复 `XImageCompare` 图像和遮罩 A/B 对比节点
+`♾️ Xz3r0/Workflow-Processing`
+- 修复新版 ComfyUI 前端下节点出现两个图片预览区域的问题
+    - 新版前端把原生预览改成由界面组件直接读取节点输出来画，现在按官方开关告诉它「本节点自己画预览」，并同步清掉前端缓存里的输出图片
+- 导致此问题的改动来自 ComfyUI 前端版本 1.53.2，从 ComfyUI 0.37.0 版本开始受影响
+
+### 4. 🩹 修复多个节点内部控件残留的输入圆点
+`♾️ Xz3r0/Workflow-Processing` / `♾️ Xz3r0/XDataHub`
+- 修复内部状态控件被隐藏后，节点界面上仍残留一个可点的连接圆点的问题
+    - 原因：Python 侧只写 `socketless` 并不能去掉前端的输入槽，必须在前端显式移除
+    - 而且每次打开工作流都会重建输入槽，所以每次都要重新移除一次
+- 已修复的节点：
+    - `XLoraGet`（lora_stack）
+    - `XSeed`（种子值相关的 4 个内部控件）
+    - `XPipeGate`（port_names，以及超出可见范围的 enable_N 开关口）
+    - `XPipe`（port_names、type_warning）
+    - `XImageCompare`（对比状态相关的内部控件）
+    - `XImageGet`（media_ref、x_mask_ref、x_paint_ref、x_transform_state）
+    - `XStringGet` / `XAudioGet` / `XVideoGet`（text_value / title_value / media_ref）
+
+---
+
+### 1. 🩹 Fixed `XListCreate` Data List Creator Node
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed input ports coming back in the wrong order after a browser refresh or reopening a workflow on newer ComfyUI frontends
+    - Example: ports 1–20 were connected, but after a refresh they showed as 1, 10…19, 2, 3…, with port 21 missing
+    - Cause: the frontend's auto-grow finds insert positions by name prefix, so `input1` also matches `input10`…`input19`
+    - The order is now sorted back by port number after loading and after every connection change, and surplus empty tail ports are trimmed to one
+- Fixed port types not being restored
+    - After reordering, types are recalculated from the current links, so the inputs and the List output no longer stay stuck at `*`
+    - `XListPull`'s Data N outputs now read the upstream port's live type instead of the stale value captured when the link was first drawn
+
+### 2. 🩹 Fixed Port Misalignment in `XPipe` / `XPipeGate` After Merging Into a Subgraph
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed links landing on the wrong ports or getting lost between the subgraph shell and its interior
+    - Example: after merging, one data port ends up far down the list (e.g. 49/50) and another has no connection
+    - Cause: the frontend is still rebuilding links at the moment of merging; reordering ports then can leave a link parked on a free port instead of moving it back
+    - Now: no reordering while the link registry is unsettled, and a failed reorder rolls back instead of leaving links parked
+- Fixed the interior link mapping
+    - Links are moved back to their correct port by matching "subgraph input name = port name"
+- Fixed port names and types being lost after merging
+    - `XPipe` ports inside the subgraph show their names (e.g. `[1] MODEL`) again, and types survive
+    - Bundle names/types now pass through the subgraph shell to downstream nodes (such as `XPipeGate`)
+- Fixed a stray "switch" appearing on a subgraph shell data port
+    - It was the internal `type_warning` control wrongly promoted onto a data port; this is now blocked at the source and cleaned up in place
+
+### 3. 🩹 Fixed `XImageCompare` Image & Mask A/B Comparison Node
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed two image preview areas showing at once on newer ComfyUI frontends
+    - The newer frontend renders the native preview directly from the node output; the node now uses the official flag to say "I draw my own preview" and also clears the frontend's cached output images
+- The change causing this issue was introduced in ComfyUI frontend version 1.53.2, affecting ComfyUI 0.37.0 and later
+
+### 4. 🩹 Fixed Lingering Input Dots From Internal Controls on Several Nodes
+`♾️ Xz3r0/Workflow-Processing` / `♾️ Xz3r0/XDataHub`
+- Fixed a clickable connection dot remaining on the node after an internal state control is hidden
+    - Cause: `socketless` on the Python side does not remove the frontend input slot; it must be removed explicitly in JS
+    - The input slot is rebuilt every time a workflow is opened, so the removal has to run on every load
+- Fixed nodes:
+    - `XLoraGet` (lora_stack)
+    - `XSeed` (the four seed-related internal controls)
+    - `XPipeGate` (port_names, plus out-of-range enable_N toggle slots)
+    - `XPipe` (port_names, type_warning)
+    - `XImageCompare` (comparison-state internal controls)
+    - `XImageGet` (media_ref, x_mask_ref, x_paint_ref, x_transform_state)
+    - `XStringGet` / `XAudioGet` / `XVideoGet` (text_value / title_value / media_ref)
+
+</details>
+
+---
+
 ## 🎉 v2.7.0
 
 <details>
