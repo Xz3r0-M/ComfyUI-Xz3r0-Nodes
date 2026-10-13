@@ -442,7 +442,9 @@ function thumbFor(item, previewState = null) {
             + `<span class="meta-date">${formatDate(extra.mtime)}</span>`
             + `</div>`
         : "";
-    switch (item.type) {
+    // LoRA 的视频封面走视频分支：先静帧，点预览才播放
+    const isVideoCover = item.type === "lora" && item.coverKind === "video";
+    switch (isVideoCover ? "video" : item.type) {
         case "audio":
             return `
                 <div class="thumb-container audio-thumb">
@@ -656,11 +658,12 @@ export class XdhMediaGrid extends BaseElement {
         if (!item) {
             return null;
         }
+        const isVideoCover = item.type === "lora" && item.coverKind === "video";
         return {
             id: String(item.id || ""),
             name: item.name,
             url: item.fullUrl || item.thumbUrl,
-            type: item.type || "image",
+            type: isVideoCover ? "video" : (item.type || "image"),
             iconHtml: icon("audio-lines", 56),
             raw: item.raw || {},
         };

@@ -162,6 +162,24 @@ const Dictionary = {
         'lora.banner.import_empty': 'metadata 中没有可导入的触发词',
         'lora.banner.import_fail':  '导入 metadata 失败，请重试',
 
+        // ── lora cover ───────────────────────────────────────
+        'lora.cover.empty':         '暂无封面',
+        'lora.cover.btn.change':    '更换封面',
+        'lora.cover.btn.remove':    '删除封面',
+        'lora.cover.video_hint':    '视频封面：这里是第一帧，点开预览才播放',
+        'lora.cover.upload_ok':     '封面已更新',
+        'lora.cover.upload_fail':   '封面更新失败，请重试',
+        'lora.cover.remove_ok':     '封面已删除',
+        'lora.cover.remove_fail':   '删除封面失败，请重试',
+        'lora.cover.invalid_format': '只支持图片和 mp4 / webm / mov 视频',
+        'lora.cover.too_large':     '文件超过 100MB 上限',
+        'lora.cover.readonly':      '当前为只读状态，暂时不能修改封面',
+        'lora.cover.confirm_replace_title': '替换封面',
+        'lora.cover.confirm_replace_body':
+            '确认后会删除这些同名旧封面文件：',
+        'lora.cover.confirm_remove_title': '删除封面',
+        'lora.cover.confirm_remove_body': '将删除这些文件：',
+
         // ── history / favorites ──────────────────────────────
         'history.mode.history':     '历史',
         'history.mode.favorites':   '收藏',
@@ -464,6 +482,27 @@ const Dictionary = {
         'lora.banner.import_ok':    'Trigger words imported from metadata',
         'lora.banner.import_empty': 'No trigger words found in metadata',
         'lora.banner.import_fail':  'Failed to import metadata, please retry',
+
+        // ── lora cover ───────────────────────────────────────
+        'lora.cover.empty':         'No cover',
+        'lora.cover.btn.change':    'Change cover',
+        'lora.cover.btn.remove':    'Remove cover',
+        'lora.cover.video_hint':
+            'Video cover: this is the first frame, open preview to play',
+        'lora.cover.upload_ok':     'Cover updated',
+        'lora.cover.upload_fail':   'Failed to update cover, please retry',
+        'lora.cover.remove_ok':     'Cover removed',
+        'lora.cover.remove_fail':   'Failed to remove cover, please retry',
+        'lora.cover.invalid_format':
+            'Only images and mp4 / webm / mov videos are supported',
+        'lora.cover.too_large':     'File exceeds the 100 MB limit',
+        'lora.cover.readonly':
+            'Read-only mode, cover cannot be changed now',
+        'lora.cover.confirm_replace_title': 'Replace cover',
+        'lora.cover.confirm_replace_body':
+            'These same-name cover files will be deleted:',
+        'lora.cover.confirm_remove_title': 'Remove cover',
+        'lora.cover.confirm_remove_body': 'These files will be deleted:',
 
         // ── history / favorites ──────────────────────────────
         'history.mode.history':     'History',

@@ -1715,7 +1715,9 @@ export class XdhLightbox extends BaseElement {
         if (!ref) return;
         const payload = {
             public_ref: ref,
-            media_type: item.type || "",
+            media_type: String(
+                item.raw?.extra?.media_type || item.type || ""
+            ),
             filename: item.name || "",
             rel_path: item.raw?.rel_path || item.raw?.extra?.rel_path || "",
             file_ext: item.raw?.file_ext || item.raw?.extra?.file_ext || "",

@@ -118,6 +118,32 @@ export async function apiPost(path, body = {}) {
 }
 
 /**
+ * 上传文件（multipart/form-data）。
+ *
+ * 与 apiPost 不同：这里不抛异常，而是返回 { ok, status, data }，
+ * 方便调用方按业务错误码分支（例如 cover_exists 要弹确认框）。
+ */
+export async function apiUpload(path, formData) {
+    const url = new URL(path, window.location.origin);
+    try {
+        const response = await fetch(url.toString(), {
+            method: "POST",
+            body: formData,
+        });
+        let data = null;
+        try {
+            data = await response.json();
+        } catch {
+            data = null;
+        }
+        return { ok: response.ok, status: response.status, data };
+    } catch (e) {
+        console.warn(`[xdh-api] UPLOAD ${path} failed:`, e);
+        return { ok: false, status: 0, data: null };
+    }
+}
+
+/**
  * Load media for a given category.
  * category: "image" | "video" | "audio"
  */

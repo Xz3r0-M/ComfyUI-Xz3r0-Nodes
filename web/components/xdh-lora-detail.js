@@ -3,10 +3,10 @@ import {
     registerCustomElement,
 } from "../core/base-element.js?v=20260403-2";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { apiGet, apiPost } from "../core/api.js?v=20260403-412";
+import { apiGet, apiPost, apiUpload } from "../core/api.js?v=20261013-1";
 import { appStore } from "../core/store.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260406-15";
+import { t } from "../core/i18n.js?v=20261013-1";
 
 function escapeHtml(value) {
     return String(value || "")
@@ -21,6 +21,21 @@ function escapeAttr(value) {
     return escapeHtml(value);
 }
 
+const COVER_EXT_SET = new Set([
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".gif",
+    ".mp4",
+    ".webm",
+    ".mov",
+]);
+const COVER_MAX_BYTES = 100 * 1024 * 1024;
+const COVER_ACCEPT = "image/png,image/jpeg,image/webp,image/bmp,"
+    + "image/gif,video/mp4,video/webm,video/quicktime";
+
 export class XdhLoraDetail extends BaseElement {
     constructor() {
         super();
@@ -29,10 +44,18 @@ export class XdhLoraDetail extends BaseElement {
         this._isLoading = false;
         this._isLinked = false;
         this._imgLoaded = false;
+        this._coverBusy = false;
+        this._confirm = null;
+        this._pendingCover = null;
 
         this._onOpenDetail = (e) => this._open(e.detail);
         this._onKeydown = (e) => {
-            if (e.key === "Escape") this._close();
+            if (e.key !== "Escape") return;
+            if (this._confirm) {
+                this._closeConfirm();
+                return;
+            }
+            this._close();
         };
     }
 
@@ -56,6 +79,9 @@ export class XdhLoraDetail extends BaseElement {
         this._isLoading = true;
         this._currentData = null;
         this._imgLoaded = false;
+        this._coverBusy = false;
+        this._confirm = null;
+        this._pendingCover = null;
         this.renderRoot();
 
         this.$(".drawer-wrap")?.classList.add("open");
@@ -86,6 +112,8 @@ export class XdhLoraDetail extends BaseElement {
         appStore.state.loraDetailOpen = false;
         this._currentRef = null;
         this._currentData = null;
+        this._confirm = null;
+        this._pendingCover = null;
     }
 
     async _save() {
@@ -192,6 +220,201 @@ export class XdhLoraDetail extends BaseElement {
         }
     }
 
+    /* ── 封面：选择 / 上传 / 删除 / 预览 ────────────────── */
+
+    _rerenderDrawer() {
+        // renderRoot 会重建 DOM（丢掉 open 类），重绘后必须重新挂上
+        this.renderRoot();
+        this.$(".drawer-wrap")?.classList.add("open");
+    }
+
+    _renderConfirmDialog() {
+        if (!this._confirm) return "";
+        const isRemove = this._confirm.kind === "remove";
+        const names = Array.isArray(this._confirm.names)
+            ? this._confirm.names
+            : [];
+        const listHtml = names
+            .map((name) => `<li>${escapeHtml(name)}</li>`)
+            .join("");
+        const titleKey = isRemove
+            ? "lora.cover.confirm_remove_title"
+            : "lora.cover.confirm_replace_title";
+        const bodyKey = isRemove
+            ? "lora.cover.confirm_remove_body"
+            : "lora.cover.confirm_replace_body";
+        return `
+            <div class="confirm-overlay">
+                <div class="confirm-box">
+                    <div class="confirm-title">
+                        ${icon("triangle-alert", 14)}
+                        <span>${t(titleKey)}</span>
+                    </div>
+                    <div class="confirm-body">${t(bodyKey)}</div>
+                    <ul class="confirm-list">${listHtml}</ul>
+                    <div class="confirm-actions">
+                        <button class="confirm-btn js-confirm-cancel">
+                            ${t('common.cancel')}
+                        </button>
+                        <button class="confirm-btn is-danger js-confirm-ok"
+                            ${this._coverBusy ? "disabled" : ""}>
+                            ${t('common.confirm')}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    _openConfirm(kind, names) {
+        this._confirm = { kind, names: names || [] };
+        this._rerenderDrawer();
+    }
+
+    _closeConfirm() {
+        if (this._coverBusy) return;
+        this._confirm = null;
+        this._pendingCover = null;
+        this._rerenderDrawer();
+    }
+
+    async _confirmAction() {
+        const confirm = this._confirm;
+        if (!confirm || this._coverBusy) return;
+        if (confirm.kind === "replace") {
+            const file = this._pendingCover;
+            if (!file) {
+                this._closeConfirm();
+                return;
+            }
+            await this._uploadCover(file, true);
+            return;
+        }
+        await this._deleteCover();
+    }
+
+    async _handleCoverFile(file) {
+        if (!file || this._coverBusy) return;
+        const name = String(file.name || "");
+        const dotIndex = name.lastIndexOf(".");
+        const ext = dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : "";
+        if (!COVER_EXT_SET.has(ext)) {
+            banner.error(t("lora.cover.invalid_format"));
+            return;
+        }
+        if (Number(file.size || 0) > COVER_MAX_BYTES) {
+            banner.error(t("lora.cover.too_large"));
+            return;
+        }
+        await this._uploadCover(file, false);
+    }
+
+    async _uploadCover(file, overwrite) {
+        if (!this._currentRef || this._coverBusy) return;
+        this._coverBusy = true;
+        this._confirm = null;
+        this._rerenderDrawer();
+        try {
+            const form = new FormData();
+            form.append("file", file, String(file.name || "cover"));
+            const ref = encodeURIComponent(this._currentRef);
+            const query = overwrite
+                ? `?ref=${ref}&overwrite=1`
+                : `?ref=${ref}`;
+            const res = await apiUpload(
+                "/xz3r0/xdatahub/loras/cover" + query,
+                form
+            );
+            if (res.ok && res.data && res.data.status === "success") {
+                if (this._currentData) {
+                    this._currentData.cover = res.data.cover || null;
+                }
+                this._pendingCover = null;
+                banner.success(t("lora.cover.upload_ok"));
+                appStore.state.refreshTrigger = Date.now();
+                return;
+            }
+            if (
+                res.status === 409
+                && res.data
+                && res.data.code === "cover_exists"
+            ) {
+                const names = Array.isArray(res.data.existing)
+                    ? res.data.existing.map(String)
+                    : [];
+                const target = String(res.data.target || "");
+                if (target && !names.includes(target)) names.push(target);
+                this._pendingCover = file;
+                this._openConfirm("replace", names);
+                return;
+            }
+            this._pendingCover = null;
+            if (res.status === 413) {
+                banner.error(t("lora.cover.too_large"));
+            } else if (res.status === 415) {
+                banner.error(t("lora.cover.invalid_format"));
+            } else if (res.status === 409 || res.status === 403) {
+                banner.error(t("lora.cover.readonly"));
+            } else {
+                banner.error(t("lora.cover.upload_fail"));
+            }
+        } catch (e) {
+            console.error("Failed to upload LoRA cover:", e);
+            this._pendingCover = null;
+            banner.error(t("lora.cover.upload_fail"));
+        } finally {
+            this._coverBusy = false;
+            this._rerenderDrawer();
+        }
+    }
+
+    async _deleteCover() {
+        if (!this._currentRef || this._coverBusy) return;
+        this._coverBusy = true;
+        this._rerenderDrawer();
+        try {
+            const res = await apiPost(
+                "/xz3r0/xdatahub/loras/cover/delete",
+                { ref: this._currentRef }
+            );
+            if (res && res.status === "success") {
+                if (this._currentData) this._currentData.cover = null;
+                banner.success(t("lora.cover.remove_ok"));
+                appStore.state.refreshTrigger = Date.now();
+            } else {
+                banner.error(t("lora.cover.remove_fail"));
+            }
+        } catch (e) {
+            console.error("Failed to remove LoRA cover:", e);
+            banner.error(t("lora.cover.remove_fail"));
+        } finally {
+            this._coverBusy = false;
+            this._confirm = null;
+            this._pendingCover = null;
+            this._rerenderDrawer();
+        }
+    }
+
+    _openCoverPreview() {
+        const cover = this._currentData ? this._currentData.cover : null;
+        if (!cover || !cover.url) return;
+        const isVideo = String(cover.kind || "") === "video";
+        document.dispatchEvent(new CustomEvent("xdh:preview", {
+            detail: {
+                id: `loracover:${this._currentRef}`,
+                name: String(cover.name || ""),
+                url: String(cover.url),
+                type: isVideo ? "video" : "image",
+                iconHtml: icon("video", 56),
+                raw: {
+                    extra: {
+                        media_ref: this._currentRef,
+                        media_type: "lora",
+                    },
+                },
+            },
+        }));
+    }
+
     bindEvents() {
         this.$(".backdrop")?.addEventListener("click", () => this._close());
         this.$(".lb-close")?.addEventListener("click", () => this._close());
@@ -206,6 +429,38 @@ export class XdhLoraDetail extends BaseElement {
             }
         });
         this.$(".import-meta-btn")?.addEventListener("click", () => this._importMetadata());
+
+        // ── 封面 ────────────────────────────────────────
+        this.$(".preview-area")?.addEventListener("click", () => {
+            this._openCoverPreview();
+        });
+        this.$(".js-cover-pick")?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (this._coverBusy) return;
+            this.$(".cover-file-input")?.click();
+        });
+        this.$(".js-cover-remove")?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (this._coverBusy) return;
+            const cover = this._currentData ? this._currentData.cover : null;
+            this._openConfirm("remove", cover ? [cover.name] : []);
+        });
+        this.$(".cover-file-input")?.addEventListener("change", (e) => {
+            const input = e.target;
+            const file = input.files ? input.files[0] : null;
+            input.value = "";
+            if (file) void this._handleCoverFile(file);
+        });
+        // ── 确认框 ────────────────────────────────────
+        this.$(".confirm-overlay")?.addEventListener("click", (e) => {
+            if (e.target === e.currentTarget) this._closeConfirm();
+        });
+        this.$(".js-confirm-cancel")?.addEventListener("click", () => {
+            this._closeConfirm();
+        });
+        this.$(".js-confirm-ok")?.addEventListener("click", () => {
+            void this._confirmAction();
+        });
     }
 
     render() {
@@ -229,23 +484,64 @@ export class XdhLoraDetail extends BaseElement {
             const note = data.lora_note || "";
             const sM = data.strength_model ?? 1.0;
             const sC = data.strength_clip ?? 1.0;
-            const thumbUrl = "/xz3r0/xdatahub/loras/thumb?ref="
-                + encodeURIComponent(data.media_ref);
+            const cover = data.cover || null;
+            const isVideoCover = !!cover && cover.kind === "video";
+            const coverName = cover ? String(cover.name || "") : "";
+            const coverUrl = cover ? String(cover.url || "") : "";
+            const coverStillUrl = cover
+                ? String(cover.thumb_url || cover.url || "")
+                : "";
             const safeNote = escapeHtml(note);
-            const safeThumbUrl = escapeAttr(thumbUrl);
+            const safeCoverUrl = escapeAttr(coverUrl);
+            const safeCoverStillUrl = escapeAttr(coverStillUrl);
+            const safeCoverName = escapeHtml(coverName);
             const safeTriggerWords = escapeHtml(twWords);
             const safeStrengthModel = escapeAttr(String(sM));
             const safeStrengthClip = escapeAttr(String(sC));
 
+            const previewBody = !cover
+                ? `<span class="preview-empty">${icon("image", 36)}</span>`
+                : isVideoCover
+                    ? `<img class="preview-still"
+                            src="${safeCoverStillUrl}" alt=""
+                            onerror="this.style.display='none'"/>
+                        <span class="preview-play">${icon("play", 20)}</span>`
+                    : `<img class="preview-blur"
+                            src="${safeCoverStillUrl}"
+                            alt="" aria-hidden="true"
+                            onerror="this.style.display='none'"/>
+                        <img class="preview-img"
+                            src="${safeCoverStillUrl}" alt="Cover"
+                            onerror="this.style.display='none'"/>`;
+
+            const coverPickBtn = `
+                <button class="cover-btn xdh-tooltip xdh-tooltip-down js-cover-pick"
+                    data-tooltip="${t('lora.cover.btn.change')}">
+                    ${icon("image-up", 14)}
+                </button>`;
+            const coverRemoveBtn = cover
+                ? `
+                <button class="cover-btn is-danger xdh-tooltip xdh-tooltip-down js-cover-remove"
+                    data-tooltip="${t('lora.cover.btn.remove')}">
+                    ${icon("trash-2", 14)}
+                </button>`
+                : "";
+            const coverCaption = cover
+                ? `${icon(isVideoCover ? "video" : "image", 12)}
+                   <span class="cover-name">${safeCoverName}</span>`
+                : `<span class="cover-name">${t('lora.cover.empty')}</span>`;
+            const coverHint = isVideoCover
+                ? ` title="${escapeAttr(t('lora.cover.video_hint'))}"`
+                : "";
+
             drawerBody = `
-                <div class="preview-area">
-                    <span class="preview-empty">${icon("image", 36)}</span>
-                    <img class="preview-blur" src="${safeThumbUrl}"
-                        alt="" aria-hidden="true"
-                        onerror="this.style.display='none'"/>
-                    <img class="preview-img" src="${safeThumbUrl}"
-                        alt="Preview"
-                        onerror="this.style.display='none'"/>
+                <div class="preview-area ${cover ? "has-cover" : ""}"
+                    data-cover-url="${safeCoverUrl}"${coverHint}>
+                    ${previewBody}
+                    <div class="preview-actions">
+                        ${coverPickBtn}${coverRemoveBtn}
+                    </div>
+                    <div class="preview-caption">${coverCaption}</div>
                 </div>
                 <div class="form-scroll xdh-scroll">
                     <div class="strength-row">
@@ -425,6 +721,162 @@ export class XdhLoraDetail extends BaseElement {
                     height: 100%;
                     object-fit: contain;
                     z-index: 3;
+                }
+                .preview-still {
+                    position: absolute;
+                    inset: 0;
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    z-index: 3;
+                }
+                .preview-area.has-cover {
+                    cursor: zoom-in;
+                }
+                .preview-play {
+                    position: absolute;
+                    inset: 0;
+                    margin: auto;
+                    width: 44px;
+                    height: 44px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 50%;
+                    background: rgba(0,0,0,0.55);
+                    color: #fff;
+                    z-index: 4;
+                    pointer-events: none;
+                }
+                .preview-actions {
+                    position: absolute;
+                    right: var(--xdh-space-sm);
+                    top: var(--xdh-space-sm);
+                    display: flex;
+                    gap: var(--xdh-space-xs);
+                    z-index: 6;
+                }
+                .cover-btn {
+                    width: 28px;
+                    height: 28px;
+                    padding: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: var(--xdh-radius-xs);
+                    border: 1px solid var(--xdh-clr-hairline);
+                    background: var(--xdh-clr-surface-strong);
+                    color: var(--xdh-clr-ink);
+                    cursor: pointer;
+                }
+                .cover-btn:hover {
+                    background: var(--xdh-clr-surface-soft);
+                }
+                .cover-btn.is-danger:hover {
+                    color: var(--xdh-clr-error);
+                }
+                .preview-caption {
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    z-index: 5;
+                    display: flex;
+                    align-items: center;
+                    gap: var(--xdh-space-xs);
+                    padding: var(--xdh-space-xs) var(--xdh-space-sm);
+                    background: linear-gradient(
+                        to top,
+                        rgba(0,0,0,0.62),
+                        rgba(0,0,0,0)
+                    );
+                    color: #fff;
+                    font-size: 11px;
+                    pointer-events: none;
+                }
+                .cover-name {
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .cover-file-input {
+                    display: none;
+                }
+
+                /* ── 封面确认框 ─────────────────────── */
+                .confirm-overlay {
+                    position: absolute;
+                    inset: 0;
+                    z-index: 20;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: var(--xdh-space-md);
+                    background: rgba(0,0,0,0.45);
+                }
+                .confirm-box {
+                    width: 100%;
+                    max-width: 280px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--xdh-space-sm);
+                    padding: var(--xdh-space-md);
+                    background: var(--xdh-color-surface-1);
+                    border: 1px solid var(--xdh-color-border);
+                    border-radius: var(--xdh-radius-sm);
+                }
+                .confirm-title {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--xdh-space-xs);
+                    color: var(--xdh-color-text-primary);
+                    font: var(--xdh-font-title-sm);
+                }
+                .confirm-body {
+                    color: var(--xdh-color-text-secondary);
+                    font-size: 12px;
+                }
+                .confirm-list {
+                    margin: 0;
+                    padding-left: 18px;
+                    max-height: 120px;
+                    overflow-y: auto;
+                    color: var(--xdh-color-text-primary);
+                    font-size: 12px;
+                    word-break: break-all;
+                }
+                .confirm-actions {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: var(--xdh-space-sm);
+                }
+                .confirm-btn {
+                    padding: var(--xdh-space-sm) var(--xdh-space-md);
+                    border-radius: var(--xdh-radius-sm);
+                    border: 1px solid var(--border-standard);
+                    background: transparent;
+                    color: var(--xdh-color-text-secondary);
+                    font: var(--xdh-font-button-sm);
+                    font-family: inherit;
+                    cursor: pointer;
+                }
+                .confirm-btn:hover {
+                    border-color: var(--border-hover);
+                    color: var(--xdh-color-text-primary);
+                }
+                .confirm-btn.is-danger {
+                    border: none;
+                    background: var(--xdh-clr-error);
+                    color: #fff;
+                }
+                .confirm-btn.is-danger:hover {
+                    background: var(--xdh-clr-error-hover);
+                    color: #fff;
+                }
+                .confirm-btn:disabled {
+                    opacity: 0.5;
+                    pointer-events: none;
                 }
 
                 ${SCROLLBAR_CSS}
@@ -606,6 +1058,9 @@ export class XdhLoraDetail extends BaseElement {
                         <button class="lb-close">${icon("x", 16)}</button>
                     </div>
                     ${drawerBody}
+                    <input type="file" class="cover-file-input"
+                        accept="${COVER_ACCEPT}"/>
+                    ${this._renderConfirmDialog()}
                 </div>
             </div>
         `;
