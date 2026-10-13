@@ -111,6 +111,11 @@ MEDIA_TYPE_EXT = {
     "audio": {".wav", ".mp3", ".flac", ".ogg", ".m4a"},
 }
 LORA_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+LORA_VIDEO_EXT = {".mp4", ".webm", ".mov"}
+LORA_COVER_EXT = LORA_IMAGE_EXT | LORA_VIDEO_EXT
+LORA_COVER_MAX_BYTES = 100 * 1024 * 1024
+LORA_COVER_VIEW_SIZES = {"thumb": THUMB_MAX_PX, "preview": 720}
+LORA_COVER_TMP_SUFFIX = ".xdh-tmp"
 LORA_ROOT_NAME = "loras"
 LORA_FILE_EXT = {
     ".bin",
@@ -145,6 +150,8 @@ ERROR_TEXT = {
     "internal_error": "System busy, please retry later",
     "unsupported_media_type": "Unsupported media type",
     "lora_db_conflict": "Target Lora database already exists",
+    "cover_exists": "A cover file with the same name already exists",
+    "file_too_large": "File exceeds the size limit",
 }
 
 
@@ -318,6 +325,7 @@ def json_error(
     code_or_request: str | web.Request,
     code: str | None = None,
     status: int = 400,
+    extra: dict[str, Any] | None = None,
 ) -> web.Response:
     if code is None:
         request = None
@@ -331,15 +339,15 @@ def json_error(
         err_code = str(code)
     locale = resolve_locale_from_request(request)
     message = error_message(err_code, locale)
-    return web.json_response(
-        {
-            "status": "error",
-            "code": err_code,
-            "message_key": f"xdatahub.api.error.{err_code}",
-            "message": message,
-        },
-        status=status,
-    )
+    payload: dict[str, Any] = {
+        "status": "error",
+        "code": err_code,
+        "message_key": f"xdatahub.api.error.{err_code}",
+        "message": message,
+    }
+    if extra:
+        payload.update(extra)
+    return web.json_response(payload, status=status)
 
 
 def parse_int(value: Any, fallback: int) -> int:
@@ -786,14 +794,92 @@ def lora_thumb_url(lora_ref: str) -> str:
     return "/xz3r0/xdatahub/loras/thumb?ref=" + quote(lora_ref, safe="")
 
 
-def find_lora_thumbnail(path: Path) -> Path | None:
+def lora_cover_url(
+    lora_ref: str,
+    variant: str = "",
+    ver: str = "",
+) -> str:
+    """构造封面访问地址；variant 为空表示取原文件。"""
+    url = "/xz3r0/xdatahub/loras/cover?ref=" + quote(lora_ref, safe="")
+    if variant:
+        url += "&variant=" + quote(str(variant), safe="")
+    if ver:
+        url += "&ver=" + quote(str(ver), safe="")
+    return url
+
+
+def lora_cover_kind(path: Path) -> str:
+    """按扩展名判断封面类型：image / video，非封面返回空串。"""
+    ext = path.suffix.lower()
+    if ext in LORA_IMAGE_EXT:
+        return "image"
+    if ext in LORA_VIDEO_EXT:
+        return "video"
+    return ""
+
+
+def find_lora_cover(path: Path) -> tuple[Path, str] | None:
+    """在 LoRA 同目录里找同名封面：先图片，再视频。"""
     stem = path.stem
     parent = path.parent
-    for ext in LORA_IMAGE_EXT:
+    for ext in sorted(LORA_IMAGE_EXT):
         candidate = parent / f"{stem}{ext}"
-        if candidate.exists() and candidate.is_file():
-            return candidate
+        try:
+            if candidate.is_file():
+                return candidate, "image"
+        except OSError:
+            continue
+    for ext in sorted(LORA_VIDEO_EXT):
+        candidate = parent / f"{stem}{ext}"
+        try:
+            if candidate.is_file():
+                return candidate, "video"
+        except OSError:
+            continue
     return None
+
+
+def find_lora_sibling_covers(path: Path) -> list[Path]:
+    """列出 LoRA 同目录里所有同名封面文件（图片 + 视频）。"""
+    stem = path.stem
+    parent = path.parent
+    found: list[Path] = []
+    for ext in sorted(LORA_COVER_EXT):
+        candidate = parent / f"{stem}{ext}"
+        try:
+            if candidate.is_file():
+                found.append(candidate)
+        except OSError:
+            continue
+    return found
+
+
+def find_lora_thumbnail(path: Path) -> Path | None:
+    """兼容旧调用：只返回同名图片封面。"""
+    cover = find_lora_cover(path)
+    if cover is None or cover[1] != "image":
+        return None
+    return cover[0]
+
+
+def lora_cover_version(path: Path) -> str:
+    """封面文件的版本标记，用于地址破缓存。"""
+    try:
+        stat = path.stat()
+    except OSError:
+        return ""
+    return f"{stat.st_mtime_ns}-{stat.st_size}"
+
+
+def lora_cover_still(
+    lora_ref: str,
+    cover_path: Path,
+    size: int,
+) -> Path | None:
+    """给视频封面生成（或复用）首帧缩略图；失败返回 None。"""
+    version = lora_cover_version(cover_path)
+    key = f"loracover:{lora_ref}:{cover_path.name}:{version}"
+    return STORE.generate_thumb(key, cover_path, size)
 
 
 def _split_trigger_words_text(value: Any) -> list[str]:
@@ -3122,10 +3208,18 @@ def _lora_item_payload_from_db(
     if root is not None:
         try:
             lora_path = root / rel_path
-            thumb_path = find_lora_thumbnail(lora_path)
-            if thumb_path is not None:
+            cover = find_lora_cover(lora_path)
+            if cover is not None:
+                cover_path, cover_kind = cover
+                version = lora_cover_version(cover_path)
                 extra["has_thumbnail"] = True
                 extra["thumb_url"] = lora_thumb_url(public_ref)
+                extra["cover_kind"] = cover_kind
+                extra["cover_url"] = lora_cover_url(
+                    public_ref,
+                    ver=version,
+                )
+                extra["cover_ver"] = version
         except Exception:
             pass
     return {
@@ -5825,6 +5919,32 @@ async def api_loras(request: web.Request) -> web.Response:
     return web.json_response({"status": "success", **list_payload(data)})
 
 
+def _lora_cover_payload(
+    lora_ref: str,
+    rel_path: str,
+) -> dict[str, Any] | None:
+    """封面信息（详情抽屉与上传响应共用）；没有封面返回 None。"""
+    root, _ = resolve_lora_dir("")
+    if root is None:
+        return None
+    cover = find_lora_cover(root / rel_path)
+    if cover is None:
+        return None
+    cover_path, kind = cover
+    version = lora_cover_version(cover_path)
+    url = lora_cover_url(lora_ref, ver=version)
+    thumb_url = url
+    if kind == "video":
+        thumb_url = lora_cover_url(lora_ref, "preview", version)
+    return {
+        "kind": kind,
+        "name": cover_path.name,
+        "url": url,
+        "thumb_url": thumb_url,
+        "ver": version,
+    }
+
+
 def _build_lora_trigger_item(
     lora_ref: str,
     rel_path: str,
@@ -5855,6 +5975,7 @@ def _build_lora_trigger_item(
         "created_at": str((payload or {}).get("created_at") or ""),
         "updated_at": str((payload or {}).get("updated_at") or ""),
         "exists": payload is not None,
+        "cover": _lora_cover_payload(lora_ref, rel_path),
     }
 
 
@@ -6168,11 +6289,11 @@ async def api_media_thumb(request: web.Request) -> web.Response:
     return resp
 
 
-@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/thumb")
-async def api_lora_thumb(request: web.Request) -> web.Response:
-    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
-    if not lora_ref:
-        return json_error(request, "invalid_payload", 400)
+def _resolve_lora_target(
+    request: web.Request,
+    lora_ref: str,
+) -> tuple[Path, Path] | web.Response:
+    """把 Lora 引用解析成 (root, lora 文件路径)；失败返回错误响应。"""
     rel_path = lora_rel_path_from_ref(lora_ref)
     if not rel_path:
         return json_error(request, "file_not_found", 404)
@@ -6182,21 +6303,65 @@ async def api_lora_thumb(request: web.Request) -> web.Response:
     lora_path = normalize_path(root / rel_path)
     if not is_path_within_root(lora_path, root):
         return json_error(request, "permission_denied", 403)
-    thumb_path = find_lora_thumbnail(lora_path)
-    if thumb_path is None:
+    if not lora_path.exists() or not lora_path.is_file():
         return json_error(request, "file_not_found", 404)
-    target = normalize_path(thumb_path)
-    if not is_path_within_root(target, root):
+    return root, lora_path
+
+
+def _thumb_file_response(thumb: Path, cache_key: str) -> web.FileResponse:
+    """返回带长缓存的缩略图响应。"""
+    resp = web.FileResponse(thumb)
+    resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    etag = hashlib.sha256(
+        f"{cache_key}:{thumb.stat().st_mtime_ns}".encode(),
+    ).hexdigest()[:16]
+    resp.headers["ETag"] = f'"{etag}"'
+    return resp
+
+
+async def _lora_cover_stream_response(
+    request: web.Request,
+    *,
+    still_only: bool,
+) -> web.Response:
+    """封面读取；still_only=True 时永远返回图片（视频取首帧）。"""
+    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    resolved = _resolve_lora_target(request, lora_ref)
+    if isinstance(resolved, web.Response):
+        return resolved
+    root, lora_path = resolved
+    cover = find_lora_cover(lora_path)
+    if cover is None:
+        return json_error(request, "file_not_found", 404)
+    cover_path = normalize_path(cover[0])
+    if not is_path_within_root(cover_path, root):
         return json_error(request, "permission_denied", 403)
-    if target.suffix.lower() not in LORA_IMAGE_EXT:
-        return json_error(request, "unsupported_media_type", 415)
-    if not target.exists() or not target.is_file():
-        return json_error(request, "file_not_found", 404)
+    cover_kind = cover[1]
+    variant = str(request.query.get("variant") or "").strip().lower()
+    size = LORA_COVER_VIEW_SIZES.get(variant)
+    if cover_kind == "video" and (still_only or size):
+        still_size = size or LORA_COVER_VIEW_SIZES["thumb"]
+        loop = asyncio.get_event_loop()
+        thumb = await loop.run_in_executor(
+            None,
+            lora_cover_still,
+            lora_ref,
+            cover_path,
+            still_size,
+        )
+        if thumb is None:
+            return json_error(request, "file_not_found", 404)
+        return _thumb_file_response(
+            thumb,
+            f"{lora_ref}:{cover_path.name}:{still_size}",
+        )
     try:
         return await _stream_media_file_response(
             request=request,
-            path=target,
-            media_type="image",
+            path=cover_path,
+            media_type=cover_kind,
         )
     except PermissionError:
         return json_error(request, "permission_denied", 403)
@@ -6206,10 +6371,146 @@ async def api_lora_thumb(request: web.Request) -> web.Response:
         if _is_client_disconnect_error(exc):
             return web.Response(status=204)
         LOGGER.exception(
-            "[xdatahub] lora thumb stream failed: err=%s",
+            "[xdatahub] lora cover stream failed: err=%s",
             type(exc).__name__,
         )
         return json_error(request, "internal_error", 500)
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/thumb")
+async def api_lora_thumb(request: web.Request) -> web.Response:
+    """旧地址兼容：永远返回图片（视频封面返回首帧）。"""
+    return await _lora_cover_stream_response(request, still_only=True)
+
+
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/cover")
+async def api_lora_cover(request: web.Request) -> web.Response:
+    """封面读取：默认原文件，variant=thumb/preview 时取视频首帧。"""
+    return await _lora_cover_stream_response(request, still_only=False)
+
+
+@server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/cover")
+async def api_lora_cover_upload(request: web.Request) -> web.Response:
+    """上传封面：复制到 Lora 同目录并改成同名。"""
+    denied = write_guard()
+    if denied:
+        return denied
+    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    resolved = _resolve_lora_target(request, lora_ref)
+    if isinstance(resolved, web.Response):
+        return resolved
+    _root, lora_path = resolved
+    rel_path = lora_rel_path_from_ref(lora_ref)
+    overwrite = parse_bool(request.query.get("overwrite"))
+    try:
+        reader = await request.multipart()
+    except Exception:
+        reader = None
+    if reader is None:
+        return json_error(request, "invalid_payload", 400)
+    field = await reader.next()
+    if field is None or field.name != "file":
+        return json_error(request, "invalid_payload", 400)
+    filename = str(field.filename or "").strip()
+    ext = Path(filename).suffix.lower()
+    if ext not in LORA_COVER_EXT:
+        return json_error(request, "unsupported_media_type", 415)
+    target = lora_path.with_suffix(ext)
+    siblings = find_lora_sibling_covers(lora_path)
+    existing = [
+        item
+        for item in siblings
+        if normalize_path(item) != normalize_path(target)
+    ]
+    if (siblings or target.exists()) and not overwrite:
+        return json_error(
+            request,
+            "cover_exists",
+            409,
+            extra={
+                "existing": [item.name for item in siblings],
+                "target": target.name,
+            },
+        )
+    tmp_path = target.parent / f"{target.name}{LORA_COVER_TMP_SUFFIX}"
+    written = 0
+    too_large = False
+    try:
+        with tmp_path.open("wb") as handle:
+            while True:
+                chunk = await field.read_chunk()
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > LORA_COVER_MAX_BYTES:
+                    too_large = True
+                    break
+                handle.write(chunk)
+    except PermissionError:
+        tmp_path.unlink(missing_ok=True)
+        return json_error(request, "permission_denied", 403)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        return json_error(request, "internal_error", 500)
+    if too_large:
+        tmp_path.unlink(missing_ok=True)
+        return json_error(request, "file_too_large", 413)
+    if written == 0:
+        tmp_path.unlink(missing_ok=True)
+        return json_error(request, "invalid_payload", 400)
+    try:
+        os.replace(str(tmp_path), str(target))
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        return json_error(request, "internal_error", 500)
+    for item in existing:
+        try:
+            item.unlink()
+        except OSError:
+            LOGGER.warning(
+                "[xdatahub] lora cover replace failed: %s",
+                item.name,
+            )
+    return web.json_response(
+        {
+            "status": "success",
+            "cover": _lora_cover_payload(lora_ref, rel_path or ""),
+        }
+    )
+
+
+@server.PromptServer.instance.routes.post(
+    "/xz3r0/xdatahub/loras/cover/delete"
+)
+async def api_lora_cover_delete(request: web.Request) -> web.Response:
+    """删除封面文件（只删同名封面，不动其它文件）。"""
+    denied = write_guard()
+    if denied:
+        return denied
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    lora_ref = normalize_lora_public_ref(str(payload.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    resolved = _resolve_lora_target(request, lora_ref)
+    if isinstance(resolved, web.Response):
+        return resolved
+    _root, lora_path = resolved
+    deleted: list[str] = []
+    for item in find_lora_sibling_covers(lora_path):
+        try:
+            item.unlink()
+            deleted.append(item.name)
+        except OSError:
+            LOGGER.warning(
+                "[xdatahub] lora cover delete failed: %s",
+                item.name,
+            )
+    return web.json_response({"status": "success", "deleted": deleted})
 
 
 @server.PromptServer.instance.routes.post("/xz3r0/xdatahub/loras/rebuild")

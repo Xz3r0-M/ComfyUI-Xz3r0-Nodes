@@ -16,6 +16,7 @@ import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import { forEachNode } from "./x_subgraph_utils.js";
 
 // =========================================================================
 // 本地化 Key 常量（参照 XImageGet2 模式）
@@ -386,20 +387,53 @@ function suppressNativePreview(node) {
 }
 
 /**
+ * 找出节点输出在 app.nodeOutputs 里的键。
+ *
+ * - 根图节点：键就是节点 id（"789"）。
+ * - 子图（Subgraph）内的节点：键是「所属子图 UUID + 冒号 + 节点 id」
+ *   （形如 "a1b2…-uuid:789"），直接用 node.id 查会落空。
+ *   前端在整个图树范围内保证节点 id 唯一，所以按「以 :节点id 结尾」
+ *   匹配不会误伤其它节点。
+ *
+ * @param {object} outputs app.nodeOutputs
+ * @param {object} node 目标节点
+ * @returns {string[]} 匹配到的键（可能为空）
+ */
+function outputKeysForNode(outputs, node) {
+    var keys = [];
+    var idText = String(node.id);
+    if (Object.prototype.hasOwnProperty.call(outputs, idText)) {
+        keys.push(idText);
+    }
+    var suffix = ":" + idText;
+    for (var key in outputs) {
+        if (key !== idText && key.slice(-suffix.length) === suffix) {
+            keys.push(key);
+        }
+    }
+    return keys;
+}
+
+/**
  * 把节点输出里的 images 抹掉。
  *
  * 新版前端在调用 onExecuted 之前，已把输出深拷贝进 Vue 渲染用的 store，
  * 所以只删 onExecuted 收到的那个对象不够 —— 必须再从 app.nodeOutputs 删一次：
  * 它是前端自己的「可变视图」，删除会同步回 store，两套预览就都拿不到图了。
  * （旧版前端 app.nodeOutputs 是普通对象，删了也无副作用。）
+ *
+ * 子图内的节点要按带作用域前缀的键删除，否则原生预览会在子图里复发。
  */
 function dropStoredOutputImages(node) {
     if (!node) return;
     var outputs = app && app.nodeOutputs;
     if (!outputs) return;
     try {
-        var entry = outputs[String(node.id)];
-        if (entry && entry.images) delete entry.images;
+        var keys = outputKeysForNode(outputs, node);
+        for (var i = 0; i < keys.length; i++) {
+            var entry = outputs[keys[i]];
+            if (entry && entry.images) delete entry.images;
+        }
     } catch (e) { /* ignore */ }
 }
 
@@ -2237,21 +2271,17 @@ app.registerExtension({
         var _previewActive = false;
 
         // ---- 收集所有 XImageCompare state（避免每次遍历） ----
+        // 必须遍历整棵图树（根图 + 各层子图）：app.graph 是根图，只扫它
+        // 会漏掉子图里的节点，表现为子图内实时预览不刷新、执行结束也不
+        // 清理浮层（残留上一张预览图）。
         function _getAllStates() {
-            var graph = app.graph;
-            if (!graph || !graph._nodes) return [];
             var result = [];
-            var nodes = graph._nodes;
-            for (var i = 0; i < nodes.length; i++) {
-                var node = nodes[i];
-                if (String(node.comfyClass || node.type || "") !== NODE_CLASS) {
-                    continue;
-                }
-                var state = node.__xcompareState;
+            forEachNode(app.graph, function (node) {
+                var state = node && node.__xcompareState;
                 if (state && state._previewOverlay) {
                     result.push(state);
                 }
-            }
+            });
             return result;
         }
 

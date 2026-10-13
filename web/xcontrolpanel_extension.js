@@ -337,32 +337,25 @@ function ensureStyles() {
         "  flex-direction: column;",
         "  gap: 6px;",
         "}",
-        ".xcontrolpanel-float-toast {",
-        "  position: absolute;",
-        "  top: 0;",
-        "  left: 0;",
-        "  right: 0;",
-        "  z-index: 5;",
-        "  padding: 5px 8px;",
-        "  border-radius: 4px;",
+        ".xcontrolpanel-manager-status {",
+        "  min-height: 15px;",
+        "  padding: 1px 0;",
         "  font: var(--xdh-font-caption-sm, 11px sans-serif);",
-        "  text-align: center;",
-        "  background: var(--comfy-menu-bg, #1e1e1e);",
-        "  border: 1px solid var(--border-color, #555);",
+        "  color: var(--descrip-text, #999);",
         "  opacity: 0;",
-        "  pointer-events: none;",
+        "  word-break: break-word;",
         "  transition: opacity 180ms ease;",
         "}",
-        ".xcontrolpanel-float-toast.is-visible {",
+        ".xcontrolpanel-manager-status.is-visible {",
         "  opacity: 1;",
         "}",
-        ".xcontrolpanel-float-toast.is-success {",
+        ".xcontrolpanel-manager-status.is-success {",
         "  color: var(--success-color, #7bd88f);",
         "}",
-        ".xcontrolpanel-float-toast.is-warn {",
+        ".xcontrolpanel-manager-status.is-warn {",
         "  color: #ffb74d;",
         "}",
-        ".xcontrolpanel-float-toast.is-error {",
+        ".xcontrolpanel-manager-status.is-error {",
         "  color: var(--error-text, #ff8c8c);",
         "}",
         ".xcontrolpanel-manager-label {",
@@ -541,6 +534,46 @@ function ensureStyles() {
         "  justify-content: flex-end;",
         "  gap: 8px;",
         "  margin-top: 4px;",
+        "}",
+        ".xcontrolpanel-button.is-primary {",
+        "  border-color: var(--primary-color, #ff385c);",
+        "  background: var(--primary-color, #ff385c);",
+        "  color: #fff;",
+        "}",
+        ".xcontrolpanel-button.is-primary:hover:enabled {",
+        "  border-color: var(--primary-color, #ff385c);",
+        "  filter: brightness(1.08);",
+        "}",
+        "/* ComfyUI 的 .comfy-modal 默认文字色是 --error-text（红），"
+            + "成功提示要显式改回普通文字色 */",
+        ".xcontrolpanel-modal-title {",
+        "  color: var(--input-text, #ddd);",
+        "  font-weight: 600;",
+        "}",
+        ".xcontrolpanel-modal-text {",
+        "  color: var(--input-text, #ddd);",
+        "  line-height: 1.5;",
+        "}",
+        ".xcontrolpanel-modal-row {",
+        "  display: flex;",
+        "  align-items: center;",
+        "  gap: 10px;",
+        "}",
+        ".xcontrolpanel-modal-spinner {",
+        "  width: 16px;",
+        "  height: 16px;",
+        "  flex: 0 0 auto;",
+        "  border: 2px solid rgba(128, 128, 128, 0.35);",
+        "  border-top-color: var(--primary-color, #ff385c);",
+        "  border-radius: 50%;",
+        "  animation: xcontrolpanel-spin 0.9s linear infinite;",
+        "}",
+        "@keyframes xcontrolpanel-spin {",
+        "  to { transform: rotate(360deg); }",
+        "}",
+        ".xcontrolpanel-modal-elapsed {",
+        "  color: var(--descrip-text, #999);",
+        "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
         "}",
     ].join("\n");
     document.head.appendChild(style);
@@ -813,6 +846,8 @@ async function runRestart(state) {
             "Waiting for ComfyUI to restart…"
         );
         setStatus(state, successMessage, "");
+        // 重启中：立刻弹出不可关闭的模态提示（此阶段后端不可用）
+        showRestartModal("waiting");
         startRestartDetection(state);
     } catch (error) {
         var detail = error && error.message ?
@@ -870,15 +905,155 @@ function startRestartDetection(state) {
     }, RESTART_EVENT_FALLBACK_MS);
 }
 
+// ---------------------------------------------------------- 重启过程弹窗
+
+var restartModal = null;
+var restartElapsedTimer = null;
+var restartElapsedEl = null;
+var restartStartedAt = 0;
+
+function ensureRestartModal() {
+    if (restartModal) return restartModal;
+    restartModal = new ComfyDialog("div", []);
+    return restartModal;
+}
+
+function stopRestartElapsedTimer() {
+    if (restartElapsedTimer) {
+        clearInterval(restartElapsedTimer);
+        restartElapsedTimer = null;
+    }
+    restartElapsedEl = null;
+}
+
+function elapsedText() {
+    var seconds = Math.max(
+        0, Math.round((Date.now() - restartStartedAt) / 1000)
+    );
+    return tk("dialog.restarting_elapsed", "Waiting for {s}s")
+        .replace("{s}", String(seconds));
+}
+
+function startRestartElapsedTimer(el) {
+    stopRestartElapsedTimer();
+    restartElapsedEl = el;
+    restartElapsedTimer = setInterval(function () {
+        if (!restartElapsedEl) return;
+        restartElapsedEl.textContent = elapsedText();
+    }, 1000);
+}
+
+function makeRefreshButton() {
+    var btn = el("button", "xcontrolpanel-button is-primary",
+        tk("btn.refresh_page", "Refresh page"));
+    btn.type = "button";
+    btn.addEventListener("click", function () {
+        window.location.reload();
+    });
+    return btn;
+}
+
+function makeCloseButton() {
+    var btn = el("button", "xcontrolpanel-button",
+        tk("btn.close", "Close"));
+    btn.type = "button";
+    btn.addEventListener("click", function () {
+        if (restartModal) restartModal.close();
+    });
+    return btn;
+}
+
+/**
+ * 重启过程弹窗：一个模态走完三段状态。
+ *
+ * - waiting：转圈 + 已等待秒数，**不给按钮**（关不掉 → 用户一定会看到）；
+ *   这一阶段后端本来就不可用，挡住画布没有实际损失。
+ * - done：重启完成，给出【刷新网页】。
+ * - timeout：等待超时，给出【刷新网页】并引导检查服务。
+ *
+ * 弹窗不会自动消失；与面板是否可见无关。
+ *
+ * @param {"waiting"|"done"|"timeout"} stage 当前阶段
+ * @returns {boolean} 是否成功弹出；false 时调用方应回退到 toast。
+ */
+function showRestartModal(stage) {
+    if (typeof ComfyDialog !== "function") return false;
+    try {
+        var dialog = ensureRestartModal();
+        var body = document.createElement("div");
+        body.className = "xcontrolpanel-dialog-body";
+
+        var title = "";
+        var message = "";
+        var buttons = [];
+
+        if (stage === "waiting") {
+            restartStartedAt = Date.now();
+            title = tk("dialog.restarting_title", "Restarting ComfyUI…");
+            message = tk(
+                "dialog.restarting_message",
+                "The server is unavailable while restarting. "
+                + "This usually takes 10 seconds to 1 minute."
+            );
+        } else if (stage === "timeout") {
+            stopRestartElapsedTimer();
+            title = tk(
+                "dialog.restart_timeout_title",
+                "Restart is taking too long"
+            );
+            message = tk(
+                "status.restart_timeout",
+                "Restart is taking too long. "
+                + "Refresh the page manually or check ComfyUI."
+            );
+            buttons = [makeRefreshButton(), makeCloseButton()];
+        } else {
+            stopRestartElapsedTimer();
+            title = tk("dialog.restart_done_title", "ComfyUI restarted");
+            message = tk(
+                "dialog.restart_done_message",
+                "The server is back online. "
+                + "Refresh this page to reconnect and continue."
+            );
+            buttons = [makeRefreshButton(), makeCloseButton()];
+        }
+
+        var titleRow = el("div", "xcontrolpanel-modal-row");
+        if (stage === "waiting") {
+            titleRow.appendChild(el("span", "xcontrolpanel-modal-spinner"));
+        }
+        titleRow.appendChild(el("div", "xcontrolpanel-modal-title", title));
+        body.appendChild(titleRow);
+        body.appendChild(el("div", "xcontrolpanel-modal-text", message));
+
+        if (stage === "waiting") {
+            var elapsedEl = el("div", "xcontrolpanel-modal-elapsed",
+                elapsedText());
+            body.appendChild(elapsedEl);
+            startRestartElapsedTimer(elapsedEl);
+        }
+
+        setDialogButtons(dialog, buttons);
+        dialog.show(body);
+        return true;
+    } catch (_error) {
+        return false;
+    }
+}
+
 function finishRestartDetection(state) {
     stopRestartDetection();
+    var doneMessage = tk(
+        "status.restarted",
+        "Restart complete. You can refresh the page."
+    );
     if (state) {
         setBusy(state, false);
-        var doneMessage = tk(
-            "status.restarted",
-            "Restart complete. You can refresh the page."
-        );
         setStatus(state, doneMessage, "success");
+    }
+    // 同一个弹窗从「重启中」切到「完成」；与面板是否可见无关，
+    // 弹窗不可用时才退回 toast。
+    if (!showRestartModal("done")) {
         toast(doneMessage, "success");
     }
 }
@@ -896,19 +1071,23 @@ async function pollRestartStatus(state) {
     if (restartPollAttempts * RESTART_POLL_INTERVAL_MS
         >= RESTART_POLL_TIMEOUT_MS) {
         stopRestartDetection();
+        var timeoutMessage = tk(
+            "status.restart_timeout",
+            "Restart is taking too long. Refresh the page manually or check ComfyUI."
+        );
         if (state) {
             setBusy(state, false);
-            var timeoutMessage = tk(
-                "status.restart_timeout",
-                "Restart is taking too long. Refresh the page manually or check ComfyUI."
-            );
             setStatus(state, timeoutMessage, "error");
+        }
+        // 超时也切成模态错误态（同样容易错过，且此刻更需要指引）
+        if (!showRestartModal("timeout")) {
             toast(timeoutMessage, "error");
         }
     }
 }
 
 function stopRestartDetection() {
+    stopRestartElapsedTimer();
     if (restartPollTimer) {
         clearInterval(restartPollTimer);
         restartPollTimer = null;
@@ -956,10 +1135,6 @@ function setUpdateControlsHidden(state, hidden) {
 function renderVersionList(state) {
     if (!state || !state.versionListEl) return;
     state.versionListEl.textContent = "";
-    // 浮动提示挂在列表内：清空后恢复，避免被移除
-    if (state.floatToastEl) {
-        state.versionListEl.appendChild(state.floatToastEl);
-    }
     var versions = state.versions || [];
     if (versions.length === 0) {
         state.filteredVersions = [];
@@ -1141,6 +1316,8 @@ function setUpdateBusy(state, busy) {
 async function refreshVersions(state) {
     if (!state || state.isUpdateBusy || state.isBusy || !state.supported) return;
     setRefreshBusy(state, true);
+    // 新一轮拉取开始：清掉上一次的结果提示（避免旧错误/旧成功与新内容并存）
+    clearManagerStatus(state);
     try {
         var response = await api.fetchApi("/xz3r0/xcontrolpanel/update/refresh", {
             method: "POST",
@@ -1173,10 +1350,10 @@ async function refreshVersions(state) {
                 "status.from_cache",
                 "Network limited. Showing the last fetched version list."
             );
-            showFloatToast(state, cacheMessage, "warn");
+            setManagerStatus(state, cacheMessage, "warn");
             toast(cacheMessage, "warn");
         } else {
-            showFloatToast(state,
+            setManagerStatus(state,
                 tk("status.refreshed", "Version list refreshed."), "success");
         }
     } catch (error) {
@@ -1261,7 +1438,7 @@ function openVersionManagerWindow(nodeState) {
     var updateStatusEl = el("div", "xcontrolpanel-status", "");
     leftCol.appendChild(updateStatusEl);
 
-    // ---- 右栏：获取版本按钮 + 搜索 + 版本列表（含浮动提示） ----
+    // ---- 右栏：获取版本按钮 + 内联状态行 + 搜索 + 版本列表 ----
     var rightCol = el("div", "xcontrolpanel-manager-right");
 
     var fetchButton = el("button", "xcontrolpanel-button xcontrolpanel-refresh",
@@ -1277,10 +1454,11 @@ function openVersionManagerWindow(nodeState) {
     searchEl.placeholder = tk("search.placeholder", "Search versions…");
     rightCol.appendChild(searchEl);
 
+    // 列表上方的内联状态行（常驻占位，不覆盖列表内容）
+    var managerStatusEl = el("div", "xcontrolpanel-manager-status", "");
+    rightCol.appendChild(managerStatusEl);
+
     var versionListEl = el("div", "xcontrolpanel-version-list xcontrolpanel-manager-list", "");
-    // 浮动提示挂在版本列表内（列表上方），不遮挡按钮/搜索框
-    var floatToastEl = el("div", "xcontrolpanel-float-toast", "");
-    versionListEl.appendChild(floatToastEl);
     rightCol.appendChild(versionListEl);
 
     var mainRow = el("div", "xcontrolpanel-manager-main", "");
@@ -1343,7 +1521,7 @@ function openVersionManagerWindow(nodeState) {
         tokenInputEl: tokenInputEl,
         tokenHelpEl: tokenHelpEl,
         refreshButton: fetchButton,
-        floatToastEl: floatToastEl,
+        managerStatusEl: managerStatusEl,
         searchEl: searchEl,
         versionListEl: versionListEl,
         versions: [],
@@ -1432,30 +1610,50 @@ async function fetchManagerStatus(winState) {
     } catch (_error) { /* ignore */ }
 }
 
-var floatToastTimer = null;
+var managerStatusTimer = null;
 
-function showFloatToast(state, message, kind) {
-    if (!state || !state.floatToastEl) return;
-    if (floatToastTimer) {
-        clearTimeout(floatToastTimer);
-        floatToastTimer = null;
+function clearManagerStatus(state) {
+    if (!state || !state.managerStatusEl) return;
+    if (managerStatusTimer) {
+        clearTimeout(managerStatusTimer);
+        managerStatusTimer = null;
     }
-    state.floatToastEl.textContent = message || "";
-    state.floatToastEl.classList.remove("is-error", "is-success", "is-warn");
+    state.managerStatusEl.textContent = "";
+    state.managerStatusEl.classList.remove("is-visible");
+}
+
+/**
+ * 版本列表上方的内联状态行。
+ *
+ * 与旧的浮动提示不同：它占自己的行（搜索框与列表之间），**不覆盖列表内容**，
+ * 所以不会遮住第一条版本。成功提示几秒后淡出；警告 / 错误常驻到下一次
+ * 操作，避免用户来不及读完（尤其是限流这类需要照做的提示）。
+ */
+function setManagerStatus(state, message, kind) {
+    if (!state || !state.managerStatusEl) return;
+    if (managerStatusTimer) {
+        clearTimeout(managerStatusTimer);
+        managerStatusTimer = null;
+    }
+    var el = state.managerStatusEl;
+    el.textContent = message || "";
+    el.classList.remove("is-error", "is-success", "is-warn");
     if (kind === "error") {
-        state.floatToastEl.classList.add("is-error");
+        el.classList.add("is-error");
     } else if (kind === "success") {
-        state.floatToastEl.classList.add("is-success");
+        el.classList.add("is-success");
     } else if (kind === "warn") {
-        state.floatToastEl.classList.add("is-warn");
+        el.classList.add("is-warn");
     }
-    state.floatToastEl.classList.add("is-visible");
-    floatToastTimer = setTimeout(function () {
-        if (state.floatToastEl) {
-            state.floatToastEl.classList.remove("is-visible");
-        }
-        floatToastTimer = null;
-    }, 2600);
+    el.classList.add("is-visible");
+    if (kind === "success") {
+        managerStatusTimer = setTimeout(function () {
+            if (state.managerStatusEl) {
+                state.managerStatusEl.classList.remove("is-visible");
+            }
+            managerStatusTimer = null;
+        }, 2600);
+    }
 }
 
 function toggleTokenForm(winState) {
@@ -1744,6 +1942,12 @@ function setDialogButtons(dialog, buttons) {
     for (var i = 0; i < old.length; i++) {
         old[i].remove();
     }
+    // 清掉上一次的按钮容器：同一个弹窗会多次切换状态（重启中 / 完成 / 超时）
+    var oldWraps = content.querySelectorAll(".xcontrolpanel-dialog-buttons");
+    for (var w = 0; w < oldWraps.length; w++) {
+        oldWraps[w].remove();
+    }
+    if (!buttons || !buttons.length) return;
     var wrap = el("div", "xcontrolpanel-dialog-buttons");
     for (var j = 0; j < buttons.length; j++) {
         wrap.appendChild(buttons[j]);

@@ -16,6 +16,10 @@
  *   不影响 ComfyUI 原生拖文件 / 拖官方节点的功能。
  * - drop 处理后 preventDefault + stopImmediatePropagation，让官方
  *   app.ts 的 bubble drop 命中 `event.defaultPrevented` 提前退出。
+ * - 建节点以「画布当前挂载的图」为目标（`app.canvas.graph`）：主画布时
+ *   就是根图，进入子图编辑后就是该子图。**不能用 `app.graph`**，它是
+ *   已废弃别名、恒指根图，会把节点建到用户看不见的地方（子图内拖拽
+ *   看似「没反应」就是此因）。
  * - LoRA 在首期不响应（不建 XLoraGet）。
  *
  * 开关来源：XDataHub 设置面板「画布交互」段的 `canvas_drop_enabled`
@@ -174,8 +178,23 @@ function resolveCanvasPos(event) {
     return null;
 }
 
+/**
+ * 取「画布当前正在编辑的图」。
+ *
+ * 主画布 = 根图；进入子图后官方会 canvas.setGraph(subgraph)，因此这里
+ * 拿到的是当前打开的那张子图。不能用 app.graph：它是已废弃别名，恒返回
+ * 根图，会把节点建到用户当前看不到的地方。
+ */
+function resolveActiveGraph() {
+    const canvasGraph = app?.canvas?.graph;
+    if (canvasGraph && typeof canvasGraph.add === "function") {
+        return canvasGraph;
+    }
+    return app?.graph;
+}
+
 function isOverBlankCanvas(cx, cy) {
-    const graph = app?.canvas?.graph || app?.graph;
+    const graph = resolveActiveGraph();
     if (!graph) return false;
     if (typeof graph.getNodeOnPos !== "function") return false;
     const hit = graph.getNodeOnPos(cx, cy);
@@ -187,7 +206,7 @@ function createAndLoadNode(payload, cx, cy) {
     if (!className) return null;
     const cfg = NODE_CONFIG[className];
     if (!cfg) return null;
-    const graph = app?.graph;
+    const graph = resolveActiveGraph();
     if (!graph || typeof graph.add !== "function") return null;
     if (typeof LiteGraph === "undefined" || !LiteGraph?.createNode) {
         return null;
