@@ -1,5 +1,67 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.8.0
+
+<details>
+
+### 1. 🛠️ 增强和修复 `XDataHub` 数据中心
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- 新增 Lora 封面编辑功能
+    - 编辑 Lora 时可直接从电脑选择一张图片作为封面（png / jpg / jpeg / webp / bmp / gif），不用再去文件夹里手动改名摆放
+    - 封面文件就放在模型旁边，换电脑或拷贝模型文件夹时会一起跟走
+- 新增 Lora 视频封面功能
+    - 支持 mp4 / webm / mov 三种格式，单个文件不超过 100MB
+    - 卡片上只显示第一帧，点预览才播放（可拖动进度条），与媒体库里的视频表现一致
+    - 同一目录下的同名视频也会被自动当成封面（以前只认图片）
+- 新增 覆盖与删除封面的确认提示
+    - 覆盖或删除封面时会先弹确认框并列出将被改动的文件名，已有封面不会被静默替换
+    - 只读目录、格式不支持、文件过大都会给出明确提示，不会静默失败
+- 修复在子图里拖放媒体文件无法自动创建加载节点的问题
+
+### 2. 🩹 修复 `XImageCompare` 图像和遮罩 A/B 对比节点
+`♾️ Xz3r0/Workflow-Processing`
+- 修复子图里的节点收不到执行中的实时预览、执行结束后浮层不清理（残留上一张图）的问题
+- 修复子图里出现第二个原生预览图的问题
+
+### 3. 🛠️ 增强 `XControlPanel` 控制面板节点
+`♾️ Xz3r0/Workflow-Processing`
+- 新增 重启过程的画布弹窗提示
+    - 确认重启后立即在画布中央弹出，显示「正在重启 ComfyUI…」与转圈图标，并显示已等待的秒数
+    - 重启完成或等待超时后，弹窗切换为对应状态并给出「刷新网页」按钮，点一下即刷新（等同手动刷新）
+- 更改版本获取后的提示显示方式
+
+---
+
+### 1. 🛠️ Enhanced & Fixed `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Added Lora cover editing
+    - Edit a Lora and pick an image (png / jpg / jpeg / webp / bmp / gif) straight from your computer as its cover, instead of renaming and placing a file by hand
+    - The cover file lives beside the model, so it travels with the model folder when you move or copy it
+- Added Lora video covers
+    - Supports mp4 / webm / mov, up to 100 MB per file
+    - The card shows only the first frame; playback starts from the preview (with a seekable progress bar), matching videos elsewhere in the node
+    - A same-name video in the Lora folder is now picked up automatically (previously only images were)
+- Added confirmation before overwriting or removing a cover
+    - Overwriting or removing asks first and lists exactly which files will be changed, so an existing cover is never replaced silently
+    - Read-only folders, unsupported formats and oversized files all report a clear message instead of failing silently
+- Fixed media files dropped inside a subgraph not creating a loader node
+
+### 2. 🩹 Fixed `XImageCompare` Image & Mask A/B Comparison Node
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed nodes inside a subgraph not receiving the live preview during execution, and the overlay not being cleaned up afterwards (leaving the previous frame visible)
+- Fixed a second native preview area appearing inside subgraphs
+
+### 3. 🛠️ Enhanced `XControlPanel` Control Panel Node
+`♾️ Xz3r0/Workflow-Processing`
+- Added a restart progress dialog
+    - It appears in the middle of the canvas as soon as a restart is confirmed, showing "Restarting ComfyUI…", a spinner and the elapsed seconds
+    - On completion or timeout the dialog switches to the matching state and offers a "Refresh page" button that reloads the page (same as a manual refresh)
+- Changed how version fetches are reported
+
+</details>
+
+---
+
 ## 🎉 v2.7.1
 
 <details>
