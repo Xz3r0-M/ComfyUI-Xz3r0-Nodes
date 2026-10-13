@@ -173,6 +173,8 @@ const Dictionary = {
         'lora.cover.remove_fail':   '删除封面失败，请重试',
         'lora.cover.invalid_format': '只支持图片和 mp4 / webm / mov 视频',
         'lora.cover.too_large':     '文件超过 100MB 上限',
+        'lora.cover.too_large_server':
+            '文件太大，被服务器拒收（可在 ComfyUI 启动参数 --max-upload-size 调大）',
         'lora.cover.readonly':      '当前为只读状态，暂时不能修改封面',
         'lora.cover.confirm_replace_title': '替换封面',
         'lora.cover.confirm_replace_body':
@@ -496,6 +498,8 @@ const Dictionary = {
         'lora.cover.invalid_format':
             'Only images and mp4 / webm / mov videos are supported',
         'lora.cover.too_large':     'File exceeds the 100 MB limit',
+        'lora.cover.too_large_server':
+            'File too large, rejected by the server (raise --max-upload-size in ComfyUI)',
         'lora.cover.readonly':
             'Read-only mode, cover cannot be changed now',
         'lora.cover.confirm_replace_title': 'Replace cover',

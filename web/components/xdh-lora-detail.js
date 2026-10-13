@@ -33,8 +33,27 @@ const COVER_EXT_SET = new Set([
     ".mov",
 ]);
 const COVER_MAX_BYTES = 100 * 1024 * 1024;
-const COVER_ACCEPT = "image/png,image/jpeg,image/webp,image/bmp,"
-    + "image/gif,video/mp4,video/webm,video/quicktime";
+// 同时写扩展名与 MIME：Windows/Linux 的对话框主要按扩展名过滤，
+// macOS 走 MIME/UTI，两边都写才能三大系统都正确筛选出 .mov 等格式
+const COVER_ACCEPT = [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".gif",
+    ".mp4",
+    ".webm",
+    ".mov",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/bmp",
+    "image/gif",
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+].join(",");
 
 export class XdhLoraDetail extends BaseElement {
     constructor() {
@@ -348,7 +367,10 @@ export class XdhLoraDetail extends BaseElement {
                 return;
             }
             this._pendingCover = null;
-            if (res.status === 413) {
+            if (res.status === 413 && !res.data) {
+                // 服务器自己的上传上限更小（ComfyUI --max-upload-size）
+                banner.error(t("lora.cover.too_large_server"));
+            } else if (res.status === 413) {
                 banner.error(t("lora.cover.too_large"));
             } else if (res.status === 415) {
                 banner.error(t("lora.cover.invalid_format"));
@@ -801,7 +823,13 @@ export class XdhLoraDetail extends BaseElement {
                     white-space: nowrap;
                 }
                 .cover-file-input {
-                    display: none;
+                    /* 不用 display:none：部分 Safari 版本对不可渲染的
+                       file input 不响应程序化 click */
+                    position: absolute;
+                    width: 1px;
+                    height: 1px;
+                    opacity: 0;
+                    pointer-events: none;
                 }
 
                 /* ── 封面确认框 ─────────────────────── */
