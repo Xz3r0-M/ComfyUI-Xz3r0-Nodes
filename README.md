@@ -26,7 +26,7 @@
 
 ### 📜 更新日志
 
-- Changelog.md
+- [Changelog.md](Changelog.md)
 
 ---
 
