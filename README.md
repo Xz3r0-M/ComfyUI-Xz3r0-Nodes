@@ -3,7 +3,6 @@
 # ♾️ ComfyUI-Xz3r0-Nodes ♾️
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0)
-[![ComfyUI](https://img.shields.io/badge/ComfyUI-compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 <img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
 ![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
 [![downloads](https://img.shields.io/endpoint?url=https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/badge.json)](https://registry.comfy.org/publishers/xz3r0/nodes/xz3r0-nodes)
@@ -12,20 +11,22 @@
 
 **如果这个项目对您有帮助，可以给个星标⭐或者分享给其他人！**
 
-[📜 点击查看更新日志 | Click to view the changelog](Changelog.md)
-
-
+---
 
 </div>
 
 ## 📖 项目简介
 
-- ComfyUI-Xz3r0-Nodes 是一个 ComfyUI 自定义节点项目，当前主要目标为创建增强的基础功能节点和扩展工具
+- 提供许多 ComfyUI 工作流都需要的人性化基础功能节点，让工作流用起来更快捷、搭起来更简洁。并提供多媒体文件（图像 / 视频 / 音频 / LoRA）的预览和加载中心 XDataHub。
 
 ### 🎯 设计特点
 
 - 🌍 多语言界面 - 节点目前支持 🇨🇳 `中文` 🇬🇧 `English` 界面
 - 🚫 安全处理 - 节点中可输入的文件名和路径已做防遍历攻击处理，请使用文字，不要使用日期时间标识符以外的特殊符号！
+
+### 📜 更新日志
+
+- Changelog.md
 
 ---
 
