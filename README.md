@@ -87,10 +87,10 @@ pip install -r requirements.txt
 
 `♾️ Xz3r0/XDataHub`
 
-|         |                  XAudioGet                    |                  XDataSave                    |                  XImageGet                    |                  XLoraGet                    |                  XStringGet                    |                  XVideoGet                    |
-| :-----: | :-------------------------------------------: | :-------------------------------------------: | :-------------------------------------------: | :------------------------------------------: | :--------------------------------------------: | :-------------------------------------------: |
-|   中文    | <img src="preview/XDataHub/CN/XAudioGet.png"> | <img src="preview/XDataHub/CN/XDataSave.png"> | <img src="preview/XDataHub/CN/XImageGet.png"> | <img src="preview/XDataHub/CN/XLoraGet.png"> | <img src="preview/XDataHub/CN/XStringGet.png"> | <img src="preview/XDataHub/CN/XVideoGet.png"> |
-| English | <img src="preview/XDataHub/EN/XAudioGet.png"> | <img src="preview/XDataHub/EN/XDataSave.png"> | <img src="preview/XDataHub/EN/XImageGet.png"> | <img src="preview/XDataHub/EN/XLoraGet.png"> | <img src="preview/XDataHub/EN/XStringGet.png"> | <img src="preview/XDataHub/EN/XVideoGet.png"> |
+|         |                  XAudioGet                    |                  XDataSave                    |                  XImageGet                    |                  XLoraGet                    |                  XMediaListGet                 |                  XStringGet                    |                  XVideoGet                    |
+| :-----: | :-------------------------------------------: | :-------------------------------------------: | :-------------------------------------------: | :-------------------------------------------: | :------------------------------------------: | :--------------------------------------------: | :-------------------------------------------: |
+|   中文    | <img src="preview/XDataHub/CN/XAudioGet.png"> | <img src="preview/XDataHub/CN/XDataSave.png"> | <img src="preview/XDataHub/CN/XImageGet.png"> | <img src="preview/XDataHub/CN/XLoraGet.png"> | <img src="preview/XDataHub/CN/XMediaListGet.png"> | <img src="preview/XDataHub/CN/XStringGet.png"> | <img src="preview/XDataHub/CN/XVideoGet.png"> |
+| English | <img src="preview/XDataHub/EN/XAudioGet.png"> | <img src="preview/XDataHub/EN/XDataSave.png"> | <img src="preview/XDataHub/EN/XImageGet.png"> | <img src="preview/XDataHub/EN/XLoraGet.png"> | <img src="preview/XDataHub/EN/XMediaListGet.png"> | <img src="preview/XDataHub/EN/XStringGet.png"> | <img src="preview/XDataHub/EN/XVideoGet.png"> |
 
 ---
 
