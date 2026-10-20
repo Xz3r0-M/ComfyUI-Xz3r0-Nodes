@@ -21,6 +21,10 @@ import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import {
+    buildAudioPlayer,
+    buildVideoPlayer,
+} from "./core/media-player.js";
 import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260916-4";
 
 const EXT_NAME = "xz3r0.xmedialistget";
@@ -62,6 +66,12 @@ const STYLE_ID = "xmedialistget-extension-style";
 const MIN_NODE_WIDTH = 500;
 const MIN_NODE_HEIGHT = 700;
 const THUMB_SIZE = 96;
+/* 和 XDataHub 卡片一样的「眼睛」预览图标。图标文件相对本模块解析，
+   避免在主页面里把 icons/... 解析到站点根目录。 */
+const PREVIEW_EYE_ICON_URL = new URL(
+    "./icons/eye.svg",
+    import.meta.url
+).href;
 const REFRESH_CONCURRENCY = 4;
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const TOAST_DURATION_MS = 2600;
@@ -537,9 +547,10 @@ function ensureStyles() {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-        .xmlg-panel {
+        .xmlg-panel,
+        .xmlg-preview {
             /* 颜色收口：优先 XDataHub token（由 web/xdatahub.js 注入宿主页），
-               缺失时回退到品牌色/中性色。面板内不再散落硬编码颜色。 */
+               缺失时回退到品牌色/中性色。面板和全屏预览共用这套变量。 */
             --xmlg-accent: var(--xdh-clr-primary, #ff385c);
             --xmlg-accent-muted: color-mix(
                 in srgb,
@@ -563,6 +574,18 @@ function ensureStyles() {
             --xmlg-success-glow-fade: color-mix(in srgb, var(--xmlg-success) 0%, transparent);
             --xmlg-warning: #f59e0b;
             --xmlg-warning-strong: #fbbf24;
+            /* 提示条：浅色主题用深琥珀字 + 米色底，深色主题反过来，
+               两边都是 6:1 以上的对比，避免「黄字压浅灰」看不清。 */
+            --xmlg-warning-text: color-mix(
+                in srgb,
+                var(--xmlg-warning) 38%,
+                var(--xmlg-text)
+            );
+            --xmlg-warning-surface: color-mix(
+                in srgb,
+                var(--xmlg-warning) 16%,
+                var(--xmlg-surface)
+            );
             --xmlg-warning-soft: color-mix(in srgb, var(--xmlg-warning) 12%, transparent);
             --xmlg-warning-ink: var(--xdh-clr-canvas, #0c0c0e);
             --xmlg-switch-off: var(--xdh-clr-border-strong, rgba(255, 255, 255, 0.22));
@@ -572,6 +595,8 @@ function ensureStyles() {
             --xmlg-thumb-bg: var(--xdh-clr-canvas, #0c0c0e);
             --xmlg-scroll-thumb: var(--xdh-scrollbar-thumb, #555);
             --xmlg-scroll-track: var(--xdh-scrollbar-track, transparent);
+        }
+        .xmlg-panel {
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -977,6 +1002,7 @@ function ensureStyles() {
             box-shadow: 0 0 0 1px var(--xmlg-accent);
         }
         .xmlg-thumb {
+            position: relative;
             width: 34px;
             height: 34px;
             flex: 0 0 34px;
@@ -989,6 +1015,46 @@ function ensureStyles() {
             font-size: 15px;
             color: var(--xmlg-text-muted);
         }
+        /* 悬停 / 键盘聚焦时，在缩略图正中浮出预览图标。 */
+        .xmlg-thumb-preview {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            z-index: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--xmlg-border);
+            background: color-mix(
+                in srgb,
+                var(--xmlg-canvas) 72%,
+                transparent
+            );
+            color: var(--xmlg-text);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.9);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+        .xmlg-thumb-preview-icon {
+            display: block;
+            width: 12px;
+            height: 12px;
+            background-color: currentColor;
+            -webkit-mask: url("${PREVIEW_EYE_ICON_URL}") center / contain
+                no-repeat;
+            mask: url("${PREVIEW_EYE_ICON_URL}") center / contain no-repeat;
+        }
+        .xmlg-thumb.is-previewable:hover .xmlg-thumb-preview,
+        .xmlg-thumb.is-previewable:focus .xmlg-thumb-preview,
+        .xmlg-thumb.is-previewable:focus-visible .xmlg-thumb-preview {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
         .xmlg-thumb.is-audio {
             background: var(--xmlg-surface);
         }
@@ -996,7 +1062,8 @@ function ensureStyles() {
         .xmlg-thumb video {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            /* 保持原始宽高比，整张图完整显示（不拉伸、不裁切） */
+            object-fit: contain;
             display: block;
         }
         .xmlg-thumb img.is-missing {
@@ -1175,7 +1242,9 @@ function ensureStyles() {
         }
         .xmlg-toast.is-warning {
             border-color: var(--xmlg-warning);
-            color: var(--xmlg-warning-strong);
+            background: var(--xmlg-warning-surface);
+            color: var(--xmlg-warning-text);
+            font-weight: 600;
         }
         @keyframes xmlg-toast-in {
             from { opacity: 0; transform: translate(-50%, -4px); }
@@ -1289,6 +1358,333 @@ function ensureStyles() {
         }
         .xmlg-hint.is-visible {
             display: block;
+        }
+
+        /* ── 全屏预览 ──────────────────────────────────────────────── */
+        .xmlg-preview {
+            position: fixed;
+            inset: 0;
+            /* 固定成视口大小并裁掉溢出内容：大图不能把界面撑到屏幕外。 */
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            z-index: 99990;
+            display: none;
+            flex-direction: column;
+            /* 全屏后背后是浏览器黑底，半透明/毛玻璃只会发灰，
+               所以这里用不透明的主底色：浅色主题纯白、深色主题近黑。 */
+            --xmlg-fs-bg: var(--xdh-clr-canvas, #0c0c0e);
+            --xmlg-fs-panel: var(--xdh-clr-surface-card, #161618);
+            --xmlg-fs-ring: var(--xdh-clr-hairline-soft,
+                rgba(255, 255, 255, 0.06));
+            --xmlg-fs-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+            background: var(--xmlg-fs-bg);
+            color: var(--xmlg-text);
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+        .xmlg-preview.is-open {
+            display: flex;
+        }
+        .xmlg-preview-stage {
+            position: relative;
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            min-height: 0;
+            padding: 12px;
+            box-sizing: border-box;
+        }
+        .xmlg-preview-bar {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 40px;
+        }
+        .xmlg-preview-title-wrap {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            min-width: 0;
+        }
+        .xmlg-preview-title {
+            max-width: 45vw;
+            font-size: 14px;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .xmlg-preview-counter {
+            color: var(--xmlg-text-muted);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .xmlg-preview-actions {
+            display: flex;
+            flex: 0 0 auto;
+            align-items: center;
+            gap: 8px;
+        }
+        .xmlg-preview-btn {
+            min-width: 30px;
+            height: 30px;
+            padding: 0 8px;
+            font-size: 14px;
+            /* 主底色上的小按钮：白（浅色）/ 深面板（深色）+ 细边框 */
+            background: var(--xmlg-fs-panel);
+        }
+        .xmlg-preview-btn:hover {
+            background: color-mix(
+                in srgb,
+                var(--xmlg-text) 8%,
+                var(--xmlg-fs-panel)
+            );
+        }
+        .xmlg-preview-btn[hidden] {
+            display: none;
+        }
+        .xmlg-preview-toggle {
+            gap: 6px;
+        }
+        .xmlg-preview-toggle-text {
+            color: var(--xmlg-text-muted);
+            font-size: 11px;
+            white-space: nowrap;
+        }
+        .xmlg-preview-media {
+            position: relative;
+            display: flex;
+            flex: 1 1 auto;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
+            border-radius: var(--xdh-radius-sm, 8px);
+            /* 媒体区与主底色同色，靠一圈细线标出范围，避免出现第二种灰。 */
+            background: var(--xmlg-fs-bg);
+            box-shadow: inset 0 0 0 1px var(--xmlg-fs-ring);
+            touch-action: none;
+        }
+        .xmlg-preview-media img.xmlg-preview-img {
+            display: block;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            user-select: none;
+            -webkit-user-drag: none;
+            transform-origin: center center;
+            will-change: transform;
+            cursor: zoom-in;
+        }
+        .xmlg-preview-media img.xmlg-preview-img.is-zoomed {
+            cursor: grab;
+        }
+        .xmlg-preview-media img.xmlg-preview-img.is-panning {
+            cursor: grabbing;
+        }
+        /* 视频/音频用和 XVideoGet / XAudioGet 同一套自绘播放器。 */
+        .xmlg-preview-media .xmg-video-player,
+        .xmlg-preview-media .xmg-audio-player {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            box-sizing: border-box;
+        }
+        /* 音频没有画面，把宽度和高度收一收，避免波形拉成一道高墙。 */
+        .xmlg-preview-media .xmg-audio-player {
+            width: min(880px, 100%);
+            height: min(360px, 100%);
+            margin: auto;
+        }
+        .xmlg-preview-media .xmg-video-content-area video {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .xmlg-preview-fallback {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px 22px;
+            border-radius: 999px;
+            border: 1px solid var(--xmlg-border);
+            background: var(--xmlg-fs-panel);
+            color: var(--xmlg-text-muted);
+        }
+        .xmlg-preview-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 38px;
+            height: 38px;
+            padding: 0;
+            border: 1px solid var(--xmlg-border);
+            border-radius: 50%;
+            background: var(--xmlg-fs-panel);
+            box-shadow: var(--xmlg-fs-shadow);
+            color: inherit;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            z-index: 2;
+        }
+        .xmlg-preview-nav:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        .xmlg-preview-prev {
+            left: 18px;
+        }
+        .xmlg-preview-next {
+            right: 18px;
+        }
+        .xmlg-preview-strip {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex: 0 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+            gap: 6px;
+            padding: 6px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border: 1px solid var(--xmlg-border);
+            border-radius: var(--xdh-radius-sm, 8px);
+            background: var(--xmlg-fs-panel);
+            scrollbar-width: thin;
+        }
+        .xmlg-preview-strip-item {
+            position: relative;
+            display: flex;
+            flex: 0 0 76px;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 76px;
+            padding: 4px;
+            border: 1px solid transparent;
+            border-radius: var(--xdh-radius-sm, 8px);
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .xmlg-preview-strip-item:hover {
+            background: color-mix(
+                in srgb,
+                var(--xmlg-text) 8%,
+                transparent
+            );
+        }
+        .xmlg-preview-strip-item.is-active {
+            border-color: var(--xmlg-accent);
+            background: var(--xmlg-accent-muted);
+        }
+        .xmlg-preview-strip-item.is-disabled {
+            opacity: 0.45;
+        }
+        /* 启用顺序角标：和面板行左侧的序号保持一致。 */
+        .xmlg-preview-strip-seq {
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 3px;
+            border-radius: var(--xdh-radius-full, 999px);
+            background: var(--xmlg-accent);
+            color: var(--xmlg-on-accent);
+            font-size: 9px;
+            font-variant-numeric: tabular-nums;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .xmlg-preview-strip-thumb {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            overflow: hidden;
+            border-radius: 6px;
+            background: var(--xmlg-thumb-bg);
+            box-shadow: inset 0 0 0 1px var(--xmlg-fs-ring);
+            font-size: 18px;
+        }
+        .xmlg-preview-strip-thumb img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .xmlg-preview-strip-name {
+            width: 100%;
+            color: var(--xmlg-text-muted);
+            font-size: 9px;
+            line-height: 1.2;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .xmlg-preview-hint {
+            position: relative;
+            z-index: 2;
+            flex: 0 0 auto;
+            align-self: flex-end;
+            color: var(--xmlg-text-muted);
+            font-size: 10px;
+            opacity: 0.8;
+        }
+        .xmlg-preview-toast {
+            position: fixed;
+            left: 50%;
+            top: 24px;
+            transform: translateX(-50%);
+            max-width: 80vw;
+            padding: 6px 12px;
+            border: 1px solid var(--xmlg-warning);
+            border-radius: var(--xdh-radius-sm, 6px);
+            background: var(--xmlg-warning-surface);
+            color: var(--xmlg-warning-text);
+            box-shadow: var(--xmlg-fs-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
+            font-size: 12px;
+            font-weight: 600;
+            display: none;
+            z-index: 3;
+            box-sizing: border-box;
+        }
+        .xmlg-preview-toast.is-visible {
+            display: block;
+        }
+        .xmlg-thumb.is-previewable {
+            cursor: zoom-in;
+        }
+        .xmlg-tooltip-name-text {
+            font-weight: 600;
+        }
+        .xmlg-tooltip-hint {
+            margin-top: 2px;
+            font-size: 10px;
+            opacity: 0.65;
         }
     `;
     document.head.appendChild(style);
@@ -1567,6 +1963,10 @@ function buildPanel() {
     warningToggle.appendChild(warningInput);
     warningToggle.appendChild(warningTrack);
     warningToggle.appendChild(warningText);
+    bindHint(warningToggle, () => t(
+        "xdatahub.ui.node.xmedialistget.type_warning_tooltip",
+        "Flag a connection when a file here doesn't match the port"
+    ));
     const toolbarRight = element("div", "xmlg-toolbar-right");
     toolbarRight.appendChild(warningToggle);
     toolbar.appendChild(toolbarLeft);
@@ -1803,16 +2203,12 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     switchLabel.appendChild(checkbox);
     switchLabel.appendChild(track);
     checkbox.addEventListener("change", () => {
-        const panelState = node.__xmlg_panel?.state;
-        if (!panelState) {
+        const result = setEntryEnabled(node, category, entry, checkbox.checked);
+        if (result.ok) {
             return;
         }
-        const items = panelState.items;
-        if (
-            checkbox.checked
-            && enabledCount(items, category) >= MAX_ENABLED
-        ) {
-            checkbox.checked = false;
+        checkbox.checked = entry.enabled !== false;
+        if (result.reason === "limit") {
             showToast(
                 node,
                 t(
@@ -1821,18 +2217,24 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
                     { limit: MAX_ENABLED }
                 )
             );
-            return;
         }
-        entry.enabled = checkbox.checked;
-        writeItems(node, items);
-        renderPanel(node);
     });
 
     const thumb = element("div", "xmlg-thumb");
     if (category === "audio") {
         thumb.classList.add("is-audio");
     }
+    thumb.classList.add("is-previewable");
+    thumb.setAttribute("role", "button");
+    thumb.setAttribute("aria-label", entry.title || entry.ref);
+    thumb.tabIndex = 0;
     thumb.appendChild(buildThumb(category, entry.ref));
+    const previewHintIcon = element("span", "xmlg-thumb-preview");
+    previewHintIcon.setAttribute("aria-hidden", "true");
+    previewHintIcon.appendChild(
+        element("span", "xmlg-thumb-preview-icon")
+    );
+    thumb.appendChild(previewHintIcon);
     thumb.addEventListener("mouseenter", (event) => {
         showTooltip(node, event, category, entry);
     });
@@ -1841,6 +2243,22 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     });
     thumb.addEventListener("mouseleave", () => {
         hideTooltip(node);
+    });
+    const openPreviewFromRow = () => {
+        hideTooltip(node);
+        openMediaPreview(node, category, index);
+    };
+    thumb.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openPreviewFromRow();
+    });
+    thumb.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        openPreviewFromRow();
     });
 
     const name = element(
@@ -1968,7 +2386,17 @@ function showTooltip(node, event, category, entry) {
         });
         media.appendChild(image);
     }
-    panel.tooltipName.textContent = entry.title || entry.ref;
+    panel.tooltipName.textContent = "";
+    panel.tooltipName.appendChild(
+        element("div", "xmlg-tooltip-name-text", entry.title || entry.ref)
+    );
+    panel.tooltipName.appendChild(
+        element(
+            "div",
+            "xmlg-tooltip-hint",
+            previewText("preview_hint", "Click to preview fullscreen")
+        )
+    );
     panel.tooltip.classList.add("is-visible");
     moveTooltip(node, event);
 }
@@ -2001,15 +2429,1058 @@ function hideTooltip(node) {
     node?.__xmlg_panel?.tooltip?.classList.remove("is-visible");
 }
 
-// 轻量自绘提示（替换浏览器原生 title），挂在 body 上。
+// ── 全屏预览 ────────────────────────────────────────────────────────────
+
+const PREVIEW_ZOOM_STEP = 1.2;
+/* 1 = 铺满可用区域（适配屏幕）；允许继续缩小，方便看整体构图。 */
+const PREVIEW_ZOOM_MIN = 0.1;
+const PREVIEW_ZOOM_MAX = 8;
+const PREVIEW_TOAST_MS = 2600;
+
+let activePreview = null;
+
+function previewText(key, fallback) {
+    return t(`xdatahub.ui.node.xmedialistget.${key}`, fallback);
+}
+
+function previewThumbUrl(ref) {
+    return `/xz3r0/xdatahub/media/thumb?ref=${
+        encodeURIComponent(ref)
+    }&size=${THUMB_SIZE}`;
+}
+
+function clampPreviewZoom(value) {
+    return Math.min(PREVIEW_ZOOM_MAX, Math.max(PREVIEW_ZOOM_MIN, value));
+}
+
+const NON_TEXT_INPUT_TYPES = new Set([
+    "checkbox",
+    "radio",
+    "range",
+    "button",
+    "submit",
+    "reset",
+]);
+
+function isTextEditingTarget(target) {
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    const editable = target.closest(
+        "input, textarea, select, [contenteditable=''], "
+        + "[contenteditable='true']"
+    );
+    if (!editable) {
+        return false;
+    }
+    // 预览里的启用开关是 checkbox，不应阻断快捷键。
+    if (editable instanceof HTMLInputElement) {
+        const type = String(editable.type || "text").toLowerCase();
+        return !NON_TEXT_INPUT_TYPES.has(type);
+    }
+    return true;
+}
+
+/**
+ * 启用/禁用某个条目：面板行开关与预览里的开关共用。
+ * 返回 { ok, reason }，reason 为 "limit" 时调用方需要提示用户。
+ */
+function setEntryEnabled(node, category, entry, enabled) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !entry) {
+        return { ok: false, reason: "no-panel" };
+    }
+    const items = panel.state.items;
+    const nextEnabled = enabled !== false;
+    if (
+        nextEnabled
+        && entry.enabled === false
+        && enabledCount(items, category) >= MAX_ENABLED
+    ) {
+        return { ok: false, reason: "limit" };
+    }
+    if ((entry.enabled !== false) === nextEnabled) {
+        return { ok: true };
+    }
+    entry.enabled = nextEnabled;
+    writeItems(node, items);
+    renderPanel(node);
+    return { ok: true };
+}
+
+function createPreviewOverlay() {
+    ensureStyles();
+    const overlay = element("div", "xmlg-preview");
+    const stage = element("div", "xmlg-preview-stage");
+
+    const bar = element("div", "xmlg-preview-bar");
+    const titleWrap = element("div", "xmlg-preview-title-wrap");
+    const title = element("div", "xmlg-preview-title");
+    const counter = element("div", "xmlg-preview-counter");
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(counter);
+
+    const actions = element("div", "xmlg-preview-actions");
+    const toggle = element("label", "xmlg-switch xmlg-preview-toggle");
+    const toggleInput = document.createElement("input");
+    toggleInput.type = "checkbox";
+    const toggleTrack = element("span", "xmlg-switch-track");
+    toggleTrack.setAttribute("aria-hidden", "true");
+    const toggleText = element("span", "xmlg-preview-toggle-text");
+    toggle.appendChild(toggleInput);
+    toggle.appendChild(toggleTrack);
+    toggle.appendChild(toggleText);
+
+    const maskButton = element("button", "xmlg-btn xmlg-preview-btn", "🖌️");
+    maskButton.type = "button";
+    maskButton.dataset.previewAction = "mask";
+    const fullButton = element("button", "xmlg-btn xmlg-preview-btn", "⛶");
+    fullButton.type = "button";
+    fullButton.dataset.previewAction = "fullscreen";
+    const closeButton = element("button", "xmlg-btn xmlg-preview-btn", "✕");
+    closeButton.type = "button";
+    closeButton.dataset.previewAction = "close";
+
+    actions.appendChild(toggle);
+    actions.appendChild(maskButton);
+    actions.appendChild(fullButton);
+    actions.appendChild(closeButton);
+    bar.appendChild(titleWrap);
+    bar.appendChild(actions);
+
+    const media = element("div", "xmlg-preview-media");
+    const prevButton = element("button", "xmlg-preview-nav xmlg-preview-prev", "‹");
+    prevButton.type = "button";
+    prevButton.dataset.previewAction = "prev";
+    const nextButton = element("button", "xmlg-preview-nav xmlg-preview-next", "›");
+    nextButton.type = "button";
+    nextButton.dataset.previewAction = "next";
+    const strip = element("div", "xmlg-preview-strip");
+    const hint = element("div", "xmlg-preview-hint");
+    const toast = element("div", "xmlg-preview-toast");
+
+    const mediaWrap = element("div", "xmlg-preview-media-wrap");
+    mediaWrap.style.cssText = "position:relative;display:flex;flex:1 1 auto;"
+        + "min-height:0;align-items:stretch;justify-content:center;"
+        + "overflow:hidden;";
+
+    stage.appendChild(bar);
+    stage.appendChild(mediaWrap);
+    stage.appendChild(strip);
+    stage.appendChild(hint);
+    mediaWrap.appendChild(media);
+    mediaWrap.appendChild(prevButton);
+    mediaWrap.appendChild(nextButton);
+    overlay.appendChild(stage);
+    overlay.appendChild(toast);
+    document.body.appendChild(overlay);
+
+    // 顶栏与导航按钮的提示文字在 syncPreviewChrome() 里随状态更新，
+    // 这里只绑一次监听，避免每次刷新界面重复挂事件。
+    const hintTargets = [
+        title,
+        toggle,
+        maskButton,
+        fullButton,
+        closeButton,
+        prevButton,
+        nextButton,
+    ];
+    for (const target of hintTargets) {
+        bindHint(target, () => target.dataset.tooltip || "");
+    }
+
+    return {
+        overlay,
+        stage,
+        bar,
+        title,
+        counter,
+        toggle,
+        toggleInput,
+        toggleText,
+        maskButton,
+        fullButton,
+        closeButton,
+        media,
+        prevButton,
+        nextButton,
+        strip,
+        hint,
+        toast,
+    };
+}
+
+let previewRuntime = null;
+
+/**
+ * 预览层只建一次：DOM 与事件监听都复用，
+ * 打开/关闭只切换状态，避免重复挂 body 元素和重复监听。
+ */
+function getPreviewRuntime() {
+    if (previewRuntime?.els?.overlay?.isConnected) {
+        return previewRuntime;
+    }
+    const preview = {
+        els: createPreviewOverlay(),
+        node: null,
+        category: "image",
+        entries: [],
+        index: 0,
+        playerState: null,
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        imageEl: null,
+        mediaEl: null,
+        suspended: false,
+        panning: null,
+        toastTimer: 0,
+    };
+    bindPreviewEvents(preview);
+    previewRuntime = preview;
+    return preview;
+}
+
+function buildPreviewMediaFallback() {
+    return element(
+        "div",
+        "xmlg-preview-fallback",
+        previewText("no_preview", "No preview")
+    );
+}
+
+/**
+ * 以鼠标位置为焦点缩放：返回缩放后图片中心需要的平移量。
+ * 纯计算，方便单测；与 XDataHub 灯箱的滚轮缩放保持一致：
+ * 鼠标指向的画面内容在缩放前后停在原地。
+ */
+function previewPanForZoomAt(point, pan, zoom, nextZoom) {
+    const ratio = nextZoom / zoom;
+    return {
+        panX: point.x - ratio * (point.x - pan.x),
+        panY: point.y - ratio * (point.y - pan.y),
+    };
+}
+
+/** 图片按「完整放进预览区、不放大」显示时的基准尺寸与预览区中心。 */
+function previewImageMetrics(preview) {
+    const image = preview.imageEl;
+    const media = preview.els.media;
+    if (!(image instanceof HTMLImageElement) || !media) {
+        return null;
+    }
+    const rect = media.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+        return null;
+    }
+    const naturalWidth = Math.max(
+        1,
+        image.naturalWidth || image.width || 1
+    );
+    const naturalHeight = Math.max(
+        1,
+        image.naturalHeight || image.height || 1
+    );
+    const fitScale = Math.min(
+        rect.width / naturalWidth,
+        rect.height / naturalHeight,
+        1
+    );
+    return {
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2,
+        viewportWidth: rect.width,
+        viewportHeight: rect.height,
+        width: naturalWidth * fitScale,
+        height: naturalHeight * fitScale,
+    };
+}
+
+function clampPreviewPan(preview) {
+    const metrics = previewImageMetrics(preview);
+    if (!metrics) {
+        return;
+    }
+    if (preview.zoom <= 1) {
+        preview.panX = 0;
+        preview.panY = 0;
+        return;
+    }
+    const maxX = Math.max(
+        0,
+        (metrics.width * preview.zoom - metrics.viewportWidth) / 2
+    );
+    const maxY = Math.max(
+        0,
+        (metrics.height * preview.zoom - metrics.viewportHeight) / 2
+    );
+    preview.panX = Math.min(maxX, Math.max(-maxX, preview.panX));
+    preview.panY = Math.min(maxY, Math.max(-maxY, preview.panY));
+}
+
+function applyPreviewZoom(preview) {
+    const image = preview.imageEl;
+    if (!(image instanceof HTMLImageElement)) {
+        return;
+    }
+    clampPreviewPan(preview);
+    image.style.transform = `translate(${preview.panX}px, ${
+        preview.panY
+    }px) scale(${preview.zoom})`;
+    image.classList.toggle("is-zoomed", preview.zoom > 1);
+}
+
+function zoomPreviewAt(preview, clientX, clientY, nextZoom) {
+    const metrics = previewImageMetrics(preview);
+    if (!metrics) {
+        return;
+    }
+    const safeNext = clampPreviewZoom(nextZoom);
+    if (Math.abs(safeNext - preview.zoom) < 1e-6) {
+        return;
+    }
+    const point = {
+        x: clientX - metrics.centerX,
+        y: clientY - metrics.centerY,
+    };
+    const nextPan = previewPanForZoomAt(
+        point,
+        { x: preview.panX, y: preview.panY },
+        preview.zoom,
+        safeNext
+    );
+    preview.zoom = safeNext;
+    preview.panX = nextPan.panX;
+    preview.panY = nextPan.panY;
+    applyPreviewZoom(preview);
+}
+
+function resetPreviewZoom(preview) {
+    preview.zoom = 1;
+    preview.panX = 0;
+    preview.panY = 0;
+    preview.panning = null;
+    if (preview.imageEl) {
+        preview.imageEl.classList.remove("is-panning");
+    }
+    applyPreviewZoom(preview);
+}
+
+function bindPreviewZoom(preview, image) {
+    image.addEventListener("pointerdown", (event) => {
+        if (preview.zoom <= 1 || event.button !== 0) {
+            return;
+        }
+        event.preventDefault();
+        image.setPointerCapture?.(event.pointerId);
+        preview.panning = {
+            id: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            panX: preview.panX,
+            panY: preview.panY,
+        };
+        image.classList.add("is-panning");
+    });
+    image.addEventListener("pointermove", (event) => {
+        const pan = preview.panning;
+        if (!pan || pan.id !== event.pointerId) {
+            return;
+        }
+        preview.panX = pan.panX + (event.clientX - pan.startX);
+        preview.panY = pan.panY + (event.clientY - pan.startY);
+        applyPreviewZoom(preview);
+    });
+    const endPan = (event) => {
+        if (!preview.panning || preview.panning.id !== event.pointerId) {
+            return;
+        }
+        preview.panning = null;
+        image.classList.remove("is-panning");
+    };
+    image.addEventListener("pointerup", endPan);
+    image.addEventListener("pointercancel", endPan);
+    image.addEventListener("dblclick", () => resetPreviewZoom(preview));
+}
+
+/**
+ * 预览里的播放器提示：与节点面板同一套自绘气泡。
+ * 播放器会在状态变化时反复调用 set()，所以文字先存到 dataset，
+ * 悬停时再按当前状态取出来。
+ */
+const PREVIEW_PLAYER_TOOLTIP = {
+    set: (target, text) => {
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+        if (text) {
+            target.dataset.tooltip = String(text);
+        } else {
+            delete target.dataset.tooltip;
+        }
+    },
+    bind: (target) => {
+        if (target instanceof HTMLElement) {
+            bindHint(target, () => target.dataset.tooltip || "");
+        }
+    },
+};
+
+/* ── 视频/音频默认状态 ─────────────────────────────────────────────
+   和 XDataHub 设置面板里的「预览」开关保持一致（默认值也与 XDataHub、
+   XVideoGet / XAudioGet 节点面板一致）：视频默认静音、音频默认不静音，
+   两者都不自动播放、不循环。设置改动通过 postMessage 即时同步。 */
+const XDATAHUB_SETTINGS_ENDPOINT = "/xz3r0/xdatahub/settings";
+const PREVIEW_MEDIA_SETTINGS_DEFAULT = {
+    video: { autoplay: false, muted: true, loop: false },
+    audio: { autoplay: false, muted: false, loop: false },
+};
+let previewMediaSettings = {
+    video: { ...PREVIEW_MEDIA_SETTINGS_DEFAULT.video },
+    audio: { ...PREVIEW_MEDIA_SETTINGS_DEFAULT.audio },
+};
+
+function applyPreviewMediaSettings(settings) {
+    if (!settings || typeof settings !== "object") {
+        return;
+    }
+    previewMediaSettings = {
+        // 与 xdh-lightbox.js 的 getPreviewSettings() 判定完全一致。
+        video: {
+            autoplay: settings.video_preview_autoplay === true,
+            muted: settings.video_preview_muted !== false,
+            loop: settings.video_preview_loop === true,
+        },
+        audio: {
+            autoplay: settings.audio_preview_autoplay === true,
+            muted: settings.audio_preview_muted === true,
+            loop: settings.audio_preview_loop === true,
+        },
+    };
+}
+
+async function refreshPreviewMediaSettings() {
+    try {
+        const response = await fetch(XDATAHUB_SETTINGS_ENDPOINT);
+        if (!response.ok) {
+            return;
+        }
+        const payload = await response.json();
+        applyPreviewMediaSettings(payload?.settings);
+    } catch {
+        // 拉取失败就用默认值（和 XDataHub 默认设置相同）
+    }
+}
+
+function releasePreviewMedia(preview) {
+    const playerState = preview?.playerState;
+    if (playerState && typeof playerState.dispose === "function") {
+        try {
+            playerState.dispose();
+        } catch {
+            // 忽略：销毁失败也要继续清理播放源
+        }
+    }
+    if (preview) {
+        preview.playerState = null;
+    }
+    const media = preview?.mediaEl;
+    if (media instanceof HTMLVideoElement
+        || media instanceof HTMLAudioElement) {
+        try {
+            media.pause();
+        } catch {
+            // 忽略：暂停失败也要继续清理播放源
+        }
+        media.removeAttribute("src");
+        media.load?.();
+    }
+}
+
+function buildPreviewMedia(preview) {
+    const host = preview.els.media;
+    const entry = preview.entries[preview.index];
+    // 换文件前先停掉上一个视频/音频，否则元素被移出页面后声音还会继续播。
+    releasePreviewMedia(preview);
+    host.innerHTML = "";
+    preview.imageEl = null;
+    preview.mediaEl = null;
+    if (!entry) {
+        return;
+    }
+    const url = buildMediaFileUrl(entry.ref);
+    const showFallback = () => {
+        releasePreviewMedia(preview);
+        host.innerHTML = "";
+        preview.imageEl = null;
+        preview.mediaEl = null;
+        host.appendChild(buildPreviewMediaFallback());
+    };
+    if (preview.category === "image") {
+        const image = document.createElement("img");
+        image.className = "xmlg-preview-img";
+        image.alt = "";
+        image.draggable = false;
+        image.src = url;
+        image.addEventListener("error", showFallback);
+        host.appendChild(image);
+        preview.imageEl = image;
+        resetPreviewZoom(preview);
+        bindPreviewZoom(preview, image);
+        return;
+    }
+    const player = preview.category === "video"
+        ? buildVideoPlayer({ t, tooltip: PREVIEW_PLAYER_TOOLTIP })
+        : buildAudioPlayer({ t, tooltip: PREVIEW_PLAYER_TOOLTIP });
+    const media = player.mediaEl;
+    const mediaSettings = previewMediaSettings[preview.category]
+        || PREVIEW_MEDIA_SETTINGS_DEFAULT[preview.category]
+        || { autoplay: false, muted: false, loop: false };
+    media.autoplay = mediaSettings.autoplay;
+    media.loop = mediaSettings.loop;
+    media.muted = mediaSettings.muted;
+    media.src = url;
+    media.addEventListener("error", showFallback);
+    host.appendChild(player.container);
+    preview.mediaEl = media;
+    preview.playerState = player.playerState;
+    preview.playerState.sync();
+    if (mediaSettings.muted) {
+        // 走播放器自己的静音逻辑，滑杆才会显示 0%、图标才会变 🔇。
+        preview.playerState.toggleMute();
+    }
+    if (mediaSettings.autoplay) {
+        media.play?.().catch(() => {});
+    }
+}
+
+function previewEntryOf(preview) {
+    return preview.entries[preview.index] || null;
+}
+
+function renderPreviewStrip(preview) {
+    const strip = preview.els.strip;
+    strip.innerHTML = "";
+    strip.setAttribute("role", "group");
+    strip.setAttribute(
+        "aria-label",
+        previewText("preview_strip_label", "Files in this list")
+    );
+    const enabledOrder = new Array(preview.entries.length).fill(0);
+    let enabledSeq = 0;
+    preview.entries.forEach((entry, index) => {
+        if (entry.enabled !== false) {
+            enabledSeq += 1;
+            enabledOrder[index] = enabledSeq;
+        }
+    });
+    const fragment = document.createDocumentFragment();
+    preview.entries.forEach((entry, index) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "xmlg-preview-strip-item";
+        item.dataset.index = String(index);
+        if (index === preview.index) {
+            item.classList.add("is-active");
+        }
+        if (entry.enabled === false) {
+            item.classList.add("is-disabled");
+        }
+        item.dataset.tooltip = entry.title || entry.ref;
+        bindHint(item, () => item.dataset.tooltip || "");
+        const thumb = element("div", "xmlg-preview-strip-thumb");
+        if (preview.category === "audio") {
+            thumb.textContent = "♪";
+        } else {
+            const image = document.createElement("img");
+            image.loading = "lazy";
+            image.decoding = "async";
+            image.alt = "";
+            image.src = previewThumbUrl(entry.ref);
+            image.addEventListener("error", () => {
+                image.remove();
+                thumb.textContent = preview.category === "video" ? "🎬" : "🖼️";
+            });
+            thumb.appendChild(image);
+        }
+        item.appendChild(thumb);
+        if (enabledOrder[index]) {
+            item.appendChild(
+                element(
+                    "span",
+                    "xmlg-preview-strip-seq",
+                    String(enabledOrder[index])
+                )
+            );
+        }
+        item.appendChild(
+            element("div", "xmlg-preview-strip-name", entry.title || entry.ref)
+        );
+        item.addEventListener("click", () => {
+            previewSetIndex(preview, index);
+        });
+        fragment.appendChild(item);
+    });
+    strip.appendChild(fragment);
+}
+
+function syncPreviewStripSelection(preview) {
+    const items = preview.els.strip.querySelectorAll(
+        ".xmlg-preview-strip-item"
+    );
+    items.forEach((item) => {
+        const index = Number(item.dataset.index);
+        item.classList.toggle("is-active", index === preview.index);
+        const entry = preview.entries[index];
+        item.classList.toggle(
+            "is-disabled",
+            !!entry && entry.enabled === false
+        );
+    });
+}
+
+function scrollPreviewStripToActive(preview) {
+    const active = preview.els.strip.querySelector(
+        ".xmlg-preview-strip-item.is-active"
+    );
+    active?.scrollIntoView?.({ block: "nearest", inline: "center" });
+}
+
+function syncPreviewChrome(preview) {
+    const els = preview.els;
+    const entry = previewEntryOf(preview);
+    const total = preview.entries.length;
+    const isImage = preview.category === "image";
+    const enabled = !!entry && entry.enabled !== false;
+
+    els.title.textContent = entry ? (entry.title || entry.ref) : "";
+    els.title.dataset.tooltip = els.title.textContent;
+    els.counter.textContent = total
+        ? `${preview.index + 1} / ${total}`
+        : "";
+
+    els.toggleInput.checked = enabled;
+    els.toggleInput.disabled = !entry;
+    els.toggle.dataset.tooltip = previewText(
+        "preview_toggle_tooltip",
+        "Click to enable or disable this file"
+    );
+    els.toggleText.textContent = enabled
+        ? previewText("enabled", "Enabled")
+        : previewText("disabled", "Disabled");
+
+    els.maskButton.hidden = !isImage;
+    els.maskButton.disabled = !entry;
+    els.maskButton.classList.toggle(
+        "is-set",
+        !!(entry && entry.mask_ref)
+    );
+    const maskLabel = entry && entry.mask_ref
+        ? previewText("mask_set", "Mask set")
+        : previewText("edit_mask", "Edit mask");
+    els.maskButton.dataset.tooltip = maskLabel;
+    els.maskButton.setAttribute("aria-label", maskLabel);
+
+    // 正常情况预览就是全屏，全屏按钮只在浏览器拒绝全屏时兜底显示。
+    const isFullscreen = document.fullscreenElement === els.overlay;
+    els.fullButton.hidden = isFullscreen;
+    els.fullButton.textContent = "⛶";
+    const fullLabel = previewText("preview_fullscreen", "Fullscreen");
+    els.fullButton.dataset.tooltip = fullLabel;
+    els.fullButton.setAttribute("aria-label", fullLabel);
+
+    const closeLabel = previewText("preview_close", "Close preview (Esc)");
+    els.closeButton.dataset.tooltip = closeLabel;
+    els.closeButton.setAttribute("aria-label", closeLabel);
+    const prevLabel = previewText("page_prev", "Previous");
+    els.prevButton.dataset.tooltip = prevLabel;
+    els.prevButton.setAttribute("aria-label", prevLabel);
+    const nextLabel = previewText("page_next", "Next");
+    els.nextButton.dataset.tooltip = nextLabel;
+    els.nextButton.setAttribute("aria-label", nextLabel);
+    els.prevButton.disabled = preview.index <= 0;
+    els.nextButton.disabled = preview.index >= total - 1;
+    els.hint.textContent = previewText(
+        "preview_keys_hint",
+        "← / → Switch · Wheel zoom · Esc Close"
+    );
+}
+
+function showPreviewToast(preview, message) {
+    const toast = preview.els.toast;
+    toast.textContent = String(message || "");
+    toast.classList.add("is-visible");
+    if (preview.toastTimer) {
+        clearTimeout(preview.toastTimer);
+    }
+    preview.toastTimer = window.setTimeout(() => {
+        toast.classList.remove("is-visible");
+        preview.toastTimer = 0;
+    }, PREVIEW_TOAST_MS);
+}
+
+function previewSetIndex(preview, index) {
+    const next = Math.max(0, Math.min(preview.entries.length - 1, index));
+    if (next === preview.index && preview.els.media.childElementCount) {
+        return;
+    }
+    preview.index = next;
+    buildPreviewMedia(preview);
+    syncPreviewChrome(preview);
+    syncPreviewStripSelection(preview);
+    scrollPreviewStripToActive(preview);
+}
+
+function previewStep(delta) {
+    const preview = activePreview;
+    if (!preview || !preview.entries?.length) {
+        return;
+    }
+    previewSetIndex(preview, preview.index + delta);
+}
+
+function openMediaPreview(node, category, index) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !CATEGORIES.includes(category)) {
+        return;
+    }
+    const entries = panel.state.items[category] || [];
+    if (!entries.length) {
+        return;
+    }
+    if (activePreview) {
+        // 复用同一个覆盖层：换内容时不要退出全屏再重进。
+        closeMediaPreview({ keepFullscreen: true });
+    }
+    const preview = getPreviewRuntime();
+    activePreview = preview;
+    preview.node = node;
+    preview.category = category;
+    preview.entries = entries;
+    preview.index = Math.max(
+        0,
+        Math.min(entries.length - 1, Number(index) || 0)
+    );
+    preview.playerState = null;
+    preview.zoom = 1;
+    preview.panX = 0;
+    preview.panY = 0;
+    preview.imageEl = null;
+    preview.mediaEl = null;
+    preview.suspended = false;
+    preview.panning = null;
+    preview.els.overlay.classList.add("is-open");
+    buildPreviewMedia(preview);
+    renderPreviewStrip(preview);
+    syncPreviewChrome(preview);
+    window.requestAnimationFrame(() => scrollPreviewStripToActive(preview));
+    // 预览只有「真全屏」一种形态：点缩略图时仍在用户手势里，直接进全屏。
+    requestPreviewFullscreen();
+}
+
+function closeMediaPreview(options = {}) {
+    const preview = activePreview;
+    if (!preview) {
+        return;
+    }
+    activePreview = null;
+    if (preview.toastTimer) {
+        clearTimeout(preview.toastTimer);
+        preview.toastTimer = 0;
+    }
+    preview.els.toast.classList.remove("is-visible");
+    releasePreviewMedia(preview);
+    preview.els.media.innerHTML = "";
+    preview.els.overlay.classList.remove("is-open");
+    preview.imageEl = null;
+    preview.mediaEl = null;
+    preview.entries = [];
+    preview.node = null;
+    preview.suspended = false;
+    preview.panning = null;
+    if (
+        !options.keepFullscreen
+        && document.fullscreenElement === preview.els.overlay
+    ) {
+        document.exitFullscreen?.().catch(() => {});
+    }
+}
+
+function closeMediaPreviewForNode(node) {
+    if (activePreview && activePreview.node === node) {
+        closeMediaPreview();
+    }
+}
+
+/** 面板重绘 / 数据变化后刷新预览（分类或数据被改掉时直接关闭）。 */
+function refreshPreviewForNode(node) {
+    const preview = activePreview;
+    if (!preview || preview.node !== node) {
+        return;
+    }
+    const panel = node.__xmlg_panel;
+    if (!panel || panel.state.category !== preview.category) {
+        closeMediaPreview();
+        return;
+    }
+    const entries = panel.state.items[preview.category] || [];
+    if (!entries.length) {
+        closeMediaPreview();
+        return;
+    }
+    const currentRef = previewEntryOf(preview)?.ref || "";
+    preview.entries = entries;
+    const found = entries.findIndex((entry) => entry.ref === currentRef);
+    preview.index = found >= 0 ? found : Math.min(
+        preview.index,
+        entries.length - 1
+    );
+    renderPreviewStrip(preview);
+    const nextRef = previewEntryOf(preview)?.ref || "";
+    if (nextRef !== currentRef) {
+        buildPreviewMedia(preview);
+    }
+    syncPreviewChrome(preview);
+    scrollPreviewStripToActive(preview);
+}
+
+/**
+ * 进入真全屏。预览本身没有「窗口内」形态：如果浏览器拒绝
+ * （例如自动化 / iframe 权限不足），会保留覆盖层并显示全屏按钮兜底。
+ */
+function requestPreviewFullscreen() {
+    const preview = activePreview;
+    const overlay = preview?.els?.overlay;
+    if (!overlay || document.fullscreenElement === overlay) {
+        return;
+    }
+    if (typeof overlay.requestFullscreen !== "function") {
+        syncPreviewChrome(preview);
+        return;
+    }
+    overlay.requestFullscreen({ navigationUI: "hide" }).catch(() => {
+        if (activePreview === preview) {
+            syncPreviewChrome(preview);
+        }
+    });
+}
+
+/** 遮罩编辑器是页面里的独立覆盖层：等它真正关掉再回到全屏。 */
+function waitForMaskEditorClose() {
+    const selector = ".ximageget-mask-editor-overlay";
+    if (!document.querySelector(selector)) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            if (document.querySelector(selector)) {
+                return;
+            }
+            observer.disconnect();
+            resolve();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    });
+}
+
+async function openPreviewMaskEditor() {
+    const preview = activePreview;
+    const entry = preview ? previewEntryOf(preview) : null;
+    if (!preview || !entry || preview.category !== "image") {
+        return;
+    }
+    // 遮罩编辑器是普通页面覆盖层，真全屏时会被藏起来，必须先退出全屏。
+    // 先标记 suspended，避免这次「主动退出」被当成用户退出而关闭预览。
+    const wasFullscreen = document.fullscreenElement === preview.els.overlay;
+    preview.suspended = true;
+    if (wasFullscreen) {
+        try {
+            await document.exitFullscreen();
+        } catch {
+            // 忽略：退出失败时仍然打开编辑器（页面内可见）。
+        }
+    }
+    try {
+        await openMaskEditorForEntry(preview.node, entry);
+        // openXMaskEditor 打开后立刻返回，必须等覆盖层被移除，
+        // 否则会在编辑器还开着的时候就抢先回到全屏。
+        await waitForMaskEditorClose();
+    } finally {
+        preview.suspended = false;
+        if (activePreview === preview) {
+            syncPreviewChrome(preview);
+            renderPreviewStrip(preview);
+            scrollPreviewStripToActive(preview);
+            if (wasFullscreen) {
+                // 编辑完自动回到真全屏（用户刚点过编辑器按钮，手势通常还在）。
+                requestPreviewFullscreen();
+            }
+        }
+    }
+}
+
+function handlePreviewKeyDown(event) {
+    const preview = activePreview;
+    if (!preview || preview.suspended) {
+        return;
+    }
+    // 预览打开时把按键拦在这里，避免后台画布响应 Delete / Ctrl+Z 等快捷键。
+    event.stopPropagation();
+    if (isTextEditingTarget(event.target)) {
+        return;
+    }
+    if (event.key === "Escape") {
+        if (document.fullscreenElement) {
+            // 交给浏览器退出全屏（第一次 Esc 不关闭预览）。
+            return;
+        }
+        event.preventDefault();
+        closeMediaPreview();
+        return;
+    }
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+    }
+    if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        previewStep(-1);
+        return;
+    }
+    if (event.key === "ArrowRight") {
+        event.preventDefault();
+        previewStep(1);
+    }
+}
+
+function bindPreviewEvents(preview) {
+    const els = preview.els;
+    // 预览是盖在整页上的模态层：指针事件不再冒泡给页面级监听。
+    // 否则鼠标移到屏幕边缘时，XDataHub 的「贴边悬停展开」仍会被触发，
+    // 在全屏预览后面把停靠窗口弹出来（看起来像被预览干扰了）。
+    const keepPointerInPreview = (event) => {
+        event.stopPropagation();
+    };
+    for (const type of ["pointermove", "mousemove", "pointerdown"]) {
+        els.overlay.addEventListener(type, keepPointerInPreview);
+    }
+    els.closeButton.addEventListener("click", () => closeMediaPreview());
+    els.prevButton.addEventListener("click", () => previewStep(-1));
+    els.nextButton.addEventListener("click", () => previewStep(1));
+    els.fullButton.addEventListener("click", () => requestPreviewFullscreen());
+    els.toggleInput.addEventListener("change", () => {
+        const entry = previewEntryOf(preview);
+        if (!entry) {
+            return;
+        }
+        const result = setEntryEnabled(
+            preview.node,
+            preview.category,
+            entry,
+            els.toggleInput.checked
+        );
+        if (!result.ok) {
+            els.toggleInput.checked = entry.enabled !== false;
+            if (result.reason === "limit") {
+                showPreviewToast(
+                    preview,
+                    t(
+                        "xdatahub.ui.node.xmedialistget"
+                        + ".limit_enable_blocked",
+                        "Already {limit} enabled; turn one off first",
+                        { limit: MAX_ENABLED }
+                    )
+                );
+            }
+        }
+    });
+    els.maskButton.addEventListener("click", () => {
+        void openPreviewMaskEditor();
+    });
+    els.media.addEventListener(
+        "wheel",
+        (event) => {
+            if (preview.category !== "image" || !preview.imageEl) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            const factor = event.deltaY < 0
+                ? PREVIEW_ZOOM_STEP
+                : 1 / PREVIEW_ZOOM_STEP;
+            // 以鼠标所指的位置为中心缩放（和 XDataHub 灯箱一致）。
+            zoomPreviewAt(
+                preview,
+                event.clientX,
+                event.clientY,
+                preview.zoom * factor
+            );
+        },
+        { passive: false }
+    );
+}
+
+function installPreviewRuntime() {
+    if (ROOT.__xmedialistget_preview_runtime__) {
+        return;
+    }
+    ROOT.__xmedialistget_preview_runtime__ = true;
+    refreshPreviewMediaSettings();
+    window.addEventListener("message", (event) => {
+        if (event.origin !== window.location.origin) {
+            return;
+        }
+        const payload = event?.data;
+        if (!payload || payload.type !== "xdatahub:host-settings-updated") {
+            return;
+        }
+        applyPreviewMediaSettings(payload.settings);
+    });
+    document.addEventListener("keydown", handlePreviewKeyDown, true);
+    document.addEventListener("fullscreenchange", () => {
+        const preview = activePreview;
+        if (!preview) {
+            return;
+        }
+        if (preview.suspended) {
+            // 打开遮罩编辑器时我们会主动退出全屏，这里不关闭预览。
+            return;
+        }
+        if (document.fullscreenElement !== preview.els.overlay) {
+            // 只有真全屏一种形态：用户按 Esc / 浏览器按钮退出全屏就关掉预览。
+            closeMediaPreview();
+            return;
+        }
+        syncPreviewChrome(preview);
+    });
+}
+
+// 轻量自绘提示（替换浏览器原生 title），平时挂在 body 上。
 let hintElement = null;
 
+/**
+ * 提示节点该挂哪儿：预览是「真全屏」时，全屏元素之外的内容浏览器
+ * 完全不渲染（连 z-index 也救不了），所以提示必须挂进预览层内部。
+ */
+function hintHost() {
+    const overlay = activePreview?.els?.overlay;
+    if (overlay && overlay.isConnected
+        && overlay.classList.contains("is-open")) {
+        return overlay;
+    }
+    return document.body;
+}
+
 function ensureHintElement() {
-    if (hintElement && hintElement.isConnected) {
+    const host = hintHost();
+    if (hintElement && hintElement.isConnected
+        && hintElement.parentElement === host) {
         return hintElement;
     }
-    hintElement = element("div", "xmlg-hint");
-    document.body.appendChild(hintElement);
+    if (!hintElement) {
+        hintElement = element("div", "xmlg-hint");
+    }
+    host.appendChild(hintElement);
     return hintElement;
 }
 
@@ -2221,6 +3692,7 @@ function renderPanel(node, options = {}) {
         panel.list.scrollTop = targetScrollTop;
         panel.list.scrollLeft = targetScrollLeft;
     });
+    refreshPreviewForNode(node);
 }
 
 function setCategory(node, category) {
@@ -2457,10 +3929,12 @@ function bindPanelEvents(node) {
         "xdatahub.ui.node.xmedialistget.invert_enabled",
         "Invert switches"
     ));
-    bindHint(panel.pageText, () => t(
-        "xdatahub.ui.node.xmedialistget.page_size_tooltip",
-        "How many rows to draw per page."
-    ));
+    for (const target of [panel.pageText, panel.range, panel.rangeValue]) {
+        bindHint(target, () => t(
+            "xdatahub.ui.node.xmedialistget.page_size_tooltip",
+            "How many rows to draw per page."
+        ));
+    }
     bindHint(panel.refreshButton, () => t(
         "xdatahub.ui.node.xmedialistget.refresh_tooltip",
         "Check again whether these files still exist on disk."
@@ -3909,6 +5383,7 @@ function initXMediaListGetExtension() {
         return;
     }
     ROOT[EXT_GUARD_KEY] = true;
+    installPreviewRuntime();
     app.registerExtension({
         name: EXT_NAME,
         async beforeRegisterNodeDef(nodeType, nodeData) {
@@ -3917,9 +5392,14 @@ function initXMediaListGetExtension() {
             }
             const originalCreated = nodeType.prototype.onNodeCreated;
             const originalConfigure = nodeType.prototype.onConfigure;
+            const originalRemoved = nodeType.prototype.onRemoved;
             nodeType.prototype.onNodeCreated = function () {
                 originalCreated?.apply(this, arguments);
                 installNodeUi(this);
+            };
+            nodeType.prototype.onRemoved = function () {
+                closeMediaPreviewForNode(this);
+                originalRemoved?.apply(this, arguments);
             };
             nodeType.prototype.onConfigure = function () {
                 originalConfigure?.apply(this, arguments);
@@ -4006,4 +5486,9 @@ function initXMediaListGetExtension() {
 
 ROOT.__xmedialistget_extension_loaded__ = true;
 ROOT.__xmedialistget_extension_init__ = initXMediaListGetExtension;
+// 本地联调 / 自动化冒烟用入口（正常使用时不会有人调用）。
+ROOT.__xmedialistget_preview__ = {
+    open: openMediaPreview,
+    close: closeMediaPreview,
+};
 initXMediaListGetExtension();
