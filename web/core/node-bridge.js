@@ -2,8 +2,9 @@
  * node-bridge.js
  * Wraps window.parent postMessage communication for node operations.
  *
- * requestNodes(nodeClass) → Promise<{ id, title, accent_index }[]>
- * sendToNode(data)        → Promise<{ ok, error }>
+ * requestNodes(nodeClass)         → Promise<{ id, title, accent_index }[]>
+ * requestNodesDetailed(nodeClass) → Promise<{ ok, nodes }>
+ * sendToNode(data)                → Promise<{ ok, error }>
  */
 
 const REQUEST_TIMEOUT_MS = 1500;
@@ -89,7 +90,7 @@ function handleMessage(event) {
         if (!req) return;
         clearTimeout(req.timer);
         _pendingNodes.delete(payload.request_id);
-        req.resolve(Array.isArray(payload.nodes) ? payload.nodes : []);
+        req.resolve(true, payload.nodes);
         return;
     }
 
@@ -110,18 +111,27 @@ if (!window.__xdh_node_bridge_installed__) {
 
 /**
  * Request nodes of a given ComfyUI class from the parent window.
+ *
+ * 与 `requestNodes` 的区别：超时/失败时 `ok` 为 false，调用方据此判断
+ * 「没取到节点」到底是「节点真被删了」还是「这一轮没拿到数据」。
  * @param {string} nodeClass e.g. 'XImageGet'
- * @returns {Promise<Array<{id:string,title:string,accent_index:number|null}>>}
+ * @returns {Promise<{ ok: boolean, nodes: Array }>}
  */
-export function requestNodes(nodeClass) {
+export function requestNodesDetailed(nodeClass) {
     return new Promise((resolve) => {
         const requestId = nextId();
         const targetOrigin = getParentTargetOrigin();
+        const finish = (ok, nodes) => {
+            resolve({
+                ok: !!ok,
+                nodes: Array.isArray(nodes) ? nodes : [],
+            });
+        };
         const timer = setTimeout(() => {
             _pendingNodes.delete(requestId);
-            resolve([]);
+            finish(false, []);
         }, REQUEST_TIMEOUT_MS);
-        _pendingNodes.set(requestId, { resolve, timer });
+        _pendingNodes.set(requestId, { resolve: finish, timer });
         try {
             window.parent?.postMessage?.(
                 {
@@ -134,9 +144,18 @@ export function requestNodes(nodeClass) {
         } catch {
             clearTimeout(timer);
             _pendingNodes.delete(requestId);
-            resolve([]);
+            finish(false, []);
         }
     });
+}
+
+/**
+ * Request nodes of a given ComfyUI class from the parent window.
+ * @param {string} nodeClass e.g. 'XImageGet'
+ * @returns {Promise<Array<{id:string,title:string,accent_index:number|null}>>}
+ */
+export function requestNodes(nodeClass) {
+    return requestNodesDetailed(nodeClass).then((result) => result.nodes);
 }
 
 /**
@@ -170,6 +189,18 @@ export function sendToNode(data) {
                         media_ref: String(data.mediaRef || ""),
                         text_value: String(data.textValue || ""),
                         title: String(data.title || ""),
+                        mode: String(data.mode || ""),
+                        items: Array.isArray(data.items)
+                            ? data.items.map((item) => ({
+                                media_ref: String(
+                                    item?.mediaRef ?? item?.media_ref ?? ""
+                                ),
+                                media_type: String(
+                                    item?.mediaType ?? item?.media_type ?? ""
+                                ),
+                                title: String(item?.title || ""),
+                            }))
+                            : [],
                     },
                 },
                 targetOrigin

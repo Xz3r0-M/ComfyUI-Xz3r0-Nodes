@@ -5,7 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20260620-1";
+import { t } from "../core/i18n.js?v=20261021-1";
 
 const DEFAULT_HOTKEY_SPEC = "Alt + X";
 const HOST_CONTROLLED_SETTING_KEYS = new Set([

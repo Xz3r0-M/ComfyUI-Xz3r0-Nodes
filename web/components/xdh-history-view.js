@@ -309,16 +309,9 @@ export class XdhHistoryView extends BaseElement {
             const item = this._itemMap.get(String(id));
             if (!item) { e.preventDefault(); return; }
 
-            const extra = item.raw?.extra || {};
-            const rawPayload = extra?.payload;
-            let textValue = "";
-            if (typeof rawPayload === "string") {
-                textValue = rawPayload.trim();
-            } else if (rawPayload && typeof rawPayload === "object") {
-                textValue = String(
-                    rawPayload.text || rawPayload.payload || ""
-                ).trim();
-            }
+            // 用与预览一致的递归提取：文本记录可能直接存字符串，
+            // 也可能包在 {text}/{payload:{text}} 里。
+            const textValue = payloadText(item);
             const title = historyItemTitle(item);
 
             e.dataTransfer.setData(
@@ -330,6 +323,10 @@ export class XdhHistoryView extends BaseElement {
                     title,
                 })
             );
+            // 额外写类型/数量标记：dragover 阶段读不到明文，
+            // 节点靠它提前知道拖进来的是文本。
+            e.dataTransfer.setData("application/x-xdatahub-type-text", "1");
+            e.dataTransfer.setData("application/x-xdatahub-count-1", "1");
             row.style.opacity = "0.5";
         });
 

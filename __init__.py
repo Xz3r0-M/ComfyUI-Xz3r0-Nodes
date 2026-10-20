@@ -74,6 +74,7 @@ from .xnode.xaudioget import XAudioGet
 from .xnode.xdatasave import XDataSave
 from .xnode.ximageget import XImageGet
 from .xnode.xloraget import XLoraGet
+from .xnode.xmedialistget import XMediaListGet
 from .xnode.xstringget import XStringGet
 from .xnode.xvideoget import XVideoGet
 
@@ -151,6 +152,7 @@ REGISTERED_NODE_CLASSES: tuple[type[io.ComfyNode], ...] = (
     XDataSave,
     XImageGet,
     XLoraGet,
+    XMediaListGet,
     XStringGet,
     XVideoGet,
     # =============================================

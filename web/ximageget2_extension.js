@@ -1889,6 +1889,7 @@ function collectNodesByClass(nodeClass) {
         const accentIndex = getNodeAccentIndex(scopedId);
         items.push({
             id: scopedId,
+            node_class: targetClass,
             title: String(node.title || targetClass),
             accent_index: accentIndex >= 0 ? accentIndex : null,
         });

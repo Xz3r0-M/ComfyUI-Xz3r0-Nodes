@@ -134,7 +134,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20261013-1";
+const XDATAHUB_ASSET_VER = "20261021-9";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -366,6 +366,31 @@ function isTrustedHostMessage(event) {
     return event?.source === window
         && normalizeMessageOrigin(String(event.origin || ""))
             === XDATAHUB_HOST_ORIGIN;
+}
+
+/**
+ * 快捷键是不是「全选」：Ctrl+A（Windows/Linux）/ Cmd+A（macOS）。
+ * 与 iframe 内部保持同一套判定（不带 Shift/Alt）。
+ */
+function isSelectAllComboEvent(event) {
+    if (!event || event.altKey || event.shiftKey) {
+        return false;
+    }
+    if (!event.ctrlKey && !event.metaKey) {
+        return false;
+    }
+    return String(event.key || "").toLowerCase() === "a";
+}
+
+/**
+ * 指针（视口坐标）是否落在矩形内；窗口不可见（尺寸 0）时算不在。
+ */
+function isPointInsideRect(x, y, rect) {
+    if (!rect || !(rect.width > 0) || !(rect.height > 0)) {
+        return false;
+    }
+    return x >= rect.left && x <= rect.right
+        && y >= rect.top && y <= rect.bottom;
 }
 
 function ensureColorTokensStylesheet() {
@@ -3458,6 +3483,94 @@ const XDataHub = {
             }
         };
 
+        // ── Ctrl/Cmd+A 转交 ────────────────────────────────────────
+        // 边缘停靠（悬停展开）时窗口是展开了，但键盘焦点还在画布上，
+        // 按键根本不会送进 iframe。这里在指针确实位于窗口内时接管
+        // 快捷键，转发给 XDataHub 内部做全选；其余情况（指针在画布、
+        // 窗口收起/隐藏、正在输入框打字）一律放行，不影响画布自身的
+        // Ctrl+A。
+        //
+        // 指针位置只能靠父页面自己的 pointermove 记录：指针一旦进入
+        // iframe 父页面就收不到移动事件，位置会停在窗口边界上，因此
+        // “在窗口内”判断依然成立。
+        let hostPointerX = 0;
+        let hostPointerY = 0;
+        let hostPointerKnown = false;
+        const handleHostPointerMove = (event) => {
+            hostPointerX = event.clientX;
+            hostPointerY = event.clientY;
+            hostPointerKnown = true;
+        };
+        const isEventTargetEditable = (event) => {
+            const path = typeof event?.composedPath === "function"
+                ? event.composedPath()
+                : [event?.target];
+            for (const node of path) {
+                if (!node || typeof node !== "object") continue;
+                const tag = String(node.tagName || "").toLowerCase();
+                if (
+                    tag === "input"
+                    || tag === "textarea"
+                    || tag === "select"
+                ) {
+                    return true;
+                }
+                if (node.isContentEditable === true) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const isPeekCollapsed = () => (
+            edgePeekEnabled && !!dockSide && !isMaximized && !peekExpanded
+        );
+        // 指针是否落在窗口内。同时看两个矩形：
+        // - getBoundingClientRect()：随滑动动画变化；
+        // - offset* 布局矩形：不受 transform 影响，即“展开后的最终位置”。
+        // 边缘悬停展开的瞬间（300ms 过渡）只有后者能命中窗口边缘。
+        const isPointerOverWindow = () => {
+            const width = windowEl.offsetWidth;
+            const height = windowEl.offsetHeight;
+            const rects = [windowEl.getBoundingClientRect()];
+            if (width > 0 && height > 0) {
+                rects.push({
+                    left: windowEl.offsetLeft,
+                    top: windowEl.offsetTop,
+                    right: windowEl.offsetLeft + width,
+                    bottom: windowEl.offsetTop + height,
+                    width,
+                    height,
+                });
+            }
+            return rects.some((rect) => isPointInsideRect(
+                hostPointerX,
+                hostPointerY,
+                rect
+            ));
+        };
+        const handleSelectAllShortcut = (event) => {
+            if (!isSelectAllComboEvent(event)) return;
+            if (!XDataHub.instance || !XDataHub.instance.isVisible) return;
+            if (isPeekCollapsed()) return;
+            if (!hostPointerKnown) return;
+            if (!isPointerOverWindow()) return;
+            if (isEventTargetEditable(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                dataFrame.contentWindow?.postMessage(
+                    { type: "xdatahub:select_all_page" },
+                    XDATAHUB_HOST_ORIGIN
+                );
+            } catch {
+                // 忽略窗口已卸载等异常。
+            }
+        };
+
+        document.addEventListener('pointermove', handleHostPointerMove, {
+            passive: true,
+        });
+        document.addEventListener('keydown', handleSelectAllShortcut, true);
         document.addEventListener('keydown', handleKeyDown);
         document.addEventListener('keyup', handleKeyUp);
         window.addEventListener('blur', handleWindowBlur);
@@ -3626,6 +3739,12 @@ const XDataHub = {
                 document.removeEventListener("keyup", handleKeyUp);
                 document.removeEventListener("pointermove", handlePeekPointerMove);
                 window.removeEventListener("blur", handleWindowBlur);
+                document.removeEventListener("pointermove", handleHostPointerMove);
+                document.removeEventListener(
+                    "keydown",
+                    handleSelectAllShortcut,
+                    true
+                );
                 window.removeEventListener("resize", handleWindowResize);
                 dataFrame.removeEventListener("load", postSharedStateToDataFrame);
                 clearTimeout(peekCollapseTimer);

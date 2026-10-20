@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260427-2";
+import { t } from "../core/i18n.js?v=20261020-1";
 import { toggleMediaFavorite } from "../core/api.js?v=20260530-1";
 
 function normalizeText(value) {
@@ -30,6 +30,133 @@ function escapeAttr(value) {
 }
 
 const CARD_CLICK_SUPPRESS_MS = 250;
+
+// 可多选的媒体分类（LoRA 也支持多选后一起拖到画布）。
+const MULTI_SELECT_CATEGORIES = new Set([
+    "image",
+    "video",
+    "audio",
+    "lora",
+]);
+
+/**
+ * 键快捷键是不是「全选」：Ctrl+A（Windows/Linux）/ Cmd+A（macOS）。
+ */
+function isSelectAllShortcut(event) {
+    if (!event || event.altKey || event.shiftKey) {
+        return false;
+    }
+    if (!event.ctrlKey && !event.metaKey) {
+        return false;
+    }
+    return String(event.key || "").toLowerCase() === "a";
+}
+
+/**
+ * 事件是否发在可输入控件里（输入框 / 文本域 / 下拉 / 可编辑区）。
+ * 必须在 shadow DOM 深处也认得出来，所以看 composedPath。
+ */
+function isEditableKeyTarget(event) {
+    const path = typeof event?.composedPath === "function"
+        ? event.composedPath()
+        : [event?.target];
+    for (const node of path) {
+        if (!node || typeof node !== "object") continue;
+        const tag = String(node.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") {
+            return true;
+        }
+        if (node.isContentEditable === true) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * 当前页里可被多选的条目 id（排除文件夹 / 记录，且类型匹配）。
+ * 保证 Ctrl+A 和手动点选的可选范围一致。
+ */
+function selectablePageIds(mediaList, category) {
+    const normalized = String(category || "").toLowerCase();
+    return (Array.isArray(mediaList) ? mediaList : [])
+        .filter((entry) => entry && !entry.isFolder
+            && entry.type !== "record")
+        .filter((entry) => String(entry.type || "").toLowerCase()
+            === normalized)
+        .map((entry) => String(entry.id));
+}
+
+/**
+ * Ctrl+A 要选中的 id：**只看当前页**。
+ *
+ * mediaList 就是分页接口返回的这一页数据，不会把其他页累积进来；
+ * 返回空数组表示这个视图不参与全选。
+ */
+function selectAllPageIds(state) {
+    const category = String(state?.activeCategory || "").toLowerCase();
+    if (!MULTI_SELECT_CATEGORIES.has(category)) {
+        return [];
+    }
+    if (state?.loraDetailOpen) {
+        return [];
+    }
+    return selectablePageIds(state?.mediaList, category);
+}
+
+/**
+ * 快捷键的「场景判断」：只在真正盯着 XDataHub 用的时候生效。
+ *
+ * - 指针在 XDataHub 窗口内：鼠标移到画布/其他地方后不再误触；
+ * - 窗口持有键盘焦点：弹窗、切窗后不抢别处的按键；
+ * - 窗口有实际尺寸：面板被隐藏（display:none）时宽高为 0。
+ */
+function selectAllScenarioAllowed(context) {
+    if (!context?.pointerInside) {
+        return false;
+    }
+    if (context.hasFocus === false) {
+        return false;
+    }
+    const width = Number(context.width);
+    const height = Number(context.height);
+    if (!(width > 0) || !(height > 0)) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * 把一张卡片压成拖拽 payload 的一项。
+ *
+ * LoRA 额外带缩略图与强度：落地建节点时可以直接拼出列表行，
+ * 不用等节点再走一次网络请求。
+ */
+function buildDragEntry(entry) {
+    const extra = entry?.raw?.extra || {};
+    const raw = entry?.raw || {};
+    const mediaRef = normalizeText(
+        extra.media_ref || raw.media_ref || raw.public_ref || raw.ref
+    );
+    const mediaType = String(entry?.type || "image").toLowerCase();
+    const item = {
+        media_ref: mediaRef,
+        media_type: mediaType,
+        title: normalizeText(entry?.title || entry?.name),
+    };
+    if (mediaType === "lora") {
+        item.thumb_url = normalizeText(extra.thumb_url || raw.thumb_url);
+        const strengthModel = extra.strength_model ?? raw.strength_model;
+        const strengthClip = extra.strength_clip ?? raw.strength_clip;
+        if (strengthModel != null) {
+            item.strength_model = Number(strengthModel);
+        }
+        if (strengthClip != null) {
+            item.strength_clip = Number(strengthClip);
+        }
+    }
+    return item;
+}
 
 const IMAGE_PREVIEWABLE_EXT = new Set([
     ".png",
@@ -550,6 +677,123 @@ export class XdhMediaGrid extends BaseElement {
         this.failedThumbIds = new Set();
         this._gridInitialized = false;
         this._suppressCardClickUntil = 0;
+        this._selectionAnchorId = '';
+        this._onSelectAllKeydown = (event) => {
+            this._handleSelectAllShortcut(event);
+        };
+        // 宿主转发的全选（停靠隐藏、悬停展开但焦点还在画布时）。
+        this._onSelectAllBridge = () => {
+            this._applySelectAllPage();
+        };
+        // 指针是否在 XDataHub 窗口内（iframe 视口内）。
+        this._pointerInside = false;
+        this._onPointerEnter = () => {
+            this._pointerInside = true;
+        };
+        this._onPointerLeave = () => {
+            this._pointerInside = false;
+        };
+        this._onPointerPresence = () => {
+            this._pointerInside = true;
+        };
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        // 防止元素被移出再挂回时重复注册监听。
+        document.removeEventListener("keydown", this._onSelectAllKeydown);
+        document.addEventListener("keydown", this._onSelectAllKeydown);
+        document.removeEventListener(
+            "xdh:select-all-page",
+            this._onSelectAllBridge
+        );
+        document.addEventListener(
+            "xdh:select-all-page",
+            this._onSelectAllBridge
+        );
+        const root = document.documentElement;
+        root.removeEventListener("pointerenter", this._onPointerEnter);
+        root.removeEventListener("pointerleave", this._onPointerLeave);
+        root.addEventListener("pointerenter", this._onPointerEnter);
+        root.addEventListener("pointerleave", this._onPointerLeave);
+        document.removeEventListener("pointerdown", this._onPointerPresence, true);
+        document.addEventListener("pointerdown", this._onPointerPresence, true);
+        document.removeEventListener("pointermove", this._onPointerPresence);
+        document.addEventListener(
+            "pointermove",
+            this._onPointerPresence,
+            { passive: true }
+        );
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        document.removeEventListener("keydown", this._onSelectAllKeydown);
+        document.removeEventListener(
+            "xdh:select-all-page",
+            this._onSelectAllBridge
+        );
+        const root = document.documentElement;
+        root.removeEventListener("pointerenter", this._onPointerEnter);
+        root.removeEventListener("pointerleave", this._onPointerLeave);
+        document.removeEventListener(
+            "pointerdown",
+            this._onPointerPresence,
+            true
+        );
+        document.removeEventListener("pointermove", this._onPointerPresence);
+    }
+
+    /**
+     * Ctrl/Cmd+A 全选**当前页**的卡片。
+     *
+     * 不抢输入框里的文字全选，也不在记录（历史/收藏）视图里捣乱。
+     */
+    _handleSelectAllShortcut(event) {
+        if (!isSelectAllShortcut(event) || event.defaultPrevented) {
+            return;
+        }
+        if (isEditableKeyTarget(event)) {
+            return;
+        }
+        if (!selectAllScenarioAllowed({
+            pointerInside: this._pointerInside,
+            hasFocus: typeof document.hasFocus === "function"
+                ? document.hasFocus()
+                : true,
+            width: window.innerWidth,
+            height: window.innerHeight,
+        })) {
+            return;
+        }
+        const state = appStore.state;
+        if (!selectAllPageIds(state).length) {
+            return;
+        }
+        event.preventDefault();
+        this._applySelectAllPage();
+    }
+
+    /**
+     * 全选当前页（键盘快捷键与宿主转发共用）。
+     * 返回是否真的选中了内容。
+     */
+    _applySelectAllPage() {
+        const state = appStore.state;
+        const ids = selectAllPageIds(state);
+        if (!ids.length) {
+            return false;
+        }
+        this._selectionAnchorId = ids[ids.length - 1];
+        const current = Array.isArray(state.selectedItems)
+            ? state.selectedItems
+            : [];
+        const unchanged = current.length === ids.length
+            && ids.every((id, index) => current[index] === id);
+        if (!unchanged) {
+            appStore.state.selectedItems = ids;
+        }
+        return true;
     }
 
     /**
@@ -763,7 +1007,54 @@ export class XdhMediaGrid extends BaseElement {
                     return;
                 }
 
+                const mediaCategory = String(
+                    appStore.state.activeCategory || ""
+                ).toLowerCase();
+                const multiSelectEnabled = MULTI_SELECT_CATEGORIES.has(
+                    mediaCategory
+                )
+                    && item
+                    && item.type !== "record";
+                const idText = String(id ?? "");
+                const current = Array.isArray(appStore.state.selectedItems)
+                    ? appStore.state.selectedItems.slice()
+                    : [];
+                if (multiSelectEnabled && e.shiftKey) {
+                    const order = (appStore.state.mediaList || [])
+                        .filter(
+                            (entry) => !entry.isFolder
+                                && entry.type !== "record"
+                        )
+                        .map((entry) => String(entry.id));
+                    const anchorId = this._selectionAnchorId
+                        || current[current.length - 1]
+                        || idText;
+                    const anchorIndex = order.indexOf(anchorId);
+                    const currentIndex = order.indexOf(idText);
+                    if (anchorIndex >= 0 && currentIndex >= 0) {
+                        const [start, end] = anchorIndex <= currentIndex
+                            ? [anchorIndex, currentIndex]
+                            : [currentIndex, anchorIndex];
+                        appStore.state.selectedItems = order.slice(
+                            start,
+                            end + 1
+                        );
+                        return;
+                    }
+                }
+                if (multiSelectEnabled && (e.ctrlKey || e.metaKey)) {
+                    if (current.includes(idText)) {
+                        appStore.state.selectedItems = current.filter(
+                            (entry) => entry !== idText
+                        );
+                    } else {
+                        appStore.state.selectedItems = [...current, idText];
+                        this._selectionAnchorId = idText;
+                    }
+                    return;
+                }
                 appStore.state.selectedItems = [id];
+                this._selectionAnchorId = idText;
             });
 
             // 单一 dragstart 委托
@@ -777,35 +1068,58 @@ export class XdhMediaGrid extends BaseElement {
                 if (!item || item.isFolder || item.type === "record") {
                     e.preventDefault(); return;
                 }
-                const extra    = item.raw?.extra || {};
-                const mediaRef = String(
-                    extra.media_ref || item.raw?.media_ref
-                    || item.raw?.public_ref || item.raw?.ref || ""
-                );
-                const mediaType = String(item.type || "image").toLowerCase();
-                const payload  = {
+                const selected = Array.isArray(appStore.state.selectedItems)
+                    ? appStore.state.selectedItems
+                    : [];
+                const useSelection = selected.includes(String(id))
+                    && selected.length > 1;
+                const orderedItems = useSelection
+                    ? (appStore.state.mediaList || []).filter(
+                        (entry) => selected.includes(String(entry.id))
+                            && !entry.isFolder
+                            && entry.type !== "record"
+                    )
+                    : [item];
+                const entries = orderedItems
+                    .map(buildDragEntry)
+                    .filter((entry) => entry.media_ref);
+                if (!entries.length) {
+                    e.preventDefault();
+                    return;
+                }
+                const first = entries[0];
+                const payload = {
                     source: "xdatahub",
-                    media_ref: mediaRef, media_type: mediaType,
-                    title: String(item.title || item.name || ""),
+                    media_ref: first.media_ref,
+                    media_type: first.media_type,
+                    title: first.title,
+                    items: entries,
                 };
-                if (mediaType === "lora") {
-                    const rawExtra = item.raw?.extra || {};
-                    const raw = item.raw || {};
-                    payload.thumb_url = String(
-                        rawExtra.thumb_url || raw.thumb_url || ""
-                    );
-                    const strengthModel = rawExtra.strength_model
-                        ?? raw.strength_model;
-                    const strengthClip = rawExtra.strength_clip
-                        ?? raw.strength_clip;
-                    if (strengthModel != null) {
-                        payload.strength_model = Number(strengthModel);
+                // 单张 LoRA：顶层补上封面与强度，兼容「拖到已有节点
+                // 面板」那条只读顶层字段的老路径。
+                if (entries.length === 1 && first.media_type === "lora") {
+                    payload.thumb_url = first.thumb_url;
+                    if (first.strength_model != null) {
+                        payload.strength_model = first.strength_model;
                     }
-                    if (strengthClip != null) {
-                        payload.strength_clip = Number(strengthClip);
+                    if (first.strength_clip != null) {
+                        payload.strength_clip = first.strength_clip;
                     }
                 }
-                e.dataTransfer.setData("application/x-xdatahub-media+json", JSON.stringify(payload));
+                e.dataTransfer.setData(
+                    "application/x-xdatahub-media+json",
+                    JSON.stringify(payload)
+                );
+                // dragover 阶段只能读 types，用独立标记让节点提前知道
+                // 拖进来的类型与数量。
+                e.dataTransfer.setData(
+                    `application/x-xdatahub-type-${first.media_type}`,
+                    "1"
+                );
+                e.dataTransfer.setData(
+                    `application/x-xdatahub-count-${entries.length}`,
+                    "1"
+                );
                 card.style.opacity = "0.5";
             });
 

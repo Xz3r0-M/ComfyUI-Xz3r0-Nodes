@@ -3,15 +3,16 @@ import {
     registerCustomElement,
 } from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
+import { buildThumbUrl } from '../core/api.js?v=20260601-5';
 import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
-import { t } from '../core/i18n.js?v=20260406-15';
+import { t } from '../core/i18n.js?v=20261020-1';
 import { banner } from '../core/banner.js';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {
     sendToNode,
     resolveNodeClassFromTargetType,
     resolveNodeClassFromCategory,
-} from '../core/node-bridge.js?v=20260426-1';
+} from '../core/node-bridge.js?v=20261021-1';
 
 function escapeAttr(value) {
     return String(value || '')
@@ -21,64 +22,123 @@ function escapeAttr(value) {
         .replace(/>/g, '&gt;');
 }
 
+// XMediaListGet 只能装图片/视频/音频：LoRA、文本（含文本收藏）
+// 在节点选择器里就不该出现，否则用户选了一个收不了的目标。
+const MEDIA_LIST_CATEGORIES = new Set(['image', 'video', 'audio']);
+
+/**
+ * 根据当前分类和已选内容，算出本次可以发送的目标节点类型。
+ *
+ * @param {string} category 当前分类（image/video/audio/lora/history/...）
+ * @param {Array} items 已选条目（用 type 或 media_type 判断真实类型）
+ * @param {boolean} isMulti 是否多选
+ * @returns {string[]} 允许的目标节点类名
+ */
+function resolveAllowedTargetTypes(category, items = [], isMulti = false) {
+    const normalizedCategory = String(
+        category || 'image'
+    ).trim().toLowerCase();
+    const itemTypes = (Array.isArray(items) ? items : [])
+        .map((item) => String(
+            item?.type || item?.media_type || ''
+        ).trim().toLowerCase())
+        .filter(Boolean);
+    const types = itemTypes.length ? itemTypes : [normalizedCategory];
+    const listEligible = types.every((type) =>
+        MEDIA_LIST_CATEGORIES.has(type)
+    );
+    if (!listEligible) {
+        return [resolveNodeClassFromCategory(normalizedCategory)];
+    }
+    return isMulti
+        ? ['XMediaListGet']
+        : [resolveNodeClassFromCategory(normalizedCategory), 'XMediaListGet'];
+}
+
+/**
+ * 发送栏里的小缩略图地址。
+ *
+ * LoRA 的封面走自己的接口（`/loras/thumb`，视频封面会返回首帧），
+ * 不能套媒体文件的缩略图接口，否则请求会扑空、图片区一片空白。
+ */
+function resolveSelectedThumbUrl(item) {
+    const type = String(item?.type || item?.media_type || '').toLowerCase();
+    if (type === 'audio') {
+        return '';
+    }
+    const extra = item?.raw?.extra || {};
+    const raw = item?.raw || {};
+    const mediaRef = String(
+        extra.media_ref || raw.media_ref || raw.public_ref || raw.ref || ''
+    );
+    if (!mediaRef) {
+        return '';
+    }
+    if (type === 'lora') {
+        const explicit = String(extra.thumb_url || raw.thumb_url || '');
+        if (explicit) {
+            return explicit;
+        }
+        return `/xz3r0/xdatahub/loras/thumb?ref=${
+            encodeURIComponent(mediaRef)
+        }`;
+    }
+    return buildThumbUrl(mediaRef, 64);
+}
+
 export class XdhStagingDock extends BaseElement {
     constructor() {
         super();
         const initialSelectedItems = Array.isArray(appStore.state.selectedItems)
             ? appStore.state.selectedItems
             : [];
-        const normalizedInitialSelected = initialSelectedItems.length > 0
-            ? [initialSelectedItems[initialSelectedItems.length - 1]]
-            : [];
-        this.selectedCount = normalizedInitialSelected.length;
+        this.selectedCount = initialSelectedItems.length;
         this.batchTargetNodeId = '';
         this.batchTargetNodeTitle = '';
         this.batchTargetNodeColor = '';
-        this.selectedItemSnapshot = null;
+        this.batchTargetNodeClass = '';
+        this.batchTargetItemCount = 0;
+        this.batchTargetCounts = null;
+        this.selectedItemSnapshots = [];
         this._collapsed = false;
-        if (normalizedInitialSelected.length > 0) {
-            const selectedId = String(normalizedInitialSelected[0]);
-            const liveItem = ((appStore.state && appStore.state.mediaList) || []).find(
-                (entry) => String(entry.id) === selectedId
-            );
-            if (liveItem) {
-                this.selectedItemSnapshot = liveItem;
-            }
-        }
+        this._syncSelectedSnapshots(initialSelectedItems);
+    }
+
+    _syncSelectedSnapshots(ids = null) {
+        const selected = Array.isArray(ids)
+            ? ids
+            : (appStore.state.selectedItems || []);
+        const mediaList = appStore.state.mediaList || [];
+        const previous = new Map(
+            (this.selectedItemSnapshots || []).map(
+                (item) => [String(item.id), item]
+            )
+        );
+        this.selectedItemSnapshots = selected
+            .map((id) => {
+                const live = mediaList.find(
+                    (entry) => String(entry.id) === String(id)
+                );
+                return live || previous.get(String(id)) || null;
+            })
+            .filter(Boolean);
     }
 
     onStoreUpdate(state, key, value) {
         if (key === 'selectedItems') {
             const incoming = Array.isArray(value) ? value : [];
-            const normalized = incoming.length > 0
-                ? [incoming[incoming.length - 1]]
-                : [];
-            if (
-                incoming.length !== normalized.length
-                || incoming[0] !== normalized[0]
-            ) {
-                appStore.state.selectedItems = normalized;
-                return;
-            }
-            this.selectedCount = normalized.length;
-            if (normalized.length === 0) {
-                this.selectedItemSnapshot = null;
-            } else {
-                const selectedId = String(normalized[0]);
-                const liveItem = (state.mediaList || []).find(
-                    (entry) => String(entry.id) === selectedId
-                );
-                if (liveItem) {
-                    this.selectedItemSnapshot = liveItem;
-                }
-            }
+            this.selectedCount = incoming.length;
+            this._syncSelectedSnapshots(incoming);
             this.renderRoot();
         } else if (key === 'activeCategory') {
-            // Different category may map to different node class.
+            // 不同分类对应不同节点类型，清空目标选择。
             this.batchTargetNodeId = '';
             this.batchTargetNodeTitle = '';
             this.batchTargetNodeColor = '';
-            this.selectedItemSnapshot = null;
+            this.batchTargetNodeClass = '';
+            this.batchTargetItemCount = 0;
+            this.batchTargetCounts = null;
+            this.selectedItemSnapshots = [];
             this.renderRoot();
         } else if (
             key === 'locale'
@@ -86,15 +146,7 @@ export class XdhStagingDock extends BaseElement {
             || key === 'searchQuery'
             || key === 'loraDetailOpen'
         ) {
-            const selectedId = String((state.selectedItems || [])[0] || '');
-            if (selectedId) {
-                const liveItem = (state.mediaList || []).find(
-                    (entry) => String(entry.id) === selectedId
-                );
-                if (liveItem) {
-                    this.selectedItemSnapshot = liveItem;
-                }
-            }
+            this._syncSelectedSnapshots();
             this.renderRoot();
         }
     }
@@ -120,7 +172,26 @@ export class XdhStagingDock extends BaseElement {
         const applyBtn = this.$('.apply-btn');
         if (applyBtn) {
             applyBtn.addEventListener('click', () => {
-                this._sendSelected();
+                this._sendSelected('append');
+            });
+        }
+        const replaceBtn = this.$('.replace-btn');
+        if (replaceBtn) {
+            replaceBtn.addEventListener('click', () => {
+                const targetCount = this._resolveTargetCount();
+                const message = t('dock.replace_confirm', {
+                    count: targetCount,
+                });
+                if (!window.confirm(message)) {
+                    return;
+                }
+                this._sendSelected('replace');
+            });
+        }
+        const appendBtn = this.$('.append-btn');
+        if (appendBtn) {
+            appendBtn.addEventListener('click', () => {
+                this._sendSelected('append');
             });
         }
 
@@ -134,25 +205,95 @@ export class XdhStagingDock extends BaseElement {
                 this.batchTargetNodeColor = e.detail?.node
                     ? String(resolveTokenAccentFromNode(e.detail.node))
                     : '';
+                this.batchTargetNodeClass = String(
+                    e.detail?.node?.node_class || ''
+                ).trim();
+                this.batchTargetItemCount = Number(
+                    e.detail?.node?.item_count || 0
+                );
+                this.batchTargetCounts = e.detail?.node?.enabled_counts
+                    || null;
+                this.renderRoot();
             });
         }
     }
 
-    async _sendSelected() {
+    _resolveTargetCount() {
+        const state = appStore.state;
+        const selectedItems = this.selectedItemSnapshots || [];
+        const sendType = String(
+            selectedItems[0]?.type || state.activeCategory || 'image'
+        ).toLowerCase();
+        const counts = this.batchTargetCounts || null;
+        if (counts && counts[sendType] != null) {
+            return Number(counts[sendType]);
+        }
+        return Number(this.batchTargetItemCount || 0);
+    }
+
+    async _sendSelected(mode = 'append') {
         const state = appStore.state;
         const selectedIds = state.selectedItems || [];
-        const selectedId = selectedIds[0];
-        if (!selectedId) {
+        if (!selectedIds.length) {
             return;
         }
-        const mediaList   = state.mediaList   || [];
-        const category    = state.activeCategory || 'image';
+        this._syncSelectedSnapshots(selectedIds);
+        const items = this.selectedItemSnapshots.map((item) => {
+            const extra = item?.raw?.extra || {};
+            const raw = item?.raw || {};
+            const mediaRef = String(
+                extra.media_ref || raw.media_ref
+                || raw.public_ref || raw.ref || ''
+            );
+            const rawPayload = extra?.payload;
+            let textValue = '';
+            if (!mediaRef) {
+                if (typeof rawPayload === 'string') {
+                    textValue = rawPayload.trim();
+                } else if (rawPayload && typeof rawPayload === 'object') {
+                    textValue = String(
+                        rawPayload.text || rawPayload.payload || ''
+                    ).trim();
+                }
+            }
+            return {
+                media_ref: mediaRef,
+                media_type: String(
+                    item?.type || state.activeCategory || 'image'
+                ).toLowerCase(),
+                title: String(item?.title || item?.name || ''),
+                text_value: textValue,
+            };
+        }).filter((entry) => entry.media_ref || entry.text_value);
+
+        if (!items.length) {
+            banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
+            return;
+        }
+
         const batchPicker = this.$('xdh-node-picker[data-batch]');
         const pickerTargetType = String(
-            batchPicker?.getAttribute('target-type') || category
+            batchPicker?.getAttribute('target-type')
+            || state.activeCategory
+            || 'image'
         ).trim();
-        const nodeClass   = resolveNodeClassFromTargetType(pickerTargetType)
-            || resolveNodeClassFromCategory(category);
+        const firstTargetType = pickerTargetType.split(',')[0].trim();
+        const nodeClass = String(
+            this.batchTargetNodeClass
+            || resolveNodeClassFromTargetType(firstTargetType)
+            || resolveNodeClassFromCategory(state.activeCategory || 'image')
+        );
+        // 双保险：目标节点类型必须收得下这批内容，否则直接提示，
+        // 不要发出一个注定被拒的请求。
+        const allowedTargetTypes = resolveAllowedTargetTypes(
+            state.activeCategory,
+            items,
+            items.length > 1
+        );
+        if (!allowedTargetTypes.includes(nodeClass)) {
+            banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
+            return;
+        }
         const batchNodeId = String(
             batchPicker?.selectedNode?.id
             || this.batchTargetNodeId
@@ -164,45 +305,67 @@ export class XdhStagingDock extends BaseElement {
             return;
         }
 
-        const item = mediaList.find((m) => String(m.id) === String(selectedId))
-            || this.selectedItemSnapshot;
-        const extra = item?.raw?.extra || {};
-        const raw = item?.raw || {};
-        const mediaRef = item
-            ? String(
-                extra.media_ref || raw.media_ref
-                || raw.public_ref || raw.ref || ''
-            )
-            : '';
-        const rawPayload = extra?.payload;
-        let textValue = '';
-        if (!mediaRef) {
-            if (typeof rawPayload === 'string') {
-                textValue = rawPayload.trim();
-            } else if (rawPayload && typeof rawPayload === 'object') {
-                textValue = String(rawPayload.text || rawPayload.payload || '')
-                    .trim();
+        const first = items[0];
+        const isListNode = nodeClass === 'XMediaListGet';
+        // XLoraGet 可多行：一次性选中多个 LoRA 时逐条追加，
+        // 否则用户选了 3 个只会进去 1 个。
+        const isLoraNode = nodeClass === 'XLoraGet';
+        const sendType = String(
+            first.media_type || state.activeCategory || 'image'
+        ).toLowerCase();
+        const currentCounts = this.batchTargetCounts || null;
+        const currentTargetCount = currentCounts
+            && currentCounts[sendType] != null
+            ? Number(currentCounts[sendType])
+            : Number(this.batchTargetItemCount || 0);
+        const addableBefore = Math.max(0, 50 - currentTargetCount);
+        const accepted = isListNode
+            ? (mode === 'replace'
+                ? Math.min(items.length, 50)
+                : Math.min(items.length, addableBefore))
+            : 0;
+        let result = null;
+        if (isLoraNode && items.length > 1) {
+            let failed = 0;
+            for (const item of items) {
+                const single = await sendToNode({
+                    nodeId: batchNodeId,
+                    nodeClass,
+                    mediaRef: item.media_ref,
+                    textValue: item.text_value,
+                    title: item.title,
+                });
+                if (!single.ok) {
+                    failed += 1;
+                }
             }
+            result = { ok: failed === 0, failed };
+        } else {
+            result = await sendToNode({
+                nodeId: batchNodeId,
+                nodeClass,
+                mediaRef: first.media_ref,
+                textValue: first.text_value,
+                title: first.title,
+                items: isListNode ? items : [],
+                mode: isListNode ? mode : '',
+            });
         }
-        const title = item ? String(item.title || item.name || '') : '';
-
-        if (!mediaRef && !textValue) {
-            banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
-            return;
-        }
-
-        const result = await sendToNode({
-            nodeId: batchNodeId,
-            nodeClass,
-            mediaRef,
-            textValue,
-            title,
-        });
 
         if (result.ok) {
             appStore.state.selectedItems = [];
-            this.selectedItemSnapshot = null;
-            banner.success(t('dock.send_success', { count: 1 }));
+            this.selectedItemSnapshots = [];
+            if (isListNode) {
+                const nextCount = mode === 'replace'
+                    ? accepted
+                    : Math.min(50, currentTargetCount + accepted);
+                this.batchTargetCounts = currentCounts
+                    ? { ...currentCounts, [sendType]: nextCount }
+                    : null;
+                this.batchTargetItemCount = nextCount;
+            }
+            this.renderRoot();
+            banner.success(t('dock.send_success', { count: items.length }));
         } else {
             banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
         }
@@ -211,16 +374,63 @@ export class XdhStagingDock extends BaseElement {
     render() {
         const state = appStore.state;
         const selectedIds = state.selectedItems || [];
-        const selectedItem = selectedIds.length > 0
-            ? (state.mediaList || []).find(
-                (entry) => String(entry.id) === String(selectedIds[0])
-            ) || this.selectedItemSnapshot
-            : null;
-        const selectedLabel = String(
-            selectedItem?.title || selectedItem?.name || selectedIds[0] || ''
-        );
+        this._syncSelectedSnapshots(selectedIds);
+        const selectedItems = this.selectedItemSnapshots;
+        const isMulti = selectedIds.length > 1;
+        const selectedLabel = isMulti
+            ? t('dock.selected_count', { count: selectedIds.length })
+            : String(
+                selectedItems[0]?.title
+                || selectedItems[0]?.name
+                || selectedIds[0]
+                || ''
+            );
         const selectedLabelEscaped = escapeAttr(selectedLabel);
-        const pickerTargetType = String(state.activeCategory || 'image');
+        const allowedTargetTypes = resolveAllowedTargetTypes(
+            state.activeCategory,
+            selectedItems,
+            isMulti
+        );
+        // 切换分类后，之前选中的目标可能已经不在候选范围内（比如
+        // 图片时选中的 XMediaListGet，切到 LoRA 后就不该再留着）。
+        if (this.batchTargetNodeClass
+            && !allowedTargetTypes.includes(this.batchTargetNodeClass)) {
+            this.batchTargetNodeId = '';
+            this.batchTargetNodeTitle = '';
+            this.batchTargetNodeColor = '';
+            this.batchTargetNodeClass = '';
+            this.batchTargetItemCount = 0;
+            this.batchTargetCounts = null;
+        }
+        const pickerTargetType = allowedTargetTypes.join(',');
+        const selectedThumbs = selectedItems
+            .slice(0, 3)
+            .map(resolveSelectedThumbUrl)
+            .filter(Boolean);
+        const targetCounts = this.batchTargetCounts || null;
+        const sendType = String(
+            selectedItems[0]?.type || state.activeCategory || 'image'
+        ).toLowerCase();
+        const targetCount = targetCounts
+            && targetCounts[sendType] != null
+            ? Number(targetCounts[sendType])
+            : Number(this.batchTargetItemCount || 0);
+        const targetHasContent = targetCount > 0;
+        const isListTarget = this.batchTargetNodeClass === 'XMediaListGet'
+            || pickerTargetType.split(',').includes('XMediaListGet');
+        const addable = Math.max(0, 50 - targetCount);
+        const sendCount = Math.min(selectedIds.length, addable);
+        const dropped = Math.max(0, selectedIds.length - sendCount);
+        const appendLabel = dropped > 0
+            ? t('dock.append_count_dropped', {
+                count: sendCount,
+                dropped,
+            })
+            : t('dock.append_count', { count: sendCount });
+        const targetCountLabel = isListTarget && targetCount > 0
+            ? ` · ${t('dock.target_count', { count: targetCount })}`
+            : '';
+        const showChoice = isListTarget && targetHasContent;
 
         if (selectedIds.length === 0 || state.loraDetailOpen) {
             return `<style>:host { display: none; }</style>`;
@@ -404,6 +614,38 @@ export class XdhStagingDock extends BaseElement {
                     text-overflow: ellipsis;
                 }
 
+                .selected-stack {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .selected-thumbs {
+                    display: flex;
+                    align-items: center;
+                    flex-shrink: 0;
+                }
+
+                .selected-thumbs img {
+                    width: 28px;
+                    height: 28px;
+                    object-fit: cover;
+                    border-radius: 4px;
+                    border: 1px solid var(--dock-border);
+                    margin-left: -8px;
+                    background: var(--dock-inner-bg);
+                }
+
+                .selected-thumbs img:first-child {
+                    margin-left: 0;
+                }
+
+                .selected-more {
+                    margin-left: 4px;
+                    font-size: 10px;
+                    color: var(--dock-secondary-text);
+                }
+
                 .batch-target-row {
                     display: flex;
                     flex-direction: column;
@@ -446,11 +688,19 @@ export class XdhStagingDock extends BaseElement {
                 </div>
 
                 <div class="dock-body">
+                    ${isMulti ? `
+                    <div class="selected-item selected-stack xdh-tooltip xdh-tooltip-up" data-tooltip="${selectedLabelEscaped}">
+                        <div class="selected-thumbs">
+                            ${selectedThumbs.map((url) => `<img src="${escapeAttr(url)}" alt="" onerror="this.style.display='none'">`).join('')}
+                            ${selectedItems.length > 3 ? `<span class="selected-more">+${selectedItems.length - 3}</span>` : ''}
+                        </div>
+                        <span>${selectedLabelEscaped}</span>
+                    </div>` : `
                     <div class="selected-item xdh-tooltip xdh-tooltip-up" data-tooltip="${selectedLabelEscaped}">
                         ${icon('file', 11)} ${selectedLabelEscaped}
-                    </div>
+                    </div>`}
                     <div class="batch-target-row">
-                        <span class="batch-target-label">${t('dock.batch_target')}</span>
+                        <span class="batch-target-label">${t('dock.batch_target')}${targetCountLabel}</span>
                         <xdh-node-picker
                             data-batch="true"
                             target-type="${escapeAttr(pickerTargetType)}"
@@ -461,9 +711,16 @@ export class XdhStagingDock extends BaseElement {
                     </div>
                 </div>
                 <div class="actions">
+                    ${showChoice ? `
+                    <xdh-button variant="primary" class="replace-btn">
+                        ${icon('refresh-cw', 14)} ${t('dock.replace')}
+                    </xdh-button>
+                    <xdh-button variant="primary" class="append-btn">
+                        ${icon('send', 14)} ${appendLabel}
+                    </xdh-button>` : `
                     <xdh-button variant="primary" class="apply-btn">
                         ${icon('send', 14)} ${t('dock.send')}
-                    </xdh-button>
+                    </xdh-button>`}
                 </div>
             </div>
             `}
