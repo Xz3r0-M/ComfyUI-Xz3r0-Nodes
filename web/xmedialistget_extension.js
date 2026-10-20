@@ -3553,6 +3553,15 @@ function renderPanel(node, options = {}) {
     };
     if (node.__xmlg_enabled_count !== outputCount) {
         node.__xmlg_enabled_count = outputCount;
+    }
+    // 三个分类的启用数任一变化都要通知下游（下游可能用的不是当前分类）。
+    const countsKey = [
+        node.__xmlg_enabled_counts.image,
+        node.__xmlg_enabled_counts.video,
+        node.__xmlg_enabled_counts.audio,
+    ].join("|");
+    if (node.__xmlg_enabled_counts_key !== countsKey) {
+        node.__xmlg_enabled_counts_key = countsKey;
         document.dispatchEvent(
             new CustomEvent("xmedialistget:count-changed")
         );

@@ -39,6 +39,7 @@ var PIPE_GATE_CLASS = "XPipeGate";
 var LIST_TO_PIPE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
+var MEDIA_LIST_CLASS = "XMediaListGet";
 var NAMES_WIDGET = "port_names";
 var TYPE_WARNING_WIDGET = "type_warning";
 var HIDE_STATE_PROP = "xpipe_hide_links_state";
@@ -162,6 +163,41 @@ function isXListRestore(node) {
     );
 }
 
+function isXMediaListGet(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === MEDIA_LIST_CLASS
+    );
+}
+
+/**
+ * XMediaListGet 的「图片数量 / 视频数量 / 音频数量」分别对应输出槽位
+ * 2 / 4 / 6；面板每次变化都会把三个分类的启用数写到节点上，这里直接读，
+ * 免得等到真正执行才知道有几路。
+ */
+function mediaListEnabledCount(node, originSlot) {
+    if (!isXMediaListGet(node)) return 0;
+    var counts = node.__xmlg_enabled_counts || null;
+    var key = originSlot === 2
+        ? "image"
+        : originSlot === 4
+            ? "video"
+            : originSlot === 6
+                ? "audio"
+                : "";
+    if (counts && key && counts[key] != null) {
+        return Math.max(
+            1,
+            Math.min(PIPE_SLOTS, Math.round(Number(counts[key])) || 0),
+        );
+    }
+    var total = Number(node.__xmlg_enabled_count);
+    if (Number.isFinite(total) && total > 0) {
+        return Math.max(1, Math.min(PIPE_SLOTS, Math.round(total)));
+    }
+    return 0;
+}
+
 
 function isXpipeFamily(node) {
     return isXPipe(node)
@@ -241,6 +277,12 @@ function resolveXListToPipeCount(node) {
                         );
                     }
                 }
+            }
+        }
+        if (isXMediaListGet(source)) {
+            var mediaCount = mediaListEnabledCount(source, link.origin_slot);
+            if (mediaCount > 0) {
+                return mediaCount;
             }
         }
         // Other INT sources fall back to widget until execute.
@@ -2051,6 +2093,17 @@ app.registerExtension({
         applyUiLocale();
         installLocaleSync();
         installCanvasHooks();
+        // XMediaListGet 面板里开关文件会改变「数量」输出，
+        // 这里即时重算下游管道槽位，不用等执行一次。
+        if (!window.__xpipeMediaListCountListenerInstalled) {
+            window.__xpipeMediaListCountListenerInstalled = true;
+            document.addEventListener(
+                "xmedialistget:count-changed",
+                function () {
+                    scheduleGraphRefresh();
+                },
+            );
+        }
     },
 
     async afterConfigureGraph() {
