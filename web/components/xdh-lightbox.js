@@ -2262,10 +2262,22 @@ export class XdhLightbox extends BaseElement {
                     outline-offset: 2px;
                 }
 
-                .fs-side-btn:disabled {
+                /* 首尾项时上一个/下一个灰显：
+                   必须带 .fs-stage[data-active="true"] 前缀，
+                   否则被上面同名的显示规则（优先级更高）盖掉，
+                   看起来像仍可点击。 */
+                .fs-side-btn:disabled,
+                .fs-stage[data-active="true"] .fs-side-btn:disabled,
+                .fs-stage[data-active="true"] .fs-side-btn:disabled:hover {
                     opacity: 0.32;
+                    color: var(--lb-text-tertiary);
                     cursor: not-allowed;
                     transform: translateY(-50%) scale(1);
+                }
+
+                .fs-stage[data-active="true"] .fs-side-btn:disabled:hover {
+                    background: var(--lb-surface-elevated);
+                    box-shadow: var(--lb-shadow-ring);
                 }
 
                 /* ============================================
