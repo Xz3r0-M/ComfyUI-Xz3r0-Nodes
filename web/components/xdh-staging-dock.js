@@ -5,14 +5,14 @@ import {
 import { appStore } from '../core/store.js';
 import { buildThumbUrl } from '../core/api.js?v=20260601-5';
 import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
-import { t } from '../core/i18n.js?v=20261020-1';
+import { t } from '../core/i18n.js?v=20261023-2';
 import { banner } from '../core/banner.js';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {
     sendToNode,
     resolveNodeClassFromTargetType,
     resolveNodeClassFromCategory,
-} from '../core/node-bridge.js?v=20261021-1';
+} from '../core/node-bridge.js?v=20261023-2';
 
 function escapeAttr(value) {
     return String(value || '')
@@ -318,12 +318,8 @@ export class XdhStagingDock extends BaseElement {
             && currentCounts[sendType] != null
             ? Number(currentCounts[sendType])
             : Number(this.batchTargetItemCount || 0);
-        const addableBefore = Math.max(0, 50 - currentTargetCount);
-        const accepted = isListNode
-            ? (mode === 'replace'
-                ? Math.min(items.length, 50)
-                : Math.min(items.length, addableBefore))
-            : 0;
+        // 全部交给目标节点：超出 50 的部分由它按「禁用」状态收下。
+        const accepted = isListNode ? items.length : 0;
         let result = null;
         if (isLoraNode && items.length > 1) {
             let failed = 0;
@@ -356,16 +352,26 @@ export class XdhStagingDock extends BaseElement {
             appStore.state.selectedItems = [];
             this.selectedItemSnapshots = [];
             if (isListNode) {
-                const nextCount = mode === 'replace'
-                    ? accepted
-                    : Math.min(50, currentTargetCount + accepted);
+                const nextCount = Math.min(
+                    50,
+                    (mode === 'replace' ? 0 : currentTargetCount) + accepted
+                );
                 this.batchTargetCounts = currentCounts
                     ? { ...currentCounts, [sendType]: nextCount }
                     : null;
                 this.batchTargetItemCount = nextCount;
             }
             this.renderRoot();
-            banner.success(t('dock.send_success', { count: items.length }));
+            if (isListNode && Number(result?.disabled) > 0) {
+                banner.info(t('dock.send_success_disabled', {
+                    count: items.length,
+                    disabled: Number(result.disabled),
+                }));
+            } else {
+                banner.success(
+                    t('dock.send_success', { count: items.length })
+                );
+            }
         } else {
             banner.warn(t('dock.send_partial', { success: 0, fail: 1 }));
         }
@@ -419,14 +425,22 @@ export class XdhStagingDock extends BaseElement {
         const isListTarget = this.batchTargetNodeClass === 'XMediaListGet'
             || pickerTargetType.split(',').includes('XMediaListGet');
         const addable = Math.max(0, 50 - targetCount);
-        const sendCount = Math.min(selectedIds.length, addable);
-        const dropped = Math.max(0, selectedIds.length - sendCount);
-        const appendLabel = dropped > 0
-            ? t('dock.append_count_dropped', {
-                count: sendCount,
-                dropped,
+        // 目标里已经启用 50 个时也不再丢弃：多出来的会以「禁用」状态
+        // 加进列表，之后用户可以自己挑哪 50 个参与输出。
+        const sendAsDisabled = Math.max(0, selectedIds.length - addable);
+        const appendLabel = sendAsDisabled > 0
+            ? t('dock.append_count_disabled', {
+                count: selectedIds.length,
+                disabled: sendAsDisabled,
             })
-            : t('dock.append_count', { count: sendCount });
+            : t('dock.append_count', { count: selectedIds.length });
+        // 替换是清空重来，所以额度固定是 50。
+        const replaceAsDisabled = Math.max(0, selectedIds.length - 50);
+        const replaceLabel = replaceAsDisabled > 0
+            ? t('dock.replace_count_disabled', {
+                disabled: replaceAsDisabled,
+            })
+            : t('dock.replace');
         const targetCountLabel = isListTarget && targetCount > 0
             ? ` · ${t('dock.target_count', { count: targetCount })}`
             : '';
@@ -713,7 +727,7 @@ export class XdhStagingDock extends BaseElement {
                 <div class="actions">
                     ${showChoice ? `
                     <xdh-button variant="primary" class="replace-btn">
-                        ${icon('refresh-cw', 14)} ${t('dock.replace')}
+                        ${icon('refresh-cw', 14)} ${replaceLabel}
                     </xdh-button>
                     <xdh-button variant="primary" class="append-btn">
                         ${icon('send', 14)} ${appendLabel}

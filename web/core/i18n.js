@@ -223,12 +223,14 @@ const Dictionary = {
         'dock.send':            '发送',
         'dock.selected_count':  '已选 {count} 项',
         'dock.replace':         '替换',
+        'dock.replace_count_disabled': '替换（{disabled} 个禁用）',
         'dock.replace_confirm': '替换会清空目标节点里已启用的 {count} 个文件，确定吗？',
         'dock.append_with_count': '追加 {addable} 个，丢弃 {dropped} 个',
         'dock.append_count':    '追加 {count} 个',
-        'dock.append_count_dropped': '追加 {count} 个，丢弃 {dropped} 个',
+        'dock.append_count_disabled': '追加 {count} 个（{disabled} 个禁用）',
         'dock.target_count':    '目标 {count} / 50',
         'dock.send_success':    '已发送 {count} 个文件',
+        'dock.send_success_disabled': '已加入 {count} 个文件，其中 {disabled} 个是禁用状态（启用的仍是最多 50 个）',
         'dock.send_partial':    '发送完成：{success} 成功，{fail} 失败',
 
         // ── node picker ──────────────────────────────────────
@@ -559,12 +561,14 @@ const Dictionary = {
         'dock.send':            'Send',
         'dock.selected_count':  '{count} items selected',
         'dock.replace':         'Replace',
+        'dock.replace_count_disabled': 'Replace ({disabled} Disabled)',
         'dock.replace_confirm': 'Replace will clear {count} enabled files in the target node. Continue?',
         'dock.append_with_count': 'Add {addable}, drop {dropped}',
         'dock.append_count':    'Add {count}',
-        'dock.append_count_dropped': 'Add {count}, drop {dropped}',
+        'dock.append_count_disabled': 'Add {count} ({disabled} Disabled)',
         'dock.target_count':    'Target {count} / 50',
         'dock.send_success':    'Sent {count} file(s) successfully',
+        'dock.send_success_disabled': 'Added {count} file(s); {disabled} are Disabled (at most 50 stay Enabled)',
         'dock.send_partial':    'Done: {success} sent, {fail} failed',
 
         // ── node picker ──────────────────────────────────────

@@ -13,7 +13,7 @@ import {
     CATEGORY_NODE_CLASS,
     resolveNodeClassFromTargetType,
     resolveNodeClassFromCategory,
-} from '../core/node-bridge.js?v=20261021-1';
+} from '../core/node-bridge.js?v=20261023-2';
 
 // 已选中目标节点后，需要持续确认它还活在画布上：
 // 用户直接删掉节点时，选中状态必须自动清掉。

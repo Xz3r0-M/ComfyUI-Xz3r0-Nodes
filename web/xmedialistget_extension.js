@@ -25,7 +25,7 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-1";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-2";
 
 const EXT_NAME = "xz3r0.xmedialistget";
 const EXT_GUARD_KEY = "__xmedialistget_extension_registered__";
@@ -2496,6 +2496,29 @@ function isTextEditingTarget(target) {
         return !NON_TEXT_INPUT_TYPES.has(type);
     }
     return true;
+}
+
+/**
+ * 按顺序把文件塞进列表：还能启用的先启用，超出上限的部分以「禁用」
+ * 状态收下（不是丢掉）。返回其中被标成禁用的数量。
+ */
+function appendEntriesWithLimit(targetList, entries, enabledSlots) {
+    let remaining = Math.max(0, Number(enabledSlots) || 0);
+    let disabled = 0;
+    for (const entry of entries) {
+        const enabled = remaining > 0;
+        if (enabled) {
+            remaining -= 1;
+        } else {
+            disabled += 1;
+        }
+        targetList.push({
+            ref: entry.ref,
+            title: entry.title,
+            enabled,
+        });
+    }
+    return disabled;
 }
 
 /**
@@ -5301,24 +5324,25 @@ function handleSendToNode(node, data, ack) {
     if (String(data.mode || "") === "replace") {
         items[category] = [];
     }
-    const addable = Math.max(
-        0,
+    // 已启用 50 个时不再丢弃剩下的文件：多出来的照样加进列表，
+    // 只是以「禁用」状态进来，之后用户可以自己决定让哪 50 个参与输出。
+    const firstNewIndex = items[category].length;
+    const disabled = appendEntriesWithLimit(
+        items[category],
+        payload.entries,
         MAX_ENABLED - enabledCount(items, category)
     );
-    const accepted = payload.entries.slice(0, addable);
-    for (const entry of accepted) {
-        items[category].push({
-            ref: entry.ref,
-            title: entry.title,
-            enabled: true,
-        });
-    }
-    const dropped = payload.entries.length - accepted.length;
     writeItems(node, items);
-    state.page = 1;
+    // 跳到新加文件所在的那一页，否则列表长了看不到刚加进来的内容。
+    const pageSize = Math.max(1, Number(state.pageSize) || DEFAULT_PAGE_SIZE);
+    state.page = Math.floor(firstNewIndex / pageSize) + 1;
     renderPanel(node);
     syncOutputPortType(node);
-    ack(true, "", { accepted: accepted.length, dropped });
+    ack(true, "", {
+        accepted: payload.entries.length,
+        dropped: 0,
+        disabled,
+    });
 }
 
 function installMessageHandler() {

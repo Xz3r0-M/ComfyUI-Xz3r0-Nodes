@@ -4,15 +4,41 @@
  *
  * requestNodes(nodeClass)         → Promise<{ id, title, accent_index }[]>
  * requestNodesDetailed(nodeClass) → Promise<{ ok, nodes }>
- * sendToNode(data)                → Promise<{ ok, error }>
+ * sendToNode(data)                → Promise<{ ok, error, accepted, dropped, disabled }>
  */
 
 const REQUEST_TIMEOUT_MS = 1500;
 const SEND_TIMEOUT_MS = 2000;
 
-let _seq = 0;
-const _pendingNodes = new Map();
-const _pendingSend  = new Map();
+/**
+ * 各组件是用带 `?v=` 的地址引用本模块的，版本不一致时浏览器会当成
+ * 两个模块、各自实例化一份。消息监听只装一次（窗口级守卫），
+ * 所以「等回复的请求表」必须放在 window 上共享，
+ * 否则第二个实例发出去的请求永远等不到回复（表现为节点列表是空的）。
+ */
+const BRIDGE_STATE_KEY = "__xdh_node_bridge_state__";
+
+function getSharedState() {
+    const existing = window[BRIDGE_STATE_KEY];
+    if (existing && typeof existing === "object") {
+        if (!(existing.pendingNodes instanceof Map)) {
+            existing.pendingNodes = new Map();
+        }
+        if (!(existing.pendingSend instanceof Map)) {
+            existing.pendingSend = new Map();
+        }
+        return existing;
+    }
+    const created = {
+        seq: 0,
+        pendingNodes: new Map(),
+        pendingSend: new Map(),
+    };
+    window[BRIDGE_STATE_KEY] = created;
+    return created;
+}
+
+const _state = getSharedState();
 
 function normalizeOrigin(value) {
     if (typeof value !== "string" || !value) {
@@ -75,8 +101,8 @@ function isAllowedParentMessage(event) {
 }
 
 function nextId() {
-    _seq += 1;
-    return `v2_nb_${Date.now()}_${_seq}`;
+    _state.seq += 1;
+    return `v2_nb_${Date.now()}_${_state.seq}`;
 }
 
 function handleMessage(event) {
@@ -86,21 +112,27 @@ function handleMessage(event) {
     if (!payload || typeof payload !== "object") return;
 
     if (payload.type === "xdatahub:media_get_nodes") {
-        const req = _pendingNodes.get(payload.request_id);
+        const req = _state.pendingNodes.get(payload.request_id);
         if (!req) return;
         clearTimeout(req.timer);
-        _pendingNodes.delete(payload.request_id);
+        _state.pendingNodes.delete(payload.request_id);
         req.resolve(true, payload.nodes);
         return;
     }
 
     if (payload.type === "xdatahub:send_to_node_ack") {
         const d = payload.data || {};
-        const req = _pendingSend.get(d.request_id);
+        const req = _state.pendingSend.get(d.request_id);
         if (!req) return;
         clearTimeout(req.timer);
-        _pendingSend.delete(d.request_id);
-        req.resolve({ ok: d.ok !== false, error: String(d.error || "") });
+        _state.pendingSend.delete(d.request_id);
+        req.resolve({
+            ok: d.ok !== false,
+            error: String(d.error || ""),
+            accepted: Number(d.accepted || 0),
+            dropped: Number(d.dropped || 0),
+            disabled: Number(d.disabled || 0),
+        });
     }
 }
 
@@ -128,10 +160,10 @@ export function requestNodesDetailed(nodeClass) {
             });
         };
         const timer = setTimeout(() => {
-            _pendingNodes.delete(requestId);
+            _state.pendingNodes.delete(requestId);
             finish(false, []);
         }, REQUEST_TIMEOUT_MS);
-        _pendingNodes.set(requestId, { resolve: finish, timer });
+        _state.pendingNodes.set(requestId, { resolve: finish, timer });
         try {
             window.parent?.postMessage?.(
                 {
@@ -143,7 +175,7 @@ export function requestNodesDetailed(nodeClass) {
             );
         } catch {
             clearTimeout(timer);
-            _pendingNodes.delete(requestId);
+            _state.pendingNodes.delete(requestId);
             finish(false, []);
         }
     });
@@ -167,17 +199,31 @@ export function requestNodes(nodeClass) {
  *   textValue?: string,
  *   title?: string,
  * }} data
- * @returns {Promise<{ ok: boolean, error: string }>}
+ * 返回里的 `disabled` 表示「因为目标已启用满 50 个、以禁用状态加进去」
+ * 的文件数，界面可以据此提示用户。
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   error: string,
+ *   accepted: number,
+ *   dropped: number,
+ *   disabled: number,
+ * }>}
  */
 export function sendToNode(data) {
     return new Promise((resolve) => {
         const requestId = nextId();
         const targetOrigin = getParentTargetOrigin();
         const timer = setTimeout(() => {
-            _pendingSend.delete(requestId);
-            resolve({ ok: false, error: "timeout" });
+            _state.pendingSend.delete(requestId);
+            resolve({
+                ok: false,
+                error: "timeout",
+                accepted: 0,
+                dropped: 0,
+                disabled: 0,
+            });
         }, SEND_TIMEOUT_MS);
-        _pendingSend.set(requestId, { resolve, timer });
+        _state.pendingSend.set(requestId, { resolve, timer });
         try {
             window.parent?.postMessage?.(
                 {
@@ -207,8 +253,14 @@ export function sendToNode(data) {
             );
         } catch {
             clearTimeout(timer);
-            _pendingSend.delete(requestId);
-            resolve({ ok: false, error: "postMessage failed" });
+            _state.pendingSend.delete(requestId);
+            resolve({
+                ok: false,
+                error: "postMessage failed",
+                accepted: 0,
+                dropped: 0,
+                disabled: 0,
+            });
         }
     });
 }

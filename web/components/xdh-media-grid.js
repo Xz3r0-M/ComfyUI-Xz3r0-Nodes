@@ -127,6 +127,37 @@ function selectAllScenarioAllowed(context) {
 }
 
 /**
+ * 按用户点选的先后顺序取出选中的文件。
+ *
+ * 不能拿 mediaList 的顺序过滤 —— 那是当前排序（名称 / 时间等），
+ * 拖出去的文件排列会和用户选择的先后对不上。
+ */
+function itemsInSelectionOrder(ids, mediaList, fallbackMap) {
+    const lookup = new Map();
+    for (const entry of Array.isArray(mediaList) ? mediaList : []) {
+        if (entry && entry.id != null) {
+            lookup.set(String(entry.id), entry);
+        }
+    }
+    const ordered = [];
+    const seen = new Set();
+    for (const rawId of Array.isArray(ids) ? ids : []) {
+        const key = String(rawId ?? "");
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const entry = lookup.get(key)
+            || (fallbackMap instanceof Map ? fallbackMap.get(key) : null);
+        if (!entry || entry.isFolder || entry.type === "record") {
+            continue;
+        }
+        ordered.push(entry);
+    }
+    return ordered;
+}
+
+/**
  * 把一张卡片压成拖拽 payload 的一项。
  *
  * LoRA 额外带缩略图与强度：落地建节点时可以直接拼出列表行，
@@ -1074,10 +1105,10 @@ export class XdhMediaGrid extends BaseElement {
                 const useSelection = selected.includes(String(id))
                     && selected.length > 1;
                 const orderedItems = useSelection
-                    ? (appStore.state.mediaList || []).filter(
-                        (entry) => selected.includes(String(entry.id))
-                            && !entry.isFolder
-                            && entry.type !== "record"
+                    ? itemsInSelectionOrder(
+                        selected,
+                        appStore.state.mediaList,
+                        this._itemMap
                     )
                     : [item];
                 const entries = orderedItems

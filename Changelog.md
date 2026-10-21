@@ -6,87 +6,117 @@
 
 ### 1. ⭐ 新增 `XMediaListGet` 媒体批量列表节点
 `♾️ Xz3r0/XDataHub`
-- 一次装一批同类媒体：从 XDataHub 拖进来、单个发送或批量发送都行，输出直接是「列表」，可以接到 `XListPull` 按序号一个个拆出来用
-- 三类媒体各有一组输出：图片 + 遮罩 + 图片数量、视频 + 视频数量、音频 + 音频数量。某一类一个文件都没有时，会输出一个空值，下游照常跑一次并拿到空结果
-- 每个文件都能单独开关，启用的文件按面板里的顺序参与输出，最多 50 个（和 `XPipe`、`XList` 系列的上限一致）
-- 图片能画遮罩：在预览里编辑后，遮罩会按图片顺序一起输出；没画过的图片输出全零遮罩
-- 只读真正要用的那一类：某个分类的输出没有连线时，这类文件就不会去读，分类标签同时变灰，避免白白加载一堆用不到的视频和音频占资源
-- 列表长了会拖慢画布，所以有翻页和「每页显示几个」滑块（5–50）。这只决定画布上摆多少行，不影响实际输出
-- 全屏预览：点文件名左边的缩略图进入
+- 从 `XDataHub` 将媒体文件（图片、视频、音频）单选 / 多选拖拽或发送到此节点对应的文件类型的列表中
+- 输出
+  - 图片 列表格式数据
+  - 图片遮罩 列表格式数据
+  - 图片数量 (`XListPull`)
+  - 视频 列表格式数据
+  - 视频数量 (`XListPull`)
+  - 音频 列表格式数据
+  - 音频数量 (`XListPull`)
+    - 对应类型的媒体文件无数据时，输出`None`空值
+- 文件支持单独启用 / 禁用，但最多启用`50`个媒体文件（每个类型）, 和 `XPipe`、`XList` 系列节点的上限一致
+- 图片支持遮罩编辑器
+  - 遮罩会根据图片的顺序一同输出，没有编辑的遮罩以纯黑遮罩图（无遮罩数据）输出
+- 自动启用或禁用对应数据加载输出
+  - 假设节点同时添加并启用了图片、视频和音频, 即使只有图片的列表端口连接到其他节点使用, ComfyUI 默认情况下依然会加载视频和音频文件导致占用系统资源, 仅节点所有的输出端口都没有连接才会默认为不加载
+  - 这个功能会根据输出端口是否有连接其他节点来自动判断启用或禁用对应类型输出（禁用时效果为媒体文件类型按钮灰显）
+- 媒体文件全屏预览（点击列表文件名左侧的缩略图进入）
     - `←` / `→` 切换文件，滚轮以鼠标位置为中心缩放，按住拖动平移，双击复位，`Esc` 关闭
-    - 底部列出当前分类的全部文件，标出启用顺序，可以直接开关或改遮罩
-    - 视频和音频用与 `XVideoGet`、`XAudioGet` 同一套播放器（含 300% 音量放大），静音 / 自动播放 / 循环的默认状态跟随 XDataHub 的设置
-- 拖放按位置插入：拖到某一行就插在这一行前面，拖到底部就追加到末尾，拖到已有文件上则替换它
-- 拖进来的类型和当前分类对不上时会提示该往哪走，把鼠标移到对应的分类按钮上就能自动切过去
-- 其余面板功能：撤销 / 重做、刷新（重新检查文件还在不在）、全部启用 / 全部禁用 / 反转开关、清空当前分类（先确认）、类型警告开关（连线类型对不上时用红光提醒）、展开 / 收起面板
-- 文件在磁盘上找不到时会在那一行标出来，不会被当成正常文件静默跳过
+    - 底部列出当前分类的全部文件，标出启用顺序
+    - 屏幕右上角新增对当前预览文件的启用 / 禁用开关和遮罩编辑器按钮（图片）
+    - 视频和音频用与 `XVideoGet`、`XAudioGet` 同一套播放器（含 300% 音量放大），静音 / 自动播放 / 循环的默认状态跟随 `XDataHub` 的设置
+- 拖放媒体文件到列表时支持插入或替换
+  - 拖拽到节点的文件类型和当前分类不正确时会提示，鼠标移到正确对应的媒体文件分类按钮上就能自动切换
+- 其余面板功能：
+  - 撤销 / 重做
+  - 类型警告开关（连线类型不正确时用红光效果提醒）
+  - 刷新（重新检查文件还在不在，文件丢失时会泛红色效果）
+  - 全部启用 / 全部禁用 / 反转开关
+  - 每页文件可显示数量的调整滑块（每页显示`5 - 50`个文件）
+  - 翻页
+  - 清空当前分类列表
 
 ### 2. 🛠️ 增强 `XDataHub` 数据中心
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
-- 支持多选：`Ctrl/Cmd + 点击` 加减单个文件，`Shift + 点击` 选中一段连续的文件，`Ctrl/Cmd + A` 选中当前页的全部文件
-    - 全选只认当前页，翻页后不会把上一页的文件也带上
-    - 只有鼠标确实在 XDataHub 窗口里（窗口可见、未收起）时才响应，鼠标在画布上时不会抢走画布自己的 `Ctrl+A`
-    - 窗口停靠在侧边、鼠标悬停临时展开时同样可用，所以不用先点一下窗口激活它
-- 全屏预览右上角新增「选择当前文件」和「加入多选 / 移出多选」，选中的文件在底部列表里会同步标出
-    - 文本类只有「选择当前文件」，LoRA 封面预览里这两个按钮都不出现
-- 选中多个文件后拖动任意一张卡片，会把选中的这些一起带走（拖到画布空白处建节点，或拖给已有的节点）
-- 暂存坞（发送栏）支持一次带多个文件，显示缩略图、「已选 N 项」和「目标 N / 50」
-- 目标节点是 `XMediaListGet` 且里面已经有文件时，暂存坞的「发送」会变成「追加」和「替换」两个按钮
-    - 按钮上直接写出会追加几个、要丢弃几个，替换前还会提示目标里有多少个已启用的文件会被清掉，确认后才动手
-    - 超过 50 个上限时同样说明会丢弃几个，不会静默截断
-- 多个 LoRA 一起发送时逐条追加成多行，不会只进去第一个
-- 目标节点被删掉后自动取消选中，不会把文件发给一个已经不存在的节点
-- 目标选择器只列出真的收得下这批内容的节点类型，例如 LoRA 和文本不会出现在 `XMediaListGet` 的目标里
-- 拖到画布空白处自动建节点：图片 / 视频 / 音频建对应的 `X*Get` 节点，多选媒体建一个 `XMediaListGet`；文本建 `XStringGet`；LoRA 建 `XLoraGet` 并把每个 LoRA 各填一行，在子图里拖放同样有效
-    - 设置里「拖拽媒体卡片自动创建节点」的说明同步更新，现在也包括文本和 LoRA
-- 修复全屏预览首尾文件的上一张 / 下一张按钮没有正确变灰的问题
+- 支持多选文件（图片、视频、音频和 LoRA）
+  - `Ctrl/Cmd + 点击` 加减单个文件（按用户点选顺序排列，不受当前名称或时间排序影响）
+  - `Shift + 点击` 选中一段连续的文件
+  - `Ctrl/Cmd + A` 选中当前页的全部文件
+    - 只有鼠标悬停在 `XDataHub` 窗口里（窗口可见、未收起）时才可触发
+    - 文本类只有「选择当前文件」，LoRA 封面修改的预览里不会出现这两个按钮
+- 全屏预览右上角新增「选择当前文件」和「加入多选 / 移出多选」按钮，选中的文件在底部列表里会同步标出
+  - 文本文件的全屏预览没有「加入多选 / 移出多选」按钮
+- 支持多选媒体文件（图片、视频、音频）拖拽到 ComfyUI 画布空白处快捷创建 `XMediaListGet` 节点
+- 支持单选 / 多选 LoRA 文件拖拽到 ComfyUI 画布空白处快捷创建 `XLoraGet` 节点
+- 支持拖拽文本到 ComfyUI 画布空白处快捷创建 `XStringGet`
+- 当发送多个媒体文件到节点 `XMediaListGet` 且里面已经有文件时，「发送」会变成「追加」和「替换」两个按钮
+    - 按钮上显示共追加几个（基于 `XMediaListGet` 节点已启用的文件数量会显示其中有多少个以禁用状态加入），替换前会出现文件被清理的提示信息
+- 支持多选 LoRA 拖拽或发送到 `XLoraGet`
+- 发送时节点列表只列出合适的节点类型，例如 LoRA 和文本不会出现 `XMediaListGet`
 
 ### 3. 🛠️ 增强 `XLoraGet` LoRA 加载节点
 `♾️ Xz3r0/XDataHub`
-- 支持一次拖入多个 LoRA：拖到已有节点上会逐条追加成多行，拖到画布空白处会新建一个节点并把这些 LoRA 全部填进去
+- 支持从 `XDataHub` 拖入多个 LoRA 到列表
 
 ---
 
 ### 1. ⭐ Added `XMediaListGet` Media Batch List Node
 `♾️ Xz3r0/XDataHub`
-- Loads a batch of one media type at a time: drag cards from XDataHub, or send one or many, and the node outputs a list that `XListPull` can split back into single files by index
-- Three output groups: images + masks + image count, videos + video count, audio + audio count. A category with no files outputs one empty value, so downstream still runs once and receives an empty result
-- Every file has its own switch; enabled files are output in panel order, up to 50 (the same cap as `XPipe` and the `XList` nodes)
-- Images can carry masks: edit one in the preview and the mask list is output in the same order; images without an edited mask output an all-zero mask
-- Only the category you actually use is read: when a category's outputs are not connected, its files are not loaded and its tab is dimmed, so unused videos and audio no longer eat resources
-- Long lists slow the canvas down, so there is paging and a "per page" slider (5–50). It only changes how many rows are drawn, never what is output
-- Fullscreen preview, opened by clicking the thumbnail left of a file name
+- Drag or send media files (images, videos, audio) from `XDataHub` — one at a time or in a multi-selection — into the list that matches their file type on this node
+- Outputs
+  - Images, as a list
+  - Image masks, as a list
+  - Image count (`XListPull`)
+  - Videos, as a list
+  - Video count (`XListPull`)
+  - Audio, as a list
+  - Audio count (`XListPull`)
+    - A type with no media files outputs an empty `None` value
+- Each file has its own switch, with at most `50` enabled media files per type — the same cap as the `XPipe` and `XList` nodes
+- Images support the mask editor
+  - Masks are output together with the images, in the same order; images without an edited mask output a plain black mask (no mask data)
+- Loading for each type is enabled or disabled automatically
+  - Say a node holds enabled images, videos and audio at the same time: even when only the image list port is connected to another node, ComfyUI would by default still load the videos and audio and waste system resources; loading is only skipped when none of the node's output ports are connected
+  - The node looks at whether each output port is connected and enables or disables that type's loading accordingly (a disabled type shows its media-type button greyed out)
+- Fullscreen media preview (click the thumbnail to the left of a file name)
     - `←` / `→` to switch files, wheel to zoom around the cursor, drag to pan, double-click to reset, `Esc` to close
-    - The bottom strip lists every file in the current category with its enabled order, and lets you toggle a file or edit its mask right there
-    - Videos and audio use the same player as `XVideoGet` and `XAudioGet` (including the 300% volume boost), and their mute / autoplay / loop defaults follow the XDataHub settings
-- Drops land where you point: dropping on a row inserts before it, dropping below the last row appends, dropping onto an existing file replaces it
-- Dropping a file whose type does not match the current category explains where it belongs; hovering the matching tab switches to it
-- The rest of the panel: undo / redo, refresh (re-check whether files still exist), enable all / disable all / invert switches, clear the current category (asks first), a type warning switch (glows mismatched links red) and collapse / expand
-- Files missing on disk are marked in their row instead of being treated as normal and skipped silently
+    - The bottom strip lists every file in the current category and marks its enable order
+    - The top-right corner gained a switch for the file being previewed and a mask editor button (images)
+    - Videos and audio use the same player as `XVideoGet` and `XAudioGet` (including the 300% volume boost); their mute / autoplay / loop defaults follow the `XDataHub` settings
+- Dropping media files onto the list inserts or replaces
+  - Dropping a file whose type does not match the current category explains where it belongs; hovering the matching media-type button switches to it
+- The rest of the panel:
+  - Undo / redo
+  - A type warning switch (glows red when the link's type does not match)
+  - Refresh (re-checks whether the files are still there; missing files glow red)
+  - Enable all / disable all / invert switches
+  - A slider for how many files to show per page (`5 - 50` files per page)
+  - Paging
+  - Clear the current category list
 
 ### 2. 🛠️ Enhanced `XDataHub` Data Center
 `ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
-- Added multi-select: `Ctrl/Cmd + click` adds or removes a single file, `Shift + click` selects a continuous run, and `Ctrl/Cmd + A` selects every file on the current page
-    - Select-all only covers the current page; paging does not carry the previous page over
-    - It only responds while the pointer is actually inside the XDataHub window (visible and not collapsed), so the canvas keeps its own `Ctrl+A` while the pointer is over the canvas
-    - It also works when the window is docked and temporarily expanded on hover, so there is no need to click the window first to activate it
-- The fullscreen preview gained "Select this file" and "Add to selection / Remove from selection" in its top-right corner, and the bottom strip marks what is selected
-    - Text previews only offer "Select this file"; LoRA cover previews show neither button
-- With several files selected, dragging any one of their cards carries the whole selection (drop it on an empty canvas area to create nodes, or onto an existing node to load them)
-- The staging dock now carries several files at once, showing thumbnails, "N items selected" and "Target N / 50"
-- When the target is an `XMediaListGet` that already holds files, the dock's single "Send" button becomes "Add" and "Replace"
-    - The buttons state how many files will be added and how many will be dropped, and Replace first tells you how many enabled files in the target will be cleared before asking you to confirm
-    - Going over the 50-item cap likewise reports how many will be dropped instead of cutting silently
-- Sending several LoRAs appends them one by one as separate rows instead of keeping only the first
-- Deleting the target node clears the selection automatically, so nothing is sent to a node that no longer exists
-- The target picker only lists node types that can actually take the current selection (for example LoRA and text never appear as `XMediaListGet` targets)
-- Dropping cards on an empty canvas area creates the matching node: images / videos / audio create the matching `X*Get` node, several media cards create one `XMediaListGet`, a text card creates `XStringGet`, and LoRA cards create `XLoraGet` with one row per LoRA. This also works inside subgraphs
-    - The "drag media cards to automatically create nodes" setting description was updated to mention text and LoRA
-- Fixed the previous / next buttons in the fullscreen preview not dimming at the first and last file
+- Multi-select files (images, videos, audio and LoRA)
+  - `Ctrl/Cmd + click` adds or removes a single file (kept in the order you clicked, regardless of the current name or date sort)
+  - `Shift + click` selects a continuous run of files
+  - `Ctrl/Cmd + A` selects every file on the current page
+    - It only triggers while the pointer is over the `XDataHub` window (visible and not collapsed)
+    - Text items only offer "Select this file"; the LoRA cover editor preview shows neither of these two buttons
+- The fullscreen preview's top-right corner gained "Select this file" and "Add to selection / Remove from selection"; selected files are marked in the bottom strip as well
+  - Text fullscreen previews have no "Add to selection / Remove from selection" button
+- Multi-select media files (images, videos, audio) and drop them on an empty canvas area to create an `XMediaListGet` node
+- Drag one or several LoRA files onto an empty canvas area to create an `XLoraGet` node
+- Drag text onto an empty canvas area to create an `XStringGet`
+- When sending several media files to an `XMediaListGet` that already holds files, "Send" becomes "Add" and "Replace"
+    - The button shows how many files will be added in total (based on how many files the `XMediaListGet` already has enabled, it also shows how many of them are added as Disabled), and Replace warns about the files that will be cleared first
+- Drag or send several LoRAs to `XLoraGet`
+- The target node list only shows suitable node types, e.g. LoRA and text never appear for `XMediaListGet`
 
 ### 3. 🛠️ Enhanced `XLoraGet` LoRA Loader Node
 `♾️ Xz3r0/XDataHub`
-- Several LoRAs can be dragged in at once: dropping on an existing node appends them as separate rows, and dropping on an empty canvas area creates one node filled with all of them
+- Several LoRAs can be dragged from `XDataHub` into the list
 
 </details>
 

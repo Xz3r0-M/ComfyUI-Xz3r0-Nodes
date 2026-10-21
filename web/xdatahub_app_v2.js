@@ -7,16 +7,16 @@ import {
     loadFavoriteList, loadFavoriteIds,
 } from "./core/api.js?v=20260601-5";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20261021-1";
+import { setLocale, t } from "./core/i18n.js?v=20261023-2";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-93";
-import "./components/xdh-media-grid.js?v=20261021-5";
-import "./components/xdh-staging-dock.js?v=20261021-5";
-import "./components/xdh-node-picker.js?v=20261021-1";
-import "./core/node-bridge.js?v=20261021-1";
+import "./components/xdh-media-grid.js?v=20261023-2";
+import "./components/xdh-staging-dock.js?v=20261023-2";
+import "./components/xdh-node-picker.js?v=20261023-2";
+import "./core/node-bridge.js?v=20261023-2";
 import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
 import "./components/xdh-lightbox.js?v=20261022-2";
