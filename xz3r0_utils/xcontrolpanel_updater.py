@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -33,6 +35,7 @@ RELEASES_URL = f"{GITHUB_API_BASE}/releases"
 REQUEST_TIMEOUT_S = 10.0
 FETCH_TAGS_TIMEOUT_S = 120.0
 FETCH_CHECKOUT_TIMEOUT_S = 120.0
+INSTALL_TIMEOUT_S = 600.0
 GIT_QUERY_TIMEOUT_S = 10.0
 
 DEFAULT_CACHE_TTL_S = 300.0
@@ -47,59 +50,6 @@ _HEADERS = {"User-Agent": "Xz3r0-Nodes-XControlPanel/2.6"}
 TOKEN_ENV_VAR = "XZR3O_GITHUB_TOKEN"
 _TOKEN_FILE_NAME = "xcontrolpanel_settings.json"
 _PENDING_FILE_NAME = "xcontrolpanel_update_pending.json"
-
-# 切换前先记下当前提交，依赖装不上时可以退回来
-_PREVIOUS_COMMIT_TIMEOUT_S = 20.0
-
-
-def _pending_install_file() -> Path:
-    """待安装标记（由 prestartup_script.py 在下次启动、核心加载前消费）。"""
-    return (
-        Path(__file__).resolve().parent.parent
-        / "XDataSaved"
-        / "settings"
-        / _PENDING_FILE_NAME
-    )
-
-
-def mark_pending_install(tag: str, previous: str = "") -> None:
-    """
-    写下「代码已切换、依赖待安装」，交给下次启动的 prestartup 钩子。
-
-    `previous` 是切换前的提交：prestartup 连续两次装不上就会退回它，
-    免得用户陷在「启动就崩、再也起不来」的循环里。
-    """
-    path = _pending_install_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "pending": True,
-                "tag": tag,
-                "previous": previous,
-                "attempts": 0,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-
-def current_commit(root: Path) -> str:
-    """当前 HEAD 的提交号（回滚用）；取不到就返回空串。"""
-    try:
-        result = _run_command(
-            ["git", "rev-parse", "HEAD"],
-            root,
-            _PREVIOUS_COMMIT_TIMEOUT_S,
-            check=False,
-        )
-    except UpdateError:
-        return ""
-    if result.returncode != 0:
-        return ""
-    return (result.stdout or "").strip()
 
 
 def _token_settings_file() -> Path:
@@ -223,6 +173,41 @@ def _build_headers() -> dict:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _pending_install_file() -> Path:
+    """待安装依赖标记文件（XDataSaved/settings/ 下）。"""
+    return (
+        Path(__file__).resolve().parent.parent
+        / "XDataSaved"
+        / "settings"
+        / _PENDING_FILE_NAME
+    )
+
+
+def mark_pending_install(tag: str) -> None:
+    """写入待安装依赖标记（代码已切换，重启后由 prestartup 完成安装）。"""
+    path = _pending_install_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {"pending": True, "tag": tag}, ensure_ascii=False, indent=2
+        ),
+        encoding="utf-8",
+    )
+
+
+def clear_pending_install() -> None:
+    """清除待安装依赖标记。"""
+    try:
+        _pending_install_file().unlink()
+    except OSError:
+        pass
+
+
+def has_pending_install() -> bool:
+    """是否存在待安装依赖标记。"""
+    return _pending_install_file().exists()
 
 
 _VERSION_RE = re.compile(r'__version__\s*=\s*["\']([^"\']+)["\']')
@@ -638,6 +623,71 @@ def checkout_tag(root: Path, tag: str) -> None:
     )
 
 
+def _interpreter_has_pip() -> bool:
+    """当前解释器是否带 pip（uv 创建的 venv 通常不带）。"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=GIT_QUERY_TIMEOUT_S,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def build_install_command(root: Path) -> list[str]:
+    """
+    构造依赖安装命令。
+
+    优先用 ComfyUI 当前解释器（sys.executable）的 pip——它就是 ComfyUI
+    正在运行的解释器，装进去一定正确。若该解释器是 uv 创建的虚拟环境
+    （默认不带 pip），改用 uv 装进**同一个解释器**（uv pip install
+    --python <sys.executable>），而不是错误的 uv pip --system。
+    """
+    requirements = str(Path(root) / "requirements.txt")
+    if not _interpreter_has_pip():
+        uv = shutil.which("uv")
+        if uv:
+            return [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                "-r",
+                requirements,
+            ]
+    # 无 pip 也无 uv 时仍回退到 pip 命令（会失败，由调用方重试/报错）。
+    return [sys.executable, "-m", "pip", "install", "-r", requirements]
+
+
+def install_requirements(root: Path) -> None:
+    """安装 requirements.txt；解释器无 pip 时自动改用 uv 重试一次。"""
+    try:
+        _run_command(build_install_command(root), root, INSTALL_TIMEOUT_S)
+    except UpdateCommandError as exc:
+        if "No module named pip" not in str(exc):
+            raise
+        uv = shutil.which("uv")
+        if uv is None:
+            raise
+        _run_command(
+            [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                "-r",
+                str(Path(root) / "requirements.txt"),
+            ],
+            root,
+            INSTALL_TIMEOUT_S,
+        )
+
+
 # ---------------------------------------------------------------- 更新状态机
 
 
@@ -697,12 +747,7 @@ def detect_file_locked(message: str) -> bool:
 
 
 def run_update_sync(root: Path, tag: str, state: UpdateState) -> None:
-    """
-    同步执行「fetch → 装依赖 → 换代码」全流程（测试可直接调用）。
-
-    依赖先装、代码后换：装依赖失败就什么都不换，环境不会变成
-    「新代码 + 旧依赖」，重启也就不会因为缺模块直接起不来。
-    """
+    """同步执行 fetch → checkout → pip 全流程（测试可直接调用）。"""
 
     def set_phase(phase: str, detail: str = "") -> None:
         with _update_lock:
@@ -728,28 +773,26 @@ def run_update_sync(root: Path, tag: str, state: UpdateState) -> None:
         set_phase(PHASE_FETCHING, "git fetch --tags")
         fetch_tags(root)
 
-        previous = current_commit(root)
-
-        # 运行中不装依赖，一律留给下次启动的 prestartup 钩子。
-        # 原因（实测）：ComfyUI 正在跑的时候，uv/pip 会在「先卸载旧包、
-        # 再装新包」的中途被占用文件卡住（比如 aimdo.dll），而它不会回滚
-        # —— 结果环境变成「少几个包」的半坏状态，比缺一个包更糟。
-        # prestartup 阶段核心还没加载，没有任何文件被占用，装什么都能成。
         set_phase(PHASE_PREPARING, f"git checkout --force {tag}")
         checkout_tag(root, tag)
 
-        # 记下切换前的提交：prestartup 连续两次装不上会退回它，
-        # 免得用户陷在「启动就坏、再也起不来」的循环里。
-        mark_pending_install(tag, previous)
-        LOGGER.info(
-            "[xcontrolpanel] version switched to %s (previous %s); "
-            "dependencies will be installed by the prestartup hook "
-            "(marker: %s)",
-            tag,
-            previous or "unknown",
-            _pending_install_file(),
-        )
-        finish(PHASE_DONE, "pending_restart")
+        set_phase(PHASE_INSTALLING, "install requirements.txt")
+        try:
+            install_requirements(root)
+        except UpdateCommandError as exc:
+            if not detect_file_locked(str(exc)):
+                raise
+            # Windows 文件占用：代码已切换，依赖留到重启后由 prestartup 完成
+            mark_pending_install(tag)
+            finish(
+                PHASE_DONE,
+                "pending_restart",
+                _trim_error(str(exc)),
+                "pending_restart",
+            )
+            return
+
+        finish(PHASE_DONE, detail="")
     except UpdateError as exc:
         finish(
             PHASE_ERROR,

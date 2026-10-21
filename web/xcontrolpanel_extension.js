@@ -2019,7 +2019,7 @@ function renderUpdateProgress(update) {
     if (!update) return;
     if (!update.active) {
         if (update.phase === "done") {
-            showUpdateComplete(update.target_tag);
+            showUpdateComplete(update.target_tag, update.error_kind);
         } else if (update.phase === "error") {
             showUpdateError(update.error
                 || tk("err.update_failed", "Update failed."),
@@ -2037,7 +2037,7 @@ function renderUpdateProgress(update) {
     updateModalPhaseEl.textContent = phaseText;
 }
 
-function showUpdateComplete(tag) {
+function showUpdateComplete(tag, errorKind) {
     uninstallUpdateBlocking();
     stopUpdatePolling();
     updateModalStage = "done";
@@ -2045,12 +2045,16 @@ function showUpdateComplete(tag) {
     body.className = "xcontrolpanel-dialog-body";
     body.appendChild(el("div", "xcontrolpanel-dialog-title",
         tk("done.title", "Update complete")));
-    // 依赖一律留到重启后、核心加载前装（运行中装会被占用文件卡住并
-    // 把环境搞成半坏状态），所以这里直接说明重启时会自动装好。
-    body.appendChild(el("div", "xcontrolpanel-dialog-text",
-        tk("done.body_pending",
-            "ComfyUI is now on {tag}. Restart it and the dependencies the new version needs are installed automatically right before ComfyUI loads, then it starts normally.")
-            .replace("{tag}", tag || "?")));
+    if (errorKind === "pending_restart") {
+        body.appendChild(el("div", "xcontrolpanel-dialog-text",
+            tk("done.body_pending",
+                "Code switched to {tag}. Dependencies will finish installing after you restart ComfyUI.")
+                .replace("{tag}", tag || "?")));
+    } else {
+        body.appendChild(el("div", "xcontrolpanel-dialog-text",
+            tk("done.body", "ComfyUI is now on {tag}. Restart ComfyUI to apply.")
+                .replace("{tag}", tag || "?")));
+    }
     var restartBtn = el("button", "xcontrolpanel-button",
         tk("done.restart", "Restart ComfyUI"));
     restartBtn.type = "button";
