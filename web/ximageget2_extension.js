@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-2";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-11";
 import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
