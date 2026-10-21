@@ -74,6 +74,7 @@
   "xdatahub.ui.node.xmedialistget.preview_fullscreen": "Fullscreen",
   "xdatahub.ui.node.xmedialistget.preview_hint": "Click to preview fullscreen",
   "xdatahub.ui.node.xmedialistget.preview_keys_hint": "← / → Switch · Wheel zoom · Esc Close",
+  "xdatahub.ui.node.xmedialistget.preview_keys_hint_media": "← / → Switch · Esc Close",
   "xdatahub.ui.node.xmedialistget.preview_strip_label": "Files in this list",
   "xdatahub.ui.node.xmedialistget.preview_toggle_tooltip": "Click to enable or disable this file",
   "xdatahub.ui.node.xmedialistget.unsupported_title": "Only images, videos and audio can go in this list",

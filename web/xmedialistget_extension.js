@@ -3136,10 +3136,16 @@ function syncPreviewChrome(preview) {
     els.nextButton.setAttribute("aria-label", nextLabel);
     els.prevButton.disabled = preview.index <= 0;
     els.nextButton.disabled = preview.index >= total - 1;
-    els.hint.textContent = previewText(
-        "preview_keys_hint",
-        "← / → Switch · Wheel zoom · Esc Close"
-    );
+    // 只有图片能用滚轮缩放；视频、音频别把这一项写进提示里。
+    els.hint.textContent = isImage
+        ? previewText(
+            "preview_keys_hint",
+            "← / → Switch · Wheel zoom · Esc Close"
+        )
+        : previewText(
+            "preview_keys_hint_media",
+            "← / → Switch · Esc Close"
+        );
 }
 
 function showPreviewToast(preview, message) {

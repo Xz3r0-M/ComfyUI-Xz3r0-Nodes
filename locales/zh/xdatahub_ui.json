@@ -74,6 +74,7 @@
   "xdatahub.ui.node.xmedialistget.preview_fullscreen": "全屏",
   "xdatahub.ui.node.xmedialistget.preview_hint": "点击缩略图全屏预览",
   "xdatahub.ui.node.xmedialistget.preview_keys_hint": "← / → 切换 · 滚轮缩放 · Esc 关闭",
+  "xdatahub.ui.node.xmedialistget.preview_keys_hint_media": "← / → 切换 · Esc 关闭",
   "xdatahub.ui.node.xmedialistget.preview_strip_label": "列表里的文件",
   "xdatahub.ui.node.xmedialistget.preview_toggle_tooltip": "点击开启或关闭这个文件",
   "xdatahub.ui.node.xmedialistget.unsupported_title": "这个列表只能放图片、视频和音频",
