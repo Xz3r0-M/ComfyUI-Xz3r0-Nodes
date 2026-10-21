@@ -20,7 +20,10 @@
  *   就是根图，进入子图编辑后就是该子图。**不能用 `app.graph`**，它是
  *   已废弃别名、恒指根图，会把节点建到用户看不见的地方（子图内拖拽
  *   看似「没反应」就是此因）。
- * - LoRA 在首期不响应（不建 XLoraGet）。
+ *
+ * 支持的类型：图片 / 视频 / 音频 / 文本 → 建 X*Get 节点（多选媒体
+ * 建一个 XMediaListGet）；LoRA → 建 XLoraGet，把拖过来的每个 LoRA
+ * 按原顺序填成一行（多选就是一个节点多行）。
  *
  * 开关来源：XDataHub 设置面板「画布交互」段的 `canvas_drop_enabled`
  * （后端 `/xz3r0/xdatahub/settings` 持久化）。本扩展运行在 ComfyUI
@@ -35,6 +38,9 @@ const EXT_GUARD_KEY = "__xdatahub_canvas_drop_registered__";
 const ROOT = globalThis;
 
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
+const LIST_NODE_CLASS = "XMediaListGet";
+const MEDIA_ITEMS_PROP = "__xdatahub_media_items";
+const MEDIA_TYPE_PROP = "__xdatahub_media_type";
 const SETTINGS_ENDPOINT = "/xz3r0/xdatahub/settings";
 const SETTING_FIELD = "canvas_drop_enabled";
 const SETTING_DEFAULT = true;
@@ -42,13 +48,17 @@ const SETTING_DEFAULT = true;
 // 模块级缓存：drop 事件同步处理，不能在事件回调里 await fetch。
 let _canvasDropEnabled = SETTING_DEFAULT;
 
-// media_type -> node class. LoRA 首期不在范围内。
+// media_type -> node class。
 const TYPE_TO_CLASS = {
     image: "XImageGet",
     video: "XVideoGet",
     audio: "XAudioGet",
     text: "XStringGet",
+    lora: "XLoraGet",
 };
+
+// 默认落点偏移：按节点大致尺寸居中。
+const DEFAULT_DROP_OFFSET = [130, 160];
 
 // 节点类 -> 存储 / 标题 property 名配置。需与各自扩展内
 // restoreStoredData 读取的 property 名严格一致，确保预置的
@@ -75,6 +85,16 @@ const NODE_CONFIG = {
         titleProperty: "__xdatahub_text_title",
         isText: true,
     },
+    XLoraGet: {
+        kind: "lora",
+        isLora: true,
+        // XLoraGet 没有可直接预置的 widget：把种子行挂在实例字段上，
+        // createNode 的 options 会在 onNodeCreated 之前赋值，
+        // 扩展在 installNodeUi 里读一次并写回 lora_stack（见
+        // xloraget_extension.js 的 readStoredRows）。
+        pendingRowsField: "__xloraget_pending_rows",
+        dropOffset: [310, 280],
+    },
 };
 
 function isCanvasDropEnabled() {
@@ -93,6 +113,32 @@ async function refreshCanvasDropEnabled() {
     } catch {
         // 保持当前值。
     }
+}
+
+/**
+ * 把任意形状的文本内容抽成字符串。
+ *
+ * XDataHub 的文本记录可能直接给字符串，也可能包在
+ * `{text}` / `{payload: {text}}` 里，这里递归向下取。
+ */
+function extractPayloadText(value, depth = 0) {
+    if (depth > 4 || value == null) return "";
+    if (typeof value === "string") return value;
+    if (typeof value !== "object") return String(value);
+    if (typeof value.text === "string") return value.text;
+    if (value.payload != null) {
+        return extractPayloadText(value.payload, depth + 1);
+    }
+    return "";
+}
+
+/**
+ * 把可选数值统一成 number 或 null（0 是合法强度，不能被吞）。
+ */
+function toOptionalNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
 }
 
 /**
@@ -121,18 +167,48 @@ function parsePayload(dataTransfer) {
     const mediaType = String(payload.media_type || "").trim().toLowerCase();
     if (!mediaType) return null;
     const mediaRef = String(payload.media_ref || "").trim();
-    const textValue = String(payload.text_value || "");
+    const textValue = extractPayloadText(
+        payload.text_value || payload.text || payload.payload
+    );
     // text 用 text_value 作为内容载体，其余用 media_ref。
     if (mediaType === "text") {
         if (!textValue.trim()) return null;
     } else if (!mediaRef) {
         return null;
     }
+    const strengthModel = toOptionalNumber(payload.strength_model);
+    const strengthClip = toOptionalNumber(payload.strength_clip);
+    const thumbUrl = String(payload.thumb_url || "");
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    const items = rawItems
+        .map((item) => ({
+            media_ref: String(item?.media_ref || "").trim(),
+            media_type: String(item?.media_type || "").toLowerCase(),
+            title: String(item?.title || ""),
+            thumb_url: String(item?.thumb_url || ""),
+            strength_model: toOptionalNumber(item?.strength_model),
+            strength_clip: toOptionalNumber(item?.strength_clip),
+        }))
+        .filter((item) => item.media_ref);
+    if (!items.length && mediaRef) {
+        items.push({
+            media_ref: mediaRef,
+            media_type: mediaType,
+            title: String(payload.title || ""),
+            thumb_url: thumbUrl,
+            strength_model: strengthModel,
+            strength_clip: strengthClip,
+        });
+    }
     return {
         media_ref: mediaRef,
         media_type: mediaType,
         text_value: textValue,
         title: String(payload.title || ""),
+        thumb_url: thumbUrl,
+        strength_model: strengthModel,
+        strength_clip: strengthClip,
+        items,
     };
 }
 
@@ -201,6 +277,45 @@ function isOverBlankCanvas(cx, cy) {
     return !hit;
 }
 
+/**
+ * XLoraGet 的拖拽种子：按拖拽顺序转成多行 lora_stack 数据。
+ * 字段按 xloraget_extension.js 的 makeRow / writeStoredRows 约定。
+ */
+function buildLoraSeedRows(payload) {
+    const rawItems = Array.isArray(payload?.items) && payload.items.length
+        ? payload.items
+        : [payload];
+    const source = rawItems.filter(
+        (entry) => String(entry?.media_type || "lora").toLowerCase()
+            === "lora"
+    );
+    const rows = [];
+    const seen = new Set();
+    for (const entry of source) {
+        const loraRef = String(entry?.media_ref || "").trim();
+        if (!loraRef || seen.has(loraRef)) continue;
+        seen.add(loraRef);
+        const hasModel = Number.isFinite(entry?.strength_model);
+        const hasClip = Number.isFinite(entry?.strength_clip);
+        const model = hasModel ? entry.strength_model : 1;
+        const clip = hasClip ? entry.strength_clip : model;
+        rows.push({
+            active: true,
+            lora_ref: loraRef,
+            lora_name: loraRef,
+            title: String(entry?.title || ""),
+            strength_model: model,
+            strength_clip: clip,
+            separate_clip_strength: clip !== model,
+            // 拖拽数据里没带强度时，等节点拉取远端数据补全。
+            strength_sync_pending: !hasModel || !hasClip,
+            thumb_url: String(entry?.thumb_url || ""),
+            pin: "none",
+        });
+    }
+    return rows;
+}
+
 function createAndLoadNode(payload, cx, cy) {
     const className = TYPE_TO_CLASS[payload.media_type];
     if (!className) return null;
@@ -213,26 +328,35 @@ function createAndLoadNode(payload, cx, cy) {
     }
 
     // 落点居中：用默认节点尺寸 260×320，此时 node 尚未创建，
-    // 不能读 node.size。
-    const pos = [cx - 130, cy - 160];
+    // 不能读 node.size。LoRA 节点更宽高，用配置里的偏移。
+    const [offsetX, offsetY] = cfg.dropOffset || DEFAULT_DROP_OFFSET;
+    const pos = [cx - offsetX, cy - offsetY];
 
     // 预置 properties：通过 createNode 第三参数 options.properties 注入，
     // LiteGraph 内部 Object.assign(node, options) 发生在 onNodeCreated
     // 之前，使各扩展 onNodeCreated 内 installNodeUi + restoreStoredData
     // 能在读值点读到并 setPreview 渲染预览。
     const seedProperties = {};
-    seedProperties[cfg.valueProperty] =
-        cfg.isText ? payload.text_value : payload.media_ref;
-    if (cfg.titleProperty && payload.title) {
-        seedProperties[cfg.titleProperty] = payload.title;
+    const nodeOptions = { pos, properties: seedProperties };
+    let seedRowsJson = "";
+    if (cfg.isLora) {
+        const rows = buildLoraSeedRows(payload);
+        if (!rows.length) return null;
+        // 同一条 options 会先于 onNodeCreated 赋值到节点上，
+        // XLoraGet 扩展读一次种子并写回 lora_stack。
+        seedRowsJson = JSON.stringify(rows);
+        nodeOptions[cfg.pendingRowsField] = seedRowsJson;
+    } else {
+        seedProperties[cfg.valueProperty] =
+            cfg.isText ? payload.text_value : payload.media_ref;
+        if (cfg.titleProperty && payload.title) {
+            seedProperties[cfg.titleProperty] = payload.title;
+        }
     }
 
     let node = null;
     try {
-        node = LiteGraph.createNode(className, undefined, {
-            pos,
-            properties: seedProperties,
-        });
+        node = LiteGraph.createNode(className, undefined, nodeOptions);
     } catch (err) {
         console.warn(
             "[XDataHub CanvasDrop] createNode failed:", err
@@ -258,7 +382,21 @@ function createAndLoadNode(payload, cx, cy) {
         }
         return false;
     };
-    if (cfg.isText) {
+    if (cfg.isLora) {
+        // 兜底：扩展在 installNodeUi 阶段已把种子写入 lora_stack；
+        // 若它还没装上（或钩子未跑到），这里补写一份，保证保存 /
+        // 执行时 stack 不为空。
+        const storageWidget = node?.widgets?.find?.(
+            (w) => w.name === "lora_stack"
+        );
+        if (
+            storageWidget
+            && seedRowsJson
+            && (!storageWidget.value || storageWidget.value === "[]")
+        ) {
+            storageWidget.value = seedRowsJson;
+        }
+    } else if (cfg.isText) {
         setWidget("text_value", payload.text_value);
         setWidget("title_value", payload.title || "");
     } else {
@@ -267,6 +405,88 @@ function createAndLoadNode(payload, cx, cy) {
         // XImageGet 的 title widget 由 ximageget2 扩展自管，
         // 此处不强制写，title 经 property 已存。
     }
+
+    try {
+        node.setDirtyCanvas?.(true, true);
+    } catch {
+        // 忽略。
+    }
+    try {
+        if (typeof app?.canvas?.selectItems === "function") {
+            app.canvas.selectItems([node]);
+        } else if (typeof app?.canvas?.selectNode === "function") {
+            app.canvas.selectNode(node);
+        }
+    } catch {
+        // 忽略。
+    }
+    return node;
+}
+
+function createMediaListNode(payload, cx, cy) {
+    const entries = payload.items.filter(
+        (item) => item.media_ref
+            && ["image", "video", "audio"].includes(item.media_type)
+    );
+    if (!entries.length) return null;
+    const mediaType = entries[0].media_type;
+    const items = { image: [], video: [], audio: [] };
+    for (const entry of entries) {
+        if (entry.media_type !== mediaType) continue;
+        items[mediaType].push({
+            ref: entry.media_ref,
+            title: entry.title,
+            enabled: true,
+        });
+    }
+    if (!items[mediaType].length) return null;
+
+    const graph = resolveActiveGraph();
+    if (!graph || typeof graph.add !== "function") return null;
+    if (typeof LiteGraph === "undefined" || !LiteGraph?.createNode) {
+        return null;
+    }
+
+    const pos = [cx - 180, cy - 260];
+    const seedProperties = {};
+    seedProperties[MEDIA_ITEMS_PROP] = JSON.stringify(items);
+    seedProperties[MEDIA_TYPE_PROP] = mediaType;
+
+    let node = null;
+    try {
+        node = LiteGraph.createNode(LIST_NODE_CLASS, undefined, {
+            pos,
+            properties: seedProperties,
+        });
+    } catch (err) {
+        console.warn("[XDataHub CanvasDrop] createNode failed:", err);
+        return null;
+    }
+    if (!node) return null;
+
+    try {
+        graph.add(node);
+    } catch (err) {
+        console.warn("[XDataHub CanvasDrop] graph.add failed:", err);
+    }
+
+    // 子图里 V3 widget 可能在 add 之后被重建；
+    // 把种子数据额外挂在实例上，供节点扩展延迟恢复。
+    node.__xmlg_pending_items = seedProperties[MEDIA_ITEMS_PROP];
+    node.__xmlg_pending_type = mediaType;
+
+    const setWidget = (name, value) => {
+        const widget = node?.widgets?.find?.(
+            (entry) => entry.name === name
+        );
+        if (widget) {
+            widget.value = value;
+            return true;
+        }
+        return false;
+    };
+    setWidget("media_items", seedProperties[MEDIA_ITEMS_PROP]);
+    setWidget("media_type", mediaType);
 
     try {
         node.setDirtyCanvas?.(true, true);
@@ -310,9 +530,6 @@ function installDropHandler() {
             const payload = parsePayload(event.dataTransfer);
             if (!payload) return;
 
-            // LoRA 首期不响应。
-            if (payload.media_type === "lora") return;
-
             const pos = resolveCanvasPos(event);
             if (!pos) return;
 
@@ -328,11 +545,19 @@ function installDropHandler() {
                 // 忽略。
             }
 
-            const node = createAndLoadNode(payload, cx, cy);
+            // 多选媒体 → 一个列表节点；LoRA 多选 → 一个 XLoraGet 多行；
+            // 其余走单节点创建。
+            const isMultiMedia = payload.items.length > 1
+                && ["image", "video", "audio"].includes(
+                    payload.media_type
+                );
+            const node = isMultiMedia
+                ? createMediaListNode(payload, cx, cy)
+                : createAndLoadNode(payload, cx, cy);
             if (!node) {
                 // 建节点失败：已 prevent，但仍 console.warn 便于排查。
                 console.warn(
-                    `[XDataHub CanvasDrop] createAndLoadNode returned null for media_type=${payload.media_type}`
+                    `[XDataHub CanvasDrop] createNode returned null for media_type=${payload.media_type}`
                 );
             }
         },

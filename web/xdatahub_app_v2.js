@@ -7,23 +7,23 @@ import {
     loadFavoriteList, loadFavoriteIds,
 } from "./core/api.js?v=20260601-5";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20260427-2";
+import { setLocale, t } from "./core/i18n.js?v=20261023-2";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-93";
-import "./components/xdh-media-grid.js?v=20261013-1";
-import "./components/xdh-staging-dock.js?v=20260531-1";
-import "./components/xdh-node-picker.js?v=20260426-4";
-import "./core/node-bridge.js?v=20260426-1";
+import "./components/xdh-media-grid.js?v=20261023-2";
+import "./components/xdh-staging-dock.js?v=20261023-2";
+import "./components/xdh-node-picker.js?v=20261023-2";
+import "./core/node-bridge.js?v=20261023-2";
 import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20261013-1";
-import "./components/xdh-history-view.js?v=20260508-1";
+import "./components/xdh-lightbox.js?v=20261022-2";
+import "./components/xdh-history-view.js?v=20261021-2";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20261013-1";
-import "./components/xdh-settings-dialog.js?v=20260428-3";
+import "./components/xdh-settings-dialog.js?v=20261021-1";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -544,6 +544,12 @@ window.addEventListener("message", (event) => {
     if (payload.type === "xdatahub:ui-locale") {
         setLocale(payload.locale);
         refreshGlobalUi();
+        return;
+    }
+    // 停靠隐藏（悬停展开）时焦点仍在画布，按键进不了 iframe；
+    // 由宿主转发过来，在内部触发一次「全选当前页」。
+    if (payload.type === "xdatahub:select_all_page") {
+        document.dispatchEvent(new CustomEvent("xdh:select-all-page"));
         return;
     }
     if (
@@ -1334,7 +1340,7 @@ appStore.subscribe(async (state, key) => {
 
     appStore.state.isLoading = true;
     appStore.state.loadError = "";
-    const shouldResetSelection = key !== "currentPage";
+    const shouldResetSelection = true;
     if (
         shouldResetSelection
         && (appStore.state.selectedItems || []).length > 0

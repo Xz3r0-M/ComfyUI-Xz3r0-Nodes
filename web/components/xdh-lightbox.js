@@ -9,7 +9,7 @@ import {
     SCROLLBAR_CSS,
     TOOLTIP_CSS,
 } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260407-3";
+import { t } from "../core/i18n.js?v=20261022-1";
 import { toggleMediaFavorite } from "../core/api.js?v=20260407-416";
 
 function getPreviewSettings() {
@@ -368,6 +368,15 @@ export class XdhLightbox extends BaseElement {
         };
     }
 
+    /** 选中状态变化时刷新按钮与底部列表的标记。 */
+    onStoreUpdate(state, key) {
+        if (key !== "selectedItems") {
+            return;
+        }
+        this._syncSelectionChrome();
+        this._syncBottomNavSelection();
+    }
+
     _setNavigationContext(navigation, activeId = "") {
         if (!navigation) {
             this._navigation = null;
@@ -459,7 +468,97 @@ export class XdhLightbox extends BaseElement {
         if (closeBtn) {
             closeBtn.disabled = !hasCurrent;
         }
+        this._syncSelectionChrome();
         this._syncBottomNav();
+    }
+
+    /**
+     * 当前预览项在列表中的 id（可以被选中）。
+     * 比如 LoRA 封面预览的 id 不在列表里，就不能选中。
+     */
+    _selectableCurrentId() {
+        const id = String(this._current?.id || "");
+        const items = this._navigation?.items;
+        if (!id || !Array.isArray(items)) {
+            return "";
+        }
+        return items.some((item) => item.id === id) ? id : "";
+    }
+
+    /** 当前项是否已在多选列表里。 */
+    _isCurrentSelected() {
+        const id = this._selectableCurrentId();
+        if (!id) {
+            return false;
+        }
+        return (appStore.state.selectedItems || [])
+            .some((value) => String(value) === id);
+    }
+
+    /**
+     * 同步「选择当前文件 / 加入多选」按钮的状态。
+     */
+    _syncSelectionChrome() {
+        const currentBtn = this.$(".fs-select-current-btn");
+        const addBtn = this.$(".fs-select-add-btn");
+        const selectableId = this._selectableCurrentId();
+        const isText = String(this._current?.type || "").toLowerCase()
+            === "text";
+        const isSelected = this._isCurrentSelected();
+        if (currentBtn) {
+            // 不在列表里的画面（如 LoRA 封面预览）无法选中，直接隐藏。
+            currentBtn.hidden = !selectableId;
+            currentBtn.disabled = !selectableId;
+        }
+        if (addBtn) {
+            addBtn.disabled = !selectableId;
+            // 文本（含收藏的文本）只需要「选择当前文件」。
+            addBtn.hidden = isText || !selectableId;
+            addBtn.classList.toggle("is-active", isSelected);
+            addBtn.setAttribute(
+                "aria-pressed",
+                isSelected ? "true" : "false"
+            );
+            const tooltip = isSelected
+                ? t("lightbox.select_added")
+                : t("lightbox.select_add");
+            addBtn.dataset.tooltip = tooltip;
+            addBtn.setAttribute("aria-label", tooltip);
+            addBtn.innerHTML = icon(isSelected ? "check" : "plus", 16);
+        }
+    }
+
+    /** 只选当前这一个文件（替换原有选择）。 */
+    _selectCurrentItem() {
+        const id = this._selectableCurrentId();
+        if (!id) {
+            return;
+        }
+        const current = appStore.state.selectedItems || [];
+        if (current.length === 1 && String(current[0]) === id) {
+            this._syncSelectionChrome();
+            return;
+        }
+        appStore.state.selectedItems = [id];
+    }
+
+    /** 把当前文件加进多选；已选中则移出。 */
+    _toggleCurrentItemSelection() {
+        const id = this._selectableCurrentId();
+        if (!id) {
+            return;
+        }
+        if (String(this._current?.type || "").toLowerCase() === "text") {
+            return;
+        }
+        const next = [...(appStore.state.selectedItems || [])];
+        const index = next.findIndex((value) => String(value) === id);
+        if (index >= 0) {
+            next.splice(index, 1);
+        } else {
+            next.push(id);
+        }
+        appStore.state.selectedItems = next;
     }
 
     _syncBottomNav() {
@@ -474,38 +573,84 @@ export class XdhLightbox extends BaseElement {
         }
         const activeId = this._current?.id;
         const items = this._navigation.items;
+        const selected = new Set(
+            (appStore.state.selectedItems || []).map((id) => String(id))
+        );
         navContainer.innerHTML = items.map((item, index) => {
             const isActive = item.id === activeId;
             const isAudio = item.type === "audio";
             const thumbUrl = item.thumbnailUrl || "";
-            return this._renderBottomNavItem(item, index, isActive, isAudio, thumbUrl);
+            return this._renderBottomNavItem(
+                item,
+                index,
+                isActive,
+                isAudio,
+                thumbUrl,
+                selected.has(item.id)
+            );
         }).join("");
         this._scrollBottomNavToActive();
     }
 
-    _renderBottomNavItem(item, index, isActive, isAudio, thumbUrl) {
+    /**
+     * 只刷新底部列表的选中标记（不重建 DOM，避免滚动位置跳动）。
+     */
+    _syncBottomNavSelection() {
+        const navContainer = this.$(".fs-bottom-nav");
+        if (!navContainer) {
+            return;
+        }
+        const selected = new Set(
+            (appStore.state.selectedItems || []).map((id) => String(id))
+        );
+        navContainer.querySelectorAll(".fs-nav-item").forEach((node) => {
+            const id = String(node.dataset.navId || "");
+            const isSelected = selected.has(id);
+            node.classList.toggle("is-selected", isSelected);
+            const badge = node.querySelector(".fs-nav-badge");
+            if (badge) {
+                badge.hidden = !isSelected;
+            }
+        });
+    }
+
+    _renderBottomNavItem(
+        item,
+        index,
+        isActive,
+        isAudio,
+        thumbUrl,
+        isSelected = false
+    ) {
         const safeId = String(item.id || "").replace(/"/g, "&quot;");
         const safeName = String(item.name || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         const activeClass = isActive ? "is-active" : "";
+        const selectedClass = isSelected ? "is-selected" : "";
+        const badgeHtml = `
+                    <span class="fs-nav-badge" ${isSelected ? "" : "hidden"} aria-hidden="true">
+                        ${icon("check", 12)}
+                    </span>`;
         const isText = item.type === "text";
         if (isAudio) {
             return `
-                <button class="fs-nav-item ${activeClass}" type="button"
+                <button class="fs-nav-item ${activeClass} ${selectedClass}" type="button"
                         data-nav-index="${index}" data-nav-id="${safeId}"
                         title="${safeName}">
                     <div class="fs-nav-thumb audio-thumb">
                         <span class="audio-icon">${icon("audio-lines", 24)}</span>
+                        ${badgeHtml}
                     </div>
                     <div class="fs-nav-name">${safeName}</div>
                 </button>`;
         }
         if (isText) {
             return `
-                <button class="fs-nav-item ${activeClass}" type="button"
+                <button class="fs-nav-item ${activeClass} ${selectedClass}" type="button"
                         data-nav-index="${index}" data-nav-id="${safeId}"
                         title="${safeName}">
                     <div class="fs-nav-thumb text-thumb">
                         <span class="text-icon">${icon("file", 24)}</span>
+                        ${badgeHtml}
                     </div>
                     <div class="fs-nav-name">${safeName}</div>
                 </button>`;
@@ -518,12 +663,13 @@ export class XdhLightbox extends BaseElement {
             ? `<div class="fs-nav-fallback">${icon("image-off", 20)}</div>`
             : "";
         return `
-            <button class="fs-nav-item ${activeClass}" type="button"
+            <button class="fs-nav-item ${activeClass} ${selectedClass}" type="button"
                     data-nav-index="${index}" data-nav-id="${safeId}"
                     title="${safeName}">
                 <div class="fs-nav-thumb ${!hasThumb ? "thumb-empty" : ""}">
                     ${thumbHtml}
                     ${fallbackHtml}
+                    ${badgeHtml}
                 </div>
                 <div class="fs-nav-name">${safeName}</div>
             </button>`;
@@ -1558,6 +1704,14 @@ export class XdhLightbox extends BaseElement {
                     this._toggleFavorite();
                     return;
                 }
+                if (action === "select-current") {
+                    this._selectCurrentItem();
+                    return;
+                }
+                if (action === "select-add") {
+                    this._toggleCurrentItemSelection();
+                    return;
+                }
                 if (action === "open") {
                     if (this._current) {
                         this._openInNewTab(this._current);
@@ -1830,6 +1984,17 @@ export class XdhLightbox extends BaseElement {
     }
 
     render() {
+        // 首次渲染（含语言/主题重绘）时直接带上选择按钮的正确状态，
+        // 避免重绘后按钮暂时错位。
+        const selectableId = this._selectableCurrentId();
+        const canSelect = !!selectableId;
+        const isTextPreview = String(this._current?.type || "").toLowerCase()
+            === "text";
+        const isSelected = this._isCurrentSelected();
+        const showAdd = canSelect && !isTextPreview;
+        const addTooltip = isSelected
+            ? t("lightbox.select_added")
+            : t("lightbox.select_add");
         return `
             <style>
                 ${ICON_CSS}
@@ -2018,6 +2183,14 @@ export class XdhLightbox extends BaseElement {
                     color: var(--xdh-color-primary);
                 }
 
+                .fs-action-btn[hidden] {
+                    display: none;
+                }
+
+                .fs-select-add-btn.is-active {
+                    color: var(--xdh-color-primary);
+                }
+
                 .fs-action-btn:disabled {
                     opacity: 0.32;
                     cursor: not-allowed;
@@ -2089,10 +2262,22 @@ export class XdhLightbox extends BaseElement {
                     outline-offset: 2px;
                 }
 
-                .fs-side-btn:disabled {
+                /* 首尾项时上一个/下一个灰显：
+                   必须带 .fs-stage[data-active="true"] 前缀，
+                   否则被上面同名的显示规则（优先级更高）盖掉，
+                   看起来像仍可点击。 */
+                .fs-side-btn:disabled,
+                .fs-stage[data-active="true"] .fs-side-btn:disabled,
+                .fs-stage[data-active="true"] .fs-side-btn:disabled:hover {
                     opacity: 0.32;
+                    color: var(--lb-text-tertiary);
                     cursor: not-allowed;
                     transform: translateY(-50%) scale(1);
+                }
+
+                .fs-stage[data-active="true"] .fs-side-btn:disabled:hover {
+                    background: var(--lb-surface-elevated);
+                    box-shadow: var(--lb-shadow-ring);
                 }
 
                 /* ============================================
@@ -2670,6 +2855,37 @@ export class XdhLightbox extends BaseElement {
                     border-color: var(--lb-border);
                 }
 
+                .fs-nav-item.is-selected .fs-nav-thumb {
+                    box-shadow:
+                        0 0 0 2px var(--xdh-color-primary),
+                        var(--lb-shadow-ring);
+                }
+
+                .fs-nav-item.is-selected .fs-nav-name {
+                    color: var(--lb-text-primary);
+                }
+
+                /* 已选中的角标（叠加在缩略图右上角） */
+                .fs-nav-badge {
+                    position: absolute;
+                    top: 2px;
+                    right: 2px;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: var(--xdh-color-primary);
+                    color: var(--xdh-clr-on-primary, #ffffff);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+                    pointer-events: none;
+                }
+
+                .fs-nav-badge[hidden] {
+                    display: none;
+                }
+
                 .fs-nav-thumb {
                     width: 48px;
                     height: 48px;
@@ -2886,8 +3102,25 @@ export class XdhLightbox extends BaseElement {
             </style>
 
             <div class="fs-stage">
-                <!-- Top Right: Open & Close buttons -->
+                <!-- Top Right: Selection, Open & Close buttons -->
                 <div class="fs-top-actions">
+                    <button class="fs-action-btn fs-select-current-btn xdh-tooltip xdh-tooltip-down"
+                            type="button"
+                            data-lightbox-action="select-current"
+                            data-tooltip="${t("lightbox.select_current")}"
+                            aria-label="${t("lightbox.select_current")}"
+                            ${canSelect ? "" : "hidden"}>
+                        ${icon("square-check-big", 16)}
+                    </button>
+                    <button class="fs-action-btn fs-select-add-btn ${isSelected ? "is-active" : ""} xdh-tooltip xdh-tooltip-down"
+                            type="button"
+                            data-lightbox-action="select-add"
+                            data-tooltip="${addTooltip}"
+                            aria-label="${addTooltip}"
+                            aria-pressed="${isSelected ? "true" : "false"}"
+                            ${showAdd ? "" : "hidden"}>
+                        ${icon(isSelected ? "check" : "plus", 16)}
+                    </button>
                     <button class="fs-action-btn fs-fav-btn xdh-tooltip xdh-tooltip-down"
                             type="button"
                             data-lightbox-action="fav"

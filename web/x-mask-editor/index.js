@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20260916-4";
-import { openMaskEditorSession } from "./session.js?v=20260916-4";
-import { saveMaskArtifacts } from "./upload.js?v=20260916-4";
+import { XMaskEditorController } from "./controller.js?v=20261023-11";
+import { openMaskEditorSession } from "./session.js?v=20261023-11";
+import { saveMaskArtifacts } from "./upload.js?v=20261023-11";
 
 const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
 const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -124,8 +124,12 @@ export async function openXMaskEditor(options = {}) {
         }
         ui.hotkeySink.focus({ preventScroll: true });
     };
+    // 主题在 controller 建好之前就可能被应用，所以用个可空引用。
+    let controllerRef = null;
     const applyThemeMode = (mode) => {
         ui.overlay.dataset.theme = normalizeEffectiveThemeMode(mode);
+        // 方格底色是从主题变量读的，换主题后要重新生成。
+        controllerRef?.refreshCheckerboard?.();
     };
     const applyThemeContext = (context) => {
         applyThemeMode(context?.effective_mode ?? context?.theme_mode);
@@ -287,6 +291,7 @@ export async function openXMaskEditor(options = {}) {
             );
         },
     });
+    controllerRef = controller;
     session.bind(ui.brushBtn, "click", () => controller.setTool("paint"));
     session.bind(ui.fillBtn, "click", () => controller.setTool("fill"));
     session.bind(ui.maskBrushBtn, "click", () => controller.setTool("mask"));
@@ -548,6 +553,8 @@ export async function openXMaskEditor(options = {}) {
             await Promise.resolve(
                 options?.onSave?.({
                     ...uploaded,
+                    hasMask: exported.hasMask !== false,
+                    hasPaint: exported.hasPaint === true,
                     transformState: exported.transformState,
                 })
             );

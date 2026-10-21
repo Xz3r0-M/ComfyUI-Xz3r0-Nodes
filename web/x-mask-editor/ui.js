@@ -477,19 +477,9 @@ export function ensureMaskEditorStyles() {
             min-height: 320px;
             border-radius: 14px;
             border: 1px solid var(--ximageget-mask-editor-border);
-            background:
-                linear-gradient(45deg,
-                    color-mix(in srgb, var(--ximageget-mask-editor-surface-soft) 92%, transparent) 25%,
-                    transparent 25%,
-                    transparent 75%,
-                    color-mix(in srgb, var(--ximageget-mask-editor-surface-soft) 92%, transparent) 75%),
-                linear-gradient(45deg,
-                    color-mix(in srgb, var(--ximageget-mask-editor-surface-soft) 92%, transparent) 25%,
-                    transparent 25%,
-                    transparent 75%,
-                    color-mix(in srgb, var(--ximageget-mask-editor-surface-soft) 92%, transparent) 75%);
-            background-position: 0 0, 12px 12px;
-            background-size: 24px 24px;
+            /* 方格底改由画布自己画（见 controller 的 buildCheckerboardPattern）：
+               CSS 画的图层在画布下面，画笔圆环的「反相」碰不到它。 */
+            background: var(--ximageget-mask-editor-bg);
         }
         .ximageget-mask-editor-stage {
             width: 100%;

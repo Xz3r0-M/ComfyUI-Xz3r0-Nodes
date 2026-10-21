@@ -2,16 +2,43 @@
  * node-bridge.js
  * Wraps window.parent postMessage communication for node operations.
  *
- * requestNodes(nodeClass) → Promise<{ id, title, accent_index }[]>
- * sendToNode(data)        → Promise<{ ok, error }>
+ * requestNodes(nodeClass)         → Promise<{ id, title, accent_index }[]>
+ * requestNodesDetailed(nodeClass) → Promise<{ ok, nodes }>
+ * sendToNode(data)                → Promise<{ ok, error, accepted, dropped, disabled }>
  */
 
 const REQUEST_TIMEOUT_MS = 1500;
 const SEND_TIMEOUT_MS = 2000;
 
-let _seq = 0;
-const _pendingNodes = new Map();
-const _pendingSend  = new Map();
+/**
+ * 各组件是用带 `?v=` 的地址引用本模块的，版本不一致时浏览器会当成
+ * 两个模块、各自实例化一份。消息监听只装一次（窗口级守卫），
+ * 所以「等回复的请求表」必须放在 window 上共享，
+ * 否则第二个实例发出去的请求永远等不到回复（表现为节点列表是空的）。
+ */
+const BRIDGE_STATE_KEY = "__xdh_node_bridge_state__";
+
+function getSharedState() {
+    const existing = window[BRIDGE_STATE_KEY];
+    if (existing && typeof existing === "object") {
+        if (!(existing.pendingNodes instanceof Map)) {
+            existing.pendingNodes = new Map();
+        }
+        if (!(existing.pendingSend instanceof Map)) {
+            existing.pendingSend = new Map();
+        }
+        return existing;
+    }
+    const created = {
+        seq: 0,
+        pendingNodes: new Map(),
+        pendingSend: new Map(),
+    };
+    window[BRIDGE_STATE_KEY] = created;
+    return created;
+}
+
+const _state = getSharedState();
 
 function normalizeOrigin(value) {
     if (typeof value !== "string" || !value) {
@@ -74,8 +101,8 @@ function isAllowedParentMessage(event) {
 }
 
 function nextId() {
-    _seq += 1;
-    return `v2_nb_${Date.now()}_${_seq}`;
+    _state.seq += 1;
+    return `v2_nb_${Date.now()}_${_state.seq}`;
 }
 
 function handleMessage(event) {
@@ -85,21 +112,27 @@ function handleMessage(event) {
     if (!payload || typeof payload !== "object") return;
 
     if (payload.type === "xdatahub:media_get_nodes") {
-        const req = _pendingNodes.get(payload.request_id);
+        const req = _state.pendingNodes.get(payload.request_id);
         if (!req) return;
         clearTimeout(req.timer);
-        _pendingNodes.delete(payload.request_id);
-        req.resolve(Array.isArray(payload.nodes) ? payload.nodes : []);
+        _state.pendingNodes.delete(payload.request_id);
+        req.resolve(true, payload.nodes);
         return;
     }
 
     if (payload.type === "xdatahub:send_to_node_ack") {
         const d = payload.data || {};
-        const req = _pendingSend.get(d.request_id);
+        const req = _state.pendingSend.get(d.request_id);
         if (!req) return;
         clearTimeout(req.timer);
-        _pendingSend.delete(d.request_id);
-        req.resolve({ ok: d.ok !== false, error: String(d.error || "") });
+        _state.pendingSend.delete(d.request_id);
+        req.resolve({
+            ok: d.ok !== false,
+            error: String(d.error || ""),
+            accepted: Number(d.accepted || 0),
+            dropped: Number(d.dropped || 0),
+            disabled: Number(d.disabled || 0),
+        });
     }
 }
 
@@ -110,18 +143,27 @@ if (!window.__xdh_node_bridge_installed__) {
 
 /**
  * Request nodes of a given ComfyUI class from the parent window.
+ *
+ * 与 `requestNodes` 的区别：超时/失败时 `ok` 为 false，调用方据此判断
+ * 「没取到节点」到底是「节点真被删了」还是「这一轮没拿到数据」。
  * @param {string} nodeClass e.g. 'XImageGet'
- * @returns {Promise<Array<{id:string,title:string,accent_index:number|null}>>}
+ * @returns {Promise<{ ok: boolean, nodes: Array }>}
  */
-export function requestNodes(nodeClass) {
+export function requestNodesDetailed(nodeClass) {
     return new Promise((resolve) => {
         const requestId = nextId();
         const targetOrigin = getParentTargetOrigin();
+        const finish = (ok, nodes) => {
+            resolve({
+                ok: !!ok,
+                nodes: Array.isArray(nodes) ? nodes : [],
+            });
+        };
         const timer = setTimeout(() => {
-            _pendingNodes.delete(requestId);
-            resolve([]);
+            _state.pendingNodes.delete(requestId);
+            finish(false, []);
         }, REQUEST_TIMEOUT_MS);
-        _pendingNodes.set(requestId, { resolve, timer });
+        _state.pendingNodes.set(requestId, { resolve: finish, timer });
         try {
             window.parent?.postMessage?.(
                 {
@@ -133,10 +175,19 @@ export function requestNodes(nodeClass) {
             );
         } catch {
             clearTimeout(timer);
-            _pendingNodes.delete(requestId);
-            resolve([]);
+            _state.pendingNodes.delete(requestId);
+            finish(false, []);
         }
     });
+}
+
+/**
+ * Request nodes of a given ComfyUI class from the parent window.
+ * @param {string} nodeClass e.g. 'XImageGet'
+ * @returns {Promise<Array<{id:string,title:string,accent_index:number|null}>>}
+ */
+export function requestNodes(nodeClass) {
+    return requestNodesDetailed(nodeClass).then((result) => result.nodes);
 }
 
 /**
@@ -148,17 +199,31 @@ export function requestNodes(nodeClass) {
  *   textValue?: string,
  *   title?: string,
  * }} data
- * @returns {Promise<{ ok: boolean, error: string }>}
+ * 返回里的 `disabled` 表示「因为目标已启用满 50 个、以禁用状态加进去」
+ * 的文件数，界面可以据此提示用户。
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   error: string,
+ *   accepted: number,
+ *   dropped: number,
+ *   disabled: number,
+ * }>}
  */
 export function sendToNode(data) {
     return new Promise((resolve) => {
         const requestId = nextId();
         const targetOrigin = getParentTargetOrigin();
         const timer = setTimeout(() => {
-            _pendingSend.delete(requestId);
-            resolve({ ok: false, error: "timeout" });
+            _state.pendingSend.delete(requestId);
+            resolve({
+                ok: false,
+                error: "timeout",
+                accepted: 0,
+                dropped: 0,
+                disabled: 0,
+            });
         }, SEND_TIMEOUT_MS);
-        _pendingSend.set(requestId, { resolve, timer });
+        _state.pendingSend.set(requestId, { resolve, timer });
         try {
             window.parent?.postMessage?.(
                 {
@@ -170,14 +235,32 @@ export function sendToNode(data) {
                         media_ref: String(data.mediaRef || ""),
                         text_value: String(data.textValue || ""),
                         title: String(data.title || ""),
+                        mode: String(data.mode || ""),
+                        items: Array.isArray(data.items)
+                            ? data.items.map((item) => ({
+                                media_ref: String(
+                                    item?.mediaRef ?? item?.media_ref ?? ""
+                                ),
+                                media_type: String(
+                                    item?.mediaType ?? item?.media_type ?? ""
+                                ),
+                                title: String(item?.title || ""),
+                            }))
+                            : [],
                     },
                 },
                 targetOrigin
             );
         } catch {
             clearTimeout(timer);
-            _pendingSend.delete(requestId);
-            resolve({ ok: false, error: "postMessage failed" });
+            _state.pendingSend.delete(requestId);
+            resolve({
+                ok: false,
+                error: "postMessage failed",
+                accepted: 0,
+                dropped: 0,
+                disabled: 0,
+            });
         }
     });
 }

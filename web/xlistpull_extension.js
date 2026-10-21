@@ -28,6 +28,7 @@ import {
 var NODE_CLASS = "XListPull";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
+var MEDIA_LIST_CLASS = "XMediaListGet";
 var MAX_OUTPUTS = 50;
 
 /** 获取当前 ComfyUI 语言设置 */
@@ -243,6 +244,28 @@ function resolveCount(node) {
             var restoreWidth = resolveRestoreWidth(upstream);
             if (restoreWidth > 0) {
                 return Math.min(restoreWidth, MAX_OUTPUTS);
+            }
+        }
+        // XMediaListGet：三个 count 端口分别对应图片/视频/音频的启用数。
+        // 端口索引：0 images / 1 masks / 2 image_count / 3 videos /
+        // 4 video_count / 5 audios / 6 audio_count。
+        if (upstream && upstream.comfyClass === MEDIA_LIST_CLASS) {
+            var linkObj = getLinkInfo(node.graph, cp.linkId);
+            var originSlot = linkObj ? linkObj.origin_slot : null;
+            var counts = upstream.__xmlg_enabled_counts || null;
+            var countKey = originSlot === 2
+                ? "image"
+                : originSlot === 4
+                    ? "video"
+                    : originSlot === 6
+                        ? "audio"
+                        : "";
+            if (counts && countKey && counts[countKey] != null) {
+                return Math.min(Number(counts[countKey]), MAX_OUTPUTS);
+            }
+            var mediaCount = Number(upstream.__xmlg_enabled_count);
+            if (Number.isFinite(mediaCount) && mediaCount > 0) {
+                return Math.min(mediaCount, MAX_OUTPUTS);
             }
         }
         // 其它 INT 上游：回退 widget，直到执行时由后端 count 决定
@@ -692,6 +715,15 @@ app.registerExtension({
         // Full tree: Pull/Create may live inside nested subgraphs.
         doRefreshAll(app.graph);
         fixXListCreateSizes(app.graph);
+        if (!window.__xlistpullMediaListListenerInstalled) {
+            window.__xlistpullMediaListListenerInstalled = true;
+            document.addEventListener(
+                "xmedialistget:count-changed",
+                function () {
+                    scheduleRefreshAll(app.graph);
+                }
+            );
+        }
     },
 
     beforeRegisterNodeDef: function (nodeType, nodeData) {

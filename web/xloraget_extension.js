@@ -16,6 +16,9 @@ const TARGET_NODE_CLASS = "XLoraGet";
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const XLORA_ROW_MIME = "application/x-xloraget-row";
 const STORAGE_WIDGET = "lora_stack";
+// 画布拖拽建节点时，建节点方通过 createNode options 预置的种子行。
+// 只消费一次，避免节点恢复时又被种子拉回。
+const PENDING_ROWS_FIELD = "__xloraget_pending_rows";
 const STYLE_ID = "xloraget-extension-style";
 const GLOBAL_CLIP_MODE_PROP = "xloraget.globalSeparateClipStrength";
 const DEFAULT_MIN_NODE_WIDTH = 614;
@@ -293,6 +296,7 @@ function collectXLoraNodes() {
         }
         items.push({
             id: scopedId,
+            node_class: TARGET_NODE_CLASS,
             title: String(node.title || TARGET_NODE_CLASS),
             accent_index: getNodeAccentIndex(scopedId),
         });
@@ -641,7 +645,7 @@ function parseDragPayload(dataTransfer) {
         const thumbUrl = String(payload?.thumb_url || "");
         const strengthModel = Number(payload?.strength_model);
         const strengthClip = Number(payload?.strength_clip);
-        return {
+        const topLevel = {
             lora_ref: loraRef,
             title,
             thumb_url: thumbUrl,
@@ -652,6 +656,29 @@ function parseDragPayload(dataTransfer) {
                 ? strengthClip
                 : null,
         };
+        // 多选拖拽：顶层仍带第一条（兼容老逻辑），items 里带全部。
+        const items = (Array.isArray(payload.items) ? payload.items : [])
+            .map((item) => {
+                const model = Number(item?.strength_model);
+                const clip = Number(item?.strength_clip);
+                return {
+                    lora_ref: String(
+                        item?.media_ref || item?.lora_ref || ""
+                    ).trim(),
+                    media_type: String(item?.media_type || "lora")
+                        .trim()
+                        .toLowerCase(),
+                    title: String(item?.title || "lora"),
+                    thumb_url: String(item?.thumb_url || ""),
+                    strength_model: Number.isFinite(model) ? model : null,
+                    strength_clip: Number.isFinite(clip) ? clip : null,
+                };
+            })
+            .filter((item) => item.lora_ref && item.media_type === "lora");
+        if (!items.length) {
+            items.push(topLevel);
+        }
+        return { ...topLevel, items };
     } catch {
         return null;
     }
@@ -1268,14 +1295,64 @@ function readStoredRows(node) {
     }
 }
 
-function writeStoredRows(node, rows) {
-    const panel = node.__xlora_panel;
-    const globalSeparateClip = !!panel?.state?.globalSeparateClip;
-    const widget = ensureStorageWidget(node);
-    if (!widget) {
-        return;
+/**
+ * 消费「画布拖拽建节点」时预置的种子行。
+ *
+ * 为什么不能在建面板时读：ComfyUI 的节点类在**构造函数里**就同步触发了
+ * nodeCreated 扩展钩子（LGraphNode 构造函数 → invokeExtensionsAsync），
+ * 那时 LiteGraph.createNode 还没把 options（种子字段）赋到节点上；等
+ * options 赋值完成、onNodeCreated 再调 installNodeUi 时，面板已装好，
+ * 只会走「已安装」早退分支。所以种子要在这里主动补一次。
+ */
+function consumePendingRows(node) {
+    const pending = String(node?.[PENDING_ROWS_FIELD] || "").trim();
+    if (!pending) {
+        return false;
     }
-    const payload = rows.map((item) => ({
+    // 先删除：只消费一次，避免重复插入。
+    delete node[PENDING_ROWS_FIELD];
+    let incoming = [];
+    try {
+        incoming = normalizeRows(JSON.parse(pending));
+    } catch {
+        return false;
+    }
+    if (!incoming.length) {
+        return false;
+    }
+    const panel = node.__xlora_panel;
+    const rows = Array.isArray(panel?.state?.rows) ? panel.state.rows : [];
+    const existingRefs = new Set(rows.map((row) => row.lora_ref));
+    const added = incoming.filter((row) => !existingRefs.has(row.lora_ref));
+    if (!added.length) {
+        return false;
+    }
+    const nextRows = enforcePinLayout([...rows, ...added]);
+    if (!panel) {
+        const widget = ensureStorageWidget(node);
+        if (widget) {
+            widget.value = JSON.stringify(
+                serializeStoredRows(
+                    nextRows,
+                    readGlobalClipMode(node, nextRows)
+                )
+            );
+        }
+        return true;
+    }
+    panel.state.rows = nextRows;
+    if (nextRows.some((row) => row.separate_clip_strength)) {
+        panel.state.globalSeparateClip = true;
+    }
+    writeStoredRows(node, nextRows);
+    renderNodeRows(node);
+    syncAllRowTriggerWords(node, { force: true });
+    refreshNodeBadge(node);
+    return true;
+}
+
+function serializeStoredRows(rows, globalSeparateClip) {
+    return rows.map((item) => ({
         active: item.active !== false,
         lora_ref: item.lora_ref,
         lora_name: item.lora_name,
@@ -1290,6 +1367,16 @@ function writeStoredRows(node, rows) {
         thumb_url: item.thumb_url || "",
         pin: item.pin || "none",
     }));
+}
+
+function writeStoredRows(node, rows) {
+    const panel = node.__xlora_panel;
+    const globalSeparateClip = !!panel?.state?.globalSeparateClip;
+    const widget = ensureStorageWidget(node);
+    if (!widget) {
+        return;
+    }
+    const payload = serializeStoredRows(rows, globalSeparateClip);
     widget.value = JSON.stringify(payload);
     node.setDirtyCanvas?.(true, true);
 }
@@ -1670,6 +1757,8 @@ function installNodeUi(node) {
     if (node.__xlora_panel) {
         ensureStorageWidget(node);
         ensureXLoraNodeMinSize(node);
+        // 拖拽建节点时种子在面板装好之后才赋到节点上，这里补消费。
+        consumePendingRows(node);
         return;
     }
     ensureStorageWidget(node);
@@ -1755,6 +1844,8 @@ function installNodeUi(node) {
     renderNodeRows(node);
     syncAllRowTriggerWords(node, { force: true });
     refreshNodeBadge(node);
+    // 若种子在面板之前就到了（异常时序），这里也会补上。
+    consumePendingRows(node);
 }
 
 function clearDragTarget(state) {
@@ -2439,7 +2530,10 @@ function bindDnD(node) {
         if (!payload) {
             return;
         }
-        const dropKey = `${payload.lora_ref}|${payload.title}|${payload.thumb_url}`;
+        const entries = payload.items?.length ? payload.items : [payload];
+        const dropKey = entries
+            .map((entry) => entry.lora_ref)
+            .join("|");
         const now = Date.now();
         if (
             dropKey === state.lastExternalDropKey
@@ -2449,21 +2543,24 @@ function bindDnD(node) {
         }
         state.lastExternalDropKey = dropKey;
         state.lastExternalDropAt = now;
-        upsertLoraRowFromMediaRef(
-            node,
-            payload.lora_ref,
-            payload.title,
-            payload.thumb_url,
-            payload.strength_model,
-            payload.strength_clip,
-            "",
-            {
-                syncStrengthFromRemote: (
-                    payload.strength_model == null
-                    && payload.strength_clip == null
-                ),
-            }
-        );
+        // 多选拖拽时按原顺序逐行插入。
+        for (const entry of entries) {
+            upsertLoraRowFromMediaRef(
+                node,
+                entry.lora_ref,
+                entry.title,
+                entry.thumb_url,
+                entry.strength_model,
+                entry.strength_clip,
+                "",
+                {
+                    syncStrengthFromRemote: (
+                        entry.strength_model == null
+                        && entry.strength_clip == null
+                    ),
+                }
+            );
+        }
     });
 }
 

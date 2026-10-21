@@ -3,17 +3,21 @@ import {
     registerCustomElement,
 } from '../core/base-element.js?v=20260403-2';
 import { appStore } from '../core/store.js';
-import { t } from '../core/i18n.js?v=20260426-1';
+import { t } from '../core/i18n.js?v=20261020-1';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import { SCROLLBAR_CSS } from '../core/icon.js';
 import {
-    requestNodes,
+    requestNodesDetailed,
     hoverNode,
     leaveNode,
     CATEGORY_NODE_CLASS,
     resolveNodeClassFromTargetType,
     resolveNodeClassFromCategory,
-} from '../core/node-bridge.js?v=20260426-1';
+} from '../core/node-bridge.js?v=20261023-2';
+
+// 已选中目标节点后，需要持续确认它还活在画布上：
+// 用户直接删掉节点时，选中状态必须自动清掉。
+const SELECTION_WATCH_MS = 2000;
 
 function compareNodeByIdAsc(left, right) {
     const leftId = String(left?.id ?? '');
@@ -65,6 +69,8 @@ export class XdhNodePicker extends BaseElement {
         this._hoverDebounceTimer = null;
         this._hoveredNodeId = '';
         this._pollInterval = null;
+        this._selectionWatchTimer = null;
+        this._selectionWatchBusy = false;
         this._onDocumentClick = this._handleDocumentClick.bind(this);
     }
 
@@ -96,6 +102,11 @@ export class XdhNodePicker extends BaseElement {
         if (name === 'selected-node-id') {
             this.selectedNodeId = String(newValue || '').trim();
             this._syncSelectedNodeFromId();
+            if (this.selectedNodeId) {
+                this._startSelectionWatch();
+            } else {
+                this._stopSelectionWatch();
+            }
             return;
         }
         if (name === 'selected-node-title') {
@@ -109,17 +120,25 @@ export class XdhNodePicker extends BaseElement {
         }
     }
 
-    _syncSelectedNodeFromId() {
+    _syncSelectedNodeFromId({ clearIfMissing = false } = {}) {
         if (!this.selectedNodeId) {
             return;
         }
         if (!Array.isArray(this.nodes) || this.nodes.length === 0) {
+            // 取不到任何节点：只有调用方能确认「这一轮数据可信」时
+            // 才认定为节点已被删除，避免瞬间超时把目标清掉。
+            if (clearIfMissing) {
+                this._clearSelection();
+            }
             return;
         }
         const matched = this.nodes.find(
             (node) => String(node.id) === this.selectedNodeId
         ) || null;
         if (!matched) {
+            if (clearIfMissing) {
+                this._clearSelection();
+            }
             return;
         }
         this.selectedNode = matched;
@@ -127,14 +146,82 @@ export class XdhNodePicker extends BaseElement {
         this.selectedNodeColor = String(resolveTokenAccentFromNode(matched));
     }
 
-    _getNodeClass() {
-        const targetNodeClass = resolveNodeClassFromTargetType(this.targetType);
-        if (targetNodeClass) {
-            return targetNodeClass;
+    /**
+     * 清掉选中目标并通知外层（发送坞）。
+     */
+    _clearSelection() {
+        const hadSelection = Boolean(
+            this.selectedNodeId
+            || this.selectedNode
+            || this.selectedNodeTitle
+            || this.selectedNodeColor
+        );
+        this.selectedNode = null;
+        this.selectedNodeId = '';
+        this.selectedNodeTitle = '';
+        this.selectedNodeColor = '';
+        this._stopSelectionWatch();
+        if (!hadSelection) {
+            return;
         }
+        this.dispatchEvent(new CustomEvent(
+            'node-selected', {
+                detail: { nodeId: '', node: null },
+                bubbles: true,
+                composed: true,
+            }
+        ));
+        if (this.isConnected) {
+            this.renderRoot();
+        }
+    }
 
-        const category = appStore.state.activeCategory || 'image';
-        return resolveNodeClassFromCategory(category);
+    _startSelectionWatch() {
+        if (this._selectionWatchTimer || !this.selectedNodeId) {
+            return;
+        }
+        this._selectionWatchTimer = window.setInterval(() => {
+            if (!this.selectedNodeId) {
+                this._stopSelectionWatch();
+                return;
+            }
+            // 下拉展开时已有 1s 轮询，不重复请求。
+            if (this.expanded || this._selectionWatchBusy) {
+                return;
+            }
+            this._selectionWatchBusy = true;
+            this._fetchNodes(true).finally(() => {
+                this._selectionWatchBusy = false;
+            });
+        }, SELECTION_WATCH_MS);
+    }
+
+    _stopSelectionWatch() {
+        if (this._selectionWatchTimer) {
+            window.clearInterval(this._selectionWatchTimer);
+            this._selectionWatchTimer = null;
+        }
+        this._selectionWatchBusy = false;
+    }
+
+    _getNodeClasses() {
+        const raw = String(this.targetType || "").trim();
+        const classes = [];
+        if (raw) {
+            for (const part of raw.split(",")) {
+                const resolved = resolveNodeClassFromTargetType(
+                    part.trim()
+                );
+                if (resolved && !classes.includes(resolved)) {
+                    classes.push(resolved);
+                }
+            }
+        }
+        if (!classes.length) {
+            const category = appStore.state.activeCategory || "image";
+            classes.push(resolveNodeClassFromCategory(category));
+        }
+        return classes;
     }
 
     _isEventInsidePicker(event) {
@@ -257,9 +344,19 @@ export class XdhNodePicker extends BaseElement {
         }
     }
 
+    connectedCallback() {
+        super.connectedCallback?.();
+        if (this.selectedNodeId) {
+            this._startSelectionWatch();
+            // 刚回到界面（例如展开坞）时立刻校验一次，不必等下一次轮询。
+            this._fetchNodes(true);
+        }
+    }
+
     disconnectedCallback() {
         super.disconnectedCallback?.();
         this._stopPolling();
+        this._stopSelectionWatch();
         this._clearHoverDebounce();
         if (this.docsListenerAdded) {
             document.removeEventListener('click', this._onDocumentClick);
@@ -268,38 +365,39 @@ export class XdhNodePicker extends BaseElement {
     }
 
     _fetchNodes(silent = false) {
-        const nodeClass = this._getNodeClass();
+        const nodeClasses = this._getNodeClasses();
         const requestSeq = ++this._fetchRequestSeq;
         if (!silent) {
             this.loading = true;
             this.renderRoot();
         }
-        requestNodes(nodeClass).then((nodes) => {
+        return Promise.all(nodeClasses.map(
+            (nodeClass) => requestNodesDetailed(nodeClass)
+        ))
+            .then((results) => {
             if (requestSeq !== this._fetchRequestSeq) {
                 return;
             }
-            this.nodes = Array.isArray(nodes)
-                ? [...nodes].sort(compareNodeByIdAsc)
-                : [];
-            this._syncSelectedNodeFromId();
-            if (this.selectedNode) {
-                const selectedId = String(this.selectedNode.id || '');
-                this.selectedNode = this.nodes.find(
-                    (node) => String(node.id) === selectedId
-                ) || null;
-                if (!this.selectedNode) {
-                    this.selectedNodeId = '';
-                    this.selectedNodeTitle = '';
-                    this.selectedNodeColor = '';
-                    this.dispatchEvent(new CustomEvent(
-                        'node-selected', {
-                            detail: { nodeId: '', node: null },
-                            bubbles: true,
-                            composed: true,
-                        }
-                    ));
+            // 只有每一类都真拿到了回应，才能拿这份列表判断
+            // 「选中的节点已经被删掉了」。
+            const trusted = results.every(
+                (result) => result?.ok !== false
+            );
+            const merged = [];
+            const seen = new Set();
+            for (const result of results) {
+                const nodes = result?.nodes;
+                for (const node of Array.isArray(nodes) ? nodes : []) {
+                    const id = String(node?.id ?? "");
+                    if (!id || seen.has(id)) {
+                        continue;
+                    }
+                    seen.add(id);
+                    merged.push(node);
                 }
             }
+            this.nodes = merged.sort(compareNodeByIdAsc);
+            this._syncSelectedNodeFromId({ clearIfMissing: trusted });
             if (!silent) {
                 this.loading = false;
                 this.renderRoot();

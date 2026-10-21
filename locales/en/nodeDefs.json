@@ -2830,6 +2830,54 @@
       }
     }
   },
+  "XMediaListGet": {
+    "display_name": "XMediaListGet",
+    "description": "Load batches of media from XDataHub. Images, videos, and audio each get their own list output; files with the switch off are never loaded.",
+    "inputs": {
+      "media_type": {
+        "name": "Media Category",
+        "tooltip": "Only changes which category the panel shows. All three media outputs are always active; switching here does not change the output."
+      },
+      "media_items": {
+        "name": "Media List Data",
+        "tooltip": "List data maintained automatically by the node panel; no need to edit by hand."
+      },
+      "type_warning": {
+        "name": "Type Warning",
+        "tooltip": "Enabled: glow red when a downstream link type does not match. Disabled: hide the warning."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Image List",
+        "tooltip": "Enabled images in panel order. When there are none, one empty value is output so downstream still runs once."
+      },
+      "1": {
+        "name": "Image Masks",
+        "tooltip": "Mask list matching the images one-to-one. Images without an edited mask output an all-zero mask."
+      },
+      "2": {
+        "name": "Image Count",
+        "tooltip": "How many images were output. Connect to XListPull's count to size its split ports automatically."
+      },
+      "3": {
+        "name": "Video List",
+        "tooltip": "Enabled videos in panel order. When there are none, one empty value is output."
+      },
+      "4": {
+        "name": "Video Count",
+        "tooltip": "How many videos were output."
+      },
+      "5": {
+        "name": "Audio List",
+        "tooltip": "Enabled audio files in panel order. When there is none, one empty value is output."
+      },
+      "6": {
+        "name": "Audio Count",
+        "tooltip": "How many audio files were output."
+      }
+    }
+  },
   "XStringGet": {
     "display_name": "XStringGet",
     "description": "Load the latest text sent from XDataHub.",

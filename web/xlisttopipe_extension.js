@@ -15,6 +15,7 @@ import { forEachNodeByComfyClass } from "./x_subgraph_utils.js";
 var NODE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
+var MEDIA_LIST_CLASS = "XMediaListGet";
 var PIPE_SLOTS = 50;
 
 function findCountPort(node) {
@@ -100,6 +101,40 @@ function resolveRestoreWidth(restoreNode) {
 }
 
 
+function isXMediaListGet(node) {
+    return !!(
+        node
+        && String(node.comfyClass || node.type || "") === MEDIA_LIST_CLASS
+    );
+}
+
+/**
+ * XMediaListGet 的图片 / 视频 / 音频数量分别从输出槽位 2 / 4 / 6 出去。
+ * 面板改动时会把启用数写到节点上，这里读它即可，不必等到执行。
+ */
+function mediaListEnabledCount(node, originSlot) {
+    if (!isXMediaListGet(node)) return 0;
+    var counts = node.__xmlg_enabled_counts || null;
+    var key = originSlot === 2
+        ? "image"
+        : originSlot === 4
+            ? "video"
+            : originSlot === 6
+                ? "audio"
+                : "";
+    if (counts && key && counts[key] != null) {
+        return Math.max(
+            1,
+            Math.min(PIPE_SLOTS, Math.round(Number(counts[key])) || 0),
+        );
+    }
+    var total = Number(node.__xmlg_enabled_count);
+    if (Number.isFinite(total) && total > 0) {
+        return Math.max(1, Math.min(PIPE_SLOTS, Math.round(total)));
+    }
+    return 0;
+}
+
 function resolveCount(node) {
     if (!node) return 1;
     var countPort = findCountPort(node);
@@ -115,6 +150,18 @@ function resolveCount(node) {
             var restoreWidth = resolveRestoreWidth(upstream);
             if (restoreWidth > 0) {
                 return Math.max(1, Math.min(PIPE_SLOTS, restoreWidth));
+            }
+        }
+        if (isXMediaListGet(upstream)) {
+            var link = node.graph.links
+                ? node.graph.links[countPort.linkId] || countPort.linkId
+                : countPort.linkId;
+            var originSlot = link && typeof link === "object"
+                ? link.origin_slot
+                : null;
+            var mediaCount = mediaListEnabledCount(upstream, originSlot);
+            if (mediaCount > 0) {
+                return mediaCount;
             }
         }
     }
@@ -146,6 +193,28 @@ function refreshDownstream() {
 
 app.registerExtension({
     name: "Xz3r0.XListToPipe",
+
+    setup: function () {
+        // XMediaListGet 面板里启用/禁用文件会改变数量输出，
+        // 收到通知就重算一次（下游管道槽位跟着变）。
+        if (!window.__xlistToPipeMediaCountListenerInstalled) {
+            window.__xlistToPipeMediaCountListenerInstalled = true;
+            document.addEventListener(
+                "xmedialistget:count-changed",
+                function () {
+                    if (!app.graph) return;
+                    forEachNodeByComfyClass(
+                        app.graph,
+                        NODE_CLASS,
+                        function (node) {
+                            syncCountWidget(node);
+                        },
+                    );
+                    refreshDownstream();
+                },
+            );
+        }
+    },
 
     afterConfigureGraph: function () {
         // Full graph tree so ToPipe nodes inside subgraphs sync too.
