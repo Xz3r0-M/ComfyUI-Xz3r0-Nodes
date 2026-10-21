@@ -764,17 +764,23 @@ export class XMaskEditorController {
             this.maskCanvas,
             this.maskOpacity
         );
-        const maskBlob = await canvasToBlob(exportMaskCanvas);
+        // 「有没有内容」按最终导出的画布判断：
+        // 画过东西但透明度拉到 0 时，导出的图其实什么也看不见。
+        const hasMask = this.hasCanvasAlpha(exportMaskCanvas);
+        const maskBlob = hasMask ? await canvasToBlob(exportMaskCanvas) : null;
         const exportPaintCanvas = this.buildExportCanvas(
             this.paintCanvas,
             this.paintOpacity
         );
-        const paintBlob = this.hasPaintData()
+        const hasPaint = this.hasCanvasAlpha(exportPaintCanvas);
+        const paintBlob = hasPaint
             ? await canvasToBlob(exportPaintCanvas)
             : null;
         return {
             maskBlob,
+            hasMask,
             paintBlob,
+            hasPaint,
             transformState: this.getTransformState(),
         };
     }
@@ -1347,14 +1353,27 @@ export class XMaskEditorController {
         } catch (e) { /* ignore */ }
     }
 
-    hasPaintData() {
-        const imageData = this.paintCtx.getImageData(
-            0,
-            0,
-            this.paintCanvas.width,
-            this.paintCanvas.height
-        );
-        const pixels = imageData.data;
+    /**
+     * 画布上是否有可见像素（全透明 = 这一层是空的）。
+     * 遮罩层和颜色层都用它判断，清空后就不会再导出空文件。
+     */
+    hasCanvasAlpha(canvas) {
+        if (!canvas) {
+            return false;
+        }
+        const width = Number(canvas.width) || 0;
+        const height = Number(canvas.height) || 0;
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
+        const context = canvas.getContext("2d", {
+            alpha: true,
+            willReadFrequently: true,
+        });
+        if (!context) {
+            return false;
+        }
+        const pixels = context.getImageData(0, 0, width, height).data;
         for (let index = 3; index < pixels.length; index += 4) {
             if (pixels[index] > 0) {
                 return true;

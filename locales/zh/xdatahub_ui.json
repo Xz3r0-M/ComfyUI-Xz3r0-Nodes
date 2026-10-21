@@ -45,6 +45,7 @@
   "xdatahub.ui.node.xmedialistget.type_warning_tooltip": "当列表里的文件类型和它连到的端口对不上时，把那条连线标出来",
   "xdatahub.ui.node.xmedialistget.edit_mask": "编辑遮罩",
   "xdatahub.ui.node.xmedialistget.mask_set": "已设置遮罩",
+  "xdatahub.ui.node.xmedialistget.paint_set": "已涂颜色",
   "xdatahub.ui.node.xmedialistget.enable_all": "全部启用",
   "xdatahub.ui.node.xmedialistget.disable_all": "全部禁用",
   "xdatahub.ui.node.xmedialistget.invert_enabled": "开关反转",

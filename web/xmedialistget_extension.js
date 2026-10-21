@@ -25,7 +25,7 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260916-4";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-1";
 
 const EXT_NAME = "xz3r0.xmedialistget";
 const EXT_GUARD_KEY = "__xmedialistget_extension_registered__";
@@ -1882,8 +1882,11 @@ async function openMaskEditorForEntry(node, entry) {
             transformState: entry.transform_state || "",
             title: entry.title || "",
             texts: getMaskEditorTexts(),
-            onSave: ({ maskRef, paintRef, transformState }) => {
-                entry.mask_ref = String(maskRef || "");
+            onSave: ({ maskRef, paintRef, hasMask, transformState }) => {
+                // 编辑器里清空遮罩后不该再算「已设置遮罩」。
+                entry.mask_ref = hasMask === false
+                    ? ""
+                    : String(maskRef || "");
                 entry.paint_ref = String(paintRef || "");
                 entry.transform_state = String(transformState || "");
                 const panel = node?.__xmlg_panel;
@@ -2315,20 +2318,10 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         maskButton.type = "button";
         const maskEmoji = element("span", "xmlg-mask-emoji", "🖌️");
         maskButton.appendChild(maskEmoji);
-        if (entry.mask_ref) {
+        if (entryHasMaskArtifacts(entry)) {
             maskButton.classList.add("is-set");
         }
-        bindHint(maskButton, () => (
-            entry.mask_ref
-                ? t(
-                    "xdatahub.ui.node.xmedialistget.mask_set",
-                    "Mask set"
-                )
-                : t(
-                    "xdatahub.ui.node.xmedialistget.edit_mask",
-                    "Edit mask"
-                )
-        ));
+        bindHint(maskButton, () => entryMaskHintText(entry));
         maskButton.addEventListener("click", (event) => {
             event.stopPropagation();
             openMaskEditorForEntry(node, entry);
@@ -2438,6 +2431,30 @@ const PREVIEW_ZOOM_MAX = 8;
 const PREVIEW_TOAST_MS = 2600;
 
 let activePreview = null;
+
+/**
+ * 图片有没有被编辑过：画了遮罩或涂了颜色都算，
+ * 这样只涂颜色也能在按钮上看出来。
+ */
+function entryHasMaskArtifacts(entry) {
+    if (!entry) {
+        return false;
+    }
+    return !!(
+        String(entry.mask_ref || "").trim()
+        || String(entry.paint_ref || "").trim()
+    );
+}
+
+function entryMaskHintText(entry) {
+    if (entry && String(entry.mask_ref || "").trim()) {
+        return previewText("mask_set", "Mask set");
+    }
+    if (entry && String(entry.paint_ref || "").trim()) {
+        return previewText("paint_set", "Paint layer set");
+    }
+    return previewText("edit_mask", "Edit mask");
+}
 
 function previewText(key, fallback) {
     return t(`xdatahub.ui.node.xmedialistget.${key}`, fallback);
@@ -3072,13 +3089,8 @@ function syncPreviewChrome(preview) {
 
     els.maskButton.hidden = !isImage;
     els.maskButton.disabled = !entry;
-    els.maskButton.classList.toggle(
-        "is-set",
-        !!(entry && entry.mask_ref)
-    );
-    const maskLabel = entry && entry.mask_ref
-        ? previewText("mask_set", "Mask set")
-        : previewText("edit_mask", "Edit mask");
+    els.maskButton.classList.toggle("is-set", entryHasMaskArtifacts(entry));
+    const maskLabel = entryMaskHintText(entry);
     els.maskButton.dataset.tooltip = maskLabel;
     els.maskButton.setAttribute("aria-label", maskLabel);
 

@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20260916-4";
-import { openMaskEditorSession } from "./session.js?v=20260916-4";
-import { saveMaskArtifacts } from "./upload.js?v=20260916-4";
+import { XMaskEditorController } from "./controller.js?v=20261023-1";
+import { openMaskEditorSession } from "./session.js?v=20261023-1";
+import { saveMaskArtifacts } from "./upload.js?v=20261023-1";
 
 const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
 const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -548,6 +548,8 @@ export async function openXMaskEditor(options = {}) {
             await Promise.resolve(
                 options?.onSave?.({
                     ...uploaded,
+                    hasMask: exported.hasMask !== false,
+                    hasPaint: exported.hasPaint === true,
                     transformState: exported.transformState,
                 })
             );

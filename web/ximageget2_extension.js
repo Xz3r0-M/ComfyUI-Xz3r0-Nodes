@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20260916-4";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-1";
 import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
@@ -1457,9 +1457,15 @@ async function openMaskEditorForNode(node) {
             onSave: ({
                 maskRef,
                 paintRef,
+                hasMask,
                 transformState,
             }) => {
-                setMaskImageRef(node, maskRef || "");
+                // 遮罩被清空（hasMask=false）时清掉引用，
+                // 预览上不会再留一层全透明的遮罩。
+                const savedMaskRef = hasMask === false
+                    ? ""
+                    : String(maskRef || "");
+                setMaskImageRef(node, savedMaskRef);
                 setSavedMaskRef(node, "");
                 setPaintImageRef(node, paintRef || "");
                 setSaveSeparateState(node, false);
@@ -1469,7 +1475,7 @@ async function openMaskEditorForNode(node) {
                     setPreview(panelInfo, {
                         file_url: buildMediaFileUrl(getStoredNodeValue(node)),
                         paint_url: buildAnnotatedImageUrl(paintRef),
-                        mask_url: buildAnnotatedImageUrl(maskRef),
+                        mask_url: buildAnnotatedImageUrl(savedMaskRef),
                         transform_state: transformState || "",
                         title: getStoredNodeTitle(node)
                             || String(panelInfo.title?.value || ""),

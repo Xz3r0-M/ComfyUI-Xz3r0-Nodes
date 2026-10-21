@@ -45,6 +45,7 @@
   "xdatahub.ui.node.xmedialistget.type_warning_tooltip": "Mark a connection when a file here is not the right kind for that port",
   "xdatahub.ui.node.xmedialistget.edit_mask": "Edit mask",
   "xdatahub.ui.node.xmedialistget.mask_set": "Mask set",
+  "xdatahub.ui.node.xmedialistget.paint_set": "Paint layer set",
   "xdatahub.ui.node.xmedialistget.enable_all": "All enabled",
   "xdatahub.ui.node.xmedialistget.disable_all": "All disabled",
   "xdatahub.ui.node.xmedialistget.invert_enabled": "Invert switches",

@@ -39,10 +39,16 @@ export async function saveMaskArtifacts({
     title = "",
 }) {
     const base = sanitizeFileBase(title, "ximageget-mask");
-    const maskArtifact = await uploadImageBlob(
-        maskBlob,
-        nextClipspaceName(`${base}-mask`)
-    );
+    // 遮罩被清空（或原本就没画）时不上传空图，
+    // 免得留下一个「全透明遮罩」文件把界面显示成「已设置遮罩」。
+    let maskRef = "";
+    if (maskBlob) {
+        const maskArtifact = await uploadImageBlob(
+            maskBlob,
+            nextClipspaceName(`${base}-mask`)
+        );
+        maskRef = maskArtifact.ref;
+    }
 
     let paintRef = "";
     if (paintBlob) {
@@ -54,7 +60,7 @@ export async function saveMaskArtifacts({
     }
 
     return {
-        maskRef: maskArtifact.ref,
+        maskRef,
         paintRef,
     };
 }
