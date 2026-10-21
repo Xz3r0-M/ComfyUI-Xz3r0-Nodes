@@ -1,5 +1,27 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.9.1
+
+<details>
+
+### 1. 🛠️ 增强 `XControlPanel` 控制面板节点
+`♾️ Xz3r0/Workflow-Processing`
+- 调整 更换 ComfyUI 版本 功能的执行方式
+  - 原先是在 ComfyUI 运行时直接装依赖，但依赖包 `comfy-aimdo` 的 `aimdo.dll` 一直被正在运行的 Python 进程占用，文件覆盖不了，安装就会失败
+  - 现在改为：从 GitHub 拉取代码 → 当前 ComfyUI 的 Python 进程退出（只退它自己，不会动其它进程）→ 新的命令行窗口安装依赖 → 依赖装好后自动启动 ComfyUI
+
+---
+
+### 1. 🛠️ Enhanced `XControlPanel` Control Panel Node
+`♾️ Xz3r0/Workflow-Processing`
+- Changed how the Switch ComfyUI Version feature works
+  - It used to install dependencies while ComfyUI was running, but `comfy-aimdo`'s `aimdo.dll` was held open by the running Python process, so the file could not be replaced and the install failed
+  - The new flow is: pull the code from GitHub → the current ComfyUI Python process exits (only itself, never other processes) → a new command-line window installs the dependencies → ComfyUI starts automatically once the install finishes
+
+</details>
+
+---
+
 ## 🎉 v2.9.0
 
 <details>
