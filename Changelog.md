@@ -60,6 +60,10 @@
 `♾️ Xz3r0/XDataHub`
 - 支持从 `XDataHub` 拖入多个 LoRA 到列表
 
+### 4. 🛠️ 增强 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet & XMediaListGet`
+- 优化性能，超大分辨率图片更加流畅
+
 ---
 
 ### 1. ⭐ Added `XMediaListGet` Media Batch List Node
@@ -117,6 +121,10 @@
 ### 3. 🛠️ Enhanced `XLoraGet` LoRA Loader Node
 `♾️ Xz3r0/XDataHub`
 - Several LoRAs can be dragged from `XDataHub` into the list
+
+### 4. 🛠️ Enhanced `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet & XMediaListGet`
+- Optimized performance, ultra-large resolution images are smoother
 
 </details>
 
