@@ -3,7 +3,7 @@
 # ♾️ ComfyUI-Xz3r0-Nodes ♾️
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0)
-<img src="https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
+<img src="https://img.shields.io/badge/Python-3.10-3776AB.svg?logo=python&amp;logoColor=white" alt="Python">
 ![Tested on Windows 11](https://img.shields.io/badge/Tested_on-Windows%2011-green?logo=windows&logoColor=white)
 [![downloads](https://img.shields.io/endpoint?url=https://xz3r0-m.github.io/ComfyUI-Xz3r0-Nodes/badge.json)](https://registry.comfy.org/publishers/xz3r0/nodes/xz3r0-nodes)
 

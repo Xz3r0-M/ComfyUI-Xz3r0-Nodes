@@ -5,6 +5,7 @@ XControlPanel API 模块。
 """
 
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -102,6 +103,124 @@ def _build_restart_args() -> list[str]:
     return [sys.executable, *sys_argv]
 
 
+# Windows 上没有真正的「就地换程序」：os.execv 其实是「先起新进程、再
+# 结束自己」，于是新旧两个 python 会重叠几秒。旧进程还挂着 aimdo.dll、
+# 日志文件时，新进程的启动前钩子就会撞上「拒绝访问」，日志轮转也会
+# 报 WinError 32。所以改成让一个中间进程「等旧进程彻底退出再启动」。
+# Windows 上没有真正的「就地换程序」：os.execv 其实是「先起新进程、再
+# 让自己退出」，于是新旧两个 python 会重叠几秒。旧进程还挂着 aimdo.dll
+# 之类的文件时，新进程的启动前钩子一装依赖就「拒绝访问」（实测过）。
+#
+# 所以改成三段式，彻底不和旧进程重叠：
+#   1. 起一个**新窗口**里的接力进程，把自己的 PID 交给它
+#   2. 本进程立刻退出 —— 它加载的 dll 随之释放
+#   3. 接力进程等本进程真的消失后，在新窗口里启动 ComfyUI
+# 新 ComfyUI 的启动前钩子负责装依赖，输出就显示在这个新窗口里。
+_RELAUNCH_SOURCE = """
+import os, sys, time
+
+pid = int(sys.argv[1])
+hook_dir = sys.argv[2]
+comfy_root = sys.argv[3]
+flag = sys.argv[4]  # 只是让命令行带上标记，供启动前钩子识别
+args = sys.argv[5:]
+
+print(
+    "[XControlPanel] waiting for the old ComfyUI process "
+    "(%d) to exit..." % pid,
+    flush=True,
+)
+handle = None
+kernel = None
+try:
+    import ctypes
+
+    kernel = ctypes.windll.kernel32
+    handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+except Exception:
+    handle = None
+if handle:
+    if kernel.WaitForSingleObject(handle, 60000) != 0:
+        print(
+            "[XControlPanel] the old process is taking long to exit; "
+            "starting anyway.",
+            flush=True,
+        )
+    kernel.CloseHandle(handle)
+else:
+    time.sleep(1.5)
+time.sleep(0.5)
+
+# 第一阶段：在这个「干净进程」里装依赖。
+# 它没有 import 任何 ComfyUI 模块，也就没有把 aimdo.dll 之类的扩展加载
+# 进自己的地址空间 —— 所以覆盖文件不会被自己挡住。装依赖的输出也正好
+# 显示在这个新窗口里。
+try:
+    sys.path.insert(0, hook_dir)
+    import prestartup_script as hook
+
+    hook.main(comfy_root)
+except Exception as exc:
+    print(
+        "[XControlPanel] dependency step failed: %s: %s"
+        % (type(exc).__name__, exc),
+        flush=True,
+    )
+
+# 第二阶段：启动 ComfyUI（同一个窗口，接着显示它的日志）
+print("[XControlPanel] starting ComfyUI in this window.", flush=True)
+try:
+    os.execv(args[0], args)
+except OSError:
+    import subprocess
+
+    subprocess.call(args)
+"""
+
+
+# 接力进程命令行里带这个标记，启动前钩子据此把它排除在外
+# （否则它会因为源码里含 `main.py` 被当成“另一个 ComfyUI”）
+_RELAUNCH_FLAG = "--xcontrolpanel-relauncher"
+
+
+def _spawn_relauncher(
+    restart_args: list[str], hook_dir: str, comfy_root: str
+) -> bool:
+    """
+    在新窗口里起接力进程：等本进程退出 → 装依赖 → 启动 ComfyUI。
+
+    返回 False 表示起不来，调用方退回 os.execv。
+    """
+    flags = 0
+    if sys.platform.startswith("win32"):
+        # 新开一个控制台窗口：用户能看见依赖安装和之后的 ComfyUI 日志，
+        # 而且不受旧窗口（bat 里的 pause）影响
+        flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+    try:
+        subprocess.Popen(  # noqa: S603 - 参数固定，无 shell
+            [
+                sys.executable,
+                "-c",
+                _RELAUNCH_SOURCE,
+                str(os.getpid()),
+                hook_dir,
+                comfy_root,
+                _RELAUNCH_FLAG,
+                *restart_args,
+            ],
+            cwd=os.getcwd(),
+            creationflags=flags,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 - 起不来就退回老路
+        LOGGER.error(
+            "[XControlPanel] relauncher spawn failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        return False
+
+
 def _restart_process() -> None:
     """执行实际重启动作。"""
     cli_session = os.environ.get("__COMFY_CLI_SESSION__")
@@ -112,6 +231,15 @@ def _restart_process() -> None:
 
     restart_args = _build_restart_args()
     LOGGER.info("[XControlPanel] Restarting ComfyUI")
+    hook_dir = str(Path(__file__).resolve().parent.parent)
+    comfy_root = str(xcontrolpanel_updater.comfyui_root())
+    if sys.platform.startswith("win32") and _spawn_relauncher(
+        restart_args, hook_dir, comfy_root
+    ):
+        # 接力进程会等本进程彻底消失，然后在一个**干净进程**里装依赖，
+        # 最后才启动 ComfyUI：本进程加载的 aimdo.dll 不会挡住覆盖
+        LOGGER.info("[XControlPanel] ComfyUI will restart in a new window")
+        os._exit(0)
     os.execv(sys.executable, restart_args)
 
 
