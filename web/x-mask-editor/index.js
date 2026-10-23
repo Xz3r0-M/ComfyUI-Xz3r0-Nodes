@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20261023-13";
-import { openMaskEditorSession } from "./session.js?v=20261023-13";
-import { saveMaskArtifacts } from "./upload.js?v=20261023-13";
+import { XMaskEditorController } from "./controller.js?v=20261023-14";
+import { openMaskEditorSession } from "./session.js?v=20261023-14";
+import { saveMaskArtifacts } from "./upload.js?v=20261023-14";
 
 const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
 const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -588,7 +588,8 @@ export async function openXMaskEditor(options = {}) {
     });
 
     try {
-        session.setStatus(String(texts.loading || "Loading..."));
+        // 大图要等几秒，先亮出「加载中」，别让人对着一片空白猜
+        session.setLoading(String(texts.loading || "Loading..."));
         await controller.load();
         controller.mount();
         controller.setTool("mask");
@@ -597,10 +598,10 @@ export async function openXMaskEditor(options = {}) {
         controller.setPaintOpacity(ui.paintOpacityRange.value);
         controller.setMaskOpacity(ui.maskOpacityRange.value);
         controller.setThreshold(Number(ui.fillThresholdRange.value));
-        session.setStatus("");
+        session.setLoading("");
         focusHotkeySink();
     } catch (error) {
-        session.setStatus(
+        session.setLoading(
             String(texts.loadFailed || "Failed to load image"),
             true
         );
@@ -609,7 +610,7 @@ export async function openXMaskEditor(options = {}) {
 
     session.bind(ui.saveBtn, "click", async () => {
         session.setBusy(true);
-        session.setStatus(String(texts.saving || "Saving..."));
+        session.setLoading(String(texts.saving || "Saving..."));
         try {
             const exported = await controller.exportArtifacts();
             const uploaded = await saveMaskArtifacts({
@@ -628,7 +629,7 @@ export async function openXMaskEditor(options = {}) {
             close();
         } catch (error) {
             session.setBusy(false);
-            session.setStatus(
+            session.setLoading(
                 String(texts.saveFailed || "Failed to save mask"),
                 true
             );

@@ -1381,6 +1381,41 @@ function writeStoredRows(node, rows) {
     node.setDirtyCanvas?.(true, true);
 }
 
+/**
+ * 某个 LoRA 换了封面：把节点里对应那一行的缩略图换掉。
+ *
+ * XDataHub 里换完封面会发消息过来，否则节点面板要重新拖一次才更新。
+ */
+function applyLoraCoverChange(payload) {
+    const ref = String(payload?.ref || "").trim();
+    if (!ref) {
+        return;
+    }
+    const thumbUrl = String(payload?.thumb_url || "");
+    for (const node of collectXLoraNodes()) {
+        const panel = node?.__xlora_panel;
+        const rows = Array.isArray(panel?.state?.rows) ? panel.state.rows : [];
+        if (!rows.length) {
+            continue;
+        }
+        let changed = false;
+        const nextRows = rows.map((row) => {
+            if (String(row?.lora_ref || "") !== ref) {
+                return row;
+            }
+            changed = true;
+            return { ...row, thumb_url: thumbUrl };
+        });
+        if (!changed) {
+            continue;
+        }
+        panel.state.rows = nextRows;
+        // 存回 widget：不然刷新页面后地址又变回旧的（旧地址会被浏览器缓存）
+        writeStoredRows(node, nextRows);
+        renderNodeRows(node);
+    }
+}
+
 function syncRowTriggerWords(node, row, options = {}) {
     if (!node || !row || !row.lora_ref) {
         return;
@@ -2828,6 +2863,10 @@ function initXLoraGetExtension() {
                     return;
                 }
                 if (payload.type === "xdatahub:lora_info_saved") {
+                    return;
+                }
+                if (payload.type === "xdatahub:lora_cover_changed") {
+                    applyLoraCoverChange(payload);
                     return;
                 }
                 if (payload.type === "xdatahub:ui-locale") {

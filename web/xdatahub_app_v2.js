@@ -13,16 +13,16 @@ import { setLocale, t } from "./core/i18n.js?v=20261023-2";
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-93";
-import "./components/xdh-media-grid.js?v=20261023-2";
+import "./components/xdh-media-grid.js?v=20261023-6";
 import "./components/xdh-staging-dock.js?v=20261023-2";
 import "./components/xdh-node-picker.js?v=20261023-2";
 import "./core/node-bridge.js?v=20261023-2";
 import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20261022-2";
+import "./components/xdh-lightbox.js?v=20261023-5";
 import "./components/xdh-history-view.js?v=20261021-2";
 import "./components/xdh-banner.js?v=20260406-15";
-import "./components/xdh-lora-detail.js?v=20261013-1";
+import "./components/xdh-lora-detail.js?v=20261023-6";
 import "./components/xdh-settings-dialog.js?v=20261021-1";
 
 // Placeholder thumbnail for mock/offline mode
@@ -978,7 +978,8 @@ function mapItem(item, category) {
             coverKind,
             // 视频封面：能用静帧就用静帧，否则交给浏览器直接抽首帧
             thumbUrl: isVideoCover && !useStillCover ? coverUrl : thumbUrl,
-            fullUrl: isVideoCover ? coverUrl : "",
+            // 全屏预览一律用原图；卡片/抽屉走上面那个缩略图地址
+            fullUrl: coverKind ? coverUrl : "",
             isVideoNativeThumb: isVideoCover && !useStillCover,
             mtime,
             size,
