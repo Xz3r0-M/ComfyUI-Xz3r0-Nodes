@@ -86,6 +86,22 @@ def mark_pending_install(tag: str, previous: str = "") -> None:
     )
 
 
+def has_pending_install() -> bool:
+    """
+    有没有「换了版本、依赖还没装」的标记。
+
+    普通重启（没换版本）不需要新窗口：同窗口里就地换程序就行。只有
+    待安装依赖时才要新窗口 —— 那时要让旧进程彻底退出、再由一个没加载
+    任何 ComfyUI 组件的干净进程去装依赖。
+    """
+    path = _pending_install_file()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return bool(data.get("pending"))
+
+
 def current_commit(root: Path) -> str:
     """当前 HEAD 的提交号（回滚用）；取不到就返回空串。"""
     try:

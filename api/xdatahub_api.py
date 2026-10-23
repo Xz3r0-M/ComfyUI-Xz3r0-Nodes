@@ -790,8 +790,23 @@ def resolve_lora_dir(rel_dir: str | None) -> tuple[Path | None, Path | None]:
     return root, target
 
 
-def lora_thumb_url(lora_ref: str) -> str:
-    return "/xz3r0/xdatahub/loras/thumb?ref=" + quote(lora_ref, safe="")
+def lora_thumb_url(
+    lora_ref: str,
+    ver: str = "",
+    variant: str = "",
+) -> str:
+    """
+    列表卡片用的缩略图地址。
+
+    必须带上封面版本（`ver`）：不带的话换完封面地址还是老地址，浏览器
+    不会重新拉图，列表里就一直显示旧封面。
+    """
+    url = "/xz3r0/xdatahub/loras/thumb?ref=" + quote(lora_ref, safe="")
+    if variant:
+        url += "&variant=" + quote(str(variant), safe="")
+    if ver:
+        url += "&ver=" + quote(str(ver), safe="")
+    return url
 
 
 def lora_cover_url(
@@ -871,15 +886,35 @@ def lora_cover_version(path: Path) -> str:
     return f"{stat.st_mtime_ns}-{stat.st_size}"
 
 
+def lora_cover_thumb_key(lora_ref: str, cover_path: Path) -> str:
+    """封面缩略图的缓存键。带版本号：换封面自动换键，绝不会拿到旧图。"""
+    version = lora_cover_version(cover_path)
+    return f"loracover:{lora_ref}:{cover_path.name}:{version}"
+
+
+def drop_lora_cover_thumbs(keys: list[str]) -> None:
+    """
+    清掉旧封面的缩略图（所有尺寸）。
+
+    缓存键里带着封面版本，换一次封面就会生成新的两个文件（300 和 720），
+    旧的不清掉就会一直躺在 thumb_cache 里。调用方要**在覆盖/删除文件
+    之前**把键算好，因为版本号是看文件本身算出来的。
+    """
+    for key in keys:
+        STORE.delete_thumb(key)
+
+
 def lora_cover_still(
     lora_ref: str,
     cover_path: Path,
     size: int,
 ) -> Path | None:
-    """给视频封面生成（或复用）首帧缩略图；失败返回 None。"""
-    version = lora_cover_version(cover_path)
-    key = f"loracover:{lora_ref}:{cover_path.name}:{version}"
-    return STORE.generate_thumb(key, cover_path, size)
+    """给封面生成（或复用）缩略图：视频取首帧，图片直接缩放。"""
+    return STORE.generate_thumb(
+        lora_cover_thumb_key(lora_ref, cover_path),
+        cover_path,
+        size,
+    )
 
 
 def _split_trigger_words_text(value: Any) -> list[str]:
@@ -3213,7 +3248,9 @@ def _lora_item_payload_from_db(
                 cover_path, cover_kind = cover
                 version = lora_cover_version(cover_path)
                 extra["has_thumbnail"] = True
-                extra["thumb_url"] = lora_thumb_url(public_ref)
+                extra["thumb_url"] = lora_thumb_url(
+                    public_ref, version, "thumb"
+                )
                 extra["cover_kind"] = cover_kind
                 extra["cover_url"] = lora_cover_url(
                     public_ref,
@@ -5345,7 +5382,11 @@ def _resolve_media_favorite_item(
                 live_row["strength_clip"] or 1.0
             )
             extra["lora_note"] = str(live_row["lora_note"] or "")
-            extra["thumb_url"] = lora_thumb_url(public_ref)
+            extra["thumb_url"] = lora_thumb_url(
+                public_ref,
+                _lora_cover_version_of(live_row),
+                "thumb",
+            )
             extra["has_thumbnail"] = True
         saved_at = ""
         if live_mtime:
@@ -5919,6 +5960,24 @@ async def api_loras(request: web.Request) -> web.Response:
     return web.json_response({"status": "success", **list_payload(data)})
 
 
+def _lora_cover_version_of(row: Any) -> str:
+    """从媒体索引行里找到封面文件，取它的版本号；取不到返回空串。"""
+    try:
+        raw_path = str(row["real_path"] or "")
+    except Exception:
+        return ""
+    # 空路径会变成 Path(".")（当前目录），必须提前挡掉
+    if not raw_path:
+        return ""
+    try:
+        cover = find_lora_cover(Path(raw_path))
+    except Exception:
+        return ""
+    if cover is None:
+        return ""
+    return lora_cover_version(cover[0])
+
+
 def _lora_cover_payload(
     lora_ref: str,
     rel_path: str,
@@ -5933,9 +5992,8 @@ def _lora_cover_payload(
     cover_path, kind = cover
     version = lora_cover_version(cover_path)
     url = lora_cover_url(lora_ref, ver=version)
-    thumb_url = url
-    if kind == "video":
-        thumb_url = lora_cover_url(lora_ref, "preview", version)
+    # 抽屉里那块预览只有几百像素高，用 720 的就行
+    thumb_url = lora_cover_url(lora_ref, "preview", version)
     return {
         "kind": kind,
         "name": cover_path.name,
@@ -6357,6 +6415,23 @@ async def _lora_cover_stream_response(
             thumb,
             f"{lora_ref}:{cover_path.name}:{still_size}",
         )
+    if cover_kind == "image" and size:
+        # 图片封面也能按尺寸取：卡片和抽屉只显示几百像素，没必要把
+        # 原图（可能几千像素）整个传给浏览器
+        loop = asyncio.get_event_loop()
+        thumb = await loop.run_in_executor(
+            None,
+            lora_cover_still,
+            lora_ref,
+            cover_path,
+            size,
+        )
+        if thumb is None:
+            return json_error(request, "file_not_found", 404)
+        return _thumb_file_response(
+            thumb,
+            f"{lora_ref}:{cover_path.name}:{size}",
+        )
     try:
         return await _stream_media_file_response(
             request=request,
@@ -6434,6 +6509,13 @@ async def api_lora_cover_upload(request: web.Request) -> web.Response:
                 "target": target.name,
             },
         )
+    # 覆盖前先记下旧封面（含其它扩展名的同名封面）的缩略图缓存键：
+    # 一旦写完，文件版本号就变了，旧键再也算不出来
+    stale_thumb_keys = [
+        lora_cover_thumb_key(lora_ref, item)
+        for item in [target, *existing]
+        if item.exists()
+    ]
     tmp_path = target.parent / f"{target.name}{LORA_COVER_TMP_SUFFIX}"
     written = 0
     too_large = False
@@ -6473,6 +6555,7 @@ async def api_lora_cover_upload(request: web.Request) -> web.Response:
                 "[xdatahub] lora cover replace failed: %s",
                 item.name,
             )
+    drop_lora_cover_thumbs(stale_thumb_keys)
     return web.json_response(
         {
             "status": "success",
@@ -6502,6 +6585,8 @@ async def api_lora_cover_delete(request: web.Request) -> web.Response:
     _root, lora_path = resolved
     deleted: list[str] = []
     for item in find_lora_sibling_covers(lora_path):
+        # 键要先算：文件删了就算不出封面版本了
+        thumb_key = lora_cover_thumb_key(lora_ref, item)
         try:
             item.unlink()
             deleted.append(item.name)
@@ -6510,6 +6595,8 @@ async def api_lora_cover_delete(request: web.Request) -> web.Response:
                 "[xdatahub] lora cover delete failed: %s",
                 item.name,
             )
+            continue
+        STORE.delete_thumb(thumb_key)
     return web.json_response({"status": "success", "deleted": deleted})
 
 

@@ -1,7 +1,7 @@
 import {
     createMaskEditorUi,
     ensureMaskEditorStyles,
-} from "./ui.js?v=20261023-11";
+} from "./ui.js?v=20261023-14";
 
 let activeSession = null;
 
@@ -96,12 +96,22 @@ export function openMaskEditorSession(texts = {}) {
         ui.eraseMaskLock.disabled = disabled;
     };
 
-    const setStatus = (text, isError = false) => {
-        if (!(ui.status instanceof HTMLElement)) {
+    // 加载/保存遮罩层：图片越大越要等，空等一片背景会让人以为坏了
+    const setLoading = (text, isError = false) => {
+        const label = String(text || "");
+        if (!(ui.loading instanceof HTMLElement)) {
             return;
         }
-        ui.status.textContent = String(text || "");
-        ui.status.classList.toggle("is-error", !!isError);
+        if (!label) {
+            ui.loading.hidden = true;
+            ui.loading.classList.remove("is-error");
+            return;
+        }
+        if (ui.loadingText.textContent !== label) {
+            ui.loadingText.textContent = label;
+        }
+        ui.loading.classList.toggle("is-error", !!isError);
+        ui.loading.hidden = false;
     };
 
     const session = {
@@ -109,7 +119,7 @@ export function openMaskEditorSession(texts = {}) {
         bind,
         close,
         setBusy,
-        setStatus,
+        setLoading,
     };
     activeSession = session;
     return session;

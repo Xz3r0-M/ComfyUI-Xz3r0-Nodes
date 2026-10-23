@@ -231,15 +231,23 @@ def _restart_process() -> None:
 
     restart_args = _build_restart_args()
     LOGGER.info("[XControlPanel] Restarting ComfyUI")
-    hook_dir = str(Path(__file__).resolve().parent.parent)
-    comfy_root = str(xcontrolpanel_updater.comfyui_root())
-    if sys.platform.startswith("win32") and _spawn_relauncher(
-        restart_args, hook_dir, comfy_root
-    ):
-        # 接力进程会等本进程彻底消失，然后在一个**干净进程**里装依赖，
-        # 最后才启动 ComfyUI：本进程加载的 aimdo.dll 不会挡住覆盖
-        LOGGER.info("[XControlPanel] ComfyUI will restart in a new window")
-        os._exit(0)
+    # 只有「换了版本、依赖还没装」才需要新窗口接力：那时要让本进程彻底
+    # 退出，再由一个没加载任何 ComfyUI 组件的干净进程去装依赖（否则
+    # aimdo.dll 被自己占用，覆盖必然失败）。
+    # 普通重启没这回事，就在同一个窗口里就地换程序 —— 用户原来的命令行
+    # 保持不动，日志也接着往同一处滚。
+    needs_install = xcontrolpanel_updater.has_pending_install()
+    if needs_install:
+        hook_dir = str(Path(__file__).resolve().parent.parent)
+        comfy_root = str(xcontrolpanel_updater.comfyui_root())
+        if sys.platform.startswith("win32") and _spawn_relauncher(
+            restart_args, hook_dir, comfy_root
+        ):
+            LOGGER.info(
+                "[XControlPanel] dependencies pending: "
+                "restarting in a new window"
+            )
+            os._exit(0)
     os.execv(sys.executable, restart_args)
 
 

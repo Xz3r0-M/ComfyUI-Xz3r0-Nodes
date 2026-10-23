@@ -355,8 +355,16 @@ export class XMaskEditorController {
     }
 
     setBrushSize(value) {
-        this.brushSize = clamp(value, BRUSH_MIN, this.getMaxBrushSize());
-        this.emitStateChange();
+        const next = clamp(value, BRUSH_MIN, this.getMaxBrushSize());
+        if (next === this.brushSize) {
+            return;
+        }
+        this.brushSize = next;
+        // 画笔圆环要跟着变大变小：只重画圆环所在的那一小块。
+        this.scheduleRender();
+        // 只通知「画笔大小变了」。整条工具栏一起刷新的话，滚轮每滚一格
+        // 都要写二十多个 DOM 属性，实测会把 60fps 压到 20fps。
+        this.emitStateChange("brush");
     }
 
     setHardness(value) {
@@ -1441,7 +1449,20 @@ export class XMaskEditorController {
         });
         exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
         exportCtx.globalAlpha = alpha;
-        exportCtx.drawImage(sourceCanvas, 0, 0);
+        // 必须把图层拉伸到原图尺寸。只传 3 个参数是 1:1 贴上去，笔画会
+        // 缩在画布左上角一块（离左上角越远偏得越多），保存后就看着
+        // 像「整张遮罩往左上拖了一截」。
+        exportCtx.drawImage(
+            sourceCanvas,
+            0,
+            0,
+            sourceCanvas.width,
+            sourceCanvas.height,
+            0,
+            0,
+            exportCanvas.width,
+            exportCanvas.height
+        );
         return exportCanvas;
     }
 
@@ -2032,7 +2053,7 @@ export class XMaskEditorController {
         this.emitStateChange();
     }
 
-    emitStateChange() {
+    emitStateChange(scope = "all") {
         this.onStateChange({
             zoom: this.zoom,
             tool: this.getEffectiveTool(),
@@ -2055,7 +2076,7 @@ export class XMaskEditorController {
             erasePaintEnabled: this.erasePaintEnabled,
             eraseMaskEnabled: this.eraseMaskEnabled,
             maskDisplayInverted: this.maskDisplayInverted,
-        });
+        }, scope);
     }
 
     handleContextMenu(event) {

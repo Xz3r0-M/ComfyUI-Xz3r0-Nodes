@@ -869,11 +869,29 @@ export class XdhMediaGrid extends BaseElement {
         ) {
             // Full re-render needed (order or dataset changed)
             if (key === "mediaList") {
+                const prevUrls = new Map(
+                    (this.items || []).map(item => [
+                        String(item?.id || ""),
+                        String(item?.thumbUrl || ""),
+                    ])
+                );
                 this.items = value;
                 const validIds = new Set((value || []).map(item => String(item.id)));
                 this.failedThumbIds = new Set(
                     [...this.failedThumbIds].filter(id => validIds.has(id))
                 );
+                // 缩略图地址变了（例如换了 LoRA 封面）：把「加载失败」
+                // 的标记清掉，否则卡片会一直停在占位图上不出图
+                (value || []).forEach((item) => {
+                    const id = String(item?.id || "");
+                    const prevUrl = prevUrls.get(id);
+                    if (
+                        prevUrl !== undefined
+                        && prevUrl !== String(item?.thumbUrl || "")
+                    ) {
+                        this.failedThumbIds.delete(id);
+                    }
+                });
             }
             this.renderRoot();
         } else if (key === "selectedItems") {
@@ -938,6 +956,8 @@ export class XdhMediaGrid extends BaseElement {
             id: String(item.id || ""),
             name: item.name,
             url: item.fullUrl || item.thumbUrl,
+            // 小图先行：大图渲染要一两百毫秒，先让预览立刻出来
+            thumbnailUrl: String(item.thumbUrl || ""),
             type: isVideoCover ? "video" : (item.type || "image"),
             iconHtml: icon("audio-lines", 56),
             raw: item.raw || {},

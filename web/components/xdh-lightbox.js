@@ -1791,11 +1791,116 @@ export class XdhLightbox extends BaseElement {
         }
 
         const image = document.createElement("img");
-        image.src = detail.url;
         image.alt = detail.name || "";
         image.className = "fs-img";
         image.setAttribute("aria-label", detail.name || t("lightbox.image"));
+        const thumbUrl = String(detail.thumbnailUrl || "");
+        if (thumbUrl && thumbUrl !== detail.url) {
+            // 原图几千像素，光是画出来就要一两百毫秒。先把列表里那张
+            // 小图铺上，画面立刻就有；原图解码好再原地换掉。
+            image.src = thumbUrl;
+            image.__xdhFullUrl = String(detail.url || "");
+        } else {
+            image.src = detail.url;
+        }
         return image;
+    }
+
+    _setMediaLoading(loading) {
+        const node = this.$(".fs-loading");
+        if (!node) {
+            return;
+        }
+        // 文字只在第一次写，之后复用
+        const label = this.$(".fs-loading-text");
+        if (label && !label.textContent) {
+            label.textContent = t("common.loading");
+        }
+        node.hidden = !loading;
+    }
+
+    /**
+     * 图片/视频没解码完之前，画面上只有背景。
+     * 几千像素的大图在机械盘上能等好几秒，期间给个转圈提示。
+     */
+    _watchMediaLoading(mediaNode, mediaType) {
+        const type = String(mediaType || "").toLowerCase();
+        // 注意：LoRA 封面也是普通图片/视频，不能按类型跳过，
+        // 否则两段式（小图先行）对 LoRA 就失效了
+        if (type === "text") {
+            this._setMediaLoading(false);
+            return;
+        }
+        this._setMediaLoading(true);
+        const done = () => {
+            if (mediaNode !== this._activeMedia) {
+                return;
+            }
+            this._setMediaLoading(false);
+        };
+        if (mediaNode instanceof HTMLImageElement) {
+            const fullUrl = String(mediaNode.__xdhFullUrl || "");
+            if (fullUrl) {
+                // 小图已经铺上了，提示留到原图就位再收
+                const probe = new Image();
+                probe.decoding = "async";
+                const settle = () => {
+                    if (mediaNode !== this._activeMedia) {
+                        return;
+                    }
+                    if (probe.naturalWidth > 0) {
+                        mediaNode.src = fullUrl;
+                        this._dimension = `${probe.naturalWidth} × ${probe.naturalHeight}`;
+                        this._syncChrome();
+                        // 换上原图那一帧浏览器要重画整张大图，会顿一下。
+                        // 提示留到画完再收，看起来就是「还在加载」而不是卡死。
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                if (mediaNode === this._activeMedia) {
+                                    this._setMediaLoading(false);
+                                }
+                            });
+                        });
+                        return;
+                    }
+                    this._setMediaLoading(false);
+                };
+                probe.addEventListener("load", settle, { once: true });
+                probe.addEventListener("error", settle, { once: true });
+                probe.src = fullUrl;
+                return;
+            }
+            if (mediaNode.complete && mediaNode.naturalWidth > 0) {
+                done();
+                return;
+            }
+            mediaNode.addEventListener("load", done, { once: true });
+            mediaNode.addEventListener("error", done, { once: true });
+            return;
+        }
+        if (mediaNode instanceof HTMLVideoElement) {
+            if (mediaNode.readyState >= 2) {
+                done();
+                return;
+            }
+            // 视频是 preload="metadata"，浏览器只保证 loadedmetadata，
+            // loadeddata 未必会来 —— 两个都听着，先到的算数
+            mediaNode.addEventListener("loadedmetadata", done, { once: true });
+            mediaNode.addEventListener("loadeddata", done, { once: true });
+            mediaNode.addEventListener("error", done, { once: true });
+            return;
+        }
+        if (mediaNode instanceof HTMLAudioElement) {
+            if (mediaNode.readyState >= 1) {
+                done();
+                return;
+            }
+            mediaNode.addEventListener("loadedmetadata", done, { once: true });
+            mediaNode.addEventListener("error", done, { once: true });
+            return;
+        }
+        // 音频自建的一套节点、兼容画布等，隐藏即可
+        this._setMediaLoading(false);
     }
 
     _probeDimension(mediaNode, mediaType) {
@@ -1803,6 +1908,10 @@ export class XdhLightbox extends BaseElement {
             return;
         }
         if (mediaNode instanceof HTMLImageElement) {
+            if (mediaNode.__xdhFullUrl) {
+                // 现在挂的是小图，尺寸等原图到了再报（见 _watchMediaLoading）
+                return;
+            }
             if (mediaNode.complete && mediaNode.naturalWidth > 0) {
                 this._dimension = `${mediaNode.naturalWidth} × ${mediaNode.naturalHeight}`;
                 return;
@@ -1915,6 +2024,7 @@ export class XdhLightbox extends BaseElement {
         mediaHost.replaceChildren(mediaNode);
         stage.dataset.mediaType = mediaType;
         this._activeMedia = mediaNode;
+        this._watchMediaLoading(mediaNode, mediaType);
         this._audioState = mediaNode?.__xdhAudioState || null;
         this._resetImageZoom();
         this._syncAudioState(this._audioState);
@@ -1952,6 +2062,7 @@ export class XdhLightbox extends BaseElement {
         this._resetImageZoom();
         this._activeMedia = null;
         this._dimension = "";
+        this._setMediaLoading(false);
         const stage = this.$(".fs-stage");
         const mediaHost = this.$(".fs-media");
         if (stage) {
@@ -2108,6 +2219,65 @@ export class XdhLightbox extends BaseElement {
                 .fs-stage[data-media-type="image"] .fs-media,
                 .fs-stage[data-media-type="lora"] .fs-media {
                     border-radius: 14px;
+                }
+
+                /* 大图/大视频解码要好几秒，先给个转圈，别让人对着空屏 */
+                .fs-loading {
+                    position: absolute;
+                    inset: 0;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 14px;
+                    z-index: 3;
+                    pointer-events: none;
+                    color: var(--lb-text-secondary);
+                }
+
+                .fs-loading[hidden] {
+                    display: none;
+                }
+
+                /* 文字要有自己的底，否则背后正好是浅色图时看不清 */
+                .fs-loading-pill {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 10px 18px;
+                    border-radius: 999px;
+                    /* 掺一点文字色提亮：不然胶囊和背后的底色几乎一个色 */
+                    background: color-mix(
+                        in srgb,
+                        var(--lb-surface-elevated) 88%,
+                        var(--lb-text-primary) 12%
+                    );
+                    border: 1px solid var(--lb-border);
+                    box-shadow: var(--lb-shadow-ring),
+                        0 6px 20px rgba(0, 0, 0, 0.22);
+                }
+
+                .fs-loading-spinner {
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    border: 2.5px solid var(--lb-border);
+                    border-top-color: var(--lb-text-primary);
+                    animation: fs-spin 900ms linear infinite;
+                }
+
+                .fs-loading-text {
+                    font-size: 13px;
+                    font-weight: 500;
+                    letter-spacing: 0.02em;
+                    color: var(--lb-text-primary);
+                    white-space: nowrap;
+                }
+
+                @keyframes fs-spin {
+                    to {
+                        transform: rotate(360deg);
+                    }
                 }
 
                 /* ============================================
@@ -3162,6 +3332,14 @@ export class XdhLightbox extends BaseElement {
 
                 <!-- Main Media Area -->
                 <div class="fs-media"></div>
+
+                <!-- Loading hint for big images/videos -->
+                <div class="fs-loading" hidden>
+                    <div class="fs-loading-pill">
+                        <span class="fs-loading-spinner" aria-hidden="true"></span>
+                        <span class="fs-loading-text"></span>
+                    </div>
+                </div>
 
                 <!-- Bottom Panel: Dimension + Title + Counter + Navigation -->
                 <div class="fs-bottom-panel" data-has-nav="false">

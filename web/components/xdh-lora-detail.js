@@ -349,6 +349,8 @@ export class XdhLoraDetail extends BaseElement {
                 }
                 this._pendingCover = null;
                 banner.success(t("lora.cover.upload_ok"));
+                this._patchListedCover(res.data.cover || null);
+                this._notifyCoverChanged(res.data.cover || null);
                 appStore.state.refreshTrigger = Date.now();
                 return;
             }
@@ -401,6 +403,8 @@ export class XdhLoraDetail extends BaseElement {
             if (res && res.status === "success") {
                 if (this._currentData) this._currentData.cover = null;
                 banner.success(t("lora.cover.remove_ok"));
+                this._patchListedCover(null);
+                this._notifyCoverChanged(null);
                 appStore.state.refreshTrigger = Date.now();
             } else {
                 banner.error(t("lora.cover.remove_fail"));
@@ -416,6 +420,76 @@ export class XdhLoraDetail extends BaseElement {
         }
     }
 
+    /**
+     * 换完封面立刻改掉列表里那张卡片。
+     *
+     * 光靠 refreshTrigger 重新拉列表也能更新，但要多等一次往返；这里
+     * 直接用接口返回的新地址替换，用户一回头就看见新图。
+     */
+    _patchListedCover(cover) {
+        const list = appStore.state.mediaList;
+        if (!Array.isArray(list) || !this._currentRef) {
+            return;
+        }
+        const targetId = `lora:${this._currentRef}`;
+        let changed = false;
+        const next = list.map((item) => {
+            if (!item || String(item.id) !== targetId) {
+                return item;
+            }
+            changed = true;
+            if (!cover) {
+                return {
+                    ...item,
+                    thumbUrl: "",
+                    fullUrl: "",
+                    coverKind: "",
+                    previewable: false,
+                    isVideoNativeThumb: false,
+                };
+            }
+            // 接口返回的是抽屉用的 720 尺寸，卡片要 300 那张：
+            // 自己拼一次，免得卡片先下一张 720 又换成 300
+            const ver = String(cover.ver || "");
+            const cardUrl = ver
+                ? `/xz3r0/xdatahub/loras/thumb?ref=${
+                    encodeURIComponent(this._currentRef)
+                }&variant=thumb&ver=${encodeURIComponent(ver)}`
+                : String(cover.thumb_url || cover.url || "");
+            return {
+                ...item,
+                thumbUrl: cardUrl,
+                fullUrl: String(cover.url || ""),
+                coverKind: String(cover.kind || "image"),
+                previewable: true,
+                isVideoNativeThumb: false,
+            };
+        });
+        if (changed) {
+            appStore.state.mediaList = next;
+        }
+    }
+
+    /** 通知宿主页面/节点面板：这个 LoRA 的封面换了。 */
+    _notifyCoverChanged(cover) {
+        const detail = {
+            ref: String(this._currentRef || ""),
+            thumb_url: cover ? String(cover.thumb_url || "") : "",
+            cover_url: cover ? String(cover.url || "") : "",
+            kind: cover ? String(cover.kind || "") : "",
+        };
+        document.dispatchEvent(
+            new CustomEvent("xdh:lora-cover-changed", { detail })
+        );
+        if (!window.parent || window.parent === window) {
+            return;
+        }
+        window.parent.postMessage(
+            { type: "xdatahub:lora_cover_changed", ...detail },
+            window.location.origin
+        );
+    }
+
     _openCoverPreview() {
         const cover = this._currentData ? this._currentData.cover : null;
         if (!cover || !cover.url) return;
@@ -425,6 +499,7 @@ export class XdhLoraDetail extends BaseElement {
                 id: `loracover:${this._currentRef}`,
                 name: String(cover.name || ""),
                 url: String(cover.url),
+                thumbnailUrl: String(cover.thumb_url || ""),
                 type: isVideo ? "video" : "image",
                 iconHtml: icon("video", 56),
                 raw: {
@@ -437,7 +512,29 @@ export class XdhLoraDetail extends BaseElement {
         }));
     }
 
+    /**
+     * 封面加载完就收起转圈。
+     * 之前没提示，大图要等几秒，期间预览框里只有背景色。
+     */
+    _watchCoverLoading() {
+        const box = this.$(".preview-loading");
+        if (!box) return;
+        const still = this.$(".preview-still") || this.$(".preview-img");
+        if (!still) {
+            box.remove();
+            return;
+        }
+        const done = () => box.remove();
+        if (still.complete && still.naturalWidth > 0) {
+            done();
+            return;
+        }
+        still.addEventListener("load", done, { once: true });
+        still.addEventListener("error", done, { once: true });
+    }
+
     bindEvents() {
+        this._watchCoverLoading();
         this.$(".backdrop")?.addEventListener("click", () => this._close());
         this.$(".lb-close")?.addEventListener("click", () => this._close());
         this.$(".cancel-btn")?.addEventListener("click", () => this._close());
@@ -510,8 +607,17 @@ export class XdhLoraDetail extends BaseElement {
             const isVideoCover = !!cover && cover.kind === "video";
             const coverName = cover ? String(cover.name || "") : "";
             const coverUrl = cover ? String(cover.url || "") : "";
+            // 关掉「图片缓存缩略图」时抽屉也用封面原图，和列表保持一致；
+            // 视频封面只能靠服务端抽帧，取不到就只显示播放按钮
+            const loraSettings = appStore.state.xdatahubSettings || {};
+            const useStillFromThumb = isVideoCover
+                || loraSettings.enable_image_thumb_cache !== false;
             const coverStillUrl = cover
-                ? String(cover.thumb_url || cover.url || "")
+                ? String(
+                    useStillFromThumb
+                        ? cover.thumb_url || cover.url || ""
+                        : cover.url || ""
+                )
                 : "";
             const safeNote = escapeHtml(note);
             const safeCoverUrl = escapeAttr(coverUrl);
@@ -535,6 +641,18 @@ export class XdhLoraDetail extends BaseElement {
                         <img class="preview-img"
                             src="${safeCoverStillUrl}" alt="Cover"
                             onerror="this.style.display='none'"/>`;
+            // 大图解码要一会儿，先给个转圈，别让人对着空框
+            const previewLoading = cover
+                ? `<div class="preview-loading">
+                        <div class="preview-loading-pill">
+                            <span class="preview-spinner"
+                                aria-hidden="true"></span>
+                            <span class="preview-loading-text">
+                                ${escapeHtml(t("common.loading"))}
+                            </span>
+                        </div>
+                    </div>`
+                : "";
 
             const coverPickBtn = `
                 <button class="cover-btn xdh-tooltip xdh-tooltip-down js-cover-pick"
@@ -560,6 +678,7 @@ export class XdhLoraDetail extends BaseElement {
                 <div class="preview-area ${cover ? "has-cover" : ""}"
                     data-cover-url="${safeCoverUrl}"${coverHint}>
                     ${previewBody}
+                    ${previewLoading}
                     <div class="preview-actions">
                         ${coverPickBtn}${coverRemoveBtn}
                     </div>
@@ -754,6 +873,47 @@ export class XdhLoraDetail extends BaseElement {
                 }
                 .preview-area.has-cover {
                     cursor: zoom-in;
+                }
+                .preview-loading {
+                    position: absolute;
+                    inset: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 5;
+                    pointer-events: none;
+                }
+                .preview-loading-pill {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 9px 16px;
+                    border-radius: 999px;
+                    background: color-mix(
+                        in srgb,
+                        var(--xdh-color-surface-1) 88%,
+                        var(--xdh-color-text-primary) 12%
+                    );
+                    border: 1px solid var(--xdh-color-border);
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+                }
+                .preview-spinner {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    border: 2px solid var(--xdh-color-border);
+                    border-top-color: var(--xdh-color-text-primary);
+                    animation: lora-cover-spin 900ms linear infinite;
+                }
+                .preview-loading-text {
+                    font-size: 12px;
+                    color: var(--xdh-color-text-primary);
+                    white-space: nowrap;
+                }
+                @keyframes lora-cover-spin {
+                    to {
+                        transform: rotate(360deg);
+                    }
                 }
                 .preview-play {
                     position: absolute;

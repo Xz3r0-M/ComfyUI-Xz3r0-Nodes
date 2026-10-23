@@ -75,6 +75,10 @@ export function ensureMaskEditorStyles() {
                 --xdh-brand-text-on-accent,
                 #ffffff
             );
+            --ximageget-mask-editor-danger: var(
+                --xdh-clr-error,
+                #c13515
+            );
             --ximageget-mask-editor-shadow: var(
                 --xdh-window-shadow,
                 0 20px 80px rgba(0, 0, 0, 0.45)
@@ -499,6 +503,60 @@ export function ensureMaskEditorStyles() {
             background: transparent;
             touch-action: none;
         }
+        .ximageget-mask-editor-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            background: var(--ximageget-mask-editor-bg);
+            /* 图片大时要等好几秒，这里得挡住误触 */
+            z-index: 5;
+            cursor: progress;
+        }
+        .ximageget-mask-editor-loading[hidden] {
+            display: none;
+        }
+        .ximageget-mask-editor-loading svg {
+            animation: ximageget-mask-editor-spin 900ms linear infinite;
+            color: var(--ximageget-mask-editor-accent);
+        }
+        .ximageget-mask-editor-loading.is-error svg {
+            animation: none;
+            color: var(--ximageget-mask-editor-danger);
+        }
+        /* 文字自带胶囊底：背后是深色还是浅色都不怕撞色 */
+        .ximageget-mask-editor-loading-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 18px;
+            border-radius: 999px;
+            /* 掺一点文字色提亮：不然胶囊和背后的底色几乎一个色 */
+            background: color-mix(
+                in srgb,
+                var(--ximageget-mask-editor-surface) 88%,
+                var(--ximageget-mask-editor-text) 12%
+            );
+            border: 1px solid var(--ximageget-mask-editor-border);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(8px);
+        }
+        .ximageget-mask-editor-loading-text {
+            font-size: 13px;
+            color: var(--ximageget-mask-editor-text);
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+        .ximageget-mask-editor-loading.is-error
+            .ximageget-mask-editor-loading-text {
+            color: var(--ximageget-mask-editor-danger);
+        }
+        @keyframes ximageget-mask-editor-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
         .ximageget-mask-editor-erase-locks {
             display: flex;
             flex-direction: column;
@@ -558,6 +616,28 @@ export function ensureMaskEditorStyles() {
         }
     `;
     document.head.appendChild(style);
+}
+
+// 转圈图标：纯 SVG 描边圆环，靠 CSS 的 animation 转起来
+function createSpinnerIcon(size = 24) {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", String(size));
+    svg.setAttribute("height", String(size));
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.4");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("aria-hidden", "true");
+    const ring = document.createElementNS(NS, "circle");
+    ring.setAttribute("cx", "12");
+    ring.setAttribute("cy", "12");
+    ring.setAttribute("r", "9");
+    // 只画 1/4 圈，转起来才看得出在转
+    ring.setAttribute("stroke-dasharray", "14 43");
+    svg.appendChild(ring);
+    return svg;
 }
 
 export function createMaskEditorUi(texts = {}) {
@@ -1108,6 +1188,20 @@ export function createMaskEditorUi(texts = {}) {
     stage.className = "ximageget-mask-editor-stage";
     viewport.appendChild(stage);
 
+    // 图片越大等得越久，得让用户看见「正在加载」而不是一片空白
+    const loading = document.createElement("div");
+    loading.className = "ximageget-mask-editor-loading";
+    loading.hidden = true;
+    loading.setAttribute("role", "status");
+    const loadingPill = document.createElement("div");
+    loadingPill.className = "ximageget-mask-editor-loading-pill";
+    loadingPill.appendChild(createSpinnerIcon(20));
+    const loadingText = document.createElement("div");
+    loadingText.className = "ximageget-mask-editor-loading-text";
+    loadingPill.appendChild(loadingText);
+    loading.appendChild(loadingPill);
+    viewport.appendChild(loading);
+
     const canvas = document.createElement("canvas");
     canvas.className = "ximageget-mask-editor-canvas";
     stage.appendChild(canvas);
@@ -1189,6 +1283,8 @@ export function createMaskEditorUi(texts = {}) {
         clearPaintBtn,
         clearMaskBtn,
         viewport,
+        loading,
+        loadingText,
         canvas,
         fillThresholdRange,
         fillThresholdInput,
