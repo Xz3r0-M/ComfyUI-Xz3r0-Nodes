@@ -1,5 +1,55 @@
 # 更新日志 | Changelog
 
+## 🎉 v2.9.2
+
+<details>
+
+### 1. 🩹 修复 `XControlPanel` 控制面板节点
+`♾️ Xz3r0/Workflow-Processing`
+- 修复「重启 ComfyUI」会另外新开一个命令行窗口来运行 ComfyUI 的问题
+
+### 2. 🛠️ 增强和修复 `XDataHub` 数据中心
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- 修复更换 LoRA 封面后列表里还是旧图
+- LoRA 卡片和详情预览改用图片缓存缩略图
+  - 卡片用 300 像素、详情顶部预览用 720 像素，基于 `XDataHub` 的图片缓存缩略图设置，全屏预览仍然是原图
+  - 换封面时自动清理旧缩略图文件
+- 新增 加载中的提示
+  - 全屏预览、LoRA 详情预览在加载大图或大视频时显示「转圈 + 加载中」
+
+### 3. 🛠️ 增强和修复 `XMaskEditor` 遮罩编辑器
+`♾️ Xz3r0/XDataHub - XImageGet & XMediaListGet`
+- 修复超大图片保存遮罩或颜色后整体往左上偏移
+- 优化减少调整画笔大小时的卡顿
+- 新增 加载中的提示
+  - 加载大图显示「转圈 + 加载中」
+
+---
+
+### 1. 🩹 Fixed `XControlPanel` Control Panel Node
+`♾️ Xz3r0/Workflow-Processing`
+- Fixed Restart ComfyUI opening a second command-line window to run ComfyUI
+
+### 2. 🛠️ Enhanced & Fixed `XDataHub` Data Center
+`ComfyUI Web Interface Extension - ComfyUI.Xz3r0.XDataHub`
+- Fixed the list still showing the old image after replacing a LoRA cover
+- LoRA cards and the detail preview now use the cached image thumbnails
+  - Cards use 300 px and the detail header preview uses 720 px, following the `XDataHub` image thumbnail cache setting; the fullscreen preview still uses the original image
+  - Old thumbnail files are cleaned up automatically when a cover is replaced
+- Added loading hints
+  - The fullscreen preview and the LoRA detail preview show a spinner with "Loading…" while a large image or video loads
+
+### 3. 🛠️ Enhanced & Fixed `XMaskEditor` Mask Editor
+`♾️ Xz3r0/XDataHub - XImageGet & XMediaListGet`
+- Fixed the saved mask or paint layer shifting toward the top-left on very large images
+- Reduced stuttering when resizing the brush
+- Added a loading hint
+  - Loading a large image shows a spinner with "Loading…"
+
+</details>
+
+---
+
 ## 🎉 v2.9.1
 
 <details>
