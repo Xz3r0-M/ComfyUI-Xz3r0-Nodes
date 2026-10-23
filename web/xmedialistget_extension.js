@@ -25,7 +25,7 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-11";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-13";
 
 const EXT_NAME = "xz3r0.xmedialistget";
 const EXT_GUARD_KEY = "__xmedialistget_extension_registered__";

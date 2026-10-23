@@ -1,6 +1,6 @@
-import { XMaskEditorController } from "./controller.js?v=20261023-11";
-import { openMaskEditorSession } from "./session.js?v=20261023-11";
-import { saveMaskArtifacts } from "./upload.js?v=20261023-11";
+import { XMaskEditorController } from "./controller.js?v=20261023-13";
+import { openMaskEditorSession } from "./session.js?v=20261023-13";
+import { saveMaskArtifacts } from "./upload.js?v=20261023-13";
 
 const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
 const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
@@ -172,8 +172,77 @@ export async function openXMaskEditor(options = {}) {
         button.classList.toggle("is-hidden", !isVisible);
     };
     const syncInputValue = (input, value) => {
-        if (document.activeElement !== input) {
-            input.value = String(value);
+        if (document.activeElement === input) {
+            return;
+        }
+        const text = String(value);
+        // 值没变就不要碰 DOM：写 value 会让浏览器重新布局，滚轮调
+        // 画笔大小时一秒几十次，攒起来就是明显卡顿。
+        if (input.value !== text) {
+            input.value = text;
+        }
+    };
+    const syncRangeExtent = (range, { min, max, step }) => {
+        const nextMin = String(min);
+        const nextMax = String(max);
+        const nextStep = String(step);
+        if (range.min !== nextMin) {
+            range.min = nextMin;
+        }
+        if (range.max !== nextMax) {
+            range.max = nextMax;
+        }
+        if (range.step !== nextStep) {
+            range.step = nextStep;
+        }
+    };
+    // 画笔大小相关的控件：滚轮 / 滑杆调大小时只更新这几个。
+    // 而且**限流**：滚轮一秒能来上百个事件，而每写一次 DOM，浏览器就要
+    // 重新算一遍布局再重画（实测一帧就掉到 50ms）。所以爆发期间最多每
+    // 100ms 写一次，停下来再补一次最终值。实时反馈靠画布上的画笔圆环，
+    // 它只重画画布，不碰 DOM。
+    const BRUSH_SYNC_MS = 100;
+    let pendingBrush = null;
+    let brushTimer = 0;
+    let lastBrushSync = 0;
+    const flushBrushControls = () => {
+        brushTimer = 0;
+        const pending = pendingBrush;
+        pendingBrush = null;
+        // 编辑器已经关掉就别再碰 DOM 了
+        if (!pending || !ui.overlay.isConnected) {
+            return;
+        }
+        lastBrushSync = performance.now();
+        const { size, max, min } = pending;
+        if (max != null) {
+            syncRangeExtent(ui.brushRange, {
+                min: min ?? ui.brushRange.min,
+                max,
+                step: Math.max(1, Math.round(max * 0.01)),
+            });
+        }
+        // 拖动滑杆时，滑杆自己就在手指下面，不需要我们再写它
+        if (document.activeElement !== ui.brushRange) {
+            const rounded = String(Math.round(size));
+            if (ui.brushRange.value !== rounded) {
+                ui.brushRange.value = rounded;
+            }
+        }
+        syncInputValue(ui.brushInput, `${Math.round(size)}px`);
+    };
+    const applyBrushControls = (brushSize, brushSizeMax, brushSizeMin) => {
+        pendingBrush = {
+            size: brushSize,
+            max: brushSizeMax ?? pendingBrush?.max ?? null,
+            min: brushSizeMin ?? pendingBrush?.min ?? null,
+        };
+        if (performance.now() - lastBrushSync >= BRUSH_SYNC_MS) {
+            flushBrushControls();
+            return;
+        }
+        if (!brushTimer) {
+            brushTimer = window.setTimeout(flushBrushControls, BRUSH_SYNC_MS);
         }
     };
     const parseUnitInput = (input, fallback = "") => {
@@ -231,18 +300,16 @@ export async function openXMaskEditor(options = {}) {
             erasePaintEnabled,
             eraseMaskEnabled,
             maskDisplayInverted,
-        }) => {
+        }, scope) => {
+            // 滚轮调画笔大小每帧都会调到这里：只刷画笔那几个控件就够，
+            // 整条工具栏一起刷会明显掉帧。
+            if (scope === "brush") {
+                applyBrushControls(brushSize, brushSizeMax, brushSizeMin);
+                return;
+            }
             ui.zoomInput.value = `${Math.round(zoom * 100)}%`;
             ui.imageSizeValue.textContent = `${imageSize.width}x${imageSize.height}`;
-            if (brushSizeMax != null) {
-                ui.brushRange.max = String(brushSizeMax);
-                ui.brushRange.step = String(Math.max(1, Math.round(brushSizeMax * 0.01)));
-            }
-            if (brushSizeMin != null) {
-                ui.brushRange.min = String(brushSizeMin);
-            }
-            ui.brushRange.value = String(Math.round(brushSize));
-            syncInputValue(ui.brushInput, `${Math.round(brushSize)}px`);
+            applyBrushControls(brushSize, brushSizeMax, brushSizeMin);
             ui.hardnessRange.value = String(Math.round(hardness));
             syncInputValue(ui.hardnessInput, `${Math.round(hardness)}%`);
             ui.colorInput.value = paintColor;
