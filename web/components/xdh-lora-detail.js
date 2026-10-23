@@ -607,8 +607,17 @@ export class XdhLoraDetail extends BaseElement {
             const isVideoCover = !!cover && cover.kind === "video";
             const coverName = cover ? String(cover.name || "") : "";
             const coverUrl = cover ? String(cover.url || "") : "";
+            // 关掉「图片缓存缩略图」时抽屉也用封面原图，和列表保持一致；
+            // 视频封面只能靠服务端抽帧，取不到就只显示播放按钮
+            const loraSettings = appStore.state.xdatahubSettings || {};
+            const useStillFromThumb = isVideoCover
+                || loraSettings.enable_image_thumb_cache !== false;
             const coverStillUrl = cover
-                ? String(cover.thumb_url || cover.url || "")
+                ? String(
+                    useStillFromThumb
+                        ? cover.thumb_url || cover.url || ""
+                        : cover.url || ""
+                )
                 : "";
             const safeNote = escapeHtml(note);
             const safeCoverUrl = escapeAttr(coverUrl);

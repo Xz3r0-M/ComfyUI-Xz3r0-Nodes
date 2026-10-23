@@ -22,7 +22,7 @@ import "./components/xdh-pagination.js?v=20260426-4";
 import "./components/xdh-lightbox.js?v=20261023-5";
 import "./components/xdh-history-view.js?v=20261021-2";
 import "./components/xdh-banner.js?v=20260406-15";
-import "./components/xdh-lora-detail.js?v=20261023-6";
+import "./components/xdh-lora-detail.js?v=20261023-7";
 import "./components/xdh-settings-dialog.js?v=20261021-1";
 
 // Placeholder thumbnail for mock/offline mode
@@ -971,13 +971,18 @@ function mapItem(item, category) {
         const useStillCover = isVideoCover
             && !!loraSettings.enable_video_thumb_cache
             && !!loraSettings.ffmpeg_available;
+        // 图片封面跟随「图片缓存缩略图」开关：关掉时和媒体列表一样用原图。
+        // 视频封面另有一套（上面那个 useStillCover），没 ffmpeg 时浏览器
+        // 自己抽首帧，照样能显示。
+        const useImageThumb = !!loraSettings.enable_image_thumb_cache;
+        const preferThumb = isVideoCover ? useStillCover : useImageThumb;
         return {
             id: item.id || ref || buildStableFallbackId(item, category, "lora"),
             name,
             type: "lora",
             coverKind,
-            // 视频封面：能用静帧就用静帧，否则交给浏览器直接抽首帧
-            thumbUrl: isVideoCover && !useStillCover ? coverUrl : thumbUrl,
+            // 不用缩略图时退回封面原图（视频则是让浏览器抽首帧）
+            thumbUrl: !preferThumb && coverKind ? coverUrl : thumbUrl,
             // 全屏预览一律用原图；卡片/抽屉走上面那个缩略图地址
             fullUrl: coverKind ? coverUrl : "",
             isVideoNativeThumb: isVideoCover && !useStillCover,
