@@ -15,6 +15,10 @@ const ROOT = globalThis;
 const TARGET_NODE_CLASS = "XLoraGet";
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const XLORA_ROW_MIME = "application/x-xloraget-row";
+/* 拖到列表边缘多少像素内开始自动滚动，以及每次滚多少。 */
+const DROP_AUTOSCROLL_EDGE = 28;
+const DROP_AUTOSCROLL_STEP = 10;
+const TOAST_DURATION_MS = 2200;
 const STORAGE_WIDGET = "lora_stack";
 // 画布拖拽建节点时，建节点方通过 createNode options 预置的种子行。
 // 只消费一次，避免节点恢复时又被种子拉回。
@@ -836,6 +840,7 @@ function ensureStyles() {
     style.id = STYLE_ID;
     style.textContent = `
         .xlora-panel {
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -843,6 +848,65 @@ function ensureStyles() {
             height: 100%;
             box-sizing: border-box;
             padding: 8px;
+        }
+        .xlora-toast {
+            position: absolute;
+            left: 50%;
+            top: 44px;
+            transform: translateX(-50%);
+            max-width: 92%;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(--xdh-clr-surface-3);
+            border: 1px solid var(--xdh-clr-hairline);
+            color: var(--xdh-color-text-primary);
+            font: var(--xdh-font-micro-label);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+            pointer-events: none;
+            display: none;
+            z-index: 40;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .xlora-toast.is-visible {
+            display: block;
+        }
+        .xlora-insert-line {
+            position: absolute;
+            left: 4px;
+            right: 4px;
+            height: 2px;
+            border-radius: 2px;
+            background: var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #7fb4ff)
+            );
+            box-shadow: 0 0 8px var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #7fb4ff)
+            );
+            pointer-events: none;
+            display: none;
+            z-index: 6;
+        }
+        .xlora-drop-label {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #2f6fed)
+            );
+            color: var(--xdh-clr-on-primary, #fff);
+            font-size: 11px;
+            font-weight: 600;
+            pointer-events: none;
+            display: none;
+            z-index: 7;
+            white-space: nowrap;
         }
         .xlora-meta {
             display: flex;
@@ -853,6 +917,8 @@ function ensureStyles() {
             flex: 0 0 20px;
         }
         .xlora-list {
+            /* 插入线、胶囊标签用绝对定位贴在这一层上 */
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -1016,10 +1082,38 @@ function ensureStyles() {
             padding: 18px 8px;
             line-height: 1.5;
         }
+        /* 加载序号：单独一列，右边一条分隔线，和后面的开关分开
+           （和 XMediaListGet 的行首序号保持一致）。 */
+        .xlora-seq {
+            flex: 0 0 26px;
+            min-width: 26px;
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+            color: var(--xdh-color-text-secondary, #9a9a9a);
+            border-right: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            box-sizing: border-box;
+            opacity: 0.6;
+            user-select: none;
+        }
+        .xlora-row.inactive .xlora-seq {
+            opacity: 0.45;
+        }
+        .xlora-seq.is-skipped {
+            opacity: 0.5;
+        }
         .xlora-row {
-            border: 1px solid var(--xdh-clr-hairline);
-            border-radius: var(--xdh-radius-sm);
-            background: var(--xdh-clr-surface-strong);
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            border-radius: var(--xdh-radius-sm, 8px);
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
             padding: 8px;
             box-sizing: border-box;
             display: flex;
@@ -1029,34 +1123,20 @@ function ensureStyles() {
             flex: 0 0 auto;
             overflow: visible;
         }
+        /* 悬停时只换边框颜色（品牌粉），和 XMediaListGet 的行一致。
+           必须写在 .dragging 之前：拖动中的虚线框有自己的一套颜色。 */
+        .xlora-row:hover {
+            border-color: var(
+                --xdh-brand-pink,
+                var(--xdh-clr-primary, #ff385c)
+            );
+        }
         .xlora-row-main {
             width: 100%;
             display: flex;
             align-items: center;
             gap: 8px;
             min-width: 0;
-        }
-        .xlora-row.dragging {
-            opacity: 0.5;
-        }
-        .xlora-row.drag-target {
-            border-color: var(--xdh-brand-pink);
-            box-shadow: 0 0 0 1px var(--xdh-brand-pink);
-        }
-        .xlora-handle {
-            width: 20px;
-            min-width: 20px;
-            height: 20px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-clr-hairline);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font: var(--xdh-font-micro-label);
-            color: var(--xdh-color-text-primary);
-            cursor: grab;
-            user-select: none;
-            background: var(--xdh-clr-surface-strong);
         }
         .xlora-active {
             display: inline-flex;
@@ -1070,9 +1150,26 @@ function ensureStyles() {
         .xlora-row.inactive {
             opacity: 0.62;
         }
-        .xlora-row.locked .xlora-handle {
-            opacity: 0.45;
-            cursor: not-allowed;
+        /* 拖动中的行：不能用「变淡」表示，那样和被禁用的行分不开。
+           改成虚线描边 + 强调色底 + 抬起的阴影，读作「正被搬走」。
+           这条必须写在 .inactive 之后：禁用的行同样可以拖，两个类同时
+           命中时以「正在拖动」为准。 */
+        .xlora-row.dragging {
+            opacity: 0.95;
+            border-width: 1px;
+            border-style: dashed;
+            border-color: var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #7fb4ff)
+            );
+            background: color-mix(
+                in srgb,
+                var(--xlora-accent, var(--xdh-clr-primary, #7fb4ff)) 12%,
+                var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92))
+            );
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+            transform: scale(0.985);
+            cursor: grabbing;
         }
         .xlora-name {
             flex: 1 1 auto;
@@ -1303,20 +1400,33 @@ function ensureStyles() {
             min-width: 22px;
             height: 22px;
             border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-strong);
-            color: var(--xdh-color-text-primary);
-            font-size: 12px;
-            line-height: 1;
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
+            color: var(--xdh-color-text-secondary, #9a9a9a);
+            line-height: 0;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             padding: 0;
         }
+        /* 图标用内联 SVG 画：⤒/⤓ 这类字符在小尺寸或缩放后会被字体
+           栅格化糊掉，矢量描边始终是清晰的一条线。 */
+        .xlora-pin-icon {
+            display: block;
+            pointer-events: none;
+        }
+        .xlora-lock-btn:hover {
+            color: var(--xdh-color-text-primary, #f2f2f2);
+            border-color: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.3));
+        }
         .xlora-lock-btn.active {
-            border-color: var(--xdh-clr-primary);
-            color: var(--xdh-clr-primary);
+            border-color: var(--xdh-clr-primary, #7fb4ff);
+            color: var(--xdh-clr-primary, #7fb4ff);
         }
         .xlora-remove {
             width: 22px;
@@ -1342,7 +1452,11 @@ function ensureStyles() {
             border: 1px solid var(--xdh-clr-hairline);
             border-radius: var(--xdh-radius-sm);
             padding: 8px;
-            width: 212px;
+            /* 宽度跟着内容走：只写「移除」这种短文字时，不该撑出
+               半个面板宽的空框；上限仍是 212px。带封面图的提示框
+               固定 212px（见 .xlora-tooltip.has-thumb）。 */
+            width: max-content;
+            min-width: 0;
             max-width: 212px;
             box-sizing: border-box;
             color: var(--xdh-color-text-primary);
@@ -1369,6 +1483,14 @@ function ensureStyles() {
             white-space: normal;
             word-break: keep-all;
             overflow-wrap: break-word;
+        }
+        .xlora-tooltip.has-thumb {
+            width: 212px;
+        }
+        /* 没有封面图时把 120px 的图片位一起收掉，否则短文字的提示框
+           会被这个空位撑成一个偏宽的空盒子。 */
+        .xlora-tooltip:not(.has-thumb) .xlora-tooltip-media {
+            display: none;
         }
         .xlora-tooltip.has-thumb .xlora-tooltip-name {
             margin-top: 8px;
@@ -1700,12 +1822,23 @@ function buildPanel() {
     toolbar.appendChild(globalToggle);
     const list = document.createElement("div");
     list.className = "xlora-list";
+    // 插入线/标签放在列表内部：它们要跟着列表一起滚动，否则列表滚
+    // 下去以后指示线会停在面板上，指不到真正的位置。
+    const insertLine = document.createElement("div");
+    insertLine.className = "xlora-insert-line";
+    const dropLabel = document.createElement("div");
+    dropLabel.className = "xlora-drop-label";
+    list.appendChild(insertLine);
+    list.appendChild(dropLabel);
     const empty = document.createElement("div");
     empty.className = "xlora-empty";
     empty.textContent = t("xdatahub.ui.node.xloraget.empty", "Drag Lora cards from XDataHub here");
+    const toast = document.createElement("div");
+    toast.className = "xlora-toast";
     panel.appendChild(meta);
     panel.appendChild(toolbar);
     panel.appendChild(list);
+    panel.appendChild(toast);
     const tooltip = document.createElement("div");
     tooltip.className = "xlora-tooltip";
     tooltip.innerHTML = `
@@ -1732,6 +1865,9 @@ function buildPanel() {
         globalToggleInput,
         list,
         empty,
+        insertLine,
+        dropLabel,
+        toast,
         tooltip,
         badge,
         badgeChip,
@@ -1979,6 +2115,11 @@ function disposeNodeUi(node) {
     if (!panel) {
         return;
     }
+    stopDropAutoScroll(panel.state);
+    if (panel.toastTimer) {
+        clearTimeout(panel.toastTimer);
+        panel.toastTimer = 0;
+    }
     hideTooltip(panel.tooltip);
     panel.tooltip?.remove();
     delete node.__xlora_panel;
@@ -2089,6 +2230,38 @@ function clearDragTarget(state) {
     state.dragTargetEl = null;
 }
 
+// Lucide 的 arrow-up-to-line / arrow-down-to-line：一条箭头加一条横线，
+// 一看就是「钉到最上 / 钉到最下」。
+const PIN_ICON_PATHS = {
+    head: ["M5 3h14", "m18 13-6-6-6 6", "M12 7v14"],
+    tail: ["M5 21h14", "m6 11 6 6 6-6", "M12 3v14"],
+};
+
+/**
+ * 置顶/置底图标。用内联 SVG 而不是字符，缩放到任意大小都清晰。
+ */
+function buildPinIcon(direction) {
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "15");
+    svg.setAttribute("height", "15");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.4");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.classList.add("xlora-pin-icon");
+    for (const d of PIN_ICON_PATHS[direction] || []) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+    }
+    return svg;
+}
+
 function canDragRow(rows, index) {
     const item = rows[index];
     if (!item) {
@@ -2183,6 +2356,47 @@ function setExpandedTriggerPanel(node, state, nextExpandedRowId) {
     }
 }
 
+/**
+ * 这一行会不会真的被加载？
+ *
+ * 后端是按这个顺序筛的：`active` 为假直接跳过；`strength_model` 和
+ * `strength_clip` 都是 0 也跳过（等于没加载）。序列号只数会加载的行，
+ * 否则「第 3 个加载的 LoRA」就要靠用户自己心算。
+ */
+function rowWillLoad(item, clipConnected = true) {
+    if (!item || item.active === false) {
+        return false;
+    }
+    const model = Number(item.strength_model);
+    // 后端在 CLIP 没接的时候会把这段强度按 0 算，这里跟着一起看，
+    // 否则「M=0 + 只留 C」的行会被误算成会加载。
+    const clip = clipConnected ? Number(item.strength_clip) : 0;
+    return !(model === 0 && clip === 0);
+}
+
+/** CLIP 输入有没有接线；拿不到连线信息时按「已接」处理。 */
+function isClipConnected(node) {
+    const inputs = node?.inputs;
+    if (!Array.isArray(inputs)) {
+        return true;
+    }
+    const clipInput = inputs.find(
+        (input) => String(input?.name || "") === "clip"
+    );
+    if (!clipInput) {
+        return true;
+    }
+    return clipInput.link != null;
+}
+
+/** 重新排版加载序号（接线变化时用）。 */
+function refreshLoadSequence(node) {
+    const panel = node?.__xlora_panel;
+    if (panel?.state?.rows?.length) {
+        renderNodeRows(node);
+    }
+}
+
 function renderNodeRows(node) {
     const panel = node.__xlora_panel;
     if (!panel) {
@@ -2213,11 +2427,21 @@ function renderNodeRows(node) {
             setExpandedTriggerPanel(node, state, null);
         }
         list.appendChild(empty);
+        mountDropOverlay(panel);
         writeStoredRows(node, rows);
         list.scrollTop = prevScrollTop;
         list.scrollLeft = prevScrollLeft;
         return;
     }
+    const loadSeq = new Array(rows.length).fill(0);
+    const clipConnected = isClipConnected(node);
+    let loadTotal = 0;
+    rows.forEach((item, index) => {
+        if (rowWillLoad(item, clipConnected)) {
+            loadTotal += 1;
+            loadSeq[index] = loadTotal;
+        }
+    });
     rows.forEach((item, index) => {
         const row = document.createElement("div");
         row.className = "xlora-row";
@@ -2229,12 +2453,40 @@ function renderNodeRows(node) {
         row.setAttribute("data-index", String(index));
         row.draggable = canDragRow(rows, index);
 
+        // 最左侧的加载序列号：只数真正会加载的行，被禁用（或强度为 0）
+        // 的行显示「–」，位置由 loadSeq 预算好。
+        const seq = document.createElement("span");
+        seq.className = "xlora-seq";
+        const loadIndex = loadSeq[index] || 0;
+        const willLoad = loadIndex > 0;
+        seq.textContent = willLoad ? String(loadIndex) : "–";
+        if (!willLoad) {
+            seq.classList.add("is-skipped");
+        }
+        bindTooltip(
+            seq,
+            tooltip,
+            t("xdatahub.ui.node.xloraget.load_order", "Load order"),
+            "",
+            willLoad
+                ? `${loadIndex} / ${loadTotal}`
+                : t(
+                    item.active === false
+                        ? "xdatahub.ui.node.xloraget.load_order_off"
+                        : "xdatahub.ui.node.xloraget.load_order_zero",
+                    item.active === false
+                        ? "Not loaded: disabled"
+                        : "Not loaded: strength is 0"
+                )
+        );
+        rowMain.appendChild(seq);
+
         if (index === 0 || index === rows.length - 1) {
             const lockBtn = document.createElement("button");
             lockBtn.className = "xlora-lock-btn";
             lockBtn.type = "button";
             if (index === 0) {
-                lockBtn.textContent = "⤒";
+                lockBtn.appendChild(buildPinIcon("head"));
                 bindTooltip(
                     lockBtn,
                     tooltip,
@@ -2256,7 +2508,7 @@ function renderNodeRows(node) {
                     renderNodeRows(node);
                 });
             } else {
-                lockBtn.textContent = "⤓";
+                lockBtn.appendChild(buildPinIcon("tail"));
                 bindTooltip(
                     lockBtn,
                     tooltip,
@@ -2279,11 +2531,6 @@ function renderNodeRows(node) {
                 });
             }
             rowMain.appendChild(lockBtn);
-        } else {
-            const handle = document.createElement("span");
-            handle.className = "xlora-handle";
-            handle.textContent = "↕";
-            rowMain.appendChild(handle);
         }
 
         const active = document.createElement("label");
@@ -2649,6 +2896,7 @@ function renderNodeRows(node) {
                 return;
             }
             state.dragIndex = index;
+            panel.moveIndex = null;
             row.classList.add("dragging");
             if (event.dataTransfer) {
                 event.dataTransfer.effectAllowed = "move";
@@ -2662,6 +2910,9 @@ function renderNodeRows(node) {
             state.dragIndex = -1;
             row.classList.remove("dragging");
             clearDragTarget(state);
+            panel.moveIndex = null;
+            clearDropIndicator(panel);
+            stopDropAutoScroll(state);
         });
         row.addEventListener("dragover", (event) => {
             if (state.dragIndex < 0) {
@@ -2669,12 +2920,17 @@ function renderNodeRows(node) {
             }
             event.preventDefault();
             event.stopPropagation();
-            clearDragTarget(state);
-            state.dragTargetEl = row;
-            row.classList.add("drag-target");
             if (event.dataTransfer) {
                 event.dataTransfer.dropEffect = "move";
             }
+            // 和「从 XDataHub 拖进来」用同一套插入线：整行高亮看起来像
+            // 「覆盖这一行」，插入线才说明白是「插到这个缝里」。
+            clearDragTarget(state);
+            // 拖动中的行还占着位置：线上的位置按「缝」算，落点按
+            // 「抽走自己之后」算，两者差一格，不能混用。
+            const gapIndex = resolveInsertIndex(list, rows, event.clientY);
+            panel.moveIndex = moveTargetFromGap(gapIndex, state.dragIndex);
+            showDropIndicator(panel, rows, gapIndex, 1, "move");
         });
         row.addEventListener("drop", (event) => {
             if (state.dragIndex < 0) {
@@ -2682,14 +2938,16 @@ function renderNodeRows(node) {
             }
             event.preventDefault();
             event.stopPropagation();
-            const rect = row.getBoundingClientRect();
-            const target = Number(row.getAttribute("data-index") || "-1");
-            const insertAfter = event.clientY > (rect.top + rect.height / 2);
-            const nextTarget = insertAfter ? target + 1 : target;
+            stopDropAutoScroll(state);
+            const target = Number.isFinite(panel.moveIndex)
+                ? panel.moveIndex
+                : resolveMoveIndex(list, rows, event.clientY, state.dragIndex);
+            panel.moveIndex = null;
+            clearDropIndicator(panel);
             state.rows = moveRowWithLocks(
                 state.rows,
                 state.dragIndex,
-                nextTarget
+                target
             );
             state.dragIndex = -1;
             writeStoredRows(node, state.rows);
@@ -2698,9 +2956,331 @@ function renderNodeRows(node) {
 
         list.appendChild(row);
     });
+    mountDropOverlay(panel);
     writeStoredRows(node, rows);
     list.scrollTop = prevScrollTop;
     list.scrollLeft = prevScrollLeft;
+}
+
+// ── 拖入即插入（对齐 XMediaListGet 的手感）──────────────────────────────
+
+/** 把插入位置夹到「钉住区」以外：置顶行前不能插，置底行后不能插。 */
+function clampInsertIndex(rows, index) {
+    const total = Array.isArray(rows) ? rows.length : 0;
+    const minIndex = rows?.some?.((item) => item.pin === "head") ? 1 : 0;
+    const maxIndex = rows?.some?.((item) => item.pin === "tail")
+        ? total - 1
+        : total;
+    const raw = Number.isFinite(index) ? index : total;
+    return clamp(raw, Math.max(0, minIndex), Math.max(0, maxIndex));
+}
+
+/**
+ * 鼠标落在列表的哪一行之间。
+ *
+ * 判定用行中线：上半段插到这一行前面，下半段插到后面。没有「替换」
+ * 这一说——LoRA 行还带着强度、触发词和备注，静默替换会把它们一起
+ * 丢掉，代价太大。
+ */
+function resolveInsertIndex(list, rows, clientY) {
+    const rowEls = Array.from(list.querySelectorAll(".xlora-row"));
+    let index = rowEls.length;
+    for (const rowEl of rowEls) {
+        const rect = rowEl.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+            index = Number(rowEl.dataset.index);
+            if (!Number.isFinite(index)) {
+                index = rowEls.indexOf(rowEl);
+            }
+            break;
+        }
+    }
+    return clampInsertIndex(rows, index);
+}
+
+function clearDropIndicator(panel) {
+    if (!panel) {
+        return;
+    }
+    if (panel.insertLine) {
+        panel.insertLine.style.display = "none";
+    }
+    if (panel.dropLabel) {
+        panel.dropLabel.style.display = "none";
+    }
+}
+
+/** 列表每次重画都会清空 innerHTML，画完把指示线挂回去。 */
+function mountDropOverlay(panel) {
+    if (!panel?.list) {
+        return;
+    }
+    clearDropIndicator(panel);
+    if (panel.insertLine) {
+        panel.list.appendChild(panel.insertLine);
+    }
+    if (panel.dropLabel) {
+        panel.list.appendChild(panel.dropLabel);
+    }
+}
+
+function showDropIndicator(panel, rows, index, count, kind = "insert") {
+    if (!panel?.list || !panel.insertLine || !panel.dropLabel) {
+        return;
+    }
+    panel.dropKind = kind;
+    const rowEls = Array.from(panel.list.querySelectorAll(".xlora-row"));
+    const padding = Number.parseFloat(
+        getComputedStyle(panel.list).paddingTop
+    ) || 0;
+    let top = padding;
+    const nextRow = rowEls.find(
+        (rowEl) => Number(rowEl.dataset.index) === index
+    );
+    if (nextRow) {
+        top = nextRow.offsetTop - 2;
+    } else if (rowEls.length) {
+        const last = rowEls[rowEls.length - 1];
+        top = last.offsetTop + last.offsetHeight + 1;
+    }
+    panel.insertLine.style.top = `${Math.max(0, top)}px`;
+    panel.insertLine.style.display = "block";
+    if (kind === "move") {
+        panel.dropLabel.textContent = t(
+            "xdatahub.ui.node.xloraget.move_here",
+            "Move here"
+        );
+    } else {
+        panel.dropLabel.textContent = count > 1
+            ? `+ ${
+                t(
+                    "xdatahub.ui.node.xloraget.insert_many",
+                    "Insert {count} LoRAs",
+                    { count }
+                )
+            }`
+            : `+ ${
+                t("xdatahub.ui.node.xloraget.insert_here", "Insert here")
+            }`;
+    }
+    panel.dropLabel.style.top = `${Math.max(0, top - 24)}px`;
+    panel.dropLabel.style.display = "block";
+}
+
+/**
+ * 内部拖动时的落点。
+ *
+ * `resolveInsertIndex` 给的是「插到第几格」，而移动是先把原行抽出来再
+ * 插回去：原行后面的位置要往前挪一格，否则往下拖会少走一位。
+ */
+/**
+ * 把「当前列表里的第几个缝」换算成「抽走自己之后要插到第几位」。
+ * 往下拖要减 1：自己一被抽走，下面的行整体前移一格。
+ */
+function moveTargetFromGap(gapIndex, fromIndex) {
+    return gapIndex > fromIndex ? gapIndex - 1 : gapIndex;
+}
+
+function resolveMoveIndex(list, rows, clientY, fromIndex) {
+    return moveTargetFromGap(
+        resolveInsertIndex(list, rows, clientY),
+        fromIndex
+    );
+}
+
+/** 拖到列表上下边缘时自动滚动，长列表才拖得到看不见的位置。 */
+function stopDropAutoScroll(state) {
+    if (state?.autoScrollRaf) {
+        cancelAnimationFrame(state.autoScrollRaf);
+        state.autoScrollRaf = 0;
+    }
+    if (state) {
+        state.autoScrollDir = 0;
+    }
+}
+
+function startDropAutoScroll(node, state, dir) {
+    if (!state || state.autoScrollDir === dir) {
+        return;
+    }
+    stopDropAutoScroll(state);
+    state.autoScrollDir = dir;
+    const step = () => {
+        if (!state.autoScrollDir) {
+            state.autoScrollRaf = 0;
+            return;
+        }
+        const list = node.__xlora_panel?.list;
+        if (list) {
+            list.scrollTop += state.autoScrollDir * DROP_AUTOSCROLL_STEP;
+            const panel = node.__xlora_panel;
+            if (panel?.dropIndex != null) {
+                showDropIndicator(
+                    panel,
+                    panel.state.rows,
+                    panel.dropIndex,
+                    panel.dropCount || 1
+                );
+            }
+        }
+        state.autoScrollRaf = requestAnimationFrame(step);
+    };
+    state.autoScrollRaf = requestAnimationFrame(step);
+}
+
+function showPanelToast(node, text) {
+    const panel = node?.__xlora_panel;
+    if (!panel?.toast || !text) {
+        return;
+    }
+    panel.toast.textContent = text;
+    panel.toast.classList.add("is-visible");
+    if (panel.toastTimer) {
+        clearTimeout(panel.toastTimer);
+    }
+    panel.toastTimer = window.setTimeout(() => {
+        panel.toastTimer = 0;
+        panel.toast?.classList.remove("is-visible");
+    }, TOAST_DURATION_MS);
+}
+
+/** 从 XDataHub 的拖拽类型标记里数一下拖了几个。 */
+function dropCountFromDataTransfer(dataTransfer) {
+    const types = dataTransfer?.types;
+    if (!types || typeof types.length !== "number") {
+        return 1;
+    }
+    for (const type of Array.from(types)) {
+        const match = /^application\/x-xdatahub-count-(\d+)$/.exec(
+            String(type)
+        );
+        if (match) {
+            const count = Number(match[1]);
+            if (Number.isFinite(count) && count > 0) {
+                return count;
+            }
+        }
+    }
+    return 1;
+}
+
+/** 拖进来的不是 LoRA（图片/视频/音频/文本）时给出明确提示。 */
+function dragHasForeignType(dataTransfer) {
+    const types = dataTransfer?.types;
+    if (!types || typeof types.length !== "number") {
+        return false;
+    }
+    for (const type of Array.from(types)) {
+        const match = /^application\/x-xdatahub-type-([a-z]+)$/.exec(
+            String(type)
+        );
+        if (match) {
+            return match[1] !== "lora";
+        }
+    }
+    return false;
+}
+
+/**
+ * 在指定位置插入几行 LoRA。
+ *
+ * 已经在列表里的不重复插入、也不挪位置，只提示一声——重复拖入多半是
+ * 手滑，静默改动列表顺序比什么都不做更容易出事。
+ */
+function insertLoraRowsAt(node, entries, index) {
+    const panel = node?.__xlora_panel;
+    if (!panel?.state) {
+        return;
+    }
+    const rows = readStoredRows(node);
+    const existingRefs = new Set(rows.map((row) => String(row.lora_ref || "")));
+    const fresh = [];
+    let skipped = 0;
+    for (const entry of entries) {
+        const ref = String(entry?.lora_ref || "").trim();
+        if (!ref) {
+            continue;
+        }
+        if (existingRefs.has(ref)) {
+            skipped += 1;
+            continue;
+        }
+        existingRefs.add(ref);
+        fresh.push(entry);
+    }
+    if (!fresh.length) {
+        if (skipped) {
+            showPanelToast(
+                node,
+                t(
+                    "xdatahub.ui.node.xloraget.already_present",
+                    "{count} already in the list",
+                    { count: skipped }
+                )
+            );
+        }
+        return;
+    }
+    const insertIndex = clampInsertIndex(rows, index);
+    const added = [];
+    for (const entry of fresh) {
+        const hasModel = Number.isFinite(Number(entry.strength_model));
+        const hasClip = Number.isFinite(Number(entry.strength_clip));
+        const model = hasModel ? toFloat(entry.strength_model, 1) : 1;
+        const clip = hasClip
+            ? toFloat(entry.strength_clip, model)
+            : model;
+        added.push(
+            makeRow({
+                lora_ref: entry.lora_ref,
+                title: String(entry.title || "lora"),
+                active: true,
+                separate_clip_strength: clip !== model,
+                strength_model: model,
+                strength_clip: clip,
+                // 拖拽数据里没带强度时，等节点拉取远端数据补全。
+                strength_sync_pending: !hasModel || !hasClip,
+                lora_note: "",
+                thumb_url: entry.thumb_url,
+                cover_kind: entry.cover_kind,
+                cover_url: entry.cover_url,
+                pin: "none",
+            })
+        );
+    }
+    const nextRows = enforcePinLayout([
+        ...rows.slice(0, insertIndex),
+        ...added,
+        ...rows.slice(insertIndex),
+    ]);
+    panel.state.rows = nextRows;
+    if (nextRows.some((row) => row.separate_clip_strength)) {
+        panel.state.globalSeparateClip = true;
+    }
+    writeStoredRows(node, nextRows);
+    renderNodeRows(node);
+    for (const row of nextRows) {
+        if (added.includes(row)) {
+            syncRowTriggerWords(node, row, { force: true });
+        }
+    }
+    const parts = [
+        t(
+            "xdatahub.ui.node.xloraget.inserted",
+            "Inserted {count} LoRAs",
+            { count: added.length }
+        ),
+    ];
+    if (skipped) {
+        parts.push(
+            t(
+                "xdatahub.ui.node.xloraget.already_present",
+                "{count} already in the list",
+                { count: skipped }
+            )
+        );
+    }
+    showPanelToast(node, parts.join(" · "));
 }
 
 function bindDnD(node) {
@@ -2731,12 +3311,72 @@ function bindDnD(node) {
             if (event.dataTransfer) {
                 event.dataTransfer.dropEffect = "move";
             }
+            if (state.dragIndex >= 0) {
+                const gapIndex = resolveInsertIndex(
+                    list,
+                    panel.state.rows,
+                    event.clientY
+                );
+                panel.moveIndex = moveTargetFromGap(
+                    gapIndex,
+                    state.dragIndex
+                );
+                showDropIndicator(
+                    panel,
+                    panel.state.rows,
+                    gapIndex,
+                    1,
+                    "move"
+                );
+                const rect = list.getBoundingClientRect();
+                if (event.clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
+                    startDropAutoScroll(node, state, -1);
+                } else if (
+                    rect.bottom - event.clientY < DROP_AUTOSCROLL_EDGE
+                ) {
+                    startDropAutoScroll(node, state, 1);
+                } else {
+                    stopDropAutoScroll(state);
+                }
+            }
             return;
         }
         consume(event);
         list.classList.add("drag-over");
+        // 列表只收 LoRA：拖图片/视频/音频/文本进来时明确拒绝，
+        // 不要让人以为「拖进去了但没反应」。
+        if (dragHasForeignType(event.dataTransfer)) {
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = "none";
+            }
+            clearDropIndicator(panel);
+            stopDropAutoScroll(state);
+            panel.dropIndex = null;
+            showPanelToast(
+                node,
+                t(
+                    "xdatahub.ui.node.xloraget.lora_only",
+                    "This list only accepts LoRAs"
+                )
+            );
+            return;
+        }
         if (event.dataTransfer) {
             event.dataTransfer.dropEffect = "copy";
+        }
+        const rows = panel.state.rows;
+        const index = resolveInsertIndex(list, rows, event.clientY);
+        panel.dropIndex = index;
+        panel.dropCount = dropCountFromDataTransfer(event.dataTransfer);
+        showDropIndicator(panel, rows, index, panel.dropCount);
+        // 拖到列表上下边缘时自动滚动
+        const rect = list.getBoundingClientRect();
+        if (event.clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
+            startDropAutoScroll(node, state, -1);
+        } else if (rect.bottom - event.clientY < DROP_AUTOSCROLL_EDGE) {
+            startDropAutoScroll(node, state, 1);
+        } else {
+            stopDropAutoScroll(state);
         }
     });
     list.addEventListener("dragleave", (event) => {
@@ -2744,16 +3384,34 @@ function bindDnD(node) {
             return;
         }
         consume(event);
+        const related = event.relatedTarget;
+        if (related instanceof Node && list.contains(related)) {
+            return;
+        }
         list.classList.remove("drag-over");
+        clearDropIndicator(panel);
+        stopDropAutoScroll(state);
+        panel.dropIndex = null;
     });
     list.addEventListener("drop", (event) => {
         if (isInternalRowDrag(event.dataTransfer)) {
             event.preventDefault();
             clearDragTarget(state);
+            stopDropAutoScroll(state);
+            clearDropIndicator(panel);
+            const target = Number.isFinite(panel.moveIndex)
+                ? panel.moveIndex
+                : resolveMoveIndex(
+                    list,
+                    panel.state.rows,
+                    event.clientY,
+                    state.dragIndex
+                );
+            panel.moveIndex = null;
             state.rows = moveRowWithLocks(
                 state.rows,
                 state.dragIndex,
-                state.rows.length
+                target
             );
             state.dragIndex = -1;
             writeStoredRows(node, state.rows);
@@ -2762,6 +3420,14 @@ function bindDnD(node) {
         }
         consume(event);
         list.classList.remove("drag-over");
+        const dropIndex = resolveInsertIndex(
+            list,
+            panel.state.rows,
+            event.clientY
+        );
+        clearDropIndicator(panel);
+        stopDropAutoScroll(state);
+        panel.dropIndex = null;
         const payload = parseDragPayload(event.dataTransfer);
         if (!payload) {
             return;
@@ -2779,26 +3445,7 @@ function bindDnD(node) {
         }
         state.lastExternalDropKey = dropKey;
         state.lastExternalDropAt = now;
-        // 多选拖拽时按原顺序逐行插入。
-        for (const entry of entries) {
-            upsertLoraRowFromMediaRef(
-                node,
-                entry.lora_ref,
-                entry.title,
-                entry.thumb_url,
-                entry.strength_model,
-                entry.strength_clip,
-                "",
-                {
-                    syncStrengthFromRemote: (
-                        entry.strength_model == null
-                        && entry.strength_clip == null
-                    ),
-                    coverKind: entry.cover_kind,
-                    coverUrl: entry.cover_url,
-                }
-            );
-        }
+        insertLoraRowsAt(node, entries, dropIndex);
     });
 }
 
@@ -3020,6 +3667,11 @@ function initXLoraGetExtension() {
             nodeType.prototype.onNodeCreated = function () {
                 origCreated?.apply(this, arguments);
                 installNodeUi(this);
+            };
+            const origConnectionsChange = nodeType.prototype.onConnectionsChange;
+            nodeType.prototype.onConnectionsChange = function () {
+                origConnectionsChange?.apply(this, arguments);
+                refreshLoadSequence(this);
             };
             nodeType.prototype.onRemoved = function () {
                 disposeNodeUi(this);
