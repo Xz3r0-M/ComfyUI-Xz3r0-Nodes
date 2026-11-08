@@ -63,6 +63,7 @@
   "xdatahub.ui.node.xmedialistget.output_video": "输出视频",
   "xdatahub.ui.node.xmedialistget.output_audio": "输出音频",
   "xdatahub.ui.node.xmedialistget.insert_many": "插入 {count} 个",
+  "xdatahub.ui.node.xmedialistget.move_here": "移动到这里",
   "xdatahub.ui.node.xmedialistget.insert_at_end": "添加到末尾",
   "xdatahub.ui.node.xmedialistget.add_to_list": "添加到列表",
   "xdatahub.ui.node.xmedialistget.replace": "替换",

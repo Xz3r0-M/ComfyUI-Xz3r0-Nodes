@@ -76,6 +76,11 @@ const REFRESH_CONCURRENCY = 4;
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const TOAST_DURATION_MS = 2600;
 const INSERT_EDGE_PX = 8;
+/* 列表内部拖拽排序用的标记：带上它就能和「从 XDataHub 拖入」区分开。 */
+const XMLG_ROW_MIME = "application/x-xmlg-row";
+/* 拖到列表上下边缘多少像素内开始自动滚动，以及每次滚多少。 */
+const DROP_AUTOSCROLL_EDGE = 28;
+const DROP_AUTOSCROLL_STEP = 10;
 const TYPE_SWITCH_DELAY_MS = 600;
 const XDATAHUB_TYPE_MIME_PREFIX = "application/x-xdatahub-type-";
 const XDATAHUB_COUNT_MIME_PREFIX = "application/x-xdatahub-count-";
@@ -923,6 +928,22 @@ function ensureStyles() {
         }
         .xmlg-row.is-disabled {
             opacity: 0.5;
+        }
+        /* 拖动中的行：不能只靠变淡（那和禁用分不开），用虚线 + 强调色
+           底 + 抬起表示「正被搬走」。必须写在 :hover / .is-disabled
+           之后，两者同时命中时以拖动为准。 */
+        .xmlg-row.is-dragging {
+            opacity: 0.95;
+            border-width: 1px;
+            border-style: dashed;
+            border-color: var(--xmlg-accent);
+            background: color-mix(
+                in srgb,
+                var(--xmlg-accent) 12%,
+                var(--xmlg-surface-strong)
+            );
+            box-shadow: var(--xdh-shadow-popup, 0 8px 20px rgba(0, 0, 0, 0.35));
+            cursor: grabbing;
         }
         .xmlg-mask-btn {
             font-size: 12px;
@@ -2192,6 +2213,33 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     if (state.missing.has(entry.ref)) {
         row.classList.add("is-missing");
     }
+    // 列表内排序：整行可拖，落点用插入线表示（不会覆盖目标行）
+    row.draggable = true;
+    row.addEventListener("dragstart", (event) => {
+        const panel = node.__xmlg_panel;
+        if (!panel) {
+            return;
+        }
+        panel.state.dragRow = { category, index, gap: null };
+        row.classList.add("is-dragging");
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData(
+                XMLG_ROW_MIME,
+                JSON.stringify({ category, index })
+            );
+        }
+    });
+    row.addEventListener("dragend", () => {
+        row.classList.remove("is-dragging");
+        const panel = node.__xmlg_panel;
+        if (!panel) {
+            return;
+        }
+        panel.state.dragRow = null;
+        stopDropAutoScroll(panel.state);
+        clearDragHighlights(panel);
+    });
 
     const switchLabel = element("label", "xmlg-switch");
     const checkbox = document.createElement("input");
@@ -2444,6 +2492,7 @@ function stopTooltipVideo(panel) {
  * 节点被删掉时收尾：tooltip 是挂在 body 上的，不主动摘掉会一直留着。
  */
 function disposeNodeUi(node) {
+    stopDropAutoScroll(node?.__xmlg_panel?.state);
     const panel = node?.__xmlg_panel;
     if (!panel) {
         return;
@@ -4287,6 +4336,116 @@ function ensureDragState(node, dataTransfer) {
     return state.drag;
 }
 
+function isInternalRowDrag(dataTransfer) {
+    if (!dataTransfer || typeof dataTransfer.types?.includes !== "function") {
+        return false;
+    }
+    return dataTransfer.types.includes(XMLG_ROW_MIME);
+}
+
+/**
+ * 列表内排序：鼠标落在「第几个缝」。返回的是全局下标
+ * （行的 data-index 本来就是分类里的全局位置，翻页后依然对得上）。
+ */
+function resolveMoveGap(list, clientY) {
+    const rows = Array.from(list.querySelectorAll(".xmlg-row"));
+    for (const row of rows) {
+        const rect = row.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+            const index = Number(row.dataset.index);
+            return Number.isFinite(index) ? index : rows.indexOf(row);
+        }
+    }
+    const last = rows[rows.length - 1];
+    return last ? Number(last.dataset.index) + 1 : 0;
+}
+
+/**
+ * 「第几个缝」换算成「抽走自己之后插到第几位」。
+ * 往下拖要减 1：自己被抽走后，下面的行整体前移一格。
+ */
+function moveTargetFromGap(gapIndex, fromIndex) {
+    return gapIndex > fromIndex ? gapIndex - 1 : gapIndex;
+}
+
+function startDropAutoScroll(node, dir) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    const state = panel.state;
+    if (state.autoScrollRaf && state.autoScrollDir === dir) {
+        return;
+    }
+    stopDropAutoScroll(state);
+    state.autoScrollDir = dir;
+    const tick = () => {
+        if (!state.autoScrollDir || !panel.list.isConnected) {
+            state.autoScrollRaf = 0;
+            return;
+        }
+        panel.list.scrollTop += state.autoScrollDir * DROP_AUTOSCROLL_STEP;
+        state.autoScrollRaf = window.requestAnimationFrame(tick);
+    };
+    state.autoScrollRaf = window.requestAnimationFrame(tick);
+}
+
+function stopDropAutoScroll(state) {
+    if (!state) {
+        return;
+    }
+    if (state.autoScrollRaf) {
+        window.cancelAnimationFrame(state.autoScrollRaf);
+        state.autoScrollRaf = 0;
+    }
+    state.autoScrollDir = 0;
+}
+
+/** 内部排序用同一条插入线，只是文案换成「移动到这里」。 */
+function showMoveIndicator(panel, gapIndex) {
+    if (!panel) {
+        return;
+    }
+    clearDragHighlights(panel);
+    placeInsertLine(panel, gapIndex);
+    panel.dropLabel.textContent = t(
+        "xdatahub.ui.node.xmedialistget.move_here",
+        "Move here"
+    );
+}
+
+/**
+ * 把当前拖动的那行挪到指定缝隙。只改顺序，不动启用状态；
+ * writeItems 会记一步撤销，所以改错了能撤回。
+ */
+function applyRowMove(node, gapIndex) {
+    const panel = node?.__xmlg_panel;
+    const dragRow = panel?.state?.dragRow;
+    if (!panel || !dragRow) {
+        return;
+    }
+    const state = panel.state;
+    if (dragRow.category !== state.category) {
+        return;
+    }
+    const list = state.items[state.category];
+    if (!Array.isArray(list)) {
+        return;
+    }
+    const from = Number(dragRow.index);
+    const target = moveTargetFromGap(Number(gapIndex), from);
+    if (!Number.isFinite(from) || from < 0 || from >= list.length) {
+        return;
+    }
+    if (!Number.isFinite(target) || target === from) {
+        return;
+    }
+    const [moved] = list.splice(from, 1);
+    list.splice(Math.max(0, Math.min(target, list.length)), 0, moved);
+    writeItems(node, state.items);
+    renderPanel(node);
+}
+
 function resolveDropTarget(list, clientY) {
     const rows = Array.from(list.querySelectorAll(".xmlg-row"));
     for (const row of rows) {
@@ -4536,6 +4695,10 @@ function bindDragAndDrop(node) {
     const state = panel.state;
 
     list.addEventListener("dragenter", (event) => {
+        if (isInternalRowDrag(event.dataTransfer)) {
+            event.preventDefault();
+            return;
+        }
         if (!hasMediaPayload(event.dataTransfer)) {
             return;
         }
@@ -4559,6 +4722,28 @@ function bindDragAndDrop(node) {
     });
 
     list.addEventListener("dragover", (event) => {
+        if (isInternalRowDrag(event.dataTransfer)) {
+            event.preventDefault();
+            const dragRow = state.dragRow;
+            if (!dragRow) {
+                return;
+            }
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = "move";
+            }
+            const gap = resolveMoveGap(list, event.clientY);
+            dragRow.gap = gap;
+            showMoveIndicator(panel, gap);
+            const rect = list.getBoundingClientRect();
+            if (event.clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
+                startDropAutoScroll(node, -1);
+            } else if (rect.bottom - event.clientY < DROP_AUTOSCROLL_EDGE) {
+                startDropAutoScroll(node, 1);
+            } else {
+                stopDropAutoScroll(state);
+            }
+            return;
+        }
         if (!hasMediaPayload(event.dataTransfer)) {
             return;
         }
@@ -4590,6 +4775,7 @@ function bindDragAndDrop(node) {
         if (related instanceof Node && list.contains(related)) {
             return;
         }
+        stopDropAutoScroll(state);
         clearDragHighlights(panel);
     });
 
@@ -4638,6 +4824,23 @@ function bindDragAndDrop(node) {
     });
 
     list.addEventListener("drop", (event) => {
+        if (isInternalRowDrag(event.dataTransfer)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === "function") {
+                event.stopImmediatePropagation();
+            }
+            const dragRow = state.dragRow;
+            const gap = Number.isFinite(dragRow?.gap)
+                ? dragRow.gap
+                : resolveMoveGap(list, event.clientY);
+            stopDropAutoScroll(state);
+            clearDragHighlights(panel);
+            // applyRowMove 要读 dragRow，先挪完再清
+            applyRowMove(node, gap);
+            state.dragRow = null;
+            return;
+        }
         if (!hasMediaPayload(event.dataTransfer)) {
             return;
         }
@@ -5143,6 +5346,10 @@ function installNodeUi(node) {
             missing: new Set(),
             toastTimer: 0,
             drag: null,
+            // 列表内拖拽排序（和「从 XDataHub 拖入」的 drag 分开）
+            dragRow: null,
+            autoScrollDir: 0,
+            autoScrollRaf: 0,
             undoStack: [],
             redoStack: [],
         },

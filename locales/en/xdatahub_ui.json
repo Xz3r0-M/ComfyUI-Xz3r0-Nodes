@@ -63,6 +63,7 @@
   "xdatahub.ui.node.xmedialistget.output_video": "Output videos",
   "xdatahub.ui.node.xmedialistget.output_audio": "Output audio",
   "xdatahub.ui.node.xmedialistget.insert_many": "Insert {count} files",
+  "xdatahub.ui.node.xmedialistget.move_here": "Move here",
   "xdatahub.ui.node.xmedialistget.insert_at_end": "Add to end",
   "xdatahub.ui.node.xmedialistget.add_to_list": "Add to list",
   "xdatahub.ui.node.xmedialistget.replace": "Replace",
