@@ -3,13 +3,21 @@
  * ==========================
  *
  * 在节点内提供按「图片 / 视频 / 音频」分类管理的媒体列表：
- * - 分类切换、分页显示、启用开关、删除、清空、刷新
+ * - 分类切换、启用开关、删除、清空、刷新
  * - 缩略图懒加载，加载失败自动标红（文件失效）
  * - 从 XDataHub 拖入媒体卡片（插入 / 替换由后续拖拽逻辑处理）
+ * - 列表内拖拽排序、分组（同组连续 = 加载顺序）
  * - 转发中键平移与滚轮缩放，保持画布基础交互
  *
  * 列表数据保存在隐藏 widget media_items 中，格式：
- * { "image": [{ref,title,enabled}], "video": [], "audio": [] }
+ * {
+ *   "image": [{ref,title,enabled,group}],
+ *   "video": [], "audio": [],
+ *   "groups": { "image": [{id,name,collapsed}], "video": [], "audio": [] }
+ * }
+ *
+ * 分页已经退场：分组要求「同组的行连续」，一个组被切到两页就
+ * 说不清组头归谁，跨页也拖不动。现在是一条长列表全量渲染。
  */
 
 import { app } from "../../scripts/app.js";
@@ -25,6 +33,18 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
+import {
+    buildRenderList,
+    createGroupFromSelection,
+    deleteGroup,
+    groupMembers,
+    groupOfGap,
+    moveGroupToGap,
+    moveRowToGap,
+    normalizeGroups,
+    renameGroup,
+    setCollapsed,
+} from "./core/group-model.js";
 import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-14";
 
 const EXT_NAME = "xz3r0.xmedialistget";
@@ -50,17 +70,18 @@ const OUTPUT_SLOT_GROUPS = {
     video: [3, 4],
     audio: [5, 6],
 };
+/* 旧版「每页条数」的设置名。分页已经退场，这里只保留名字：
+   老节点的属性仍然读得到，不用做数据迁移。 */
 const PAGE_SIZE_PROP = "xmedialistget.pageSize";
 const CATEGORIES = ["image", "video", "audio"];
+/* 行的唯一标识：同一个分类里 ref 不会重复。 */
+const XMLG_KEY_OF = (entry) => String(entry?.ref || "");
 const CATEGORY_EMOJI = {
     image: "🖼️",
     video: "🎞️",
     audio: "🎵",
 };
 const MAX_ENABLED = 50;
-const DEFAULT_PAGE_SIZE = 50;
-const MIN_PAGE_SIZE = 5;
-const MAX_PAGE_SIZE = 50;
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const STYLE_ID = "xmedialistget-extension-style";
 const MIN_NODE_WIDTH = 500;
@@ -72,12 +93,81 @@ const PREVIEW_EYE_ICON_URL = new URL(
     "./icons/eye.svg",
     import.meta.url
 ).href;
+/* 组头的折叠箭头。原来的 ▾ 是 10px 字号里的一个字符，字高只有 5px
+   左右，画布一缩小就糊成一团；换成一条粗一点的折线图标，缩到 0.8 倍
+   仍然清楚，折叠时就地转 90 度。 */
+const GROUP_ARROW_ICON_URL = new URL(
+    "./icons/chevron-down.svg",
+    import.meta.url
+).href;
 const REFRESH_CONCURRENCY = 4;
+/* 列表内拖动「让位」的滑动时长。Chromium 的标签条用 200ms，我们的
+   行比标签矮，160ms 更跟手；也是「其它行滑开」这个效果的全部时长。 */
+const SLIDE_MS = 160;
+/* 重排防抖：指针相对上次改顺序的位置要移动够这么远才允许再改。
+   Chromium 用 16dip（按标签宽度缩放），我们按行高缩放。 */
+const REORDER_THRESHOLD_RATIO = 0.35;
+const GROUP_DRAG_THRESHOLD_RATIO = 0.75;
+/* 按下后移动多少像素才算「拖」：小于它还是单击（点开关、点缩略图）。 */
+const DRAG_START_PX = 4;
+/* 跨组归属的「中性带」：以缝隙两侧邻居的边界为中心，左右各留行高的
+   四分之一（Chromium 用的就是标签宽度的 1/4）。落在这段里 = 不属于
+   任何组；越过去才算加入某一组。 */
+const GROUP_LEAN_RATIO = 0.25;
+/* 组的可选颜色。刻意不用红色系（色板里的 02 红、07 橙）：它们跟品牌粉
+   太接近，画在竖线和胶囊上会被误当成强调色或警告色。
+   色号存进组记录（color 字段），没存过色号的老组按 id 哈希挑一个，
+   所以老数据不需要迁移（包括以前存过 "02" 的组，会自动换到别的颜色）。 */
+const GROUP_COLORS = [
+    {
+        id: "01",
+        nameKey: "group_color_blue",
+        fallback: "Blue",
+        value: "var(--db-palette-01, #0066FF)",
+    },
+    {
+        id: "11",
+        nameKey: "group_color_azure",
+        fallback: "Azure",
+        value: "color-mix(in srgb, var(--db-palette-01, #0066FF) 55%, "
+            + "var(--db-palette-06, #00CCCC))",
+    },
+    {
+        id: "06",
+        nameKey: "group_color_cyan",
+        fallback: "Cyan",
+        value: "var(--db-palette-06, #00CCCC)",
+    },
+    {
+        id: "03",
+        nameKey: "group_color_green",
+        fallback: "Green",
+        value: "var(--db-palette-03, #00A86B)",
+    },
+    {
+        id: "12",
+        nameKey: "group_color_lime",
+        fallback: "Lime",
+        value: "color-mix(in srgb, var(--db-palette-03, #00A86B) 55%, "
+            + "var(--db-palette-04, #FFBF00))",
+    },
+    {
+        id: "04",
+        nameKey: "group_color_yellow",
+        fallback: "Yellow",
+        value: "var(--db-palette-04, #FFBF00)",
+    },
+    {
+        id: "05",
+        nameKey: "group_color_purple",
+        fallback: "Purple",
+        value: "var(--db-palette-05, #CC00CC)",
+    },
+];
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const TOAST_DURATION_MS = 2600;
 const INSERT_EDGE_PX = 8;
 /* 列表内部拖拽排序用的标记：带上它就能和「从 XDataHub 拖入」区分开。 */
-const XMLG_ROW_MIME = "application/x-xmlg-row";
 /* 拖到列表上下边缘多少像素内开始自动滚动，以及每次滚多少。 */
 const DROP_AUTOSCROLL_EDGE = 28;
 const DROP_AUTOSCROLL_STEP = 10;
@@ -221,8 +311,17 @@ function categoryLabel(category) {
     return t(key, fallback);
 }
 
-function emptyItems() {
+function emptyGroups() {
     return { image: [], video: [], audio: [] };
+}
+
+function emptyItems() {
+    return {
+        image: [],
+        video: [],
+        audio: [],
+        groups: emptyGroups(),
+    };
 }
 
 function normalizeItems(raw) {
@@ -230,8 +329,12 @@ function normalizeItems(raw) {
     if (!raw || typeof raw !== "object") {
         return output;
     }
+    const rawGroups = raw.groups && typeof raw.groups === "object"
+        ? raw.groups
+        : {};
     for (const category of CATEGORIES) {
         const list = Array.isArray(raw[category]) ? raw[category] : [];
+        const rows = [];
         for (const entry of list) {
             if (!entry || typeof entry !== "object") {
                 continue;
@@ -240,15 +343,23 @@ function normalizeItems(raw) {
             if (!ref) {
                 continue;
             }
-            output[category].push({
+            rows.push({
                 ref,
                 title: String(entry.title || ""),
                 enabled: entry.enabled !== false,
+                group: typeof entry.group === "string"
+                    ? entry.group.trim() || null
+                    : null,
                 mask_ref: String(entry.mask_ref || ""),
                 paint_ref: String(entry.paint_ref || ""),
                 transform_state: String(entry.transform_state || ""),
             });
         }
+        // 旧数据完全没有 group 字段，这里必须安静地接受并把
+        // 「同组连续」「不留空组」两条不变量一次落地。
+        const normalized = normalizeGroups(rows, rawGroups[category]);
+        output[category] = normalized.items;
+        output.groups[category] = normalized.groups;
     }
     return output;
 }
@@ -294,10 +405,60 @@ function readItems(node) {
     return items;
 }
 
+/*
+ * 组的两条不变量（同组连续、不留空组）只在一个地方落地：
+ * 每次写入前统一整理。任何新增的「改列表」路径只要走 writeItems
+ * 就不会留下幽灵组，也不会出现同组被拆开。
+ */
+function syncCategoryGroups(items, category) {
+    if (!items.groups || typeof items.groups !== "object") {
+        items.groups = emptyGroups();
+    }
+    const result = normalizeGroups(
+        items[category] || [],
+        items.groups[category]
+    );
+    items[category] = result.items;
+    items.groups[category] = result.groups;
+    return result;
+}
+
+function syncAllGroups(items) {
+    const dissolved = [];
+    for (const category of CATEGORIES) {
+        dissolved.push(...syncCategoryGroups(items, category).dissolved);
+    }
+    return dissolved;
+}
+
 function writeItems(node, items, options = {}) {
     const widget = ensureStorageWidget(node);
     if (!widget) {
         return;
+    }
+    // 模型里的操作（移动 / 建组）会当场把空组剔掉，所以它会把
+    // 「刚刚被解散的组」一并交出来；这里只负责提示，不重复整理。
+    const dissolved = [
+        ...(Array.isArray(options.dissolved) ? options.dissolved : []),
+        ...syncAllGroups(items),
+    ];
+    // 组一声不响地消失，会让人以为文件也丢了。必须明确提示。
+    if (dissolved.length && options.recordUndo !== false) {
+        const names = [];
+        for (const record of dissolved) {
+            const label = record.name || record.id;
+            if (label && !names.includes(label)) {
+                names.push(label);
+            }
+        }
+        showToast(
+            node,
+            t(
+                "xdatahub.ui.node.xmedialistget.group_dissolved",
+                "Group {name} has no files left, so it was removed",
+                { name: names.join(", ") }
+            )
+        );
     }
     if (options.recordUndo !== false) {
         pushUndoSnapshot(node);
@@ -414,24 +575,6 @@ function readCategory(node) {
     }
     const value = widgetValue || "image";
     return CATEGORIES.includes(value) ? value : "image";
-}
-
-function readPageSize(node) {
-    const value = Number(node?.properties?.[PAGE_SIZE_PROP]);
-    if (!Number.isFinite(value)) {
-        return DEFAULT_PAGE_SIZE;
-    }
-    return Math.min(
-        MAX_PAGE_SIZE,
-        Math.max(MIN_PAGE_SIZE, Math.round(value))
-    );
-}
-
-function writePageSize(node, value) {
-    if (!node.properties || typeof node.properties !== "object") {
-        node.properties = {};
-    }
-    node.properties[PAGE_SIZE_PROP] = value;
 }
 
 function enabledCount(items, category) {
@@ -553,6 +696,9 @@ function ensureStyles() {
     style.id = STYLE_ID;
     style.textContent = `
         .xmlg-panel,
+        /* 拖动时跟手的卡片挂在 body 上（见 spawnGhost），
+           颜色变量要在这里再给一份 */
+        .xmlg-drag-ghost,
         .xmlg-preview {
             /* 颜色收口：优先 XDataHub token（由 web/xdatahub.js 注入宿主页），
                缺失时回退到品牌色/中性色。面板和全屏预览共用这套变量。 */
@@ -602,6 +748,7 @@ function ensureStyles() {
             --xmlg-scroll-track: var(--xdh-scrollbar-track, transparent);
         }
         .xmlg-panel {
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -792,12 +939,13 @@ function ensureStyles() {
             box-sizing: border-box;
         }
         .xmlg-list-toolbar .xmlg-status {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
+            /* 分页退场后工具栏按钮变多，状态文字不能再绝对居中（会和
+               按钮叠在一起），改成占剩余宽度、靠右对齐。 */
+            flex: 1 1 auto;
+            text-align: right;
             white-space: nowrap;
-            flex: none;
-            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .xmlg-list-toolbar label {
             display: inline-flex;
@@ -811,10 +959,6 @@ function ensureStyles() {
             align-items: center;
             gap: 4px;
             white-space: nowrap;
-        }
-        .xmlg-range {
-            width: 56px;
-            accent-color: var(--xmlg-accent);
         }
         .xmlg-btn {
             width: 22px;
@@ -841,11 +985,18 @@ function ensureStyles() {
             opacity: 0.4;
             cursor: default;
         }
+        /* 「创建分组」不可用时不用真 disabled：真 disabled 的按钮收不到
+           鼠标事件，悬停提示就永远看不到为什么点不动。 */
+        .xmlg-btn.is-disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
         .xmlg-status {
             flex: 1 1 auto;
-            text-align: center;
+            text-align: right;
             opacity: 0.8;
             font-size: 11px;
+            font-variant-numeric: tabular-nums;
         }
         .xmlg-list-viewport {
             position: relative;
@@ -884,6 +1035,9 @@ function ensureStyles() {
             display: flex;
             align-items: center;
             gap: 6px;
+            /* 按住行是要搬它，不是要选字：一旦选中文字，浏览器会启动
+               原生「拖选文字」，我们的拖动会被 pointercancel 打断 */
+            user-select: none;
             min-height: 44px;
             flex: 0 0 auto;
             padding: 4px 6px;
@@ -901,6 +1055,16 @@ function ensureStyles() {
             border-right: 1px solid var(--xmlg-border);
             padding-right: 6px;
             box-sizing: border-box;
+        }
+        /* 组内行的序号（含没有序号时的「–」）用组色，和左侧竖线呼应 */
+        .xmlg-row.is-grouped .xmlg-seq {
+            color: var(--xmlg-group-stripe, var(--xmlg-accent));
+            opacity: 1;
+            border-right-color: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 45%,
+                transparent
+            );
         }
         .xmlg-row-hint {
             position: absolute;
@@ -929,21 +1093,100 @@ function ensureStyles() {
         .xmlg-row.is-disabled {
             opacity: 0.5;
         }
-        /* 拖动中的行：不能只靠变淡（那和禁用分不开），用虚线 + 强调色
-           底 + 抬起表示「正被搬走」。必须写在 :hover / .is-disabled
-           之后，两者同时命中时以拖动为准。 */
-        .xmlg-row.is-dragging {
-            opacity: 0.95;
-            border-width: 1px;
-            border-style: dashed;
+        /* 每组一根竖线：整组一条，画在行边框外面的留白里。
+           做成一个绝对定位元素（而不是每行一个伪元素），组头和第一行
+           之间才不会断成两截。上下位置由脚本按组头和最后一行的位置算。 */
+        .xmlg-group-rail {
+            position: absolute;
+            /* 列表左内边距 6px、行边框正好在 6px 处：竖线占 1~4px，在边框外 */
+            left: 1px;
+            width: 3px;
+            border-radius: 3px;
+            background: var(--xmlg-group-stripe, var(--xmlg-accent));
+            pointer-events: none;
+        }
+        .xmlg-row.is-selected {
+            border-color: var(--xmlg-accent);
+            box-shadow: inset 0 0 0 1px var(--xmlg-accent);
+        }
+        .xmlg-group-head.is-group-target {
+            border-color: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 70%,
+                transparent
+            );
+        }
+        .xmlg-group-head.is-drop-target {
             border-color: var(--xmlg-accent);
             background: color-mix(
                 in srgb,
-                var(--xmlg-accent) 12%,
+                var(--xmlg-accent) 20%,
+                transparent
+            );
+        }
+        /* 拖动中的行：不能只靠变淡（那和禁用分不开），用虚线 + 强调色
+           底 + 抬起表示「正被搬走」。必须写在 :hover / .is-disabled
+           之后，两者同时命中时以拖动为准。 */
+        /* 拖动中的行不再是「抬起的那张卡片」——卡片是浏览器自己画的
+           拖影，这里的原件留在列表里当「空槽位」：位置就是落点，
+           用户看到的是一个虚线框，松手就地变成这一行。 */
+        /* 拖动中的行只把「内容」藏起来，它占的那一格留着：
+           这样列表里能看出这一格空出来、要落在这儿（让位动画也才有东西可让）。
+           用 display: none 的话整行连位置一起消失，拖动时列表纹丝不动，
+           就看不出会插到哪了。 */
+        .xmlg-row.is-dragging {
+            visibility: hidden;
+        }
+        /* 拖动中整个列表不参与鼠标命中：悬停样式（行边框变色、按钮变亮、
+           缩略图预览）就全部自然失效——边框一亮会被误读成「放上来就覆盖」。
+           落点只按位置算，跟指针压在谁身上无关。 */
+        body.xmlg-pointer-dragging .xmlg-list {
+            pointer-events: none;
+        }
+        /* 跟着指针走的卡片：源行已经藏起来了，这一张就是它本身 */
+        .xmlg-drag-ghost {
+            position: fixed;
+            z-index: 99999;
+            pointer-events: none;
+            /* 不透明：半透明会把下面那行透出来，看起来像是重影 */
+            opacity: 1;
+            /* 不许放大：放大 1% 就会往两边各溢出一个像素，
+               正好压住行左边那根组竖线，竖线就看不清了。
+               卡片和原来的行一样大，只靠阴影表现「浮起来」。 */
+            box-shadow: var(--xdh-shadow-popup, 0 10px 26px rgba(0, 0, 0, 0.45));
+        }
+        /* 卡片必须完全不透明：禁用行本身是 50% 半透明，直接克隆过来
+           会透出下面的行，看着像重影（选择器要比 .is-disabled 更具体） */
+        .xmlg-row.xmlg-drag-ghost,
+        .xmlg-group-head.xmlg-drag-ghost {
+            opacity: 1;
+        }
+        /* 组胶囊的底色是「组色 20% + 透明」，拿它当卡片会透出下面的行：
+           换成同一个颜色压在不透明底色上 */
+        .xmlg-group-head.xmlg-drag-ghost {
+            background: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 18%,
                 var(--xmlg-surface-strong)
             );
-            box-shadow: var(--xdh-shadow-popup, 0 8px 20px rgba(0, 0, 0, 0.35));
+        }
+        /* 指针拖动期间：不选中文字，光标保持「抓着」 */
+        body.xmlg-pointer-dragging {
+            user-select: none;
             cursor: grabbing;
+        }
+        /* 拖一行进组时，这一组的竖线要跟着变长：
+           给它一个和行让位同长的过渡，别瞬间跳到新长度。
+           只在指针拖动期间开——否则刷新页面时竖线会从 3px 长出来。 */
+        body.xmlg-pointer-dragging .xmlg-group-rail {
+            transition:
+                height ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0, 1),
+                top ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0, 1);
+        }
+        /* 让位时正在滑动的行：交给合成层，长列表里不抖 */
+        .xmlg-row.is-sliding,
+        .xmlg-group-head.is-sliding {
+            will-change: transform;
         }
         .xmlg-mask-btn {
             font-size: 12px;
@@ -960,15 +1203,38 @@ function ensureStyles() {
             filter: none;
             opacity: 1;
         }
+        /* 行的操作按钮之间那条竖线：align-self 撑满行高，再用负外边距
+           吃掉行的上下内边距，线两头正好顶到行边框（原来是固定 16px，
+           上下各留一截空白）。 */
         .xmlg-row-divider {
+            align-self: stretch;
+            margin: -4px 0;
             width: 1px;
-            height: 16px;
-            flex: 0 0 auto;
+            flex: 0 0 1px;
             background: var(--xmlg-border);
         }
         .xmlg-row.is-missing {
             border-color: var(--xmlg-danger);
             background: var(--xmlg-danger-soft);
+        }
+        /* 拖整组时这一摞一起变淡（比单行更淡：表示整块在搬） */
+        .xmlg-row.is-block-dragging {
+            opacity: 0.45;
+        }
+        /* 拖整组时这一组当场折起来：只留组名那一行
+           （和「折叠组」看起来一致，只是不改数据） */
+        /* 组内成员：整块让开，不占位置 */
+        .xmlg-row.is-drag-collapsed {
+            display: none;
+        }
+        /* 组名那一行：内容藏起来，但那一格留着当空位，
+           拖动时其它组和行才能滑开让位，看出这一组会落到哪 */
+        .xmlg-group-head.is-drag-collapsed {
+            visibility: hidden;
+        }
+        .xmlg-group-head.is-dragging {
+            cursor: grabbing;
+            opacity: 0.7;
         }
         .xmlg-row.is-replace-target {
             border-color: var(--xmlg-warning);
@@ -1134,10 +1400,259 @@ function ensureStyles() {
             pointer-events: none;
             box-sizing: border-box;
         }
-        .xmlg-pager {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
+        /* 组头本身就是一整行贯穿的胶囊：底色用组色兑淡、边框用组色，
+           箭头 / 名字 / 计数 / 设置按钮都住在里面。顶上不画分隔线。 */
+        .xmlg-row input,
+        .xmlg-group-name-input {
+            user-select: text;
+        }
+        .xmlg-group-head {
+            user-select: none;
+            position: relative;
+            display: flex;
             align-items: center;
+            /* 箭头、名字、计数之间留出呼吸区（原来 6px 挤在一起） */
+            gap: 9px;
+            min-height: 28px;
+            /* 不要额外上边距：列表本身就是 4px 间距，再加 6px 会让
+               「组上方的缝」比「组下方」「行与行之间」都大一截 */
+            margin: 0;
+            padding: 2px 8px 2px 4px;
+            border: 1px solid color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 40%,
+                transparent
+            );
+            border-radius: 999px;
+            background: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 16%,
+                transparent
+            );
+            font-size: 11px;
+            line-height: 1.2;
+            box-sizing: border-box;
+        }
+        .xmlg-group-arrow {
+            flex: 0 0 auto;
+            width: 18px;
+            height: 18px;
+            margin-left: 1px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid transparent;
+            border-radius: 999px;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            line-height: 1;
+            cursor: pointer;
+        }
+        /* 用图标而不是字符：字符受字号限制，缩小后笔画糊在一起 */
+        .xmlg-group-arrow::before {
+            content: "";
+            width: 16px;
+            height: 16px;
+            background: currentColor;
+            -webkit-mask: url("${GROUP_ARROW_ICON_URL}") center / contain
+                no-repeat;
+            mask: url("${GROUP_ARROW_ICON_URL}") center / contain no-repeat;
+            transition: transform 160ms cubic-bezier(0.2, 0, 0.6, 1);
+        }
+        /* 展开时朝下，折叠时就地转成朝右 */
+        .xmlg-group-arrow.is-collapsed::before {
+            transform: rotate(-90deg);
+        }
+        .xmlg-group-arrow:hover {
+            border-color: var(--xmlg-border);
+            background: var(--xmlg-surface-strong);
+        }
+        /* 折叠组胶囊正中间的「这一组有几个文件」 */
+        .xmlg-group-count {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            padding: 0 6px;
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+        .xmlg-group-head.is-collapsed .xmlg-group-count {
+            display: block;
+        }
+        .xmlg-group-name {
+            flex: 0 1 auto;
+            min-width: 0;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: text;
+        }
+        .xmlg-group-name-input {
+            flex: 1 1 auto;
+            min-width: 60px;
+            height: 20px;
+            padding: 0 6px;
+            border: 1px solid var(--xmlg-accent);
+            border-radius: 999px;
+            background: var(--xmlg-canvas, rgba(0, 0, 0, 0.35));
+            color: inherit;
+            font: inherit;
+            font-size: 11px;
+            box-sizing: border-box;
+        }
+        /* 胶囊里的设置按钮：圆角跟着胶囊走，不然右端会显得方方正正 */
+        .xmlg-group-settings {
+            margin-left: auto;
+            flex: 0 0 auto;
+            width: auto;
+            min-width: 0;
+            height: 20px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 22%,
+                transparent
+            );
+            font-size: 10px;
+            white-space: nowrap;
+        }
+        .xmlg-group-btn {
+            width: auto;
+            min-width: 0;
+            padding: 0 8px;
+            font-size: 11px;
+        }
+        .xmlg-modal {
+            position: absolute;
+            inset: 0;
+            z-index: 30;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            background: var(--xmlg-scrim, rgba(0, 0, 0, 0.55));
+            backdrop-filter: blur(1.5px);
+            box-sizing: border-box;
+        }
+        .xmlg-modal-card {
+            width: 100%;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            border-radius: var(--xdh-radius-sm, 10px);
+            border: 1px solid var(--xmlg-border, rgba(255, 255, 255, 0.14));
+            background: var(--xmlg-surface-strong, rgba(32, 32, 36, 0.96));
+            box-shadow: var(--xdh-shadow-popup, 0 12px 32px rgba(0, 0, 0, 0.5));
+            box-sizing: border-box;
+        }
+        .xmlg-modal-title {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .xmlg-modal-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .xmlg-modal-label {
+            font-size: 10px;
+            opacity: 0.6;
+        }
+        .xmlg-modal-input {
+            width: 100%;
+            height: 26px;
+            padding: 0 8px;
+            border: 1px solid var(--xmlg-border, rgba(255, 255, 255, 0.14));
+            border-radius: var(--xdh-radius-xs, 4px);
+            background: var(--xmlg-canvas, rgba(0, 0, 0, 0.35));
+            color: inherit;
+            font: inherit;
+            font-size: 11px;
+            box-sizing: border-box;
+        }
+        .xmlg-modal-input:focus {
+            outline: none;
+            border-color: var(--xmlg-accent);
+        }
+        .xmlg-swatches {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .xmlg-swatch {
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 1px solid var(--xmlg-border, rgba(255, 255, 255, 0.14));
+            border-radius: 999px;
+            background: var(--xmlg-swatch, var(--xmlg-accent));
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        /* 选中的颜色：外圈描一道亮边，深色浅色主题都看得清 */
+        .xmlg-swatch.is-active {
+            box-shadow: 0 0 0 2px var(--xmlg-surface-strong, #202024),
+                0 0 0 3px var(--xmlg-swatch, var(--xmlg-accent));
+        }
+        .xmlg-swatch:hover {
+            box-shadow: 0 0 0 2px var(--xmlg-surface-strong, #202024),
+                0 0 0 3px color-mix(
+                    in srgb,
+                    var(--xmlg-swatch, var(--xmlg-accent)) 70%,
+                    transparent
+                );
+        }
+        .xmlg-modal-text {
+            font-size: 11px;
+            line-height: 1.5;
+            opacity: 0.8;
+        }
+        .xmlg-modal-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .xmlg-modal-btn {
+            width: 100%;
+            height: 26px;
+            padding: 0 8px;
+            border: 1px solid var(--xmlg-border, rgba(255, 255, 255, 0.14));
+            border-radius: var(--xdh-radius-xs, 4px);
+            background: var(--xmlg-surface, rgba(255, 255, 255, 0.06));
+            color: inherit;
+            font: inherit;
+            font-size: 11px;
+            line-height: 1;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            box-sizing: border-box;
+        }
+        .xmlg-modal-btn:hover {
+            border-color: var(--xmlg-accent);
+        }
+        .xmlg-modal-btn.is-danger {
+            border-color: var(--xmlg-danger, #D90429);
+            color: var(--xmlg-danger-bright, #FF6B6B);
+        }
+        .xmlg-modal-btn.is-danger:hover {
+            background: var(--xmlg-danger-soft, rgba(217, 4, 41, 0.16));
+        }
+        .xmlg-pager {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             gap: 8px;
             min-height: 30px;
             padding: 4px 10px;
@@ -1146,26 +1661,13 @@ function ensureStyles() {
             background: var(--xmlg-surface);
             box-sizing: border-box;
         }
-        .xmlg-pager-center {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
         .xmlg-total {
-            justify-self: start;
             font-size: 11px;
             opacity: 0.6;
             white-space: nowrap;
         }
         .xmlg-pager-clear {
-            justify-self: end;
             font-size: 13px;
-        }
-        .xmlg-page-status {
-            min-width: 96px;
-            text-align: center;
-            opacity: 0.85;
         }
         .xmlg-overlay {
             position: absolute;
@@ -2006,26 +2508,21 @@ function buildPanel() {
     const invertButton = element("button", "xmlg-btn", "⇄");
     invertButton.type = "button";
     const status = element("div", "xmlg-status", "—");
-    const pageLabel = element("label");
-    const pageText = element("span", null, "Per page");
-    const range = document.createElement("input");
-    range.type = "range";
-    range.className = "xmlg-range";
-    range.min = String(MIN_PAGE_SIZE);
-    range.max = String(MAX_PAGE_SIZE);
-    range.step = "5";
-    range.value = String(DEFAULT_PAGE_SIZE);
-    const rangeValue = element("span", "xmlg-range-value", String(range.value));
-    pageLabel.appendChild(pageText);
-    pageLabel.appendChild(range);
-    pageLabel.appendChild(rangeValue);
+    const groupButton = element("button", "xmlg-btn xmlg-group-btn", "＋");
+    groupButton.type = "button";
+    bindHint(groupButton, () => t(
+        "xdatahub.ui.node.xmedialistget.new_group_tooltip",
+        "Create a group from the selected files that aren't in one yet."
+    ));
     listToolbar.appendChild(refreshButton);
     listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
     listToolbar.appendChild(enableAllButton);
     listToolbar.appendChild(disableAllButton);
     listToolbar.appendChild(invertButton);
+    // 创建分组是「批量选择」入口，和上面的开关类按钮之间留一条分隔线
+    listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
+    listToolbar.appendChild(groupButton);
     listToolbar.appendChild(status);
-    listToolbar.appendChild(pageLabel);
 
     const list = element("div", "xmlg-list");
     const overlay = element("div", "xmlg-overlay");
@@ -2050,21 +2547,13 @@ function buildPanel() {
     listViewport.appendChild(overlay);
     listViewport.appendChild(toast);
 
+    // 底栏只剩「共 N 个文件」和「清空本分类」：页码、上一页 /
+    // 下一页、每页条数都随分页一起退场了。
     const pager = element("div", "xmlg-pager");
     const total = element("span", "xmlg-total", "");
-    const pagerCenter = element("div", "xmlg-pager-center");
-    const prevButton = element("button", "xmlg-btn", "‹");
-    prevButton.type = "button";
-    const pageStatus = element("span", "xmlg-page-status", "1 / 1");
-    const nextButton = element("button", "xmlg-btn", "›");
-    nextButton.type = "button";
     const clearButton = element("button", "xmlg-btn xmlg-pager-clear", "🗑️");
     clearButton.type = "button";
-    pagerCenter.appendChild(prevButton);
-    pagerCenter.appendChild(pageStatus);
-    pagerCenter.appendChild(nextButton);
     pager.appendChild(total);
-    pager.appendChild(pagerCenter);
     pager.appendChild(clearButton);
 
     const listShell = element("div", "xmlg-list-shell");
@@ -2092,13 +2581,11 @@ function buildPanel() {
         panel,
         tabs,
         tabButtons,
-        range,
-        rangeValue,
-        pageText,
         refreshButton,
         enableAllButton,
         disableAllButton,
         invertButton,
+        groupButton,
         undoButton,
         redoButton,
         warningToggle,
@@ -2115,9 +2602,6 @@ function buildPanel() {
         dropLabel,
         empty,
         toast,
-        prevButton,
-        pageStatus,
-        nextButton,
         total,
         tooltip,
         tooltipMedia,
@@ -2201,44 +2685,728 @@ function buildThumb(category, ref) {
     return image;
 }
 
+/** 色号 → CSS 颜色（每一项都自带兜底色，主题变量没加载也不会变透明）。 */
+function groupColorValue(colorId) {
+    const picked = GROUP_COLORS.find((item) => item.id === colorId);
+    return picked ? picked.value : "";
+}
+
+/**
+ * 组当前用的是哪个色号：用户选过就用选的，没选过按组 id 哈希挑一个。
+ * 传组记录或组 id 都行（老调用点只给 id）。
+ */
+function groupColorId(group) {
+    const record = group && typeof group === "object" ? group : null;
+    if (record && groupColorValue(record.color)) {
+        return record.color;
+    }
+    const text = String(record ? record.id : group || "");
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+        hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+    }
+    return GROUP_COLORS[hash % GROUP_COLORS.length].id;
+}
+
+/** 组色带的 CSS 颜色。 */
+function groupStripeColor(group) {
+    return groupColorValue(groupColorId(group));
+}
+
+/* 列表重建时把已经不存在的文件从选择里剔掉。 */
+function pruneSelection(state, items) {
+    const alive = new Set((items || []).map((entry) => entry.ref));
+    for (const ref of Array.from(state.selection || [])) {
+        if (!alive.has(ref)) {
+            state.selection.delete(ref);
+        }
+    }
+    if (!state.selection.size) {
+        state.selectionAnchor = null;
+        return;
+    }
+    if (
+        state.selectionAnchor == null
+        || state.selectionAnchor >= items.length
+    ) {
+        state.selectionAnchor = Math.max(0, items.length - 1);
+    }
+}
+
+/**
+ * 行的选择：普通点击选一个，Ctrl/Cmd 加选，Shift 连选一段。
+ *
+ * 选择只用于「成组」，拖动永远是单行 —— 不然拖一行动了一整批
+ * 会变成新的惊吓源。
+ */
+function handleRowSelection(node, category, ref, index, event) {
+    const state = node?.__xmlg_panel?.state;
+    if (!state) {
+        return;
+    }
+    const additive = event.ctrlKey || event.metaKey;
+    const items = state.items[category] || [];
+    if (
+        event.shiftKey
+        && Number.isFinite(state.selectionAnchor)
+    ) {
+        const start = Math.min(state.selectionAnchor, index);
+        const end = Math.max(state.selectionAnchor, index);
+        if (!additive) {
+            state.selection.clear();
+        }
+        for (let cursor = start; cursor <= end; cursor += 1) {
+            const entry = items[cursor];
+            if (entry) {
+                state.selection.add(entry.ref);
+            }
+        }
+    } else if (additive) {
+        if (state.selection.has(ref)) {
+            state.selection.delete(ref);
+        } else {
+            state.selection.add(ref);
+        }
+        state.selectionAnchor = index;
+    } else {
+        const alreadyOnly = state.selection.size === 1
+            && state.selection.has(ref);
+        state.selection.clear();
+        if (!alreadyOnly) {
+            state.selection.add(ref);
+        }
+        state.selectionAnchor = index;
+    }
+    renderPanel(node);
+}
+
+/** 把当前选中的文件合成一个组（默认名「组 N」）。 */
+/**
+ * 选中的文件里，还没有加入任何分组的那些。
+ *
+ * 「创建分组」只服务于未分组的文件：已经在组里的文件再去建组，
+ * 等于把它从原来的组里拽出来，用户不会预料到这一点 —— 想换组
+ * 应该用拖动（拖到别的组的地盘上），而不是重新建一个组。
+ */
+function ungroupedSelection(state, category) {
+    const list = state?.items?.[category] || [];
+    const picked = [];
+    for (const entry of list) {
+        if (entry.group) {
+            continue;
+        }
+        if (state.selection.has(entry.ref)) {
+            picked.push(entry.ref);
+        }
+    }
+    return picked;
+}
+
+function createGroupFromCurrentSelection(node) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    const state = panel.state;
+    const category = state.category;
+    if (!state.selection.size) {
+        return;
+    }
+    const available = ungroupedSelection(state, category);
+    if (!available.length) {
+        // 选中的全都在组里：不动它们，也不造出空组
+        showToast(
+            node,
+            t(
+                "xdatahub.ui.node.xmedialistget.group_all_selected_grouped",
+                "Those files are already in groups. Only files without a group can start a new one.",
+            ),
+            { warning: true }
+        );
+        return;
+    }
+    const skipped = state.selection.size - available.length;
+    const items = state.items;
+    const groups = items.groups?.[category] || [];
+    const name = t(
+        "xdatahub.ui.node.xmedialistget.group_default_name",
+        "Group {index}",
+        { index: groups.length + 1 }
+    );
+    const result = createGroupFromSelection(
+        items[category] || [],
+        groups,
+        available,
+        name,
+        { keyOf: XMLG_KEY_OF }
+    );
+    if (!result.id) {
+        return;
+    }
+    items[category] = result.items;
+    items.groups[category] = result.groups;
+    state.selection.clear();
+    state.selectionAnchor = null;
+    writeItems(node, items, { dissolved: result.dissolved });
+    renderPanel(node);
+    // 建完直接进改名状态：名字天生是「组 N」，让用户顺手改掉
+    beginGroupRename(node, result.id);
+    scrollRowIntoView(node, Math.max(0, (result.insertAt || 0)));
+    if (skipped > 0) {
+        // 混选时明确告诉用户「有几个没算进去」，避免以为全都建进去了
+        showToast(
+            node,
+            t(
+                "xdatahub.ui.node.xmedialistget.group_skipped_grouped",
+                "Skipped {count} files that are already in a group",
+                { count: skipped }
+            ),
+            { warning: true }
+        );
+    }
+}
+
+function startGroupRename(node, category, groupId, head, nameEl) {
+    if (!head || head.querySelector(".xmlg-group-name-input")) {
+        return;
+    }
+    const groups = node?.__xmlg_panel?.state?.items?.groups?.[category];
+    const record = (groups || []).find((item) => item.id === groupId);
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "xmlg-group-name-input";
+    input.value = String(record?.name || "");
+    nameEl.style.display = "none";
+    // 名字现在包在胶囊里，输入框要插到同一层，别把胶囊撑坏
+    nameEl.parentElement.insertBefore(input, nameEl);
+    input.focus();
+    input.select();
+    let finished = false;
+    const finish = (commit) => {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        const value = input.value.trim();
+        input.remove();
+        nameEl.style.display = "";
+        if (commit) {
+            applyGroupRename(node, category, groupId, value);
+        }
+    };
+    input.addEventListener("keydown", (event) => {
+        // 不能把按键漏给画布（否则输入空格时画布可能吃到快捷键）
+        event.stopPropagation();
+        if (event.key === "Enter") {
+            event.preventDefault();
+            finish(true);
+        } else if (event.key === "Escape") {
+            event.preventDefault();
+            finish(false);
+        }
+    });
+    input.addEventListener("blur", () => finish(true));
+}
+
+/** 给组头找到改名入口（建组后直接用）。 */
+function beginGroupRename(node, groupId) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !groupId) {
+        return;
+    }
+    const head = panel.list.querySelector(
+        `.xmlg-group-head[data-group-id="${groupId}"]`
+    );
+    const nameEl = head?.querySelector(".xmlg-group-name");
+    if (!head || !nameEl) {
+        return;
+    }
+    startGroupRename(node, panel.state.category, groupId, head, nameEl);
+}
+
+function applyGroupRename(node, category, groupId, value) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    const items = panel.state.items;
+    const groups = items.groups?.[category] || [];
+    const record = groups.find((item) => item.id === groupId);
+    const next = String(value || "").trim();
+    // 空名字不接受：组名不能是空白，保留原名重画
+    if (!record || !next || next === record.name) {
+        renderPanel(node);
+        return;
+    }
+    items.groups[category] = renameGroup(groups, groupId, next);
+    writeItems(node, items);
+    renderPanel(node);
+}
+
+function setGroupCollapsed(node, category, groupId, collapsed) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    const items = panel.state.items;
+    items.groups[category] = setCollapsed(
+        items.groups?.[category] || [],
+        groupId,
+        collapsed
+    );
+    writeItems(node, items);
+    renderPanel(node);
+}
+
+function closeGroupDialog(node) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    panel.modal?.remove();
+    panel.modal = null;
+}
+
+/**
+ * 组设置框：改名、换色、取消组、删除组都放这儿。
+ * 组头只留一个入口 —— 一排小按钮在窄面板里挤成一团，还容易误点。
+ *
+ * 名称/颜色是「即改即生效」（带撤销快照），改完框不关；
+ * 取消组和删除组会关框，删除组还有一次二次确认。
+ */
+function openGroupSettingsDialog(node, category, entry) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    closeGroupDialog(node);
+    const groupId = entry.groupId;
+    const group = entry.group;
+    const count = entry.memberCount;
+    const modal = element("div", "xmlg-modal");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    const card = element("div", "xmlg-modal-card");
+    card.appendChild(element(
+        "div",
+        "xmlg-modal-title",
+        t(
+            "xdatahub.ui.node.xmedialistget.group_settings_title",
+            "Group settings"
+        )
+    ));
+
+    const nameField = element("label", "xmlg-modal-field");
+    nameField.appendChild(element(
+        "span",
+        "xmlg-modal-label",
+        t("xdatahub.ui.node.xmedialistget.group_name_label", "Name")
+    ));
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "xmlg-modal-input";
+    input.maxLength = 60;
+    input.value = String(group.name || groupId);
+    input.addEventListener("keydown", (event) => {
+        // 按键不能漏给画布（空格/方向键会被当成快捷键）
+        event.stopPropagation();
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeGroupDialog(node);
+            return;
+        }
+        if (event.key === "Enter") {
+            event.preventDefault();
+            input.blur();
+        }
+    });
+    input.addEventListener("change", () => {
+        applyGroupRename(node, category, groupId, input.value);
+        // 空名字不收：重画后把框里的内容拉回真名，别让用户以为改成功了
+        const live = groupRecord(node, category, groupId);
+        input.value = String(live?.name || groupId);
+    });
+    nameField.appendChild(input);
+    card.appendChild(nameField);
+
+    const colorField = element("div", "xmlg-modal-field");
+    colorField.appendChild(element(
+        "span",
+        "xmlg-modal-label",
+        t("xdatahub.ui.node.xmedialistget.group_color_label", "Color")
+    ));
+    const swatches = element("div", "xmlg-swatches");
+    const activeId = groupColorId(groupRecord(node, category, groupId) || group);
+    for (const color of GROUP_COLORS) {
+        const swatch = element("button", "xmlg-swatch");
+        swatch.type = "button";
+        swatch.dataset.color = color.id;
+        swatch.style.setProperty("--xmlg-swatch", groupColorValue(color.id));
+        const label = t(
+            `xdatahub.ui.node.xmedialistget.${color.nameKey}`,
+            color.fallback
+        );
+        swatch.setAttribute("aria-label", label);
+        swatch.setAttribute("aria-pressed", String(color.id === activeId));
+        bindHint(swatch, () => label);
+        if (color.id === activeId) {
+            swatch.classList.add("is-active");
+        }
+        swatch.addEventListener("click", () => {
+            applyGroupColor(node, category, groupId, color.id);
+            for (const other of swatches.children) {
+                const picked = other === swatch;
+                other.classList.toggle("is-active", picked);
+                other.setAttribute("aria-pressed", String(picked));
+            }
+        });
+        swatches.appendChild(swatch);
+    }
+    colorField.appendChild(swatches);
+    card.appendChild(colorField);
+
+    card.appendChild(element(
+        "div",
+        "xmlg-modal-text",
+        t(
+            "xdatahub.ui.node.xmedialistget.group_delete_hint",
+            "This group holds {count} files. Decide what happens to them.",
+            { count }
+        )
+    ));
+
+    const keepButton = element(
+        "button",
+        "xmlg-modal-btn",
+        t(
+            "xdatahub.ui.node.xmedialistget.group_delete_keep",
+            "Keep {count} files and move them out of the group",
+            { count }
+        )
+    );
+    keepButton.type = "button";
+    keepButton.addEventListener("click", () => {
+        closeGroupDialog(node);
+        applyGroupDelete(node, category, groupId, "ungroup");
+    });
+
+    const wipeButton = element(
+        "button",
+        "xmlg-modal-btn is-danger",
+        t(
+            "xdatahub.ui.node.xmedialistget.group_delete_files",
+            "Delete this group and its {count} files",
+            { count }
+        )
+    );
+    wipeButton.type = "button";
+    wipeButton.addEventListener("click", () => {
+        const message = t(
+            "xdatahub.ui.node.xmedialistget.group_delete_confirm",
+            "Delete {count} files for good?",
+            { count }
+        );
+        if (!window.confirm(message)) {
+            return;
+        }
+        closeGroupDialog(node);
+        applyGroupDelete(node, category, groupId, "delete");
+    });
+
+    const doneButton = element(
+        "button",
+        "xmlg-modal-btn",
+        t("xdatahub.ui.node.xmedialistget.group_done", "Done")
+    );
+    doneButton.type = "button";
+    doneButton.addEventListener("click", () => closeGroupDialog(node));
+
+    const actions = element("div", "xmlg-modal-actions");
+    actions.appendChild(keepButton);
+    actions.appendChild(wipeButton);
+    actions.appendChild(doneButton);
+    card.appendChild(actions);
+    modal.appendChild(card);
+    modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+            closeGroupDialog(node);
+        }
+    });
+    modal.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeGroupDialog(node);
+        }
+    });
+    panel.panel.appendChild(modal);
+    panel.modal = modal;
+    // 焦点给名称框：破坏性按钮永远不能被回车顺手点到
+    input.focus();
+    input.select();
+}
+
+/** 取当前组记录（每次现查，弹框开着时列表可能已经重画过）。 */
+function groupRecord(node, category, groupId) {
+    const state = node?.__xmlg_panel?.state;
+    const groups = state?.items?.groups?.[category] || [];
+    return groups.find((item) => item.id === groupId) || null;
+}
+
+/** 换组颜色：写回组记录，色带立刻跟着变。 */
+function applyGroupColor(node, category, groupId, colorId) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    const items = panel.state.items;
+    const groups = items.groups?.[category] || [];
+    if (!groups.some((item) => item.id === groupId)) {
+        return;
+    }
+    items.groups[category] = groups.map((item) => (
+        item.id === groupId ? { ...item, color: colorId } : item
+    ));
+    writeItems(node, items);
+    renderPanel(node);
+}
+
+function applyGroupDelete(node, category, groupId, mode) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    const items = panel.state.items;
+    const result = deleteGroup(
+        items[category] || [],
+        items.groups?.[category] || [],
+        groupId,
+        mode
+    );
+    items[category] = result.items;
+    items.groups[category] = result.groups;
+    const alive = new Set(result.items.map((entry) => entry.ref));
+    for (const ref of Array.from(panel.state.selection)) {
+        if (!alive.has(ref)) {
+            panel.state.selection.delete(ref);
+        }
+    }
+    writeItems(node, items);
+    renderPanel(node);
+    showToast(
+        node,
+        mode === "delete"
+            ? t(
+                "xdatahub.ui.node.xmedialistget.group_files_deleted",
+                "Deleted a group and {count} files",
+                { count: result.removed }
+            )
+            : t(
+                "xdatahub.ui.node.xmedialistget.group_ungrouped",
+                "Moved {count} files out of the group",
+                { count: result.removed }
+            ),
+        { warning: mode === "delete" }
+    );
+}
+
+/**
+ * 删掉某组最后一个成员时，组会跟着消失。删文件本身不可逆，所以这里
+ * 必须停下来问一句 —— 否则用户只看到「文件没了，组头也没了」。
+ * 拖出最后一个成员不做拦截（拖拽可逆，且有 toast 提示）。
+ */
+function confirmRemovingGroupMember(node, category, entry) {
+    const state = node?.__xmlg_panel?.state;
+    if (!state || !entry?.group) {
+        return true;
+    }
+    const members = groupMembers(state.items[category] || [], entry.group);
+    if (members.length > 1) {
+        return true;
+    }
+    const groups = state.items.groups?.[category] || [];
+    const record = groups.find((item) => item.id === entry.group);
+    return window.confirm(t(
+        "xdatahub.ui.node.xmedialistget.group_will_dissolve",
+        "This is the last file in group {name}. Removing it also removes the group. Continue?",
+        { name: record?.name || entry.group }
+    ));
+}
+
+/** 折叠组胶囊上的数字：「已启用 / 总数」，和底部那条 Enabled 统计同一个读法。 */
+function groupCountText(entry) {
+    const members = Array.isArray(entry?.members) ? entry.members : [];
+    const total = Number.isFinite(entry?.memberCount)
+        ? entry.memberCount
+        : members.length;
+    const enabled = members.filter(
+        (row) => row && row.enabled !== false
+    ).length;
+    return `${enabled}/${total}`;
+}
+
+function buildGroupHead(node, category, entry) {
+    const group = entry.group;
+    const head = element("div", "xmlg-group-head");
+    head.dataset.groupId = entry.groupId;
+    head.dataset.category = category;
+    // 折叠状态同时挂到组头上：胶囊居中那个计数只在折叠时露出来
+    head.classList.toggle("is-collapsed", Boolean(entry.collapsed));
+    head.style.setProperty(
+        "--xmlg-group-stripe",
+        groupStripeColor(group)
+    );
+
+    // 组头本身就是一个整行贯穿的胶囊：箭头 + 名字 + 计数 + 设置按钮
+    const arrow = element("button", "xmlg-group-arrow");
+    arrow.type = "button";
+    arrow.classList.toggle("is-collapsed", Boolean(entry.collapsed));
+    arrow.setAttribute("aria-expanded", String(!entry.collapsed));
+    bindHint(arrow, () => (
+        entry.collapsed
+            ? t("xdatahub.ui.node.xmedialistget.group_expand", "Expand")
+            : t("xdatahub.ui.node.xmedialistget.group_collapse", "Collapse")
+    ));
+    arrow.addEventListener("click", (event) => {
+        // 箭头只负责折叠，不参与拖动，也不触发行的选择
+        event.stopPropagation();
+        setGroupCollapsed(node, category, entry.groupId, !entry.collapsed);
+    });
+    head.appendChild(arrow);
+
+    const name = element(
+        "span",
+        "xmlg-group-name",
+        group.name || entry.groupId
+    );
+    bindHint(name, () => t(
+        "xdatahub.ui.node.xmedialistget.group_rename_tooltip",
+        "Double-click to rename"
+    ));
+    name.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        startGroupRename(node, category, entry.groupId, head, name);
+    });
+    head.appendChild(name);
+
+    // 折叠起来就看不见成员了，把「这一组有几个文件」写在胶囊正中间；
+    // 展开时成员都在眼前，这个数字是多余的，所以只在折叠时显示。
+    const count = element(
+        "span",
+        "xmlg-group-count",
+        groupCountText(entry)
+    );
+    head.appendChild(count);
+
+    // 改名 / 换色 / 取消组 / 删除组都收进这个设置框，组头只留一个入口
+    const settings = element(
+        "button",
+        "xmlg-btn xmlg-group-settings",
+        t("xdatahub.ui.node.xmedialistget.group_settings", "Settings")
+    );
+    settings.type = "button";
+    bindHint(settings, () => t(
+        "xdatahub.ui.node.xmedialistget.group_settings_tooltip",
+        "Rename, recolor, or remove this group"
+    ));
+    settings.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openGroupSettingsDialog(node, category, entry);
+    });
+    head.appendChild(settings);
+
+    // 组头就是「整块的把手」：按住胶囊就能把这一组整摞搬走。
+    // 展开组搬的是一整段，折叠组搬的只有组头（成员仍然跟着走）。
+    // 和行一样走指针事件（浏览器自带的拖放事件太稀疏，滑不流畅）。
+    bindHint(head, () => t(
+        "xdatahub.ui.node.xmedialistget.group_drag_tooltip",
+        "Drag to move the whole group"
+    ));
+    head.addEventListener("pointerdown", (event) => {
+        // 按在按钮上不算「抓组头」，否则点设置时手一抖就开始拖
+        if (event.target?.closest?.("button, input")) {
+            return;
+        }
+        armGroupPointerDrag(node, category, head, entry.groupId, event);
+    });
+    head.addEventListener("dragstart", (event) => {
+        event.preventDefault();
+    });
+
+    return head;
+}
+
+/**
+ * 行的 DOM 身份键。
+ *
+ * 同一个文件允许在列表里出现多次（比如从 XDataHub 把同一个文件拖进来两次）。
+ * 只拿 ref 当键的话，第二次出现的那一行根本没被登记，重排时会被当成
+ * 「多余节点」删掉——表现就是刚拖进来的那一行凭空消失、位置乱掉，而且
+ * 之后再怎么拖都对不上。这里按出现顺序补序号：首次是 ref，之后是 ref#2…
+ */
+function rowKeyOf(entry, seen) {
+    const ref = String(entry?.row?.ref || "");
+    const count = (seen.get(ref) || 0) + 1;
+    seen.set(ref, count);
+    return count > 1 ? `${ref}#${count}` : ref;
+}
+
 function buildRow(node, category, entry, index, enabledSeq = 0) {
     const state = node.__xmlg_panel.state;
     const row = element("div", "xmlg-row");
     row.dataset.index = String(index);
     row.dataset.ref = entry.ref;
     row.dataset.category = category;
+    // 拖动重排时这个节点会被搬到新位置，行号也跟着变。闭包里不能
+    // 留着旧 index，否则开关 / 预览 / 移除会作用到别的一行上。
+    const liveIndex = () => {
+        const value = Number(row.dataset.index);
+        return Number.isFinite(value) ? value : 0;
+    };
     if (entry.enabled === false) {
         row.classList.add("is-disabled");
     }
     if (state.missing.has(entry.ref)) {
         row.classList.add("is-missing");
     }
-    // 列表内排序：整行可拖，落点用插入线表示（不会覆盖目标行）
-    row.draggable = true;
-    row.addEventListener("dragstart", (event) => {
-        const panel = node.__xmlg_panel;
-        if (!panel) {
+    if (entry.group) {
+        // 竖线不画在行上（那样组头和第一行之间会断），由整组一根的
+        // .xmlg-group-rail 负责，这里只留「我在哪一组」的标记。
+        row.classList.add("is-grouped");
+        row.dataset.group = entry.group;
+    }
+    if (state.selection?.has(entry.ref)) {
+        row.classList.add("is-selected");
+    }
+    // 点行本身 = 选中；开关 / 缩略图 / 按钮有自己的点击行为，不抢。
+    row.addEventListener("click", (event) => {
+        if (
+            event.target?.closest?.(
+                "button, input, label, .xmlg-thumb, .xmlg-remove"
+            )
+        ) {
             return;
         }
-        panel.state.dragRow = { category, index, gap: null };
-        row.classList.add("is-dragging");
-        if (event.dataTransfer) {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData(
-                XMLG_ROW_MIME,
-                JSON.stringify({ category, index })
-            );
+        const panelState = node.__xmlg_panel?.state;
+        // 刚拖完免不了会来一个 click：这时不能再改选中
+        if (
+            panelState?.suppressClickUntil
+            && performance.now() < panelState.suppressClickUntil
+        ) {
+            return;
         }
+        handleRowSelection(node, category, entry.ref, liveIndex(), event);
     });
-    row.addEventListener("dragend", () => {
-        row.classList.remove("is-dragging");
-        const panel = node.__xmlg_panel;
-        if (!panel) {
-            return;
-        }
-        panel.state.dragRow = null;
-        stopDropAutoScroll(panel.state);
-        clearDragHighlights(panel);
+    // 列表内排序：按住行就能搬。
+    //
+    // 这里不用浏览器自带的拖放（draggable + dragstart）：它的 dragover
+    // 实测只有 10Hz 上下，行会一顿一顿地跳，做不出「其它行平滑滑开」
+    // 的效果。改用指针事件（每帧一次），Chromium 自己的标签条也是这么干的。
+    row.addEventListener("pointerdown", (event) => {
+        armRowPointerDrag(node, category, row, event);
+    });
+    // 缩略图之类的元素默认可以被浏览器拖走，那会把我们的指针拖动静悄悄掐断
+    row.addEventListener("dragstart", (event) => {
+        event.preventDefault();
     });
 
     const switchLabel = element("label", "xmlg-switch");
@@ -2251,6 +3419,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
             : t("xdatahub.ui.node.xmedialistget.disabled", "Disabled")
     ));
     const track = element("span", "xmlg-switch-track");
+    row.__xmlgSwitch = checkbox;
     switchLabel.appendChild(checkbox);
     switchLabel.appendChild(track);
     checkbox.addEventListener("change", () => {
@@ -2287,6 +3456,10 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     );
     thumb.appendChild(previewHintIcon);
     thumb.addEventListener("mouseenter", (event) => {
+        // 拖动中不弹预览：它会跟到光标旁边，把要看的落点整个盖住
+        if (event.buttons) {
+            return;
+        }
         showTooltip(node, event, category, entry);
     });
     thumb.addEventListener("mousemove", (event) => {
@@ -2297,7 +3470,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     });
     const openPreviewFromRow = () => {
         hideTooltip(node);
-        openMediaPreview(node, category, index);
+        openMediaPreview(node, category, liveIndex());
     };
     thumb.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -2343,18 +3516,22 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         if (!panelState) {
             return;
         }
-        panelState.items[category].splice(index, 1);
+        if (!confirmRemovingGroupMember(node, category, entry)) {
+            return;
+        }
+        panelState.items[category].splice(liveIndex(), 1);
         writeItems(node, panelState.items);
         renderPanel(node);
     });
 
-    row.appendChild(
-        element(
-            "span",
-            "xmlg-seq",
-            enabledSeq > 0 ? String(enabledSeq) : "–"
-        )
+    const seq = element(
+        "span",
+        "xmlg-seq",
+        enabledSeq > 0 ? String(enabledSeq) : "–"
     );
+    // 缓存起来：重排时只需改文字（每行都要重算序号），不必再查一次
+    row.__xmlgSeq = seq;
+    row.appendChild(seq);
     row.appendChild(switchLabel);
     row.appendChild(thumb);
     row.appendChild(name);
@@ -2493,10 +3670,20 @@ function stopTooltipVideo(panel) {
  */
 function disposeNodeUi(node) {
     stopDropAutoScroll(node?.__xmlg_panel?.state);
+    closeGroupDialog(node);
     const panel = node?.__xmlg_panel;
     if (!panel) {
         return;
     }
+    panel.state?.pointerDrag?.cleanup?.();
+    if (panel.state) {
+        panel.state.pointerDrag = null;
+    }
+    panel.railObserver?.disconnect();
+    panel.railObserver = null;
+    // 让位动画的收尾定时器也要停，否则面板拆了还会去碰已经不在的节点
+    window.clearTimeout(panel.slideTimer);
+    panel.slideTimer = 0;
     hideTooltip(node);
     panel.tooltip?.remove();
     panel.tooltip = null;
@@ -3657,6 +4844,10 @@ function bindHint(target, getText) {
         return;
     }
     target.addEventListener("mouseenter", (event) => {
+        // 拖动中不要弹提示：它会一直挂在光标旁边，把要看的落点挡住
+        if (event.buttons) {
+            return;
+        }
         const text = typeof getText === "function" ? getText() : getText;
         showHint(text, event);
     });
@@ -3720,14 +4911,6 @@ function renderPanel(node, options = {}) {
             state.category === category
         );
     }
-    panel.pageText.textContent = t(
-        "xdatahub.ui.node.xmedialistget.page_size_label",
-        "Per page"
-    );
-    if (document.activeElement !== panel.range) {
-        panel.range.value = String(state.pageSize);
-    }
-    panel.rangeValue.textContent = String(state.pageSize);
     panel.warningText.textContent = t(
         "xdatahub.ui.node.xmedialistget.type_warning",
         "Type warning"
@@ -3744,28 +4927,24 @@ function renderPanel(node, options = {}) {
     );
 
     const items = state.items[state.category] || [];
+    const groups = state.items.groups?.[state.category] || [];
+    pruneSelection(state, items);
     const hasItems = items.length > 0;
     panel.enableAllButton.disabled = !hasItems;
     panel.disableAllButton.disabled = !hasItems;
     panel.invertButton.disabled = !hasItems;
-    const enabledOrder = new Array(items.length).fill(0);
-    let enabledSeq = 0;
-    for (let index = 0; index < items.length; index += 1) {
-        if (items[index].enabled !== false) {
-            enabledSeq += 1;
-            enabledOrder[index] = enabledSeq;
-        }
-    }
-    const totalPages = Math.max(
-        1,
-        Math.ceil(items.length / state.pageSize)
+    // 只有选中了「还没分组」的文件时才能建组。这里不用真 disabled：
+    // 真 disabled 的按钮收不到悬停事件，用户看不到「为什么点不动」。
+    const groupable = ungroupedSelection(state, state.category).length;
+    panel.groupButton.classList.toggle("is-disabled", groupable < 1);
+    panel.groupButton.setAttribute(
+        "aria-disabled",
+        groupable < 1 ? "true" : "false"
     );
-    if (state.page > totalPages) {
-        state.page = totalPages;
-    }
-    if (state.page < 1) {
-        state.page = 1;
-    }
+    panel.groupButton.textContent = t(
+        "xdatahub.ui.node.xmedialistget.new_group",
+        "Create group"
+    );
 
     for (const child of Array.from(panel.list.children)) {
         if (
@@ -3780,19 +4959,77 @@ function renderPanel(node, options = {}) {
         child.remove();
     }
 
-    const start = (state.page - 1) * state.pageSize;
-    const visible = items.slice(start, start + state.pageSize);
-    for (let offset = 0; offset < visible.length; offset += 1) {
-        panel.list.appendChild(
-            buildRow(
-                node,
-                state.category,
-                visible[offset],
-                start + offset,
-                enabledOrder[start + offset]
-            )
+    // 一条长列表全量渲染。组头也算一行；序号只数「会加载」的行，
+    // 所以用户看到的数字就是实际加载顺序，跟组与折叠无关。
+    const entries = buildRenderList(items, groups, {
+        keyOf: XMLG_KEY_OF,
+        willLoad: (entry) => entry.enabled !== false,
+    });
+    // 组色带：组头和竖线共用同一个颜色，按组记录算一次。
+    const stripeByGroup = new Map(
+        groups.map((group) => [group.id, groupStripeColor(group)])
+    );
+    const headByGroup = new Map();
+    const lastRowByGroup = new Map();
+    // 行元素按「唯一键」索引，重排时直接拿回来搬位置（不重建，缩略图不重载）
+    const rowByRef = new Map();
+    const seenRefs = new Map();
+    for (const entry of entries) {
+        if (entry.type === "group") {
+            const head = buildGroupHead(node, state.category, entry);
+            headByGroup.set(entry.groupId, head);
+            panel.list.appendChild(head);
+            continue;
+        }
+        const rowEl = buildRow(
+            node,
+            state.category,
+            entry.row,
+            entry.index,
+            entry.seq
         );
+        if (entry.row.group) {
+            // 序号（以及没序号的「–」）跟着组色走，一眼看出这行属于哪一组
+            rowEl.style.setProperty(
+                "--xmlg-group-stripe",
+                stripeByGroup.get(entry.row.group)
+                    || groupStripeColor(entry.row.group)
+            );
+            lastRowByGroup.set(entry.row.group, rowEl);
+        }
+        rowByRef.set(rowKeyOf(entry, seenRefs), rowEl);
+        panel.list.appendChild(rowEl);
     }
+    panel.rowByRef = rowByRef;
+    panel.headByGroup = headByGroup;
+    // 每组一根竖线：从组头顶端一直画到最后一行底端。
+    // 做成一个绝对定位元素（而不是每行一个伪元素），组头和第一行之间
+    // 才不会断成两截；折叠的组就只贯穿组头那一条。
+    panel.railHosts = new Map();
+    for (const [groupId, head] of headByGroup) {
+        const rail = element("div", "xmlg-group-rail");
+        rail.dataset.group = groupId;
+        rail.style.setProperty(
+            "--xmlg-group-stripe",
+            stripeByGroup.get(groupId) || groupStripeColor(groupId)
+        );
+        panel.list.appendChild(rail);
+        panel.railHosts.set(groupId, {
+            rail,
+            head,
+            last: lastRowByGroup.get(groupId) || head,
+        });
+    }
+    // 换了新的一批组头和行，缓存作废，必须重新量
+    panel.railMeasured = false;
+    layoutGroupRails(panel);
+    ensureRailObserver(panel);
+    // 挂载瞬间布局可能还没算完，下一帧再校一次（幂等，代价很小）
+    window.requestAnimationFrame(() => {
+        if (panel.list?.isConnected) {
+            layoutGroupRails(panel);
+        }
+    });
 
     panel.empty.textContent = items.length
         ? ""
@@ -3802,18 +5039,11 @@ function renderPanel(node, options = {}) {
         );
     panel.empty.style.display = items.length ? "none" : "flex";
 
-    panel.pageStatus.textContent = t(
-        "xdatahub.ui.node.xmedialistget.page_status",
-        "Page {page} of {total}",
-        { page: state.page, total: totalPages }
-    );
     panel.total.textContent = t(
         "xdatahub.ui.node.xmedialistget.total_items",
         "{count} files",
         { count: items.length }
     );
-    panel.prevButton.disabled = state.page <= 1;
-    panel.nextButton.disabled = state.page >= totalPages;
     const targetScrollTop = Number.isFinite(options.scrollTop)
         ? options.scrollTop
         : prevScrollTop;
@@ -3835,6 +5065,23 @@ function renderPanel(node, options = {}) {
     refreshPreviewForNode(node);
 }
 
+/*
+ * 把某一行滚进视野。分页退场后不再有「第几页」，插入或拖入
+ * 新内容时改用这个，只滚列表本身（用 nearest 不会把整页弹走）。
+ */
+function scrollRowIntoView(node, index) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !Number.isFinite(Number(index))) {
+        return;
+    }
+    window.requestAnimationFrame(() => {
+        const row = panel.list.querySelector(
+            `.xmlg-row[data-index="${Number(index)}"]`
+        );
+        row?.scrollIntoView?.({ block: "nearest" });
+    });
+}
+
 function setCategory(node, category) {
     const panel = node?.__xmlg_panel;
     if (!panel || !CATEGORIES.includes(category)) {
@@ -3845,7 +5092,8 @@ function setCategory(node, category) {
         return;
     }
     state.category = category;
-    state.page = 1;
+    state.selection.clear();
+    state.selectionAnchor = null;
     const widget = findWidget(node, MEDIA_TYPE_WIDGET);
     if (widget) {
         widget.value = category;
@@ -4004,44 +5252,6 @@ function bindPanelEvents(node) {
             setCategory(node, category);
         });
     }
-    panel.range.addEventListener("input", () => {
-        const state = node.__xmlg_panel?.state;
-        if (!state) {
-            return;
-        }
-        const value = Math.min(
-            MAX_PAGE_SIZE,
-            Math.max(MIN_PAGE_SIZE, Number(panel.range.value) || DEFAULT_PAGE_SIZE)
-        );
-        state.pageSize = value;
-        state.page = 1;
-        writePageSize(node, value);
-        renderPanel(node);
-    });
-    panel.prevButton.addEventListener("click", () => {
-        const state = node.__xmlg_panel?.state;
-        if (!state || state.page <= 1) {
-            return;
-        }
-        state.page -= 1;
-        renderPanel(node, { scrollTop: 0 });
-    });
-    panel.nextButton.addEventListener("click", () => {
-        const state = node.__xmlg_panel?.state;
-        if (!state) {
-            return;
-        }
-        const items = state.items[state.category] || [];
-        const totalPages = Math.max(
-            1,
-            Math.ceil(items.length / state.pageSize)
-        );
-        if (state.page >= totalPages) {
-            return;
-        }
-        state.page += 1;
-        renderPanel(node, { scrollTop: 0 });
-    });
     panel.refreshButton.addEventListener("click", () => {
         refreshMissing(node).catch(() => {});
     });
@@ -4057,6 +5267,22 @@ function bindPanelEvents(node) {
     panel.invertButton.addEventListener("click", () => {
         invertEnabled(node);
     });
+    panel.groupButton.addEventListener("click", () => {
+        createGroupFromCurrentSelection(node);
+    });
+    // 点列表空白处取消选择（点行由行自己处理）
+    panel.list.addEventListener("click", (event) => {
+        const state = node.__xmlg_panel?.state;
+        if (!state || !state.selection.size) {
+            return;
+        }
+        if (event.target?.closest?.(".xmlg-row, .xmlg-group-head")) {
+            return;
+        }
+        state.selection.clear();
+        state.selectionAnchor = null;
+        renderPanel(node);
+    });
     bindHint(panel.enableAllButton, () => t(
         "xdatahub.ui.node.xmedialistget.enable_all",
         "All enabled"
@@ -4069,12 +5295,6 @@ function bindPanelEvents(node) {
         "xdatahub.ui.node.xmedialistget.invert_enabled",
         "Invert switches"
     ));
-    for (const target of [panel.pageText, panel.range, panel.rangeValue]) {
-        bindHint(target, () => t(
-            "xdatahub.ui.node.xmedialistget.page_size_tooltip",
-            "How many rows to draw per page."
-        ));
-    }
     bindHint(panel.refreshButton, () => t(
         "xdatahub.ui.node.xmedialistget.refresh_tooltip",
         "Check again whether these files still exist on disk."
@@ -4090,14 +5310,6 @@ function bindPanelEvents(node) {
     bindHint(panel.redoButton, () => t(
         "xdatahub.ui.node.xmedialistget.redo_tooltip",
         "Redo last undo"
-    ));
-    bindHint(panel.prevButton, () => t(
-        "xdatahub.ui.node.xmedialistget.page_prev",
-        "Previous"
-    ));
-    bindHint(panel.nextButton, () => t(
-        "xdatahub.ui.node.xmedialistget.page_next",
-        "Next"
     ));
     panel.undoButton.addEventListener("click", () => {
         undoLastChange(node);
@@ -4336,28 +5548,138 @@ function ensureDragState(node, dataTransfer) {
     return state.drag;
 }
 
-function isInternalRowDrag(dataTransfer) {
-    if (!dataTransfer || typeof dataTransfer.types?.includes !== "function") {
-        return false;
+/**
+ * 按组头和最后一行的实际位置重画每组那根竖线。
+ *
+ * 为什么不能只在 renderPanel 里算一次：节点刚创建 / 刚刷新网页时，
+ * DOM 小组件可能还没挂进画布，所有行的位置和高度都还是 0，
+ * 算出来的竖线只有 3px（等于看不见），必须等布局好了再算一次。
+ */
+function layoutGroupRails(panel) {
+    if (!panel?.railHosts?.size || !panel.list?.isConnected) {
+        return;
     }
-    return dataTransfer.types.includes(XMLG_ROW_MIME);
+    // 列表只变高（拖节点上下边）不会挪动任何一行，宽度没变就不用重新量。
+    // 省掉的是一次强制重排：300 行的列表约 4ms，拖动时会一帧一次。
+    const width = panel.list.clientWidth;
+    if (panel.railMeasured && panel.railWidth === width) {
+        return;
+    }
+    // 先把所有位置量完，再统一写样式。边量边写会让浏览器每改一次
+    // 样式就重排一次，几十个组在拖动窗口时会明显卡顿。
+    const plan = [];
+    for (const host of panel.railHosts.values()) {
+        // 组名那一行都藏起来了（拖整组时整组离开列表），竖线没有落点，
+        // 先收起来；等放回来再重新量
+        const headVisible = !!host.head?.isConnected
+            && host.head.offsetHeight > 0
+            && !host.head.classList.contains("is-drag-collapsed");
+        if (!headVisible || host.rail.style.display === "none") {
+            const want = headVisible ? "" : "none";
+            if (host.rail.style.display !== want) {
+                host.rail.style.display = want;
+                host.top = null;
+                host.height = null;
+            }
+            if (!headVisible) {
+                continue;
+            }
+        }
+        // 最后一个「还看得见」的成员行：拖动中被拖的那行是藏起来的，
+        // 整组拖动时成员也全藏着，量出来都是 0，会把竖线缩成一个小残点
+        const edge = lastVisibleMember(
+            panel.list,
+            host.head?.dataset.groupId || "",
+            host.last
+        ) || host.head;
+        const top = host.head.offsetTop;
+        const height = Math.max(3, edge.offsetTop + edge.offsetHeight - top);
+        if (host.top === top && host.height === height) {
+            continue;
+        }
+        plan.push({ host, top, height });
+    }
+    for (const { host, top, height } of plan) {
+        host.top = top;
+        host.height = height;
+        host.rail.style.top = `${top}px`;
+        host.rail.style.height = `${height}px`;
+    }
+    panel.railWidth = width;
+    panel.railMeasured = width > 0;
+}
+
+/** 这一组里最后一个还看得见的成员行（都看不见就返回兜底元素）。 */
+function lastVisibleMember(list, groupId, fallback) {
+    if (!list || !groupId) {
+        return fallback;
+    }
+    const rows = list.querySelectorAll(
+        `.xmlg-row[data-group="${groupId}"]`
+    );
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (rows[index].offsetHeight > 0) {
+            return rows[index];
+        }
+    }
+    return fallback && fallback.offsetHeight > 0 ? fallback : null;
+}
+
+/** 列表尺寸变化（首次挂载、窗口缩放、节点缩放）就重排竖线。 */
+function ensureRailObserver(panel) {
+    if (panel.railObserver || typeof ResizeObserver !== "function") {
+        return;
+    }
+    panel.railObserver = new ResizeObserver(() => layoutGroupRails(panel));
+    panel.railObserver.observe(panel.list);
+}
+
+/** 某一组在数据里的最后一位之后（折叠组追加到这里）。 */
+function appendIndexForGroup(items, groupId) {
+    const rows = Array.isArray(items) ? items : [];
+    let last = -1;
+    rows.forEach((row, index) => {
+        if (row && row.group === groupId) {
+            last = index;
+        }
+    });
+    return last >= 0 ? last + 1 : rows.length;
+}
+
+/** 指针当前压在哪个 .xmlg-row 上（压在组头/空白处返回 null）。 */
+function rowAtPointer(list, clientY) {
+    for (const row of list.querySelectorAll(".xmlg-row")) {
+        const rect = row.getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+            return row;
+        }
+    }
+    return null;
 }
 
 /**
- * 列表内排序：鼠标落在「第几个缝」。返回的是全局下标
- * （行的 data-index 本来就是分类里的全局位置，翻页后依然对得上）。
+ * 落点属于哪一组。
+ *
+ * 指针停在哪一组的行上就算哪一组 —— 用户把文件拖到「组的地盘」里，
+ * 意思很明确就是加入这一组，不该只有拖到组头才生效。
+ * 只有指针落在空白处（没有任何行）时，才退回老规则「跟上方那一行」。
  */
-function resolveMoveGap(list, clientY) {
-    const rows = Array.from(list.querySelectorAll(".xmlg-row"));
-    for (const row of rows) {
-        const rect = row.getBoundingClientRect();
-        if (clientY < rect.top + rect.height / 2) {
-            const index = Number(row.dataset.index);
-            return Number.isFinite(index) ? index : rows.indexOf(row);
-        }
+function groupForDrop(list, items, gapIndex, clientY) {
+    const row = rowAtPointer(list, clientY);
+    if (row) {
+        return row.dataset.group || null;
     }
-    const last = rows[rows.length - 1];
-    return last ? Number(last.dataset.index) + 1 : 0;
+    return groupOfGap(items, gapIndex);
+}
+
+/** 组名（提示里要说人话：「插入到「风格」」）。 */
+function groupNameById(node, category, groupId) {
+    if (!groupId) {
+        return "";
+    }
+    const groups = node?.__xmlg_panel?.state?.items?.groups?.[category] || [];
+    const record = groups.find((item) => item.id === groupId);
+    return record?.name || groupId;
 }
 
 /**
@@ -4385,6 +5707,15 @@ function startDropAutoScroll(node, dir) {
             return;
         }
         panel.list.scrollTop += state.autoScrollDir * DROP_AUTOSCROLL_STEP;
+        // 指针没动，但列表滚了：落点要跟着重算，否则滚半天不挪位
+        const pending = state.pointerDrag;
+        if (pending?.active) {
+            applyPointerDrag(node, pending.clientY);
+            // 重算落点可能把方向翻了个面（换了新的循环），这里别重复排
+            if (!state.autoScrollDir) {
+                return;
+            }
+        }
         state.autoScrollRaf = window.requestAnimationFrame(tick);
     };
     state.autoScrollRaf = window.requestAnimationFrame(tick);
@@ -4401,52 +5732,1272 @@ function stopDropAutoScroll(state) {
     state.autoScrollDir = 0;
 }
 
-/** 内部排序用同一条插入线，只是文案换成「移动到这里」。 */
-function showMoveIndicator(panel, gapIndex) {
+/* 拖动时把「即将加入的那一组」圈出来，落点归属一眼可见。 */
+function markGroupTarget(panel, groupId) {
     if (!panel) {
         return;
     }
-    clearDragHighlights(panel);
-    placeInsertLine(panel, gapIndex);
-    panel.dropLabel.textContent = t(
-        "xdatahub.ui.node.xmedialistget.move_here",
-        "Move here"
+    for (const target of panel.list.querySelectorAll(".is-group-target")) {
+        target.classList.remove("is-group-target");
+    }
+    if (!groupId) {
+        return;
+    }
+    panel.list
+        .querySelector(`.xmlg-group-head[data-group-id="${groupId}"]`)
+        ?.classList.add("is-group-target");
+    for (const row of panel.list.querySelectorAll(
+        `.xmlg-row[data-group="${groupId}"]`
+    )) {
+        row.classList.add("is-group-target");
+    }
+}
+
+/** 拖动整组时把这一摞行一起变淡，让人看出搬的是整块。 */
+function markGroupBlockDragging(panel, groupId, active) {
+    if (!panel?.list || !groupId) {
+        return;
+    }
+    for (const row of panel.list.querySelectorAll(
+        `.xmlg-row[data-group="${groupId}"]`
+    )) {
+        row.classList.toggle("is-block-dragging", active);
+    }
+    panel.railHosts?.get(groupId)?.rail.classList.toggle(
+        "is-block-dragging",
+        active
     );
 }
 
 /**
- * 把当前拖动的那行挪到指定缝隙。只改顺序，不动启用状态；
- * writeItems 会记一步撤销，所以改错了能撤回。
+ * 拖整组时，列表里这一组当场折起来，只留组名那一行。
+ *
+ * Chromium 拖标签组也是这么做的（拖起来就把组收成一行）：
+ * 一来拖一整摞的时候，屏幕上还占着一整摞会让人分不清「跟着鼠标的是什么」，
+ * 二来折叠后它只占一行，落点算起来和折叠组完全一致。
+ *
+ * 只改显示，不动数据：拖完 / 取消就恢复展开。
  */
-function applyRowMove(node, gapIndex) {
+function setGroupDragCollapsed(panel, groupId, collapsed) {
+    if (!panel?.list || !groupId) {
+        return;
+    }
+    // 组名那一行也一起藏：拖整组时列表里什么都不留，
+    // 屏幕上只剩跟着指针的那张卡片（Chromium 拖标签组也是这样）
+    const targets = [
+        ...panel.list.querySelectorAll(`.xmlg-row[data-group="${groupId}"]`),
+        ...panel.list.querySelectorAll(
+            `.xmlg-group-head[data-group-id="${groupId}"]`
+        ),
+    ];
+    for (const element of targets) {
+        element.classList.toggle("is-drag-collapsed", collapsed);
+    }
+    panel.railMeasured = false;
+    layoutGroupRails(panel);
+}
+
+/** 开拖：记下起点、抓取偏移、以及「取消就还原」的快照。 */
+function beginRowDrag(node, category, row, event) {
     const panel = node?.__xmlg_panel;
-    const dragRow = panel?.state?.dragRow;
-    if (!panel || !dragRow) {
+    if (!panel) {
         return;
     }
     const state = panel.state;
-    if (dragRow.category !== state.category) {
+    const index = Number(row.dataset.index);
+    const safeIndex = Number.isFinite(index) ? index : 0;
+    // 尺寸必须在「藏起来之前」量：藏起来（display: none）之后
+    // 量到的全是 0，跟手的那张卡片就会变成一小撮
+    const rect = row.getBoundingClientRect();
+    state.dragRow = {
+        category,
+        index: safeIndex,
+        ref: row.dataset.ref || "",
+        rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+        },
+        layoutW: row.offsetWidth,
+        layoutH: row.offsetHeight,
+        // undefined = 还没定过归属；null = 明确不分组
+        groupId: undefined,
+        // 开拖时它在哪一组：用它做「粘性」，让人容易留在原组
+        groupOrigin: (state.items[category] || [])[safeIndex]?.group || null,
+        grabOffsetY: Math.max(0, event.clientY - rect.top),
+        height: rect.height || 44,
+        lastY: event.clientY,
+        snapshot: JSON.stringify(state.items),
+        moved: false,
+        dropped: false,
+        dissolvedNames: [],
+    };
+    row.classList.add("is-dragging");
+}
+
+/** 收尾（已放下）：补上结构性变化，并把这次的组消失提示说一声。 */
+function finishRowDrag(node, dragRow) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !dragRow) {
         return;
     }
-    const list = state.items[state.category];
-    if (!Array.isArray(list)) {
+    dragRow.dropped = true;
+    writeItems(node, panel.state.items, { recordUndo: false });
+    announceDissolvedGroups(node, dragRow.dissolvedNames);
+    if (panel.state.dragRow === dragRow) {
+        panel.state.dragRow = null;
+    }
+}
+
+function beginGroupDrag(node, category, head, groupId, event) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
         return;
     }
-    const from = Number(dragRow.index);
-    const target = moveTargetFromGap(Number(gapIndex), from);
-    if (!Number.isFinite(from) || from < 0 || from >= list.length) {
+    const headRect = head.getBoundingClientRect();
+    panel.state.dragGroup = {
+        category,
+        groupId,
+        gap: null,
+        rect: {
+            left: headRect.left,
+            top: headRect.top,
+            width: headRect.width,
+            height: headRect.height,
+        },
+        layoutW: head.offsetWidth,
+        layoutH: head.offsetHeight,
+        lastY: event.clientY,
+        snapshot: JSON.stringify(panel.state.items),
+        moved: false,
+        dropped: false,
+        dissolvedNames: [],
+    };
+    head.classList.add("is-dragging");
+    markGroupBlockDragging(panel, groupId, true);
+    setGroupDragCollapsed(panel, groupId, true);
+}
+
+/** 整组收尾（已放下）：把模型写回去，组消失的提示说一声。 */
+function finishGroupDrag(node, dragGroup) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !dragGroup) {
         return;
     }
-    if (!Number.isFinite(target) || target === from) {
+    dragGroup.dropped = true;
+    markGroupBlockDragging(panel, dragGroup.groupId, false);
+    setGroupDragCollapsed(panel, dragGroup.groupId, false);
+    if (panel.state.dragGroup === dragGroup) {
+        panel.state.dragGroup = null;
+    }
+    writeItems(node, panel.state.items, { recordUndo: false });
+    announceDissolvedGroups(node, dragGroup.dissolvedNames);
+}
+
+/** 整段拖动只算一次撤销：第一次真的挪动时才记快照。 */
+function ensureDragUndo(node) {
+    const panel = node?.__xmlg_panel;
+    const drag = panel?.state?.dragRow || panel?.state?.dragGroup;
+    if (!panel || !drag || drag.undoTaken) {
         return;
     }
-    const [moved] = list.splice(from, 1);
-    list.splice(Math.max(0, Math.min(target, list.length)), 0, moved);
-    writeItems(node, state.items);
+    drag.undoTaken = true;
+    drag.pushedValue = String(ensureStorageWidget(node)?.value || "{}");
+    pushUndoSnapshot(node);
+    panel.state.redoStack = [];
+}
+
+/** 取消拖动：数据回滚到开拖前，撤销栈里那条也撤掉（这次没改成任何东西）。 */
+function restoreDragSnapshot(node, drag) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !drag?.snapshot) {
+        return;
+    }
+    let items = panel.state.items;
+    try {
+        items = normalizeItems(JSON.parse(drag.snapshot));
+    } catch {
+        return;
+    }
+    panel.state.items = items;
+    const stack = panel.state.undoStack || [];
+    if (
+        drag.pushedValue !== undefined
+        && stack[stack.length - 1] === drag.pushedValue
+    ) {
+        stack.pop();
+        panel.state.undoStack = stack;
+    }
+    writeItems(node, items, { recordUndo: false });
     renderPanel(node);
 }
 
-function resolveDropTarget(list, clientY) {
+function collectDissolved(drag, dissolved) {
+    if (!drag || !Array.isArray(dissolved)) {
+        return;
+    }
+    drag.dissolvedNames = drag.dissolvedNames || [];
+    for (const record of dissolved) {
+        const name = record?.name || record?.id || "";
+        if (name && !drag.dissolvedNames.includes(name)) {
+            drag.dissolvedNames.push(name);
+        }
+    }
+}
+
+function announceDissolvedGroups(node, names) {
+    if (!Array.isArray(names) || !names.length) {
+        return;
+    }
+    showToast(
+        node,
+        t(
+            "xdatahub.ui.node.xmedialistget.group_dissolved",
+            "Group {name} has no files left, so it was removed",
+            { name: names.join(", ") }
+        )
+    );
+}
+
+/** 整组拖动：落点一变就真的搬过去（不再画插入线）。 */
+function liveMoveGroup(node, gapIndex) {
+    const panel = node?.__xmlg_panel;
+    const dragGroup = panel?.state?.dragGroup;
+    const state = panel?.state;
+    if (!panel || !dragGroup || !state) {
+        return false;
+    }
+    if (dragGroup.category !== state.category) {
+        return false;
+    }
+    const rows = state.items[state.category];
+    if (!Array.isArray(rows)) {
+        return false;
+    }
+    const result = moveGroupToGap(
+        rows,
+        state.items.groups?.[state.category] || [],
+        dragGroup.groupId,
+        gapIndex
+    );
+    dragGroup.gap = result.gap;
+    if (!result.moved) {
+        return false;
+    }
+    state.items[state.category] = result.items;
+    state.items.groups[state.category] = result.groups;
+    dragGroup.moved = true;
+    collectDissolved(dragGroup, result.dissolved);
+    ensureDragUndo(node);
+    applyOrderInPlace(node, { animate: true });
+    writeItems(node, state.items, { recordUndo: false });
+    return true;
+}
+
+/** 单行拖动：落点一变就真的挪过去，并记住它现在在第几位。 */
+function liveMoveRow(node, gapIndex, groupId) {
+    const panel = node?.__xmlg_panel;
+    const dragRow = panel?.state?.dragRow;
+    const state = panel?.state;
+    if (!panel || !dragRow || !state) {
+        return false;
+    }
+    if (dragRow.category !== state.category) {
+        return false;
+    }
+    const rows = state.items[state.category];
+    if (!Array.isArray(rows)) {
+        return false;
+    }
+    const from = Number(dragRow.index);
+    const gap = Number(gapIndex);
+    if (!Number.isFinite(from) || from < 0 || from >= rows.length) {
+        return false;
+    }
+    if (!Number.isFinite(gap)) {
+        return false;
+    }
+    const wanted = groupId === undefined
+        ? dragRow.groupId
+        : groupId;
+    const staysPut = moveTargetFromGap(gap, from) === from;
+    const sameGroup = (wanted === undefined ? null : wanted || null)
+        === (rows[from]?.group || null);
+    if (staysPut && sameGroup) {
+        return false;
+    }
+    const options = { keyOf: XMLG_KEY_OF };
+    if (wanted !== undefined) {
+        options.groupId = wanted || null;
+    }
+    const result = moveRowToGap(
+        rows,
+        state.items.groups?.[state.category] || [],
+        from,
+        gap,
+        options
+    );
+    state.items[state.category] = result.items;
+    state.items.groups[state.category] = result.groups;
+    const nextIndex = result.items.findIndex(
+        (row) => XMLG_KEY_OF(row) === dragRow.ref
+    );
+    if (nextIndex >= 0) {
+        dragRow.index = nextIndex;
+    }
+    dragRow.groupId = result.groupId;
+    dragRow.moved = true;
+    collectDissolved(dragRow, result.dissolved);
+    ensureDragUndo(node);
+    applyOrderInPlace(node, { animate: true });
+    writeItems(node, state.items, { recordUndo: false });
+    return true;
+}
+
+/* ==========================================================================
+ * 列表内拖动：拖动过程中就真的改顺序（Chromium 标签条的做法）
+ *
+ * 三个要点：
+ * 1. 穿过某一行就把数据真的挑过去，其它行「滑开让位」——
+ *    用户看到的落点就是事实，不再需要插入线。
+ * 2. 行元素不重建，只搬位置；搬完用「先量旧位置、改完再量新位置、
+ *    反向位移做动画」的办法让它滑回去（业界叫 FLIP）。
+ * 3. 归属哪一组用 Chromium 那套：看缝上下两行 + 四分之一行高的中性带
+ *    + 「粘住原组」，不再只看指针压在哪一行上。
+ *
+ * 插入线只留给「从 XDataHub 拖新文件进来」，因为那个场景里还没
+ * 有真位置可展示。
+ * ========================================================================== */
+
+
+/* ---------- 指针拖动引擎（行 / 整组共用） ---------- */
+
+/**
+ * 按下时只记一笔，移动超过 DRAG_START_PX 才算拖动。
+ * 这样单击选中、点开关、点缩略图、点按钮都不受影响。
+ */
+function armPointerDrag(node, event, intent) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || event.button !== 0 || event.isPrimary === false) {
+        return;
+    }
+    if (event.target?.closest?.("button, input, label, .xmlg-thumb")) {
+        return;
+    }
+    const state = panel.state;
+    if (state.pointerDrag?.active) {
+        return;
+    }
+    const pending = {
+        ...intent,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        clientY: event.clientY,
+        active: false,
+    };
+    const onMove = (moveEvent) => {
+        if (moveEvent.pointerId !== pending.pointerId) {
+            return;
+        }
+        movePointerDrag(node, moveEvent);
+    };
+    const onUp = (upEvent) => {
+        if (upEvent.pointerId !== pending.pointerId) {
+            return;
+        }
+        endPointerDrag(node);
+    };
+    const onKey = (keyEvent) => {
+        if (keyEvent.key !== "Escape") {
+            return;
+        }
+        keyEvent.preventDefault();
+        cancelPointerDrag(node);
+    };
+    pending.cleanup = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("keydown", onKey, true);
+    };
+    state.pointerDrag = pending;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey, true);
+}
+
+function armRowPointerDrag(node, category, row, event) {
+    armPointerDrag(node, event, {
+        kind: "row",
+        category,
+        row,
+        ref: row.dataset.ref || "",
+    });
+}
+
+function armGroupPointerDrag(node, category, head, groupId, event) {
+    armPointerDrag(node, event, {
+        kind: "group",
+        category,
+        head,
+        groupId,
+    });
+}
+
+function movePointerDrag(node, event) {
+    const panel = node?.__xmlg_panel;
+    const pending = panel?.state?.pointerDrag;
+    if (!panel || !pending) {
+        return;
+    }
+    pending.clientY = event.clientY;
+    if (!pending.active) {
+        const dx = event.clientX - pending.startX;
+        const dy = event.clientY - pending.startY;
+        if (Math.hypot(dx, dy) < DRAG_START_PX) {
+            return;
+        }
+        startPointerDrag(node, pending, event);
+        return;
+    }
+    event.preventDefault();
+    moveGhost(node, event.clientY);
+    applyPointerDrag(node, event.clientY);
+}
+
+function startPointerDrag(node, pending, event) {
+    const panel = node.__xmlg_panel;
+    if (pending.kind === "group") {
+        beginGroupDrag(
+            node,
+            pending.category,
+            pending.head,
+            pending.groupId,
+            event
+        );
+    } else {
+        beginRowDrag(node, pending.category, pending.row, event);
+    }
+    pending.active = true;
+    document.body.classList.add("xmlg-pointer-dragging");
+    spawnGhost(node, pending);
+    applyPointerDrag(node, pending.clientY);
+}
+
+/**
+ * 按指针位置算落点并当场落地（其它行滑开让位）。
+ *
+ * 防抖：跟上次真挪动时的指针位置差得够远才允许再挪，否则在两条行的
+ * 中线附近会来回抖（Chromium 的 16dip 阈值是同一个思路）。
+ */
+function applyPointerDrag(node, clientY) {
+    const panel = node?.__xmlg_panel;
+    const pending = panel?.state?.pointerDrag;
+    if (!panel || !pending) {
+        return;
+    }
+    if (pending.kind === "group") {
+        // 整组拖动也走同一套防抖：不然在两组交界处挪一个像素就会来回翻
+        const dragGroup = panel.state.dragGroup;
+        if (!dragGroup) {
+            return;
+        }
+        const groupThreshold = Math.max(
+            6,
+            (pending.head?.offsetHeight || 28) * GROUP_DRAG_THRESHOLD_RATIO
+        );
+        const groupFar = Math.abs(clientY - dragGroup.lastY) >= groupThreshold;
+        if (groupFar && liveMoveGroup(node, resolveGroupGap(node, clientY))) {
+            dragGroup.lastY = clientY;
+        }
+    } else {
+        const dragRow = panel.state.dragRow;
+        if (!dragRow) {
+            return;
+        }
+        const target = resolveLiveRowTarget(node, clientY);
+        const threshold = Math.max(
+            6,
+            (dragRow.height || 44) * REORDER_THRESHOLD_RATIO
+        );
+        const far = Math.abs(clientY - dragRow.lastY) >= threshold;
+        if (far && liveMoveRow(node, target.gap, target.groupId)) {
+            dragRow.lastY = clientY;
+        }
+        markGroupTarget(panel, dragRow.groupId || null);
+    }
+    const rect = panel.list.getBoundingClientRect();
+    if (clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
+        startDropAutoScroll(node, -1);
+    } else if (rect.bottom - clientY < DROP_AUTOSCROLL_EDGE) {
+        startDropAutoScroll(node, 1);
+    } else {
+        stopDropAutoScroll(panel.state);
+    }
+}
+
+/** 跟着指针走的「卡片」：源行留在列表里当槽位，这个是纯装饰。 */
+function spawnGhost(node, pending) {
+    const panel = node?.__xmlg_panel;
+    const source = pending.kind === "group" ? pending.head : pending.row;
+    if (!panel || !source?.isConnected) {
+        return;
+    }
+    // 只清上一张卡片：不能走 removeGhost，它会顺手把「拖动中」这个
+    // 全局状态摘掉（竖线的过渡就挂在这个状态上）
+    pending.ghost?.remove();
+    pending.ghost = null;
+    // 行在开拖时就被藏起来了（列表里不留槽位），所以尺寸要用
+    // 藏起来之前量的那一份（记在 dragRow / dragGroup 上）
+    const drag = pending.kind === "group"
+        ? panel.state.dragGroup
+        : panel.state.dragRow;
+    const rect = drag?.rect || source.getBoundingClientRect();
+    const grab = Number.isFinite(pending.startY)
+        ? pending.startY - rect.top
+        : 0;
+    pending.grabOffsetY = Math.max(0, Number.isFinite(grab) ? grab : 0);
+    const ghost = source.cloneNode(true);
+    // is-drag-collapsed 也摘掉：拖整组时源组名是藏起来的，
+    // 克隆带上这个 class 卡片就跟着一起看不见了
+    ghost.classList.remove(
+        "is-dragging",
+        "is-drag-collapsed",
+        "is-selected",
+        "is-group-target"
+    );
+    ghost.removeAttribute("data-index");
+    ghost.classList.add("xmlg-drag-ghost");
+    // 组头本身带 margin-top（和上一组之间留的空），卡片是固定定位，
+    // margin 会把盒子整体往下顶 6px，位置上就对不齐了
+    ghost.style.margin = "0";
+    // 卡片挂在 body 上，那里没有画布的缩放，所以：
+    // 1) 尺寸用元素自己的布局尺寸（offsetWidth/Height），不用屏幕尺寸；
+    // 2) 再按「屏幕尺寸 / 布局尺寸」算出的画布缩放比缩一下。
+    // 不这么做的话，画布缩到 80% 时卡片会按 100% 显示，比原行大一圈，
+    // 正好盖住左边的组竖线。
+    const layoutW = drag?.layoutW || rect.width || 0;
+    const layoutH = drag?.layoutH || rect.height || 0;
+    const canvasScale = layoutW > 0
+        ? Math.min(4, Math.max(0.1, rect.width / layoutW))
+        : 1;
+    ghost.style.width = `${layoutW}px`;
+    ghost.style.height = `${layoutH}px`;
+    // 行本身有 min-height，卡片要按量出来的高度走
+    ghost.style.minHeight = "0";
+    ghost.style.transformOrigin = "top left";
+    // 必须挂 body：ComfyUI 的画布（节点的祖先）带缩放/位移变换，
+    // position: fixed 一旦落在这种祖先里，left/top 就按坐标系的算法算，
+    // 卡片会跑到屏幕另一边去。挂列表里也不行（会被当成一行）。
+    // 颜色变量由 .xmlg-drag-ghost 这条样式自带一份。
+    document.body.appendChild(ghost);
+    pending.ghost = ghost;
+
+    // 页面还可能有 zoom 之类的整体缩放/位移：写进去的 px 和屏幕上的 px
+    // 未必 1:1。这里量一次换算关系（写 0px 和写 100px 分别落在哪），
+    // 之后按这个关系换算，任何坐标系下都能落在指针对应的位置。
+    ghost.style.left = "0px";
+    ghost.style.top = "0px";
+    const zero = ghost.getBoundingClientRect();
+    ghost.style.top = "100px";
+    const down = ghost.getBoundingClientRect();
+    ghost.style.left = "100px";
+    const right = ghost.getBoundingClientRect();
+    const scaleY = (down.top - zero.top) / 100;
+    const scaleX = (right.left - zero.left) / 100;
+    pending.ghostOriginY = zero.top;
+    pending.ghostOriginX = zero.left;
+    pending.ghostScaleY = Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1;
+    pending.ghostScaleX = Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1;
+    pending.ghostHeight = Number.isFinite(rect.height) && rect.height > 0
+        ? rect.height
+        : layoutH;
+
+    // 卡片自己还要缩一下才能真正和原元素一样大。
+    // 注意要除掉坐标系本身的缩放：外层已经有 0.7 倍缩放时，
+    // 元素在屏幕上量到的宽度本来就小了一圈，再乘一次就变成 0.49 倍。
+    const extra = layoutW > 0
+        ? Math.min(
+            4,
+            Math.max(0.1, rect.width / (layoutW * pending.ghostScaleX))
+        )
+        : canvasScale;
+    ghost.style.transform = `scale(${extra})`;
+    pending.ghostScale = extra;
+
+    placeGhost(node, rect.left, rect.top);
+}
+
+/**
+ * 把卡片放到「屏幕上」的某个位置。
+ *
+ * 写进去的值要按坐标系换算（页面可能有 zoom、画布有缩放），并且兜一层：
+ * 非有限值一律不写——写成 NaN 浏览器会当成「没有 top」，
+ * 卡片就会掉到页面最下面去。
+ *
+ * left 传 null 表示「横向不动」（拖动只改纵向）。
+ */
+function placeGhost(node, screenLeft, screenTop) {
+    const pending = node?.__xmlg_panel?.state?.pointerDrag;
+    const ghost = pending?.ghost;
+    if (!ghost) {
+        return;
+    }
+    const sx = pending.ghostScaleX || 1;
+    const sy = pending.ghostScaleY || 1;
+    const ox = pending.ghostOriginX || 0;
+    const oy = pending.ghostOriginY || 0;
+    if (Number.isFinite(screenLeft)) {
+        ghost.style.left = `${(screenLeft - ox) / sx}px`;
+    }
+    if (Number.isFinite(screenTop)) {
+        const height = pending.ghostHeight || 0;
+        const lowest = window.innerHeight - height - 4;
+        const clamped = Math.min(Math.max(0, lowest), Math.max(0, screenTop));
+        ghost.style.top = `${(clamped - oy) / sy}px`;
+    }
+}
+
+function moveGhost(node, clientY) {
+    const pending = node?.__xmlg_panel?.state?.pointerDrag;
+    if (!pending?.ghost) {
+        return;
+    }
+    const offset = Number.isFinite(pending.grabOffsetY)
+        ? pending.grabOffsetY
+        : 0;
+    if (!Number.isFinite(clientY)) {
+        return;
+    }
+    placeGhost(node, null, clientY - offset);
+}
+
+function removeGhost(panel, known) {
+    const pending = known || panel?.state?.pointerDrag;
+    pending?.ghost?.remove();
+    if (pending) {
+        pending.ghost = null;
+    }
+    document.body.classList.remove("xmlg-pointer-dragging");
+}
+
+function endPointerDrag(node) {
+    const panel = node?.__xmlg_panel;
+    const pending = panel?.state?.pointerDrag;
+    if (!panel || !pending) {
+        return;
+    }
+    pending.cleanup?.();
+    if (!pending.active) {
+        removeGhost(panel);
+        panel.state.pointerDrag = null;
+        return;
+    }
+    // 先按最终位置落地，再撤掉拖动状态：竖线的过渡挂在拖动状态上，
+    // 反过来的话最后一格调整会跳过过渡，松手瞬间竖线会跳一下。
+    applyPointerDragStop(node);
+    removeGhost(panel);
+    panel.state.pointerDrag = null;
+    // 拖完必然紧跟一个 click：要吞掉，否则会顺手改了选中状态
+    panel.state.suppressClickUntil = performance.now() + 400;
+    if (pending.kind === "group") {
+        const dragGroup = panel.state.dragGroup;
+        panel.state.dragGroup = null;
+        if (dragGroup) {
+            finishGroupDrag(node, dragGroup);
+        }
+    } else {
+        const dragRow = panel.state.dragRow;
+        panel.state.dragRow = null;
+        if (dragRow) {
+            finishRowDrag(node, dragRow);
+        }
+    }
+    pending.row?.classList.remove("is-dragging");
+    pending.head?.classList.remove("is-dragging");
+    stopDropAutoScroll(panel.state);
+    clearDragHighlights(panel);
+}
+
+function applyPointerDragStop(node) {
+    const panel = node?.__xmlg_panel;
+    const pending = panel?.state?.pointerDrag;
+    if (!panel || !pending?.active) {
+        return;
+    }
+    // 松手时按最终位置再算一次，免得最后几像素被阈值吃掉
+    if (pending.kind === "group") {
+        liveMoveGroup(node, resolveGroupGap(node, pending.clientY));
+        return;
+    }
+    const target = resolveLiveRowTarget(node, pending.clientY);
+    liveMoveRow(node, target.gap, target.groupId);
+}
+
+/** Esc / 指针被系统收走：这一趟作废，顺序回到按下之前。 */
+function cancelPointerDrag(node) {
+    const panel = node?.__xmlg_panel;
+    const pending = panel?.state?.pointerDrag;
+    if (!panel || !pending?.active) {
+        return;
+    }
+    pending.cleanup?.();
+    panel.state.pointerDrag = null;
+    pending.row?.classList.remove("is-dragging");
+    pending.head?.classList.remove("is-dragging");
+    const drag = pending.kind === "group"
+        ? panel.state.dragGroup
+        : panel.state.dragRow;
+    panel.state.dragRow = null;
+    panel.state.dragGroup = null;
+    stopDropAutoScroll(panel.state);
+    clearDragHighlights(panel);
+    markGroupBlockDragging(panel, pending.groupId, false);
+    setGroupDragCollapsed(panel, pending.groupId, false);
+    if (drag) {
+        restoreDragSnapshot(node, drag);
+    }
+    // 回滚完再撤「拖动中」：竖线缩回去也走过渡，不突兀
+    removeGhost(panel, pending);
+}
+
+/**
+ * 指针指向哪一格缝隙。
+ *
+ * 关键在于**一趟扫完行和组胶囊**，用「谁的中线在指针下面」来定缝：
+ *
+ * - 行：缝落在它前面（等于它的下标）
+ * - 组胶囊：缝落在这一组的**第一名成员**前面（折叠组没渲染成员，
+ *   所以只能靠胶囊；上半边算「组前面」，下半边自然落到下一段）
+ * - 都没有：列表末尾
+ *
+ * 这样映射是**单调**的：指针从上往下扫，扫到胶囊中线之前一直是「组前
+ * 面」那一格，越过后才变成「组后面」。以前分成「压在胶囊上就强行进这
+ * 一组」和「按行算」两条路，指针停在胶囊上沿时两者来回抢，就抖起来了。
+ */
+function resolveFlowGap(node, clientY) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    const list = panel?.list;
+    if (!panel || !state || !list) {
+        return 0;
+    }
+    const items = state.items[state.category] || [];
+    for (const child of list.children) {
+        const isRow = child.classList.contains("xmlg-row");
+        const isHead = child.classList.contains("xmlg-group-head");
+        if (!isRow && !isHead) {
+            continue;
+        }
+        const rect = child.getBoundingClientRect();
+        if (clientY >= rect.top + rect.height / 2) {
+            continue;
+        }
+        if (isRow) {
+            const index = Number(child.dataset.index);
+            if (Number.isFinite(index)) {
+                return index;
+            }
+            continue;
+        }
+        return firstIndexForGroup(items, child.dataset.groupId || "");
+    }
+    return items.length;
+}
+
+/**
+ * 指针现在指向哪一格缝隙、归哪一组。
+ *
+ * 归属只看位置（Chromium 那套「中性带 + 粘性」），
+ * 组胶囊不再是一条特殊的「放上来就进组」通道：位置本身就是答案。
+ */
+function resolveLiveRowTarget(node, clientY) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    const list = panel?.list;
+    if (!panel || !state || !list) {
+        return { gap: null, groupId: null };
+    }
+    const items = state.items[state.category] || [];
+    const gap = resolveFlowGap(node, clientY);
+    return {
+        gap,
+        groupId: leanGroupForGap({
+            list,
+            items,
+            gap,
+            clientY,
+            dragRow: state.dragRow,
+        }),
+    };
+}
+
+/** 缝隙那条界线在屏幕上的位置（上下两行都有时取交界）。 */
+function gapBoundaryTop(list, gap) {
+    let above = null;
+    let below = null;
+    for (const row of list.querySelectorAll(".xmlg-row")) {
+        const index = Number(row.dataset.index);
+        if (!Number.isFinite(index)) {
+            continue;
+        }
+        if (index === gap - 1) {
+            above = row;
+        } else if (index === gap) {
+            below = row;
+        }
+    }
+    if (above && below) {
+        const a = above.getBoundingClientRect();
+        const b = below.getBoundingClientRect();
+        return (a.bottom + b.top) / 2;
+    }
+    if (below) {
+        return below.getBoundingClientRect().top;
+    }
+    if (above) {
+        return above.getBoundingClientRect().bottom;
+    }
+    return null;
+}
+
+/**
+ * 这一格缝隙「归哪一组」——照搬 Chromium 标签条的判定。
+ *
+ * 1. 缝上下两行同一组 → 就是这一组
+ * 2. 不同组（含一边没组）→ 以两行交界为界：被拖那一行的中心还没越过
+ *    界（各留四分之一行高的缓冲）就算上一组，越过去才算下一组
+ * 3. 正好卡在缓冲带里 → 不属于任何组（最不容易误判）
+ * 4. 「粘性」：上一组正是开拖时所在的那一组，就把界线往下挪一个缓冲，
+ *    多留一点余地让人留在原组里（Chromium 注释里写明是为了防止在组的
+ *    边缘反复闪来闪去）。
+ */
+function leanGroupForGap(options) {
+    const { list, items, gap, clientY, dragRow } = options;
+    const height = (dragRow && dragRow.height) || 44;
+    const buffer = height * GROUP_LEAN_RATIO;
+    const above = gap > 0 ? items[gap - 1] : null;
+    const below = gap >= 0 && gap < items.length ? items[gap] : null;
+    const aboveGroup = (above && above.group) || null;
+    const belowGroup = (below && below.group) || null;
+    if (aboveGroup === belowGroup) {
+        return aboveGroup;
+    }
+    const boundary = gapBoundaryTop(list, gap);
+    if (boundary === null) {
+        return aboveGroup || belowGroup;
+    }
+    const grab = dragRow && Number.isFinite(dragRow.grabOffsetY)
+        ? dragRow.grabOffsetY
+        : height / 2;
+    const center = clientY - grab + height / 2;
+    const origin = (dragRow && dragRow.groupOrigin) || null;
+    let shift = 0;
+    if (aboveGroup && aboveGroup === origin) {
+        shift = buffer;
+    } else if (belowGroup && belowGroup === origin) {
+        shift = -buffer;
+    }
+    const offset = center - boundary - shift;
+    if (offset < -buffer) {
+        return aboveGroup;
+    }
+    if (offset > buffer) {
+        return belowGroup;
+    }
+    return null;
+}
+
+/** 只量「看得见的那几行」的位置，屏幕外的不参与动画。 */
+function measureRowTops(panel) {
+    const list = panel.list;
+    const listRect = list.getBoundingClientRect();
+    const from = listRect.top - 240;
+    const to = listRect.bottom + 240;
+    const tops = new Map();
+    for (const child of list.children) {
+        if (
+            !child.classList.contains("xmlg-row")
+            && !child.classList.contains("xmlg-group-head")
+        ) {
+            continue;
+        }
+        const rect = child.getBoundingClientRect();
+        if (rect.bottom < from || rect.top > to) {
+            continue;
+        }
+        tops.set(child, rect.top - listRect.top);
+    }
+    return tops;
+}
+
+/** 把上一次没跑完的让位动画就地收掉（不改布局，只清 transform）。 */
+function clearSlide(panel) {
+    const list = panel?.list;
+    if (!list) {
+        return;
+    }
+    for (const el of list.querySelectorAll(".is-sliding")) {
+        el.style.transition = "none";
+        el.style.transform = "";
+        el.style.removeProperty("transition");
+        el.classList.remove("is-sliding");
+    }
+}
+
+/**
+ * 让位动画：先量旧位置、改完再量新位置，然后用「反向位移 → 0」滑回去。
+ *
+ * 之所以量「屏幕位置」而不是 offsetTop：上一次动画可能还没跑完，
+ * 屏幕位置里已经包含了它当前的位移，从这里接着滑才不会跳一下。
+ */
+function playSlide(panel, tops) {
+    const list = panel.list;
+    if (!list || !tops?.size) {
+        return;
+    }
+    const listRect = list.getBoundingClientRect();
+    const moves = [];
+    for (const [el, top] of tops) {
+        if (!el.isConnected || el.classList.contains("is-dragging")) {
+            continue;
+        }
+        const delta = top - (el.getBoundingClientRect().top - listRect.top);
+        if (Math.abs(delta) < 0.5) {
+            continue;
+        }
+        moves.push({ el, delta });
+    }
+    if (!moves.length) {
+        return;
+    }
+    for (const { el, delta } of moves) {
+        el.style.transition = "none";
+        el.style.transform = `translateY(${delta}px)`;
+        el.classList.add("is-sliding");
+    }
+    // 先把「反向位移」这一帧确定下来，再开始过渡；否则两次写会被浏览器
+    // 合成成一次，动画根本不会出现。
+    void list.offsetHeight;
+    window.requestAnimationFrame(() => {
+        for (const { el } of moves) {
+            if (!el.isConnected) {
+                continue;
+            }
+            el.style.transition =
+                `transform ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0, 1)`;
+            el.style.transform = "translateY(0px)";
+        }
+    });
+    window.clearTimeout(panel.slideTimer);
+    panel.slideTimer = window.setTimeout(() => {
+        for (const { el } of moves) {
+            if (!el.isConnected) {
+                continue;
+            }
+            el.style.transition = "none";
+            el.style.transform = "";
+            el.style.removeProperty("transition");
+            el.classList.remove("is-sliding");
+        }
+    }, SLIDE_MS + 60);
+}
+
+/** 列表里第一个「会随数据重排」的子元素（覆盖层、提示等都排在它前面）。 */
+function firstFlowChild(panel) {
+    const fixed = new Set([
+        panel.overlay,
+        panel.insertLine,
+        panel.dropLabel,
+        panel.empty,
+        panel.toast,
+    ]);
+    for (const child of panel.list.children) {
+        if (fixed.has(child) || child.classList.contains("xmlg-group-rail")) {
+            continue;
+        }
+        return child;
+    }
+    return null;
+}
+
+/**
+ * 按当前数据「就地」摆好列表：复用现有的行 / 组头节点，只搬位置、
+ * 改序号、改归属，再给被挤动的行做滑动动画。
+ *
+ * 为什么不直接 renderPanel：一次全量重建 300 行的列表要 70ms 上下，
+ * 而拖动时每穿过一行就要来一次，手感立刻就垮了。就地搬节点只要几
+ * 毫秒，而且缩略图不会重新加载（不会闪）。
+ */
+function applyOrderInPlace(node, options = {}) {
+    const panel = node?.__xmlg_panel;
+    const list = panel?.list;
+    if (!panel || !list?.isConnected) {
+        return false;
+    }
+    const state = panel.state;
+    const items = state.items[state.category] || [];
+    const groups = state.items.groups?.[state.category] || [];
+    const animate = options.animate !== false;
+    const tops = animate ? measureRowTops(panel) : null;
+    if (animate) {
+        clearSlide(panel);
+    }
+    const entries = buildRenderList(items, groups, {
+        keyOf: XMLG_KEY_OF,
+        willLoad: (entry) => entry.enabled !== false,
+    });
+    const rowByRef = panel.rowByRef || new Map();
+    const headByGroup = panel.headByGroup || new Map();
+    const stripeByGroup = new Map(
+        groups.map((group) => [group.id, groupStripeColor(group)])
+    );
+    const wanted = new Set();
+    const seenRefs = new Map();
+    const lastRowByGroup = new Map();
+    const placed = [];
+    for (const entry of entries) {
+        if (entry.type === "group") {
+            let head = headByGroup.get(entry.groupId);
+            if (!head) {
+                head = buildGroupHead(node, state.category, entry);
+                headByGroup.set(entry.groupId, head);
+            }
+            wanted.add(entry.groupId);
+            placed.push({ entry, el: head });
+            continue;
+        }
+        const key = rowKeyOf(entry, seenRefs);
+        let rowEl = rowByRef.get(key);
+        if (!rowEl) {
+            rowEl = buildRow(
+                node,
+                state.category,
+                entry.row,
+                entry.index,
+                entry.seq
+            );
+            rowByRef.set(key, rowEl);
+        }
+        placed.push({ entry, el: rowEl });
+    }
+    panel.rowByRef = rowByRef;
+    panel.headByGroup = headByGroup;
+    // 只搬位置：按目标顺序逐个插到游标前面，已经在正确位置的不动
+    let cursor = firstFlowChild(panel);
+    for (const { el } of placed) {
+        if (el === cursor) {
+            cursor = cursor.nextSibling;
+            continue;
+        }
+        list.insertBefore(el, cursor);
+    }
+    // 不再需要的行 / 组头（组被解散、文件被删）直接撤掉
+    const keep = new Set(placed.map((item) => item.el));
+    const fixed = new Set([
+        panel.overlay,
+        panel.insertLine,
+        panel.dropLabel,
+        panel.empty,
+        panel.toast,
+    ]);
+    for (const child of Array.from(list.children)) {
+        if (
+            keep.has(child)
+            || fixed.has(child)
+            || child.classList.contains("xmlg-group-rail")
+        ) {
+            continue;
+        }
+        child.remove();
+    }
+    for (const [ref, el] of rowByRef) {
+        if (!el.isConnected) {
+            rowByRef.delete(ref);
+        }
+    }
+    for (const [groupId, el] of headByGroup) {
+        if (!el.isConnected || !wanted.has(groupId)) {
+            headByGroup.delete(groupId);
+        }
+    }
+    // 行号、序号、归属：一次过全部对齐
+    for (const { entry, el } of placed) {
+        if (entry.type === "group") {
+            el.dataset.groupId = entry.groupId;
+            el.classList.toggle(
+                "is-collapsed",
+                entry.collapsed === true
+            );
+            el.style.setProperty(
+                "--xmlg-group-stripe",
+                stripeByGroup.get(entry.groupId)
+                    || groupStripeColor(entry.groupId)
+            );
+            // 拖动时成员会进出这一组，胶囊上的数字跟着改
+            const countEl = el.querySelector(".xmlg-group-count");
+            const countText = groupCountText(entry);
+            if (countEl && countEl.textContent !== countText) {
+                countEl.textContent = countText;
+            }
+            continue;
+        }
+        el.dataset.index = String(entry.index);
+        const row = entry.row;
+        const enabled = row.enabled !== false;
+        const seqText = enabled ? String(entry.seq) : "–";
+        if (el.__xmlgSeq && el.__xmlgSeq.textContent !== seqText) {
+            el.__xmlgSeq.textContent = seqText;
+        }
+        el.classList.toggle("is-disabled", !enabled);
+        // 同一个文件在列表里出现多次时，两个节点的「身份」可能互换，
+        // 开关状态也一起对齐，免得显示成另一个的开关状态
+        if (el.__xmlgSwitch && el.__xmlgSwitch.checked !== enabled) {
+            el.__xmlgSwitch.checked = enabled;
+        }
+        const groupId = row.group || "";
+        if ((el.dataset.group || "") !== groupId) {
+            if (groupId) {
+                el.dataset.group = groupId;
+                el.classList.add("is-grouped");
+                el.style.setProperty(
+                    "--xmlg-group-stripe",
+                    stripeByGroup.get(groupId) || groupStripeColor(groupId)
+                );
+            } else {
+                delete el.dataset.group;
+                el.classList.remove("is-grouped");
+                el.style.removeProperty("--xmlg-group-stripe");
+            }
+        }
+        if (groupId) {
+            lastRowByGroup.set(groupId, el);
+        }
+    }
+    // 每组一根竖线：能复用就复用。
+    // 重建的话，新元素一挂上去就是最终长度，过渡根本没机会跑——
+    // 这正是「拖一行进组时竖线突然变长」的来源。
+    const railHosts = panel.railHosts instanceof Map
+        ? panel.railHosts
+        : new Map();
+    for (const [groupId, host] of Array.from(railHosts)) {
+        if (!wanted.has(groupId) || !headByGroup.get(groupId)) {
+            host.rail.remove();
+            railHosts.delete(groupId);
+        }
+    }
+    for (const groupId of wanted) {
+        const head = headByGroup.get(groupId);
+        if (!head) {
+            continue;
+        }
+        let host = railHosts.get(groupId);
+        if (!host) {
+            const rail = element("div", "xmlg-group-rail");
+            rail.dataset.group = groupId;
+            list.appendChild(rail);
+            host = { rail, head, last: head };
+            railHosts.set(groupId, host);
+        }
+        host.head = head;
+        host.last = lastRowByGroup.get(groupId) || head;
+        host.rail.style.setProperty(
+            "--xmlg-group-stripe",
+            stripeByGroup.get(groupId) || groupStripeColor(groupId)
+        );
+        // 正在拖的就是这一组：继续显示「正在搬」
+        host.rail.classList.toggle(
+            "is-block-dragging",
+            Boolean(state.dragGroup && state.dragGroup.groupId === groupId)
+        );
+    }
+    panel.railHosts = railHosts;
+    panel.railMeasured = false;
+    layoutGroupRails(panel);
+    if (animate && tops) {
+        playSlide(panel, tops);
+    }
+    return true;
+}
+
+/** 指针压在哪个组头上（展开、折叠都算；没压到返回 null）。 */
+function groupHeadAtPointer(list, clientY) {
+    for (const head of list.querySelectorAll(".xmlg-group-head")) {
+        const rect = head.getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+            return head.dataset.groupId || null;
+        }
+    }
+    return null;
+}
+
+/** 指针上方最近的可见元素（行或组胶囊）；列表顶端之上返回 null。 */
+function flowElementAbove(list, clientY) {
+    let found = null;
+    for (const child of list.children) {
+        const isRow = child.classList.contains("xmlg-row");
+        const isHead = child.classList.contains("xmlg-group-head");
+        if (!isRow && !isHead) {
+            continue;
+        }
+        const rect = child.getBoundingClientRect();
+        if (rect.bottom <= clientY) {
+            found = child;
+        }
+    }
+    return found;
+}
+
+/** 某一组第一行在数据里的位置（用来把整块插到这一组前面）。 */
+function firstIndexForGroup(items, groupId) {
+    const rows = Array.isArray(items) ? items : [];
+    for (let index = 0; index < rows.length; index += 1) {
+        if (rows[index] && rows[index].group === groupId) {
+            return index;
+        }
+    }
+    return rows.length;
+}
+
+/** 整组拖动的落点：跟单行共用同一套「柜位」算法。 */
+function resolveGroupGap(node, clientY) {
+    return resolveFlowGap(node, clientY);
+}
+
+/** 这一行是不是它所在组的最后一名成员。 */
+function isLastGroupMember(items, index, groupId) {
+    if (!groupId) {
+        return false;
+    }
+    const next = items[index + 1];
+    return !next || (next.group || null) !== groupId;
+}
+
+function resolveDropTarget(node, clientY) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    if (!panel || !state) {
+        return null;
+    }
+    const list = panel.list;
+    const category = state.category;
+    const items = state.items[category] || [];
+    const groups = (state.items.groups && state.items.groups[category]) || [];
+    // 指针压在任意一组的胶囊上（展开的、折叠的都算）= 追加到这一组末尾。
+    // 折叠组的成员没渲染，只能靠胶囊指位置；展开的组也照此办理，
+    // 否则「拖到组头」会掉到列表最底下，跟这里提示的「加入这一组」不符。
+    const head = groupHeadAtPointer(list, clientY);
+    if (head) {
+        return {
+            mode: "insert",
+            index: appendIndexForGroup(items, head),
+            row: null,
+            group: head,
+        };
+    }
     const rows = Array.from(list.querySelectorAll(".xmlg-row"));
     for (const row of rows) {
         const rect = row.getBoundingClientRect();
@@ -4454,17 +7005,55 @@ function resolveDropTarget(list, clientY) {
             continue;
         }
         const index = Number(row.dataset.index);
+        const group = row.dataset.group || null;
         if (clientY - rect.top <= INSERT_EDGE_PX) {
-            return { mode: "insert", index, row };
+            return { mode: "insert", index, row, group };
         }
         if (rect.bottom - clientY <= INSERT_EDGE_PX) {
-            return { mode: "insert", index: index + 1, row };
+            return { mode: "insert", index: index + 1, row, group };
         }
-        return { mode: "replace", index, row };
+        // 一组的最后一名（以及列表最后一行）的下半部分算「追加到末尾」，
+        // 否则想在组的最底部加个文件，只能赌那 8px 边距，很容易误替换。
+        const tail = isLastGroupMember(items, index, group)
+            || index === items.length - 1;
+        if (tail && clientY - rect.top > rect.height / 2) {
+            return { mode: "insert", index: index + 1, row, group };
+        }
+        return { mode: "replace", index, row, group };
     }
-    const last = rows[rows.length - 1];
-    const index = last ? Number(last.dataset.index) + 1 : 0;
-    return { mode: "insert", index, row: null };
+    // 指针落在两段之间的空隙里（组和组之间只有几个像素），这时
+    // 「接在上面那一段后面」才是用户的意思 —— 尤其想让文件进到某组
+    // 的最底部时，手指很难刚好停在那一行里，常常就落在这条缝上。
+    const above = flowElementAbove(list, clientY);
+    if (!above) {
+        return {
+            mode: "insert",
+            index: 0,
+            row: null,
+            group: groupForDrop(list, items, 0, clientY),
+        };
+    }
+    if (above.classList.contains("xmlg-group-head")) {
+        const groupId = above.dataset.groupId || null;
+        const record = groups.find((item) => item.id === groupId);
+        // 折叠组：成员没渲染，组头下面就是这一组的末尾 → 追加进去
+        // 展开组：组头下面紧接着的是它的第一名成员 → 插到那一名前面
+        return {
+            mode: "insert",
+            index: record && record.collapsed === true
+                ? appendIndexForGroup(items, groupId)
+                : firstIndexForGroup(items, groupId),
+            row: null,
+            group: groupId,
+        };
+    }
+    const index = Number(above.dataset.index) + 1;
+    return {
+        mode: "insert",
+        index,
+        row: above,
+        group: above.dataset.group || null,
+    };
 }
 
 function clearDragHighlights(panel) {
@@ -4478,20 +7067,76 @@ function clearDragHighlights(panel) {
     }
     panel.insertLine.style.display = "none";
     panel.dropLabel.style.display = "none";
+    for (const target of panel.list.querySelectorAll(".is-drop-target")) {
+        target.classList.remove("is-drop-target");
+    }
+}
+
+/**
+ * 一个可见元素在数据里的「结束位置」。
+ *
+ * 插入点正好落在这里，插入线就画在它的下沿：
+ * - 普通行：它自己后面那一格
+ * - 折叠的组头：整个组的后面（成员没渲染，组头就是这组的末尾）
+ * - 展开的组头：组里第一名成员那一格（成员行紧接着画在它下面）
+ */
+function flowEndIndex(items, category, child) {
+    if (child.classList.contains("xmlg-group-head")) {
+        const groupId = child.dataset.groupId || "";
+        const rows = items[category] || [];
+        const records = (items.groups && items.groups[category]) || [];
+        const record = records.find((item) => item.id === groupId);
+        return record && record.collapsed === true
+            ? appendIndexForGroup(rows, groupId)
+            : firstIndexForGroup(rows, groupId);
+    }
+    return Number(child.dataset.index) + 1;
+}
+
+/**
+ * 插入线画在哪个高度。
+ *
+ * 基准是「落点上面那一段」的下沿，不是「下一行的上边」：
+ * 落点如果是「某一组的最后一名之后」，下一行属于**另一组**，
+ * 拿下一行当基准就会把线画到下一组组头的下面 —— 看起来像插进了
+ * 下一组，实际却是接在上一组末尾。认上一段的末尾，线和真实落点永远一致。
+ */
+function insertLineTop(panel, index) {
+    const items = panel.state.items || {};
+    const category = panel.state.category;
+    const flow = Array.from(panel.list.children).filter(
+        (child) => child.classList.contains("xmlg-row")
+            || child.classList.contains("xmlg-group-head")
+    );
+    if (!flow.length) {
+        return 6;
+    }
+    // 取「结束位置最靠后、且不越过插入点」的那一段；位置打平时行优先。
+    // 行优先很重要：落点在某组第一行前面时，那一组的组头结束位置也
+    // 是同一下标，若让组头赢，线就会画到组头下面（看起来像插进了组里）。
+    let anchor = null;
+    let anchorEnd = Number.NEGATIVE_INFINITY;
+    let anchorIsHead = false;
+    for (const child of flow) {
+        const isHead = child.classList.contains("xmlg-group-head");
+        const end = flowEndIndex(items, category, child);
+        if (!Number.isFinite(end) || end > index) {
+            continue;
+        }
+        if (end > anchorEnd || (end === anchorEnd && anchorIsHead && !isHead)) {
+            anchor = child;
+            anchorEnd = end;
+            anchorIsHead = isHead;
+        }
+    }
+    if (!anchor) {
+        return Math.max(0, flow[0].offsetTop - 2);
+    }
+    return anchor.offsetTop + anchor.offsetHeight + 1;
 }
 
 function placeInsertLine(panel, index) {
-    const rows = Array.from(panel.list.querySelectorAll(".xmlg-row"));
-    let top = 6;
-    let row = rows.find(
-        (entry) => Number(entry.dataset.index) === index
-    );
-    if (row) {
-        top = row.offsetTop - 2;
-    } else if (rows.length) {
-        const last = rows[rows.length - 1];
-        top = last.offsetTop + last.offsetHeight + 1;
-    }
+    const top = insertLineTop(panel, index);
     panel.insertLine.style.top = `${top}px`;
     panel.insertLine.style.display = "block";
     panel.dropLabel.style.top = `${Math.max(0, top - 24)}px`;
@@ -4512,6 +7157,27 @@ function updateDropIndicator(node, target) {
         return;
     }
     placeInsertLine(panel, target.index);
+    // 落点落在某一组里：把那组圈出来，提示里直接写组名
+    markGroupTarget(panel, target.group);
+    const groupName = groupNameById(node, panel.state.category, target.group);
+    if (groupName) {
+        panel.dropLabel.textContent = count > 1
+            ? `+ ${
+                t(
+                    "xdatahub.ui.node.xmedialistget.insert_many_into_group",
+                    "Insert {count} files into \"{name}\"",
+                    { count, name: groupName }
+                )
+            }`
+            : `+ ${
+                t(
+                    "xdatahub.ui.node.xmedialistget.insert_into_group",
+                    "Insert into \"{name}\"",
+                    { name: groupName }
+                )
+            }`;
+        return;
+    }
     panel.dropLabel.textContent = count > 1
         ? `+ ${
             t(
@@ -4623,6 +7289,8 @@ function applyDrop(node, payload, target) {
                 ref: entries[0].ref,
                 title: entries[0].title || previous.title,
                 enabled: previous.enabled,
+                // 在组内换文件时留在同一个组，不被默默踢出去
+                group: previous.group || null,
             };
             writeItems(node, items);
             renderPanel(node);
@@ -4648,6 +7316,8 @@ function applyDrop(node, payload, target) {
         0,
         MAX_ENABLED - enabledCount(items, category)
     );
+    // 拖到某一组的地盘里落下的文件，直接成为这一组的成员
+    const groupId = target?.group || null;
     const added = entries.map((entry) => {
         const enabled = slots > 0;
         if (enabled) {
@@ -4657,12 +7327,14 @@ function applyDrop(node, payload, target) {
             ref: entry.ref,
             title: entry.title,
             enabled,
+            group: groupId,
         };
     });
     list.splice(insertIndex, 0, ...added);
     writeItems(node, items);
-    state.page = Math.floor(insertIndex / state.pageSize) + 1;
     renderPanel(node);
+    // 分页退场后不再「翻到某一页」，改成把新插入的第一行滚进视野。
+    scrollRowIntoView(node, insertIndex);
     const disabledCount = added.filter((entry) => !entry.enabled).length;
     if (disabledCount > 0) {
         showToast(
@@ -4674,13 +7346,20 @@ function applyDrop(node, payload, target) {
             )
         );
     } else {
+        const groupName = groupNameById(node, category, groupId);
         showToast(
             node,
-            t(
-                "xdatahub.ui.node.xmedialistget.inserted",
-                "Inserted {count} files",
-                { count: added.length }
-            )
+            groupName
+                ? t(
+                    "xdatahub.ui.node.xmedialistget.inserted_into_group",
+                    "Inserted {count} files into \"{name}\"",
+                    { count: added.length, name: groupName }
+                )
+                : t(
+                    "xdatahub.ui.node.xmedialistget.inserted",
+                    "Inserted {count} files",
+                    { count: added.length }
+                )
         );
     }
 }
@@ -4695,10 +7374,6 @@ function bindDragAndDrop(node) {
     const state = panel.state;
 
     list.addEventListener("dragenter", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
-            event.preventDefault();
-            return;
-        }
         if (!hasMediaPayload(event.dataTransfer)) {
             return;
         }
@@ -4722,28 +7397,6 @@ function bindDragAndDrop(node) {
     });
 
     list.addEventListener("dragover", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
-            event.preventDefault();
-            const dragRow = state.dragRow;
-            if (!dragRow) {
-                return;
-            }
-            if (event.dataTransfer) {
-                event.dataTransfer.dropEffect = "move";
-            }
-            const gap = resolveMoveGap(list, event.clientY);
-            dragRow.gap = gap;
-            showMoveIndicator(panel, gap);
-            const rect = list.getBoundingClientRect();
-            if (event.clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
-                startDropAutoScroll(node, -1);
-            } else if (rect.bottom - event.clientY < DROP_AUTOSCROLL_EDGE) {
-                startDropAutoScroll(node, 1);
-            } else {
-                stopDropAutoScroll(state);
-            }
-            return;
-        }
         if (!hasMediaPayload(event.dataTransfer)) {
             return;
         }
@@ -4765,7 +7418,7 @@ function bindDragAndDrop(node) {
             return;
         }
         hideTypeMismatch(panel);
-        const target = resolveDropTarget(list, event.clientY);
+        const target = resolveDropTarget(node, event.clientY);
         drag.target = target;
         updateDropIndicator(node, target);
     });
@@ -4824,23 +7477,6 @@ function bindDragAndDrop(node) {
     });
 
     list.addEventListener("drop", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
-            event.preventDefault();
-            event.stopPropagation();
-            if (typeof event.stopImmediatePropagation === "function") {
-                event.stopImmediatePropagation();
-            }
-            const dragRow = state.dragRow;
-            const gap = Number.isFinite(dragRow?.gap)
-                ? dragRow.gap
-                : resolveMoveGap(list, event.clientY);
-            stopDropAutoScroll(state);
-            clearDragHighlights(panel);
-            // applyRowMove 要读 dragRow，先挪完再清
-            applyRowMove(node, gap);
-            state.dragRow = null;
-            return;
-        }
         if (!hasMediaPayload(event.dataTransfer)) {
             return;
         }
@@ -4850,8 +7486,7 @@ function bindDragAndDrop(node) {
             event.stopImmediatePropagation();
         }
         const payload = parseDropPayload(event.dataTransfer);
-        const target = state.drag?.target
-            || resolveDropTarget(list, event.clientY);
+        const target = resolveDropTarget(node, event.clientY);
         clearDragUI(node);
         if (!payload) {
             // 可能是 LoRA / 文本这类根本不支持的内容，也可能一次拖了
@@ -5341,13 +7976,19 @@ function installNodeUi(node) {
         state: {
             items: readItems(node),
             category: readCategory(node),
-            page: 1,
-            pageSize: readPageSize(node),
             missing: new Set(),
+            // 多选只用于成组；拖动永远是单行
+            selection: new Set(),
+            selectionAnchor: null,
             toastTimer: 0,
             drag: null,
             // 列表内拖拽排序（和「从 XDataHub 拖入」的 drag 分开）
             dragRow: null,
+            // 拖整组（拖组头）
+            dragGroup: null,
+            // 按下但还没达到「算拖动」的阈值（指针事件那一套）
+            pointerDrag: null,
+            suppressClickUntil: 0,
             autoScrollDir: 0,
             autoScrollRaf: 0,
             undoStack: [],
@@ -5375,7 +8016,6 @@ function installNodeUi(node) {
                 const next = readCategory(node);
                 if (next !== state.category) {
                     state.category = next;
-                    state.page = 1;
                     syncOutputPortType(node);
                     renderPanel(node);
                 }
@@ -5587,10 +8227,9 @@ function handleSendToNode(node, data, ack) {
         MAX_ENABLED - enabledCount(items, category)
     );
     writeItems(node, items);
-    // 跳到新加文件所在的那一页，否则列表长了看不到刚加进来的内容。
-    const pageSize = Math.max(1, Number(state.pageSize) || DEFAULT_PAGE_SIZE);
-    state.page = Math.floor(firstNewIndex / pageSize) + 1;
     renderPanel(node);
+    // 列表长了看不到刚加进来的内容：把第一行新文件滚进视野。
+    scrollRowIntoView(node, firstNewIndex);
     syncOutputPortType(node);
     ack(true, "", {
         accepted: payload.entries.length,
@@ -5708,8 +8347,6 @@ function initXMediaListGetExtension() {
                 if (panel) {
                     panel.state.items = readItems(this);
                     panel.state.category = readCategory(this);
-                    panel.state.pageSize = readPageSize(this);
-                    panel.state.page = 1;
                     panel.state.missing = new Set();
                     panel.state.undoStack = [];
                     panel.state.redoStack = [];
@@ -5758,8 +8395,6 @@ function initXMediaListGetExtension() {
             if (panel) {
                 panel.state.items = readItems(node);
                 panel.state.category = readCategory(node);
-                panel.state.pageSize = readPageSize(node);
-                panel.state.page = 1;
                 panel.state.missing = new Set();
                 panel.state.undoStack = [];
                 panel.state.redoStack = [];
