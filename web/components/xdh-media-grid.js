@@ -177,6 +177,9 @@ function buildDragEntry(entry) {
     };
     if (mediaType === "lora") {
         item.thumb_url = normalizeText(extra.thumb_url || raw.thumb_url);
+        // 视频封面要带上类型与原图地址，节点那边才知道画视频第一帧
+        item.cover_kind = normalizeText(extra.cover_kind);
+        item.cover_url = normalizeText(extra.cover_url);
         const strengthModel = extra.strength_model ?? raw.strength_model;
         const strengthClip = extra.strength_clip ?? raw.strength_clip;
         if (strengthModel != null) {

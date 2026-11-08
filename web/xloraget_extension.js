@@ -405,6 +405,7 @@ async function fetchLoraTriggerWords(loraRef) {
             trigger_words: [],
             strength_model: null,
             strength_clip: null,
+            cover: null,
         };
     }
     const response = await api.fetchApi(
@@ -426,7 +427,92 @@ async function fetchLoraTriggerWords(loraRef) {
         strength_clip: Number.isFinite(strengthClip)
             ? strengthClip
             : null,
+        // 这个接口顺带带了封面信息，省一次请求（视频封面就靠它）
+        cover: item.cover || null,
     };
+}
+
+/** 封面类型：只有 image / video 两种，其余一律当「没有封面」。 */
+function normalizeCoverKind(value) {
+    const kind = String(value || "").trim().toLowerCase();
+    return kind === "video" || kind === "image" ? kind : "";
+}
+
+/**
+ * 视频封面在 tooltip 里直接播放。
+ *
+ * 悬停才出现的封面本来就是「看一眼」，静态第一帧的信息量太少，
+ * 所以这里静音自动循环播放（静音才不会被浏览器拦）。
+ * 地址带 `#t=0.1`：万一系统禁止自动播放，也至少停在第一帧而
+ * 不是一块黑。
+ */
+function playTooltipVideo(video, url) {
+    if (!(video instanceof HTMLVideoElement)) {
+        return;
+    }
+    const base = String(url || "").split("#")[0];
+    if (!base) {
+        return;
+    }
+    video.src = `${base}#t=0.1`;
+    video.style.display = "block";
+    const started = video.play?.();
+    if (started && typeof started.catch === "function") {
+        // 自动播放被拦下来不算错，停在第一帧也挺好看
+        started.catch(() => {});
+    }
+}
+
+function stopTooltipVideo(video) {
+    if (!(video instanceof HTMLVideoElement) || !video.hasAttribute("src")) {
+        return;
+    }
+    try {
+        video.pause();
+    } catch {
+        // 没有可播源时 pause 可能抛错，忽略
+    }
+    video.removeAttribute("src");
+    video.load?.();
+    video.style.display = "none";
+}
+
+/**
+ * tooltip 里那块封面的内容：图片封面用 `<img>`，视频封面用 `<video>`。
+ *
+ * 视频走 `<video>` 而不是服务端抽的静帧：静帧只能看到一帧，而封面
+ * 是悬停才出现的，动起来才看得出内容。这样也不依赖 ffmpeg。
+ * @returns {boolean} 是否显示出了内容
+ */
+function applyTooltipMedia(tooltip, thumbUrl, coverKind, coverUrl) {
+    const img = tooltip?.querySelector("img");
+    const video = tooltip?.querySelector("video");
+    if (!(img instanceof HTMLImageElement)
+        || !(video instanceof HTMLVideoElement)) {
+        return false;
+    }
+    const stillUrl = String(thumbUrl || "").trim();
+    const sourceUrl = String(coverUrl || "").trim();
+    const isVideo = normalizeCoverKind(coverKind) === "video";
+    stopTooltipVideo(video);
+    if (isVideo && sourceUrl) {
+        img.removeAttribute("src");
+        img.onerror = null;
+        img.style.display = "none";
+        playTooltipVideo(video, sourceUrl);
+        return true;
+    }
+    img.onerror = () => {
+        img.style.display = "none";
+    };
+    if (!stillUrl) {
+        img.removeAttribute("src");
+        img.style.display = "none";
+        return false;
+    }
+    img.style.display = "block";
+    img.src = stillUrl;
+    return true;
 }
 
 function positionTooltip(tooltip, event) {
@@ -483,15 +569,15 @@ function showTooltip(
     text,
     thumbUrl = "",
     noteText = "",
-    target = null
+    target = null,
+    coverKind = "",
+    coverUrl = ""
 ) {
-    const img = tooltip?.querySelector("img");
     const label = tooltip?.querySelector(".xlora-tooltip-name");
     const divider = tooltip?.querySelector(".xlora-tooltip-divider");
     const note = tooltip?.querySelector(".xlora-tooltip-note");
     if (!(tooltip instanceof HTMLElement)
         || !(label instanceof HTMLElement)
-        || !(img instanceof HTMLImageElement)
         || !(divider instanceof HTMLElement)
         || !(note instanceof HTMLElement)) {
         return;
@@ -499,9 +585,14 @@ function showTooltip(
     const resolvedText = resolveTooltipContent(text, target);
     const resolvedThumbUrl = resolveTooltipContent(thumbUrl, target);
     const resolvedNoteText = resolveTooltipContent(noteText, target);
+    const resolvedCoverKind = resolveTooltipContent(coverKind, target);
+    const resolvedCoverUrl = resolveTooltipContent(coverUrl, target);
     const displayName = extractLoraFilename(String(resolvedText || ""));
     const displayNote = String(resolvedNoteText || "").trim();
-    if (!displayName && !displayNote && !resolvedThumbUrl) {
+    const isVideoCover = normalizeCoverKind(resolvedCoverKind) === "video";
+    const hasCover = !!String(resolvedThumbUrl || "").trim()
+        || (isVideoCover && !!String(resolvedCoverUrl || "").trim());
+    if (!displayName && !displayNote && !hasCover) {
         hideTooltip(tooltip);
         return;
     }
@@ -509,15 +600,13 @@ function showTooltip(
     note.textContent = displayNote;
     divider.style.display = displayNote ? "block" : "none";
     note.style.display = displayNote ? "block" : "none";
-    if (resolvedThumbUrl) {
-        img.src = resolvedThumbUrl;
-        img.style.display = "block";
-        tooltip.classList.add("has-thumb");
-    } else {
-        img.removeAttribute("src");
-        img.style.display = "none";
-        tooltip.classList.remove("has-thumb");
-    }
+    const shown = applyTooltipMedia(
+        tooltip,
+        resolvedThumbUrl,
+        resolvedCoverKind,
+        resolvedCoverUrl
+    );
+    tooltip.classList.toggle("has-thumb", shown);
     tooltip.style.display = "block";
     positionTooltip(tooltip, event);
 }
@@ -530,9 +619,12 @@ function moveTooltip(tooltip, event) {
 }
 
 function hideTooltip(tooltip) {
-    if (tooltip instanceof HTMLElement) {
-        tooltip.style.display = "none";
+    if (!(tooltip instanceof HTMLElement)) {
+        return;
     }
+    tooltip.style.display = "none";
+    // 视频封面一直挂着会继续解码、占内存，收起来时顺手卸掉
+    stopTooltipVideo(tooltip.querySelector("video"));
 }
 
 function bindTooltip(
@@ -540,13 +632,24 @@ function bindTooltip(
     tooltip,
     text,
     thumbUrl = "",
-    noteText = ""
+    noteText = "",
+    coverKind = "",
+    coverUrl = ""
 ) {
     if (!(target instanceof HTMLElement)) {
         return;
     }
     target.addEventListener("mouseenter", (event) => {
-        showTooltip(tooltip, event, text, thumbUrl, noteText, target);
+        showTooltip(
+            tooltip,
+            event,
+            text,
+            thumbUrl,
+            noteText,
+            target,
+            coverKind,
+            coverUrl
+        );
     });
     target.addEventListener("mousemove", (event) => {
         moveTooltip(tooltip, event);
@@ -592,6 +695,11 @@ function makeRow(partial = {}) {
         trigger_words_error: "",
         strength_sync_pending: partial.strength_sync_pending === true,
         thumb_url: String(partial.thumb_url || ""),
+        // 封面类型与封面原图：视频封面靠它们才能在 tooltip 里画出来
+        cover_kind: normalizeCoverKind(
+            partial.cover_kind || partial.coverKind
+        ),
+        cover_url: String(partial.cover_url || partial.coverUrl || ""),
         pin: partial.pin === "head" || partial.pin === "tail"
             ? partial.pin
             : "none",
@@ -643,12 +751,20 @@ function parseDragPayload(dataTransfer) {
         }
         const title = String(payload?.title || "lora");
         const thumbUrl = String(payload?.thumb_url || "");
+        const coverKind = normalizeCoverKind(
+            payload?.cover_kind || payload?.coverKind
+        );
+        const coverUrl = String(
+            payload?.cover_url || payload?.coverUrl || ""
+        );
         const strengthModel = Number(payload?.strength_model);
         const strengthClip = Number(payload?.strength_clip);
         const topLevel = {
             lora_ref: loraRef,
             title,
             thumb_url: thumbUrl,
+            cover_kind: coverKind,
+            cover_url: coverUrl,
             strength_model: Number.isFinite(strengthModel)
                 ? strengthModel
                 : null,
@@ -670,6 +786,12 @@ function parseDragPayload(dataTransfer) {
                         .toLowerCase(),
                     title: String(item?.title || "lora"),
                     thumb_url: String(item?.thumb_url || ""),
+                    cover_kind: normalizeCoverKind(
+                        item?.cover_kind || item?.coverKind
+                    ),
+                    cover_url: String(
+                        item?.cover_url || item?.coverUrl || ""
+                    ),
                     strength_model: Number.isFinite(model) ? model : null,
                     strength_clip: Number.isFinite(clip) ? clip : null,
                 };
@@ -1227,14 +1349,19 @@ function ensureStyles() {
             box-shadow: var(--xdh-shadow-popup);
             display: none;
         }
-        .xlora-tooltip img {
+        .xlora-tooltip-media {
+            position: relative;
+            width: 120px;
+            margin: 0 auto;
+        }
+        .xlora-tooltip img,
+        .xlora-tooltip video {
             width: 120px;
             height: 120px;
             display: block;
             object-fit: contain;
             background: #000;
             border-radius: var(--xdh-radius-xs);
-            margin: 0 auto;
         }
         .xlora-tooltip-name {
             font: var(--xdh-font-micro-label);
@@ -1365,6 +1492,8 @@ function serializeStoredRows(rows, globalSeparateClip) {
         trigger_words: normalizeTriggerWords(item.trigger_words),
         lora_note: String(item.lora_note || ""),
         thumb_url: item.thumb_url || "",
+        cover_kind: normalizeCoverKind(item.cover_kind),
+        cover_url: String(item.cover_url || ""),
         pin: item.pin || "none",
     }));
 }
@@ -1392,6 +1521,8 @@ function applyLoraCoverChange(payload) {
         return;
     }
     const thumbUrl = String(payload?.thumb_url || "");
+    const coverUrl = String(payload?.cover_url || "");
+    const coverKind = normalizeCoverKind(payload?.cover_kind || payload?.kind);
     for (const node of collectXLoraNodes()) {
         const panel = node?.__xlora_panel;
         const rows = Array.isArray(panel?.state?.rows) ? panel.state.rows : [];
@@ -1404,7 +1535,12 @@ function applyLoraCoverChange(payload) {
                 return row;
             }
             changed = true;
-            return { ...row, thumb_url: thumbUrl };
+            return {
+                ...row,
+                thumb_url: thumbUrl,
+                cover_kind: coverKind,
+                cover_url: coverUrl,
+            };
         });
         if (!changed) {
             continue;
@@ -1414,6 +1550,25 @@ function applyLoraCoverChange(payload) {
         writeStoredRows(node, nextRows);
         renderNodeRows(node);
     }
+}
+
+/**
+ * 把封面信息写到行上；服务端说没有封面时清空，避免留着旧地址。
+ */
+function applyRowCover(row, kind, thumbUrl, coverUrl) {
+    if (!row) {
+        return;
+    }
+    const nextKind = normalizeCoverKind(kind);
+    if (!nextKind) {
+        row.cover_kind = "";
+        row.cover_url = "";
+        row.thumb_url = "";
+        return;
+    }
+    row.cover_kind = nextKind;
+    row.cover_url = String(coverUrl || "");
+    row.thumb_url = String(thumbUrl || "");
 }
 
 function syncRowTriggerWords(node, row, options = {}) {
@@ -1443,6 +1598,14 @@ function syncRowTriggerWords(node, row, options = {}) {
             const words = normalizeTriggerWords(payload?.trigger_words || []);
             row.trigger_words = mergeTriggerWords(row.trigger_words, words);
             row.lora_note = String(payload?.lora_note || "").trim();
+            // 封面以服务端为准：目录里换了封面、或从别处拖进来的行，
+            // 都能在这里补齐（视频封面需要 kind 才能画第一帧）。
+            applyRowCover(
+                row,
+                payload?.cover?.kind,
+                payload?.cover?.thumb_url,
+                payload?.cover?.url
+            );
             if (row.strength_sync_pending === true) {
                 const fetchedModel = Number(payload?.strength_model);
                 const fetchedClip = Number(payload?.strength_clip);
@@ -1546,7 +1709,17 @@ function buildPanel() {
     const tooltip = document.createElement("div");
     tooltip.className = "xlora-tooltip";
     tooltip.innerHTML = `
-        <img alt="thumb" style="display:none;">
+        <div class="xlora-tooltip-media">
+            <img alt="thumb" style="display:none;">
+            <video
+                muted
+                loop
+                autoplay
+                playsinline
+                preload="metadata"
+                style="display:none;"
+            ></video>
+        </div>
         <div class="xlora-tooltip-name"></div>
         <div class="xlora-tooltip-divider"></div>
         <div class="xlora-tooltip-note"></div>
@@ -1650,6 +1823,12 @@ function upsertLoraRowFromMediaRef(
     const rows = readStoredRows(node);
     const existing = rows.find((item) => item.lora_ref === loraRef);
     const normalizedThumb = String(thumbUrl || "").trim();
+    const incomingCoverKind = normalizeCoverKind(
+        options.coverKind || options.cover_kind
+    );
+    const incomingCoverUrl = String(
+        options.coverUrl || options.cover_url || ""
+    ).trim();
     const hasExplicitStrengthModel = Number.isFinite(Number(strengthModel));
     const hasExplicitStrengthClip = Number.isFinite(Number(strengthClip));
     const strengthSyncPending = options.syncStrengthFromRemote === true
@@ -1672,6 +1851,10 @@ function upsertLoraRowFromMediaRef(
         if (normalizedThumb) {
             existing.thumb_url = normalizedThumb;
         }
+        if (incomingCoverKind) {
+            existing.cover_kind = incomingCoverKind;
+            existing.cover_url = incomingCoverUrl;
+        }
         existing.strength_model = normalizedModelStrength;
         existing.strength_clip = normalizedClipStrength;
         existing.separate_clip_strength = separateClipStrength;
@@ -1689,6 +1872,8 @@ function upsertLoraRowFromMediaRef(
                 strength_sync_pending: strengthSyncPending,
                 lora_note: normalizedLoraNote,
                 thumb_url: normalizedThumb,
+                cover_kind: incomingCoverKind,
+                cover_url: incomingCoverUrl,
                 pin: "none",
             })
         );
@@ -1783,6 +1968,20 @@ function ensureXLoraNodeMinSize(node) {
             origOnResize.apply(this, arguments);
         }
     };
+}
+
+/**
+ * 节点被删掉时收尾：tooltip 挂在 body 上，不主动摘掉会一直留着
+ * （里面的图片/视频也一起赖着）。
+ */
+function disposeNodeUi(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    hideTooltip(panel.tooltip);
+    panel.tooltip?.remove();
+    delete node.__xlora_panel;
 }
 
 function installNodeUi(node) {
@@ -2126,7 +2325,9 @@ function renderNodeRows(node) {
             tooltip,
             item.title || item.lora_name,
             item.thumb_url,
-            item.lora_note || ""
+            item.lora_note || "",
+            item.cover_kind,
+            item.cover_url
         );
         rowMain.appendChild(name);
 
@@ -2593,6 +2794,8 @@ function bindDnD(node) {
                         entry.strength_model == null
                         && entry.strength_clip == null
                     ),
+                    coverKind: entry.cover_kind,
+                    coverUrl: entry.cover_url,
                 }
             );
         }
@@ -2813,9 +3016,14 @@ function initXLoraGetExtension() {
             }
             const origCreated = nodeType.prototype.onNodeCreated;
             const origConfigure = nodeType.prototype.onConfigure;
+            const origRemoved = nodeType.prototype.onRemoved;
             nodeType.prototype.onNodeCreated = function () {
                 origCreated?.apply(this, arguments);
                 installNodeUi(this);
+            };
+            nodeType.prototype.onRemoved = function () {
+                disposeNodeUi(this);
+                origRemoved?.apply(this, arguments);
             };
             nodeType.prototype.onConfigure = function () {
                 origConfigure?.apply(this, arguments);
@@ -2948,7 +3156,11 @@ function initXLoraGetExtension() {
                         data.thumb_url || "",
                         data.strength_model,
                         data.strength_clip,
-                        data.lora_note || ""
+                        data.lora_note || "",
+                        {
+                            coverKind: data.cover_kind,
+                            coverUrl: data.cover_url,
+                        }
                     );
                     ack(true);
                 } catch (error) {

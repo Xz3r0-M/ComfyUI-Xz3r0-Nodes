@@ -2349,6 +2349,7 @@ function showTooltip(node, event, category, entry) {
         return;
     }
     const media = panel.tooltipMedia;
+    stopTooltipVideo(panel);
     media.innerHTML = "";
     media.classList.toggle("is-audio", category === "audio");
     if (category === "audio") {
@@ -2418,8 +2419,48 @@ function moveTooltip(node, event) {
     }
 }
 
+/**
+ * 停掉悬停预览里的视频。
+ *
+ * 为什么必须手动停：CSS 的 `display:none` **不会**暂停视频，隐藏起来
+ * 它还会继续解码、继续播放（静音但照样吃 CPU），换个文件再悬停才会
+ * 被新元素顶掉。所以收起预览时要显式 pause + 卸掉播放源。
+ */
+function stopTooltipVideo(panel) {
+    const video = panel?.tooltipMedia?.querySelector("video");
+    if (!(video instanceof HTMLVideoElement) || !video.hasAttribute("src")) {
+        return;
+    }
+    try {
+        video.pause();
+    } catch {
+        // 忽略：暂停失败也要继续清理播放源
+    }
+    video.removeAttribute("src");
+    video.load?.();
+}
+
+/**
+ * 节点被删掉时收尾：tooltip 是挂在 body 上的，不主动摘掉会一直留着。
+ */
+function disposeNodeUi(node) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    hideTooltip(node);
+    panel.tooltip?.remove();
+    panel.tooltip = null;
+    delete node.__xmlg_panel;
+}
+
 function hideTooltip(node) {
-    node?.__xmlg_panel?.tooltip?.classList.remove("is-visible");
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    panel.tooltip?.classList.remove("is-visible");
+    stopTooltipVideo(panel);
 }
 
 // ── 全屏预览 ────────────────────────────────────────────────────────────
@@ -5450,6 +5491,7 @@ function initXMediaListGetExtension() {
             };
             nodeType.prototype.onRemoved = function () {
                 closeMediaPreviewForNode(this);
+                disposeNodeUi(this);
                 originalRemoved?.apply(this, arguments);
             };
             nodeType.prototype.onConfigure = function () {
