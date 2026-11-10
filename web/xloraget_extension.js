@@ -1154,11 +1154,21 @@ function ensureStyles() {
             box-sizing: border-box;
             padding: 8px;
         }
+        /* 列表的视口：滚动发生在里面的 .xlora-list 上，这一层只负责
+           给提示条当定位父级（和 XMediaListGet 的 .xmlg-list-viewport 一样） */
+        .xlora-list-viewport {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 0;
+            min-height: 0;
+        }
         .xlora-toast {
-            /* 挂在列表底部：提示条弹出来不该盖住最上面的行 */
+            /* 贴列表顶端弹出，和 XMediaListGet 的提示条同一套坐标：
+               两边都是「视口顶部往下 42px」，不再一个在上一个在下 */
             position: absolute;
             left: 50%;
-            bottom: 46px;
+            top: 42px;
             transform: translateX(-50%);
             max-width: 92%;
             padding: 6px 12px;
@@ -2619,14 +2629,20 @@ function buildPanel(node) {
     const clearButton = element("button", "xlora-tbtn xlora-clear", "🗑️");
     clearButton.type = "button";
     footer.appendChild(clearButton);
-    // 工具栏 + 列表 + 底栏合成一张卡片：顶盖是按钮条，中间滚动，
+    // 工具栏 + 视口 + 底栏合成一张卡片：顶盖是按钮条，中间滚动，
     // 底栏报数。
     const listShell = element("div", "xlora-list-shell");
     listShell.appendChild(listToolbar);
-    listShell.appendChild(list);
-    // 提示条浮在列表上方，所以跟着列表待在卡片里（卡片是它的定位父级），
-    // 不会跑道卡片外面的描述文字上。
-    listShell.appendChild(toast);
+    /* 列表外面再套一层「视口」：提示条（toast）的定位父级必须是这一层，
+       不是卡片。卡片里还含顶盖，按卡片定位的话「距顶 42px」会跑进工具栏，
+       想让它露在列表上方就只能按底部定位——那样提示条会跑到列表最下面，
+       离刚操作的那一行十万八千里。套一层视口以后，两边用同一套坐标
+       （见 .xlora-toast 的 top）。 */
+    const listViewport = element("div", "xlora-list-viewport");
+    listViewport.appendChild(list);
+    // 提示条浮在列表上方，跟着视口走，不会跑道卡片外面的描述文字上。
+    listViewport.appendChild(toast);
+    listShell.appendChild(listViewport);
     listShell.appendChild(footer);
     panel.appendChild(meta);
     panel.appendChild(toolbar);

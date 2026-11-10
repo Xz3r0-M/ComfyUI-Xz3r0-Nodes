@@ -1056,7 +1056,9 @@ const GROUP_CSS_TEXT = `__GROUP_HOSTS__,
             );
             font-size: 11px;
             line-height: 1.35;
-            white-space: normal;
+            /* pre-line：文案里的换行符真的换行（两句提示各占一行），
+               但不保留多余空格——其它提示没有换行符，看起来和以前一样 */
+            white-space: pre-line;
             overflow-wrap: break-word;
         }
         .xmlg-hint.is-visible {
@@ -2152,10 +2154,27 @@ function buildGroupHead(node, category, entry) {
     // 组头就是「整块的把手」：按住胶囊就能把这一组整摞搬走。
     // 展开组搬的是一整段，折叠组搬的只有组头（成员仍然跟着走）。
     // 和行一样走指针事件（浏览器自带的拖放事件太稀疏，滑不流畅）。
-    bindHint(head, () => t(
-        "xdatahub.ui.group.group_drag_tooltip",
-        "Drag to move the whole group"
-    ));
+    /* 组头能干的第二件事是「单击 = 让 ✔ ✖ ⇄ 只作用于这一组」。这件
+       事在界面上没有任何按钮，只能靠提示说清楚，否则只能靠用户瞎点
+       撞出来。已经收窄到这一组时，提示改成「再点一下取消」。
+       收窄状态现取（不是建组头那一刻的快照），所以提示会跟着变。 */
+    bindHint(head, () => {
+        const scoped = (panelOf(node)?.state?.scopeGroup || null)
+            === entry.groupId;
+        if (scoped) {
+            return t(
+                "xdatahub.ui.group.group_head_tooltip_scoped",
+                "Click again to stop narrowing ✔ ✖ ⇄ to "
+                    + "this group"
+            );
+        }
+        return t(
+            "xdatahub.ui.group.group_head_tooltip",
+            "Drag to move the whole group.\n"
+                + "Or click to make ✔ ✖ ⇄ act on this "
+                + "group only."
+        );
+    });
     head.addEventListener("pointerdown", (event) => {
         // 按在按钮上不算「抓组头」，否则点设置时手一抖就开始拖
         if (event.target?.closest?.("button, input")) {
