@@ -2531,14 +2531,14 @@ function buildPanel(node) {
     undoButton.disabled = true;
     engine.bindHint(undoButton, () => t(
         "xdatahub.ui.node.xloraget.undo_tooltip",
-        "Undo the last step"
+        "Undo last step"
     ));
     const redoButton = element("button", "xlora-tbtn", "↷");
     redoButton.type = "button";
     redoButton.disabled = true;
     engine.bindHint(redoButton, () => t(
         "xdatahub.ui.node.xloraget.redo_tooltip",
-        "Redo the step just undone"
+        "Redo last undo"
     ));
     toolbarLeft.appendChild(undoButton);
     toolbarLeft.appendChild(redoButton);
@@ -2571,19 +2571,19 @@ function buildPanel(node) {
     enableAllButton.type = "button";
     engine.bindHint(enableAllButton, () => t(
         "xdatahub.ui.node.xloraget.enable_all_tooltip",
-        "Turn on every LoRA in scope"
+        "All enabled"
     ));
     const disableAllButton = element("button", "xlora-tbtn", "✖");
     disableAllButton.type = "button";
     engine.bindHint(disableAllButton, () => t(
         "xdatahub.ui.node.xloraget.disable_all_tooltip",
-        "Turn off every LoRA in scope"
+        "All disabled"
     ));
     const invertButton = element("button", "xlora-tbtn", "⇄");
     invertButton.type = "button";
     engine.bindHint(invertButton, () => t(
         "xdatahub.ui.node.xloraget.invert_tooltip",
-        "Flip every switch in scope"
+        "Invert switches"
     ));
     const {
         scopeControl,
