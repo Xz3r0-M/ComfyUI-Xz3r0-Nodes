@@ -39,6 +39,8 @@ import {
     deleteGroup,
     groupMembers,
     groupOfGap,
+    groupSeqOf,
+    nextGroupSeq,
     moveGroupToGap,
     moveRowToGap,
     normalizeGroups,
@@ -74,14 +76,42 @@ const OUTPUT_SLOT_GROUPS = {
    老节点的属性仍然读得到，不用做数据迁移。 */
 const PAGE_SIZE_PROP = "xmedialistget.pageSize";
 const CATEGORIES = ["image", "video", "audio"];
-/* 行的唯一标识：同一个分类里 ref 不会重复。 */
-const XMLG_KEY_OF = (entry) => String(entry?.ref || "");
+/*
+ * 行的唯一标识。
+ *
+ * 同一个文件允许在列表里出现多次（用户可能就是想让它多跑一遍），
+ * 所以 ref 不再是身份——拿 ref 当身份的话，点一下就会把所有重复的
+ * 行一起选中，建组也会把副本一起拽走。每行发一个 uid，跟着行走，
+ * 复制行、拖动、重排都不变。
+ */
+let rowUidSeed = 0;
+function newRowUid() {
+    rowUidSeed += 1;
+    return `r${rowUidSeed.toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const XMLG_KEY_OF = (entry) => {
+    if (!entry || typeof entry !== "object") {
+        return "";
+    }
+    if (!entry.uid) {
+        // 兜底：老数据、或别处漏掉的行，第一次被认出来时补一个
+        entry.uid = newRowUid();
+    }
+    return String(entry.uid);
+};
 const CATEGORY_EMOJI = {
     image: "🖼️",
     video: "🎞️",
     audio: "🎵",
 };
 const MAX_ENABLED = 50;
+// ✔ ✖ ⇄ 三个按钮的「作用范围」：files = 只动还没分组的，all = 全都动，
+// groups = 只动组里的。再加上「单击组头 → 只作用于这一组」的临时收窄。
+const ENABLE_SCOPES = ["files", "all", "groups"];
+// 单击组头换范围：等这么久还等不到第二下，才当成「单击」。
+// 不然双击改名会顺手把范围切走（改个名字，工具栏跟着跳）。
+const HEAD_TAP_DELAY_MS = 220;
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const STYLE_ID = "xmedialistget-extension-style";
 const MIN_NODE_WIDTH = 500;
@@ -344,6 +374,7 @@ function normalizeItems(raw) {
                 continue;
             }
             rows.push({
+                uid: String(entry.uid || "").trim() || newRowUid(),
                 ref,
                 title: String(entry.title || ""),
                 enabled: entry.enabled !== false,
@@ -928,8 +959,14 @@ function ensureStyles() {
             position: relative;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            /* 靠左挤紧：换行时各行也从头排，不会像 space-between 那样
+               被拉得东一个西一个。状态文字自己用 margin-left:auto 顶右边 */
+            justify-content: flex-start;
             gap: 6px;
+            /* 窄面板放不下一整排（刷新 + 建组 + 三个开关 + 范围胶囊 + 状态）
+               时换行，宁可多占一行也别把按钮裁掉一半 */
+            flex-wrap: wrap;
+            row-gap: 4px;
             min-height: 30px;
             padding: 4px 10px;
             border: none;
@@ -938,14 +975,140 @@ function ensureStyles() {
             background: var(--xmlg-surface);
             box-sizing: border-box;
         }
-        .xmlg-list-toolbar .xmlg-status {
-            /* 分页退场后工具栏按钮变多，状态文字不能再绝对居中（会和
-               按钮叠在一起），改成占剩余宽度、靠右对齐。 */
-            flex: 1 1 auto;
-            text-align: right;
+        /* ✔ ✖ ⇄ 打哪里：一枚胶囊里分三档，当前那档是实心圆点 */
+        .xmlg-scope {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            flex: 0 0 auto;
+            padding: 2px;
+            border: 1px solid var(--xmlg-border);
+            border-radius: 999px;
+            background: var(--xmlg-surface-strong);
+        }
+        .xmlg-scope-btn {
+            flex: 0 0 auto;
+            padding: 2px 8px;
+            border: none;
+            border-radius: 999px;
+            background: transparent;
+            color: var(--xmlg-text);
+            font: inherit;
+            font-size: 10px;
+            line-height: 1.5;
             white-space: nowrap;
+            cursor: pointer;
+            opacity: 0.62;
+            /* 合并 / 拆开时圆角要跟着动，别一下子跳变形 */
+            transition: background 120ms, opacity 120ms,
+                border-radius 120ms ease-out;
+        }
+        .xmlg-scope-btn:hover {
+            opacity: 0.9;
+        }
+        .xmlg-scope-btn.is-active {
+            opacity: 1;
+            background: color-mix(
+                in srgb,
+                var(--xmlg-accent) 26%,
+                transparent
+            );
+            box-shadow: inset 0 0 0 1px color-mix(
+                in srgb,
+                var(--xmlg-accent) 45%,
+                transparent
+            );
+        }
+        /* 这一档里一个文件都没有：切过去也没东西可动，先淡下去 */
+        .xmlg-scope-btn.is-empty {
+            opacity: 0.32;
+        }
+        /* 单击组头 = 让 ✔ ✖ ⇄ 只作用于这一组，这里显示是哪一组。
+           它和「分组」拼成**同一个胶囊**的两半：中间不留缝、外圈只有一根
+           边框，实心底色的「分组」在左边收圆、右边接平，组号在右边续上，
+           看起来就是 (分组｜组 2)。 */
+        .xmlg-scope-chip {
+            /* 常驻 DOM、收成 0 宽：靠 grid 列宽 0fr → 1fr 平滑长出来，
+               而不是 display:none 一下蹦出来（那没法做动画） */
+            display: inline-grid;
+            /* 必须写 minmax(0, …)：光写 0fr 会被内容的「最小宽度」兜住，
+               收起时还留着内边距那 13px，收不干净 */
+            grid-template-columns: minmax(0, 0fr);
+            align-items: center;
+            flex: 0 0 auto;
+            margin-left: 0;
+            padding: 0;
+            border: none;
+            opacity: 0;
+            overflow: hidden;
+            pointer-events: none;
+            transition:
+                grid-template-columns 200ms cubic-bezier(0.22, 0.61, 0.36, 1),
+                opacity 160ms ease;
+            border-radius: 0 999px 999px 0;
+            /* 内容宽度交给内部撑开，超长时自己收省略号 */
+            max-width: 110px;
+            /* 描边用**这一组自己的颜色**，不用品牌粉：这半段的底子是组色，
+               套一圈粉边会互相染色、看着像另一种颜色。组色描边和底色同源，
+               在接缝处正好和左边的粉边形成一条双色分界线 */
+            box-shadow: inset 0 0 0 1px color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 70%,
+                transparent
+            );
+            background: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 22%,
+                transparent
+            );
+            color: var(--xmlg-text);
+            font: inherit;
+            font-size: 10px;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+        .xmlg-scope-chip.is-visible {
+            /* 抵消容器那 2px 段间缝，和左边的「分组」严丝合缝 */
+            grid-template-columns: minmax(0, 1fr);
+            margin-left: -2px;
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .xmlg-scope-chip-inner {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 0;
+            overflow: hidden;
+            padding: 2px 7px 2px 6px;
+            white-space: nowrap;
+        }
+        /* 合并态：「分组」那段右边不再收圆，实心底色和组号连成一片，
+           只在最外侧收圆。两者之间原本 2px 的段间缝用负外边距抵消掉，
+           这样 Files / All / 分组 之间的缝还是原来的 2px，不会被一起拉紧 */
+        .xmlg-scope-btn.is-scoped {
+            /* 合并态：右边缘不收圆角，内描边照旧留着。
+               组号那半有同一圈描边、位置严丝合缝，两段描边叠起来看着
+               就是**整条胶囊的一圈边框**，不会在接缝处「收口」 */
+            border-radius: 999px 0 0 999px;
+        }
+        .xmlg-scope-chip-text {
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .xmlg-scope-chip-close {
+            flex: 0 0 auto;
+            opacity: 0.7;
+        }
+        .xmlg-scope-chip:hover .xmlg-scope-chip-close {
+            opacity: 1;
+        }
+        /* 「只作用于这一组」的标记：用品牌粉，不用组色。
+           组色和组头自己的底色太接近，画布缩小后这根线就看不见了；
+           品牌粉在深色/浅色两套主题下都够扎眼。2px 是为了小缩放也认得出。 */
+        .xmlg-group-head.is-scope-target {
+            box-shadow: inset 0 0 0 2px var(--xmlg-accent, #ff385c);
         }
         .xmlg-list-toolbar label {
             display: inline-flex;
@@ -991,12 +1154,26 @@ function ensureStyles() {
             opacity: 0.4;
             cursor: not-allowed;
         }
+        /* 底栏里的「已启用 X / 50」：和「共 N 个文件」并排，
+           中间靠 .xmlg-pager-divider 隔开 */
         .xmlg-status {
-            flex: 1 1 auto;
-            text-align: right;
+            flex: 0 0 auto;
             opacity: 0.8;
             font-size: 11px;
             font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .xmlg-pager-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+        .xmlg-pager-divider {
+            flex: 0 0 auto;
+            width: 1px;
+            height: 11px;
+            background: var(--xmlg-border);
         }
         .xmlg-list-viewport {
             position: relative;
@@ -1045,6 +1222,20 @@ function ensureStyles() {
             border: 1px solid var(--xmlg-border);
             background: var(--xmlg-surface-strong);
             box-sizing: border-box;
+        }
+        /* 折叠 / 展开那一下的高度收放：过渡只在这 160ms 里挂着，
+           平时不挂——否则换缩略图、改行内容也会跟着动一下。
+           内边距和上下边框也要一起收：只收 height 的话，行压到 0 还剩
+           10px（上下内边距 8 + 边框 2），那一截会在最后「啪」地消失。 */
+        .xmlg-row.is-folding {
+            transition:
+                height ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                margin-top ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                padding-top ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                padding-bottom ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                border-top-width ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                border-bottom-width ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                opacity ${SLIDE_MS}ms linear;
         }
         .xmlg-seq {
             flex: 0 0 24px;
@@ -1411,13 +1602,17 @@ function ensureStyles() {
             position: relative;
             display: flex;
             align-items: center;
-            /* 箭头、名字、计数之间留出呼吸区（原来 6px 挤在一起） */
-            gap: 9px;
+            /* 箭头、名字之间留出呼吸区（原来 6px 挤在一起）。
+               计数胶囊要把这份间距收回去，贴着设置按钮，所以留个变量 */
+            --xmlg-head-gap: 9px;
+            gap: var(--xmlg-head-gap);
             min-height: 28px;
             /* 不要额外上边距：列表本身就是 4px 间距，再加 6px 会让
                「组上方的缝」比「组下方」「行与行之间」都大一截 */
             margin: 0;
-            padding: 2px 8px 2px 4px;
+            /* 右内边距要和上下一样（2px + 1px 边框 = 4px 视觉缝）：
+               原来是 8px，设置按钮右边空出 9px、上下只有 4px，看着往左歪 */
+            padding: 2px 3px 2px 4px;
             border: 1px solid color-mix(
                 in srgb,
                 var(--xmlg-group-stripe, var(--xmlg-accent)) 40%,
@@ -1469,25 +1664,79 @@ function ensureStyles() {
             border-color: var(--xmlg-border);
             background: var(--xmlg-surface-strong);
         }
-        /* 折叠组胶囊正中间的「这一组有几个文件」 */
+        /* 折叠组的「已启用 / 总数」：紧挨在设置按钮左边的一个小胶囊，
+           中间固定留一个间距。位置靠「吃掉剩余空间」定住，所以组名多长
+           都影响不到它——长名字自己收省略号，胶囊纹丝不动。 */
         .xmlg-group-count {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            display: none;
-            padding: 0 6px;
-            font-size: 11px;
+            flex: 0 0 auto;
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            /* 展开时宽度收到 0、全透明，但一直占着位置：收拢这 160ms 里
+               慢慢长出来，而不是等动画结束重画那一帧突然冒出来 */
+            max-width: 0;
+            padding: 1px 0;
+            border: 1px solid color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 34%,
+                transparent
+            );
+            border-radius: 999px;
+            background: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 14%,
+                transparent
+            );
+            border-width: 0;
+            font-size: 10px;
+            line-height: 1.4;
             font-variant-numeric: tabular-nums;
-            opacity: 0.85;
+            white-space: nowrap;
+            overflow: hidden;
+            opacity: 0;
+            transition:
+                max-width ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                padding ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                border-width ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1),
+                opacity ${SLIDE_MS}ms cubic-bezier(0.2, 0, 0.6, 1);
+            /* 数字不该抢走按住组头的鼠标事件 */
             pointer-events: none;
         }
         .xmlg-group-head.is-collapsed .xmlg-group-count {
-            display: block;
+            max-width: 80px;
+            padding: 1px 7px;
+            border-width: 1px;
+            opacity: 1;
+        }
+        /* 名字前面的序列号徽标：「组 3」这个号才是这一组的身份，
+           工具栏要指代某一组时念的就是它 */
+        .xmlg-group-seq {
+            flex: 0 0 auto;
+            min-width: 16px;
+            padding: 0 5px;
+            border: 1px solid var(--xmlg-border);
+            border-radius: 999px;
+            background: color-mix(
+                in srgb,
+                var(--xmlg-group-stripe, var(--xmlg-accent)) 14%,
+                transparent
+            );
+            color: var(--xmlg-text);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.5;
+            text-align: center;
+            opacity: 0.85;
+        }
+        .xmlg-group-seq.is-hidden {
+            display: none;
         }
         .xmlg-group-name {
             flex: 0 1 auto;
             min-width: 0;
+            /* 剩下的空间归名字（超长就省略号），右边的计数和设置按钮
+               因此始终贴在最右侧 */
+            margin-right: 0;
             font-weight: 600;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -1509,7 +1758,9 @@ function ensureStyles() {
         }
         /* 胶囊里的设置按钮：圆角跟着胶囊走，不然右端会显得方方正正 */
         .xmlg-group-settings {
-            margin-left: auto;
+            /* 靠右的活交给计数胶囊做（它要贴着这个按钮）：
+               两个 auto 外边距会把剩余空间五五分，计数就贴不过来了 */
+            margin-left: 0;
             flex: 0 0 auto;
             width: auto;
             min-width: 0;
@@ -1527,8 +1778,11 @@ function ensureStyles() {
         .xmlg-group-btn {
             width: auto;
             min-width: 0;
+            flex: 0 0 auto;
             padding: 0 8px;
             font-size: 11px;
+            /* 宽度紧的时候宁可让右边的状态文字省略，也别把按钮折成两行 */
+            white-space: nowrap;
         }
         .xmlg-modal {
             position: absolute;
@@ -2507,6 +2761,37 @@ function buildPanel() {
     disableAllButton.type = "button";
     const invertButton = element("button", "xmlg-btn", "⇄");
     invertButton.type = "button";
+    // 范围胶囊：✔ ✖ ⇄ 这次动「文件（未分组）/ 全部 / 分组」——三档互斥
+    const scopeControl = element("div", "xmlg-scope");
+    scopeControl.setAttribute("role", "group");
+    bindHint(scopeControl, () => t(
+        "xdatahub.ui.node.xmedialistget.scope_tooltip",
+        "Which files the three buttons on the right act on"
+    ));
+    const scopeButtons = new Map();
+    for (const mode of ENABLE_SCOPES) {
+        const button = element("button", "xmlg-scope-btn", scopeLabel(mode));
+        button.type = "button";
+        button.dataset.scope = mode;
+        bindHint(button, () => scopeTooltip(mode));
+        scopeButtons.set(mode, button);
+        scopeControl.appendChild(button);
+    }
+    // 单击组头后出来的一枚小标签：显示「只作用于哪一组」，点它取消。
+    // 它挂在范围胶囊**里面**（见下面的 appendChild），跟「分组」同一根边框，
+    // 一眼就看得出「分组 = 组 2」，不会像另起一枚孤立药丸那样分裂。
+    const scopeChip = element("button", "xmlg-scope-chip");
+    scopeChip.type = "button";
+    // 内容包一层：外层用 grid 列宽从 0fr 长到 1fr，宽度就能平滑展开
+    // （直接 transition width / max-width 长到内容宽度做不出匀速效果）
+    const scopeChipInner = element("span", "xmlg-scope-chip-inner");
+    const scopeChipText = element("span", "xmlg-scope-chip-text", "");
+    scopeChipInner.appendChild(scopeChipText);
+    scopeChipInner.appendChild(element("span", "xmlg-scope-chip-close", "✕"));
+    scopeChip.appendChild(scopeChipInner);
+    // 提示文案由 syncScopeUi 现算现存在这里：这个函数拿不到 node，
+    // 直接闭包读 node 会报错，而提示又要跟着当前选中的组走。
+    bindHint(scopeChip, () => scopeChip.__xmlg_hint || "");
     const status = element("div", "xmlg-status", "—");
     const groupButton = element("button", "xmlg-btn xmlg-group-btn", "＋");
     groupButton.type = "button";
@@ -2514,15 +2799,20 @@ function buildPanel() {
         "xdatahub.ui.node.xmedialistget.new_group_tooltip",
         "Create a group from the selected files that aren't in one yet."
     ));
+    // 顺序：刷新 → 创建分组 → ✔ ✖ ⇄ → 范围胶囊（组标签长在里面）→ 状态。
+    // 范围胶囊是唯一会「变宽」的东西（选出某一组时冒出组号），
+    // 所以它必须排在所有按钮**之后**：变宽只会挤到右边那行状态文字，
+    // 谁都不会在手指点到一半时自己挪位置。
     listToolbar.appendChild(refreshButton);
+    listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
+    listToolbar.appendChild(groupButton);
     listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
     listToolbar.appendChild(enableAllButton);
     listToolbar.appendChild(disableAllButton);
     listToolbar.appendChild(invertButton);
-    // 创建分组是「批量选择」入口，和上面的开关类按钮之间留一条分隔线
-    listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
-    listToolbar.appendChild(groupButton);
-    listToolbar.appendChild(status);
+    listToolbar.appendChild(scopeControl);
+    // 组标签是范围胶囊的最后一段
+    scopeControl.appendChild(scopeChip);
 
     const list = element("div", "xmlg-list");
     const overlay = element("div", "xmlg-overlay");
@@ -2550,10 +2840,17 @@ function buildPanel() {
     // 底栏只剩「共 N 个文件」和「清空本分类」：页码、上一页 /
     // 下一页、每页条数都随分页一起退场了。
     const pager = element("div", "xmlg-pager");
+    // 两个数字并排：「共 N 个文件」和「已启用 X / 50」中间隔一条细线，
+    // 免得两个数字粘在一起分不清谁是谁
+    const pagerInfo = element("div", "xmlg-pager-info");
     const total = element("span", "xmlg-total", "");
+    const pagerDivider = element("span", "xmlg-pager-divider");
     const clearButton = element("button", "xmlg-btn xmlg-pager-clear", "🗑️");
     clearButton.type = "button";
-    pager.appendChild(total);
+    pagerInfo.appendChild(total);
+    pagerInfo.appendChild(pagerDivider);
+    pagerInfo.appendChild(status);
+    pager.appendChild(pagerInfo);
     pager.appendChild(clearButton);
 
     const listShell = element("div", "xmlg-list-shell");
@@ -2582,6 +2879,10 @@ function buildPanel() {
         tabs,
         tabButtons,
         refreshButton,
+        scopeControl,
+        scopeButtons,
+        scopeChip,
+        scopeChipText,
         enableAllButton,
         disableAllButton,
         invertButton,
@@ -2713,12 +3014,12 @@ function groupStripeColor(group) {
     return groupColorValue(groupColorId(group));
 }
 
-/* 列表重建时把已经不存在的文件从选择里剔掉。 */
+/* 列表重建时把已经不存在的行从选择里剔掉。 */
 function pruneSelection(state, items) {
-    const alive = new Set((items || []).map((entry) => entry.ref));
-    for (const ref of Array.from(state.selection || [])) {
-        if (!alive.has(ref)) {
-            state.selection.delete(ref);
+    const alive = new Set((items || []).map((entry) => XMLG_KEY_OF(entry)));
+    for (const key of Array.from(state.selection || [])) {
+        if (!alive.has(key)) {
+            state.selection.delete(key);
         }
     }
     if (!state.selection.size) {
@@ -2739,7 +3040,7 @@ function pruneSelection(state, items) {
  * 选择只用于「成组」，拖动永远是单行 —— 不然拖一行动了一整批
  * 会变成新的惊吓源。
  */
-function handleRowSelection(node, category, ref, index, event) {
+function handleRowSelection(node, category, key, index, event) {
     const state = node?.__xmlg_panel?.state;
     if (!state) {
         return;
@@ -2758,22 +3059,22 @@ function handleRowSelection(node, category, ref, index, event) {
         for (let cursor = start; cursor <= end; cursor += 1) {
             const entry = items[cursor];
             if (entry) {
-                state.selection.add(entry.ref);
+                state.selection.add(XMLG_KEY_OF(entry));
             }
         }
     } else if (additive) {
-        if (state.selection.has(ref)) {
-            state.selection.delete(ref);
+        if (state.selection.has(key)) {
+            state.selection.delete(key);
         } else {
-            state.selection.add(ref);
+            state.selection.add(key);
         }
         state.selectionAnchor = index;
     } else {
         const alreadyOnly = state.selection.size === 1
-            && state.selection.has(ref);
+            && state.selection.has(key);
         state.selection.clear();
         if (!alreadyOnly) {
-            state.selection.add(ref);
+            state.selection.add(key);
         }
         state.selectionAnchor = index;
     }
@@ -2795,8 +3096,8 @@ function ungroupedSelection(state, category) {
         if (entry.group) {
             continue;
         }
-        if (state.selection.has(entry.ref)) {
-            picked.push(entry.ref);
+        if (state.selection.has(XMLG_KEY_OF(entry))) {
+            picked.push(XMLG_KEY_OF(entry));
         }
     }
     return picked;
@@ -2828,11 +3129,9 @@ function createGroupFromCurrentSelection(node) {
     const skipped = state.selection.size - available.length;
     const items = state.items;
     const groups = items.groups?.[category] || [];
-    const name = t(
-        "xdatahub.ui.node.xmedialistget.group_default_name",
-        "Group {index}",
-        { index: groups.length + 1 }
-    );
+    // 号不回收（删了组再建新的，号继续往后走），名字跟着号走
+    const seq = nextGroupSeq(groups);
+    const name = defaultGroupName(seq, groups);
     const result = createGroupFromSelection(
         items[category] || [],
         groups,
@@ -2888,8 +3187,14 @@ function startGroupRename(node, category, groupId, head, nameEl) {
         }
         finished = true;
         const value = input.value.trim();
-        input.remove();
-        nameEl.style.display = "";
+        // 列表重画时输入框可能已经被一起拆掉了，这里要容错：
+        // 对着已经离开文档的节点再动一下会抛「不是子节点」的错
+        if (input.parentElement) {
+            input.remove();
+        }
+        if (nameEl.isConnected) {
+            nameEl.style.display = "";
+        }
         if (commit) {
             applyGroupRename(node, category, groupId, value);
         }
@@ -2943,10 +3248,251 @@ function applyGroupRename(node, category, groupId, value) {
     renderPanel(node);
 }
 
+/** 这一组现在在列表里露出来的成员行（折叠组返回空数组）。 */
+function groupMemberRowElements(list, groupId) {
+    if (!list || !groupId) {
+        return [];
+    }
+    // 行身上带着 data-group，拖动时也是靠它找「这一组还剩哪些可见行」
+    return [...list.querySelectorAll(`.xmlg-row[data-group="${groupId}"]`)];
+}
+
+/**
+ * 折叠前的收拢：把这组的成员行压到 0 高度、竖线缩到只剩组头。
+ * 只改样式不碰数据——数据要等动画放完再改（见 commitGroupCollapsed），
+ * 否则行会「啪」一下直接消失，白动画了。
+ *
+ * 返回 false 表示没东西可收（已经是折叠状态），调用方直接提交数据。
+ */
+function foldGroupRowsOut(panel, groupId) {
+    const list = panel?.list;
+    const rows = groupMemberRowElements(list, groupId);
+    if (!rows.length) {
+        return false;
+    }
+    // 先把当前高度钉死，过渡才有起点（高度是 auto 的没得算）
+    for (const row of rows) {
+        row.style.height = `${row.offsetHeight}px`;
+        row.style.overflow = "hidden";
+        row.style.pointerEvents = "none";
+    }
+    // 强制一次重排，让「钉死的高度」落到样式里
+    void list.offsetHeight;
+    for (const row of rows) {
+        row.classList.add("is-folding");
+        row.style.height = "0px";
+        // min-height 是 44px，不清掉的话压不到地板
+        row.style.minHeight = "0px";
+        row.style.opacity = "0";
+        // 列表的行间距是 4px，靠负外边距把这 4px 一起收掉，
+        // 不然行都没了还留几道空隙
+        row.style.marginTop = "-4px";
+        // 上下内边距 + 边框也要收干净，否则行最低只能压到 10px
+        row.style.paddingTop = "0px";
+        row.style.paddingBottom = "0px";
+        row.style.borderTopWidth = "0px";
+        row.style.borderBottomWidth = "0px";
+    }
+    // 折叠状态提前挂到组头上：计数胶囊跟着这 160ms 慢慢长出来。
+    // 等动画结束重画时，新组头一出生就是折叠后的样子，两边对得上。
+    const head = list.querySelector(
+        `.xmlg-group-head[data-group-id="${groupId}"]`
+    );
+    if (head) {
+        head.classList.add("is-collapsed");
+    }
+    // 这 160ms 里整块列表不接鼠标：行正在收，点到、拖到都没有意义
+    list.style.pointerEvents = "none";
+    // 所有组的竖线每帧跟着重量（不只是这一组，下面那些组也在一起上移）
+    followRailsDuringFold(panel);
+    return true;
+}
+
+/**
+ * 展开时用：重画出来的组头先摆成「折叠时」的样子，但不要动画。
+ * 新元素没有「上一版宽度」，直接给它撑到折叠时的上限，长开那一步再
+ * 交还给 CSS 过渡——计数胶囊才会跟着行一起收走，而不是当场消失。
+ */
+function seedCollapsedHeadLook(list, groupId) {
+    const head = list?.querySelector(
+        `.xmlg-group-head[data-group-id="${groupId}"]`
+    );
+    if (!head) {
+        return;
+    }
+    head.classList.add("is-collapsed");
+    const pill = head.querySelector(".xmlg-group-count");
+    if (pill) {
+        pill.style.transition = "none";
+        pill.style.maxWidth = "80px";
+    }
+}
+
+/**
+ * 展开后的放行：行从 0 高度长回原样，竖线早在「长开」那一刻量准了，
+ * 所以这 160ms 里不会短一截。
+ */
+function unfoldGroupRowsIn(panel, groupId, targetScrollTop = NaN) {
+    const list = panel?.list;
+    const rows = groupMemberRowElements(list, groupId);
+    if (!rows.length) {
+        panel.foldBusy = false;
+        return;
+    }
+    // 此刻行还是正常高度：先记下目标高度，顺便让调用方量的竖线算准
+    const heights = rows.map((row) => row.offsetHeight);
+    const savedScrollTop = Number.isFinite(targetScrollTop)
+        ? targetScrollTop
+        : list.scrollTop;
+    // 重画出来的组头是「展开后」的样子，可用户刚看到的是折叠后的样子
+    // （上面挂着计数胶囊）。先按折叠的样子摆回去，长开时再交还给 CSS
+    // 过渡，胶囊就会跟着行一起收走，而不是当场消失。
+    seedCollapsedHeadLook(list, groupId);
+    // 从这里就开始跟：压扁的那两帧里这一组的竖线也得先缩下来
+    followRailsDuringFold(panel);
+    for (const row of rows) {
+        row.style.height = "0px";
+        row.style.minHeight = "0px";
+        row.style.overflow = "hidden";
+        row.style.opacity = "0";
+        row.style.marginTop = "-4px";
+        row.style.paddingTop = "0px";
+        row.style.paddingBottom = "0px";
+        row.style.borderTopWidth = "0px";
+        row.style.borderBottomWidth = "0px";
+        row.style.pointerEvents = "none";
+    }
+    // 这几行是刚插进 DOM 的：同一次任务里把高度改两遍，浏览器不会补
+    // 过渡（元素还没算过一版样式）。等下一帧、让「压扁」这版样式真正
+    // 算过一次之后再长开，才会看到从 0 拉起来的那 160ms。
+    window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+            growGroupRowsIn(panel, list, rows, heights, savedScrollTop);
+        });
+    });
+}
+
+/** 收放动画的后半段：行从 0 长回原样，再把临时样式清干净。 */
+function growGroupRowsIn(panel, list, rows, heights, savedScrollTop) {
+    // 这一帧里列表被重画过（换了分类、刷新了），这几行已经不在页面上了
+    if (!list?.isConnected || !rows.every((row) => row.isConnected)) {
+        if (panel) {
+            panel.foldBusy = false;
+        }
+        return;
+    }
+
+    // 胶囊跟着行一起收：把展开时临时撑起来的宽度交还给 CSS 过渡。
+    // 顺序不能反——先撤掉内联样式（恢复过渡），再摘掉折叠态才会动。
+    const groupId = rows[0]?.dataset.group || "";
+    const head = groupId
+        ? list.querySelector(`.xmlg-group-head[data-group-id="${groupId}"]`)
+        : null;
+    if (head) {
+        const pill = head.querySelector(".xmlg-group-count");
+        if (pill) {
+            pill.style.removeProperty("transition");
+            pill.style.removeProperty("max-width");
+        }
+        head.classList.remove("is-collapsed");
+    }
+    rows.forEach((row, index) => {
+        row.classList.add("is-folding");
+        row.style.height = `${heights[index]}px`;
+        row.style.opacity = "1";
+        row.style.marginTop = "0px";
+        // 内边距和边框的交还给 CSS（写回 4px / 1px），跟着一起长回来；
+        // min-height 留到最后再还——它一回来就把高度顶到 44px，
+        // 过渡还没开始就结束了
+        row.style.paddingTop = "";
+        row.style.paddingBottom = "";
+        row.style.borderTopWidth = "";
+        row.style.borderBottomWidth = "";
+    });
+    window.setTimeout(() => {
+        for (const row of rows) {
+            if (!row.isConnected) {
+                continue;
+            }
+            row.classList.remove("is-folding");
+            for (const prop of [
+                "height",
+                "min-height",
+                "overflow",
+                "opacity",
+                "margin-top",
+                "padding-top",
+                "padding-bottom",
+                "border-top-width",
+                "border-bottom-width",
+                "pointer-events",
+            ]) {
+                row.style.removeProperty(prop);
+            }
+        }
+        // 胶囊的临时宽度也要收干净（动画被打断时可能还留着）
+        if (head) {
+            const pill = head.querySelector(".xmlg-group-count");
+            if (pill) {
+                pill.style.removeProperty("transition");
+                pill.style.removeProperty("max-width");
+            }
+        }
+        if (panel) {
+            panel.foldBusy = false;
+        }
+        if (!list.isConnected || !panel) {
+            return;
+        }
+        // 行缩到 0 的那一瞬间内容变短了，列表靠底时浏览器会把滚动位置
+        // 往回顶；长回原样后把用户原来的位置还回去。
+        if (list.scrollTop < savedScrollTop) {
+            list.scrollTop = savedScrollTop;
+        }
+        // 现在高度才是真的，重新量一遍竖线
+        panel.railMeasured = false;
+        layoutGroupRails(panel);
+    }, SLIDE_MS + 40);
+}
+
 function setGroupCollapsed(node, category, groupId, collapsed) {
     const panel = node?.__xmlg_panel;
     if (!panel) {
         return;
+    }
+    // 动画那 160ms 里再点一下，直接不理：免得同时跑两段收放
+    if (panel.foldBusy) {
+        return;
+    }
+    const group = panel.state.items.groups?.[category] || [];
+    const record = group.find((entry) => entry.id === groupId);
+    if (!record || Boolean(record.collapsed) === Boolean(collapsed)) {
+        return;
+    }
+    if (collapsed && foldGroupRowsOut(panel, groupId)) {
+        // 收完再改数据重画（160ms）
+        panel.foldBusy = true;
+        window.setTimeout(() => {
+            if (panel.foldBusy) {
+                panel.foldBusy = false;
+            }
+            commitGroupCollapsed(node, category, groupId, true);
+        }, SLIDE_MS);
+        return;
+    }
+    commitGroupCollapsed(node, category, groupId, collapsed);
+}
+
+/** 真正把「折叠 / 展开」写进数据并重画（动画结束后才调）。 */
+function commitGroupCollapsed(node, category, groupId, collapsed) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    // 收拢动画期间关掉的鼠标事件，到这里还回来（列表马上要重建，
+    // 这行是给「收拢没走动画」那条路兜底的）
+    if (panel.list) {
+        panel.list.style.pointerEvents = "";
     }
     const items = panel.state.items;
     items.groups[category] = setCollapsed(
@@ -2955,7 +3501,12 @@ function setGroupCollapsed(node, category, groupId, collapsed) {
         collapsed
     );
     writeItems(node, items);
+    // 展开时告诉 renderPanel：这一组刚长开，行要做入场动画
+    panel.pendingExpand = collapsed ? "" : groupId;
+    // 展开的动画在重画之后，结束才放开（见 growGroupRowsIn）
+    panel.foldBusy = Boolean(panel.pendingExpand);
     renderPanel(node);
+    panel.pendingExpand = "";
 }
 
 function closeGroupDialog(node) {
@@ -3075,16 +3626,22 @@ function openGroupSettingsDialog(node, category, entry) {
         )
     ));
 
+    // 按钮只写短标签（长句子会换行、按钮忽高忽低）；
+    // 「点了会怎样」放到悬停提示里，想弄清的人一秒就能看到。
     const keepButton = element(
         "button",
         "xmlg-modal-btn",
         t(
             "xdatahub.ui.node.xmedialistget.group_delete_keep",
-            "Keep {count} files and move them out of the group",
-            { count }
+            "Dissolve group"
         )
     );
     keepButton.type = "button";
+    bindHint(keepButton, () => t(
+        "xdatahub.ui.node.xmedialistget.group_delete_keep_hint",
+        "The {count} files stay right where they are, just without a group.",
+        { count }
+    ));
     keepButton.addEventListener("click", () => {
         closeGroupDialog(node);
         applyGroupDelete(node, category, groupId, "ungroup");
@@ -3095,15 +3652,20 @@ function openGroupSettingsDialog(node, category, entry) {
         "xmlg-modal-btn is-danger",
         t(
             "xdatahub.ui.node.xmedialistget.group_delete_files",
-            "Delete this group and its {count} files",
-            { count }
+            "Remove group and files from list"
         )
     );
     wipeButton.type = "button";
+    bindHint(wipeButton, () => t(
+        "xdatahub.ui.node.xmedialistget.group_delete_files_hint",
+        "The group and its {count} files leave this list. The files "
+            + "themselves stay on disk.",
+        { count }
+    ));
     wipeButton.addEventListener("click", () => {
         const message = t(
             "xdatahub.ui.node.xmedialistget.group_delete_confirm",
-            "Delete {count} files for good?",
+            "Remove {count} files from the list for good?",
             { count }
         );
         if (!window.confirm(message)) {
@@ -3184,10 +3746,10 @@ function applyGroupDelete(node, category, groupId, mode) {
     );
     items[category] = result.items;
     items.groups[category] = result.groups;
-    const alive = new Set(result.items.map((entry) => entry.ref));
-    for (const ref of Array.from(panel.state.selection)) {
-        if (!alive.has(ref)) {
-            panel.state.selection.delete(ref);
+    const alive = new Set(result.items.map((entry) => XMLG_KEY_OF(entry)));
+    for (const key of Array.from(panel.state.selection)) {
+        if (!alive.has(key)) {
+            panel.state.selection.delete(key);
         }
     }
     writeItems(node, items);
@@ -3197,7 +3759,7 @@ function applyGroupDelete(node, category, groupId, mode) {
         mode === "delete"
             ? t(
                 "xdatahub.ui.node.xmedialistget.group_files_deleted",
-                "Deleted a group and {count} files",
+                "Removed a group and {count} files from the list",
                 { count: result.removed }
             )
             : t(
@@ -3233,6 +3795,211 @@ function confirmRemovingGroupMember(node, category, entry) {
 }
 
 /** 折叠组胶囊上的数字：「已启用 / 总数」，和底部那条 Enabled 统计同一个读法。 */
+/**
+ * 新建组的默认名字池：先短后长，够用一辈子。
+ *
+ * 为什么不用「组 N」：那是把一句中文（或一句英文）**存进工作流数据**，
+ * 换个语言界面就变成另一种文字。这些代号是全球通用的词，中英一模一样，
+ * 存下来永远是同一个词，用户也不用先打字才能有个名字。
+ *
+ * 三层设计：
+ *   1~26 号   NATO 代号（Alpha…Zulu）——短、好认，像行业默认值；
+ *   27 号起   两个常见词拼起来（Amber Falcon、Brave Otter）——
+ *             32 × 32 = 1024 个，越用越长但不会越用越生僻；
+ *   全用完了   才退回「组 1150」这种（现实中到不了）。
+ *
+ * 名字由**序号**算出来，不是随机抽：同一号永远是同一个名字，
+ * 删组、重排、刷新都不会变。
+ */
+const PRESET_GROUP_NAMES = [
+    "Alpha",
+    "Bravo",
+    "Charlie",
+    "Delta",
+    "Echo",
+    "Foxtrot",
+    "Golf",
+    "Hotel",
+    "India",
+    "Juliet",
+    "Kilo",
+    "Lima",
+    "Mike",
+    "November",
+    "Oscar",
+    "Papa",
+    "Quebec",
+    "Romeo",
+    "Sierra",
+    "Tango",
+    "Uniform",
+    "Victor",
+    "Whiskey",
+    "Xray",
+    "Yankee",
+    "Zulu",
+];
+
+/** 组合名的前半：形容词（都短、都好念，不跟后半重词）。 */
+const PRESET_GROUP_ADJECTIVES = [
+    "Amber",
+    "Brave",
+    "Calm",
+    "Clever",
+    "Cosmic",
+    "Crisp",
+    "Dapper",
+    "Dusty",
+    "Eager",
+    "Gentle",
+    "Golden",
+    "Hazy",
+    "Humble",
+    "Jolly",
+    "Keen",
+    "Lucky",
+    "Mellow",
+    "Merry",
+    "Nimble",
+    "Plucky",
+    "Quiet",
+    "Rapid",
+    "Rustic",
+    "Silent",
+    "Silver",
+    "Sunny",
+    "Swift",
+    "Velvet",
+    "Wandering",
+    "Wild",
+    "Witty",
+    "Zesty",
+];
+
+/** 组合名的后半：具体的东西（看得见摸得着，比抽象词好记）。 */
+const PRESET_GROUP_NOUNS = [
+    "Anchor",
+    "Badger",
+    "Beacon",
+    "Bison",
+    "Canyon",
+    "Cedar",
+    "Comet",
+    "Cove",
+    "Dolphin",
+    "Ember",
+    "Falcon",
+    "Fern",
+    "Glacier",
+    "Harbor",
+    "Heron",
+    "Lantern",
+    "Maple",
+    "Meadow",
+    "Orchid",
+    "Otter",
+    "Panda",
+    "Pebble",
+    "Pine",
+    "Raven",
+    "River",
+    "Sparrow",
+    "Summit",
+    "Thistle",
+    "Tide",
+    "Valley",
+    "Willow",
+    "Wren",
+];
+
+/** 名字池总容量：NATO + 形容词 × 名词。 */
+const PRESET_GROUP_NAME_COUNT = PRESET_GROUP_NAMES.length
+    + PRESET_GROUP_ADJECTIVES.length * PRESET_GROUP_NOUNS.length;
+
+/**
+ * 第 index 个（0 开始）预设名。超出池子返回空串。
+ *
+ * 组合名像里程表，**后半（名词）先换**：相邻两个名字看着差别大
+ * （`Amber Falcon` → `Amber Otter`），不会一连几十个都长得一样。
+ */
+function presetGroupNameAt(index) {
+    if (index < 0 || index >= PRESET_GROUP_NAME_COUNT) {
+        return "";
+    }
+    if (index < PRESET_GROUP_NAMES.length) {
+        return PRESET_GROUP_NAMES[index];
+    }
+    const rest = index - PRESET_GROUP_NAMES.length;
+    const adjectives = PRESET_GROUP_ADJECTIVES;
+    const nouns = PRESET_GROUP_NOUNS;
+    const adjective = adjectives[Math.floor(rest / nouns.length) % adjectives.length];
+    const noun = nouns[rest % nouns.length];
+    return `${adjective} ${noun}`;
+}
+
+/**
+ * 第 seq 个组该叫什么：从序号对应的名字往后找第一个没人用的。
+ *
+ * 为什么要「避开重名」：用户可能把某组改名成了「Delta」，等号轮到
+ * Delta 时就往后顺延，别让两组装同名。
+ */
+function defaultGroupName(seq, groups = []) {
+    const index = Math.trunc(Number(seq)) || 0;
+    const taken = new Set(
+        (Array.isArray(groups) ? groups : [])
+            .map((group) => String(group?.name || "").trim().toLowerCase())
+            .filter(Boolean)
+    );
+    for (
+        let cursor = Math.max(0, index - 1);
+        cursor < PRESET_GROUP_NAME_COUNT;
+        cursor += 1
+    ) {
+        const preset = presetGroupNameAt(cursor);
+        if (preset && !taken.has(preset.toLowerCase())) {
+            return preset;
+        }
+    }
+    return t(
+        "xdatahub.ui.node.xmedialistget.group_default_name",
+        "Group {index}",
+        { index }
+    );
+}
+
+/** 界面上指代某一组只用序列号：「组 3」。名字只在本组头里显示。 */
+/**
+ * 光秃秃的序列号：「12」。
+ *
+ * 工具栏里那枚标签只用号、不带「组 / Group」：那个词在英文界面里
+ * 会把标签撑长一倍（"Group 12"），而且它紧挨着「分组」那段，
+ * 意思已经够清楚了。需要成句说的地方（提示、toast）用下面的 label。
+ */
+function groupSeqNumber(record) {
+    const seq = Number(record && record.seq) || 0;
+    return seq ? String(seq) : "";
+}
+
+/** 成句的称呼：「组 12 / Group 12」，给提示和 toast 用。 */
+function groupSeqLabel(record) {
+    const seq = Number(record && record.seq) || 0;
+    if (!seq) {
+        // 极端情况（旧数据还没补号）：退回 id，也不会是用户的长名字
+        return String((record && record.id) || "");
+    }
+    return t(
+        "xdatahub.ui.node.xmedialistget.group_default_name",
+        "Group {index}",
+        { index: seq }
+    );
+}
+
+/** 组头的标题：用户起的名字优先，没名字就用序列号。 */
+function groupTitle(record, fallback = "") {
+    const name = String((record && record.name) || "").trim();
+    return name || groupSeqLabel(record) || fallback;
+}
+
 function groupCountText(entry) {
     const members = Array.isArray(entry?.members) ? entry.members : [];
     const total = Number.isFinite(entry?.memberCount)
@@ -3251,6 +4018,11 @@ function buildGroupHead(node, category, entry) {
     head.dataset.category = category;
     // 折叠状态同时挂到组头上：胶囊居中那个计数只在折叠时露出来
     head.classList.toggle("is-collapsed", Boolean(entry.collapsed));
+    // 重建出来的组头也要带上「✔ ✖ ⇄ 只作用于这一组」的描边
+    head.classList.toggle(
+        "is-scope-target",
+        (node.__xmlg_panel?.state?.scopeGroup || null) === entry.groupId
+    );
     head.style.setProperty(
         "--xmlg-group-stripe",
         groupStripeColor(group)
@@ -3273,11 +4045,15 @@ function buildGroupHead(node, category, entry) {
     });
     head.appendChild(arrow);
 
-    const name = element(
-        "span",
-        "xmlg-group-name",
-        group.name || entry.groupId
-    );
+    // 序列号徽标：常态显示。数字是这一组的身份证，名字只是它的小名；
+    // 有了它，工具栏上那句「只作用于组 3」永远对得上号。
+    const title = groupTitle(group, entry.groupId);
+    const seq = groupSeqOf(group);
+    const seqBadge = element("span", "xmlg-group-seq", String(seq || ""));
+    seqBadge.classList.toggle("is-hidden", !seq);
+    head.appendChild(seqBadge);
+
+    const name = element("span", "xmlg-group-name", title);
     bindHint(name, () => t(
         "xdatahub.ui.node.xmedialistget.group_rename_tooltip",
         "Double-click to rename"
@@ -3288,7 +4064,7 @@ function buildGroupHead(node, category, entry) {
     });
     head.appendChild(name);
 
-    // 折叠起来就看不见成员了，把「这一组有几个文件」写在胶囊正中间；
+    // 折叠起来就看不见成员了，把「这一组有几个文件」写在设置按钮左边；
     // 展开时成员都在眼前，这个数字是多余的，所以只在折叠时显示。
     const count = element(
         "span",
@@ -3328,6 +4104,38 @@ function buildGroupHead(node, category, entry) {
         }
         armGroupPointerDrag(node, category, head, entry.groupId, event);
     });
+    // 单击（没拖动）= 让 ✔ ✖ ⇄ 只作用于这一组，再点一次取消。
+    // 拖完紧跟的那个 click 要吞掉，否则松手会顺手改了范围；
+    // 双击（改名）也不能顺带改范围，所以延后一拍再决定。
+    let scopeTapTimer = 0;
+    head.addEventListener("click", (event) => {
+        if (event.target?.closest?.("button, input")) {
+            return;
+        }
+        const state = node?.__xmlg_panel?.state;
+        if (!state) {
+            return;
+        }
+        if (
+            state.suppressClickUntil
+            && performance.now() < state.suppressClickUntil
+        ) {
+            return;
+        }
+        if (isPassiveHeadZone(head, event)) {
+            return;
+        }
+        window.clearTimeout(scopeTapTimer);
+        scopeTapTimer = window.setTimeout(() => {
+            toggleScopeGroup(node, category, entry.groupId);
+        }, HEAD_TAP_DELAY_MS);
+    });
+    // 双击是「改名」，把刚才那一下单击撤销掉。
+    // 必须用捕获阶段：名字自己的 dblclick 会 stopPropagation，
+    // 冒泡阶段挂的监听根本收不到。
+    head.addEventListener("dblclick", () => {
+        window.clearTimeout(scopeTapTimer);
+    }, true);
     head.addEventListener("dragstart", (event) => {
         event.preventDefault();
     });
@@ -3374,7 +4182,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         row.classList.add("is-grouped");
         row.dataset.group = entry.group;
     }
-    if (state.selection?.has(entry.ref)) {
+    if (state.selection?.has(XMLG_KEY_OF(entry))) {
         row.classList.add("is-selected");
     }
     // 点行本身 = 选中；开关 / 缩略图 / 按钮有自己的点击行为，不抢。
@@ -3394,7 +4202,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         ) {
             return;
         }
-        handleRowSelection(node, category, entry.ref, liveIndex(), event);
+        handleRowSelection(node, category, XMLG_KEY_OF(entry), liveIndex(), event);
     });
     // 列表内排序：按住行就能搬。
     //
@@ -3790,6 +4598,7 @@ function appendEntriesWithLimit(targetList, entries, enabledSlots) {
             disabled += 1;
         }
         targetList.push({
+            uid: newRowUid(),
             ref: entry.ref,
             title: entry.title,
             enabled,
@@ -4929,12 +5738,17 @@ function renderPanel(node, options = {}) {
     const items = state.items[state.category] || [];
     const groups = state.items.groups?.[state.category] || [];
     pruneSelection(state, items);
-    const hasItems = items.length > 0;
-    panel.enableAllButton.disabled = !hasItems;
-    panel.disableAllButton.disabled = !hasItems;
-    panel.invertButton.disabled = !hasItems;
+    // 范围胶囊、组标签先对齐（顺手把失效的组范围清掉）。
+    // 组头的高亮要等列表重建完再补，见函数末尾。
+    syncScopeUi(node, { heads: false });
+    // 三个按钮能不能按，看的是「当前范围里有没有文件」：
+    // 范围选「分组」但一个组都没有时，按了也没意义
+    const batchable = scopeRows(state).length > 0;
     // 只有选中了「还没分组」的文件时才能建组。这里不用真 disabled：
     // 真 disabled 的按钮收不到悬停事件，用户看不到「为什么点不动」。
+    panel.enableAllButton.disabled = !batchable;
+    panel.disableAllButton.disabled = !batchable;
+    panel.invertButton.disabled = !batchable;
     const groupable = ungroupedSelection(state, state.category).length;
     panel.groupButton.classList.toggle("is-disabled", groupable < 1);
     panel.groupButton.setAttribute(
@@ -5062,6 +5876,14 @@ function renderPanel(node, options = {}) {
         panel.list.scrollTop = targetScrollTop;
         panel.list.scrollLeft = targetScrollLeft;
     });
+    // 刚展开的那一组：行从 0 高度长开。放在量完竖线之后，这样线是先按
+    // 「长开」的尺寸摆好的，动画中途不会短一截；滚动位置也要传进去，
+    // 行缩到 0 的那一帧内容变短，浏览器会把靠底的列表往回顶。
+    if (panel.pendingExpand) {
+        unfoldGroupRowsIn(panel, panel.pendingExpand, targetScrollTop);
+    }
+    // 列表重建完了，才能给「只作用于这一组」的组头描边
+    syncScopeUi(node, { heads: true });
     refreshPreviewForNode(node);
 }
 
@@ -5094,6 +5916,9 @@ function setCategory(node, category) {
     state.category = category;
     state.selection.clear();
     state.selectionAnchor = null;
+    // 组是分类内的，「只作用于某一组」换个标签就失效
+    state.scopeGroup = null;
+    state.scopeGroupBack = null;
     const widget = findWidget(node, MEDIA_TYPE_WIDGET);
     if (widget) {
         widget.value = category;
@@ -5165,6 +5990,344 @@ async function refreshMissing(node) {
     renderPanel(node);
 }
 
+/**
+ * 这一次点击算不算「点在这组的身上」。
+ *
+ * 计数胶囊是纯显示（pointer-events: none），点它的命中目标会变成组头；
+ * 设置按钮和折叠箭头周边也有几个像素的余量——点偏一点点就去改范围，
+ * 用户会觉得「数字和设置被动了」。这些区域一律不算。
+ */
+function isPassiveHeadZone(head, event) {
+    const slack = 4;
+    for (const selector of [
+        ".xmlg-group-count",
+        ".xmlg-group-settings",
+        ".xmlg-group-arrow",
+    ]) {
+        const target = head.querySelector(selector);
+        if (!target) {
+            continue;
+        }
+        const rect = target.getBoundingClientRect();
+        if (
+            event.clientX >= rect.left - slack
+            && event.clientX <= rect.right + slack
+            && event.clientY >= rect.top - slack
+            && event.clientY <= rect.bottom + slack
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function scopeLabel(mode) {
+    if (mode === "files") {
+        return t("xdatahub.ui.node.xmedialistget.scope_files", "Files");
+    }
+    if (mode === "groups") {
+        return t("xdatahub.ui.node.xmedialistget.scope_groups", "Grouped");
+    }
+    return t("xdatahub.ui.node.xmedialistget.scope_all", "All");
+}
+
+function scopeTooltip(mode) {
+    if (mode === "files") {
+        return t(
+            "xdatahub.ui.node.xmedialistget.scope_files_tooltip",
+            "Only files that aren't in a group"
+        );
+    }
+    if (mode === "groups") {
+        return t(
+            "xdatahub.ui.node.xmedialistget.scope_groups_tooltip",
+            "Only files that are in a group"
+        );
+    }
+    return t(
+        "xdatahub.ui.node.xmedialistget.scope_all_tooltip",
+        "Every file, grouped or not"
+    );
+}
+
+/**
+ * ✔ ✖ ⇄ 这三个按钮这次要动哪些文件。
+ *
+ * - 单击过某个组头 → 只动这一组的成员（最具体的指令优先）
+ * - 否则按工具栏那枚胶囊：files 只动未分组 / groups 只动已分组 / all 全都动
+ */
+function scopeRows(state) {
+    const rows = state?.items?.[state.category] || [];
+    const groupId = state?.scopeGroup;
+    if (groupId) {
+        const members = rows.filter(
+            (row) => row && (row.group || null) === groupId
+        );
+        if (members.length) {
+            return members;
+        }
+    }
+    const mode = state?.enableScope || "all";
+    if (mode === "files") {
+        return rows.filter((row) => row && !row.group);
+    }
+    if (mode === "groups") {
+        return rows.filter((row) => row && row.group);
+    }
+    return rows.slice();
+}
+
+/**
+ * 把「目标行」设成开 / 关，范围外的行一个都不碰。
+ *
+ * 名额是全局的（上限 MAX_ENABLED）：先数一遍目标行里已经开着的，
+ * 剩下的名额再从前往后分配，没分到的返回数量去提示。
+ * 注意这里「只加不减」——名额不够时不会把用户原本开着的行关掉。
+ */
+function applyScopeEnabled(rows, targets, enabled, limit) {
+    const set = new Set(Array.isArray(targets) ? targets : []);
+    if (!set.size) {
+        return 0;
+    }
+    // 名额 = 上限 - 已经开着的（范围内 + 范围外都算，上限是全局的）
+    let used = 0;
+    for (const row of rows) {
+        if (row && row.enabled !== false) {
+            used += 1;
+        }
+    }
+    let budget = Math.max(0, limit - used);
+    let skipped = 0;
+    for (const row of rows) {
+        if (!row || !set.has(row)) {
+            continue;
+        }
+        if (!enabled) {
+            row.enabled = false;
+            continue;
+        }
+        if (row.enabled !== false) {
+            continue;
+        }
+        if (budget > 0) {
+            row.enabled = true;
+            budget -= 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    return skipped;
+}
+
+/**
+ * 反相：先只翻转目标行，再按全局名额从后往前收。
+ *
+ * 收的时候优先关掉「这次刚被打开、且在范围内」的那些，范围外原本开着的
+ * 尽量留到最后才动——用户没要求碰它们。
+ */
+function applyScopeInvert(rows, targets, limit) {
+    const set = new Set(Array.isArray(targets) ? targets : []);
+    if (!set.size) {
+        return 0;
+    }
+    for (const row of rows) {
+        if (row && set.has(row)) {
+            row.enabled = row.enabled === false;
+        }
+    }
+    let total = rows.filter((row) => row && row.enabled !== false).length;
+    let skipped = 0;
+    for (let index = rows.length - 1; index >= 0 && total > limit; index -= 1) {
+        const row = rows[index];
+        if (!row || row.enabled === false || !set.has(row)) {
+            continue;
+        }
+        row.enabled = false;
+        total -= 1;
+        skipped += 1;
+    }
+    for (let index = rows.length - 1; index >= 0 && total > limit; index -= 1) {
+        const row = rows[index];
+        if (!row || row.enabled === false) {
+            continue;
+        }
+        row.enabled = false;
+        total -= 1;
+    }
+    return skipped;
+}
+
+/**
+ * 收窄到某一组：先把当前档位记下来，取消时好退回去。
+ * 连续点不同的组不会把记下的那一档覆盖成「分组」。
+ */
+function narrowToGroup(state, groupId) {
+    if (!state || !groupId) {
+        return;
+    }
+    if (!state.scopeGroup) {
+        state.scopeGroupBack = state.enableScope;
+    }
+    state.scopeGroup = groupId;
+    state.enableScope = "groups";
+}
+
+/**
+ * 取消「只作用于某一组」，并把档位退回收窄之前那一档。
+ * 只收窄不留退路的话，点两下点了等于没点：组不作用于任何分组，
+ * 胶囊却还亮着「分组」，✔ ✖ ⇄ 就作用在一堆你没打算动的文件上。
+ */
+function clearScopeGroup(state) {
+    if (!state) {
+        return;
+    }
+    state.scopeGroup = null;
+    const back = state.scopeGroupBack;
+    state.scopeGroupBack = null;
+    if (ENABLE_SCOPES.includes(back)) {
+        state.enableScope = back;
+    }
+}
+
+/** 切换那枚胶囊的档位（顺手取消「只作用于某一组」）。 */
+function selectScope(node, mode) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    if (!panel || !state || !ENABLE_SCOPES.includes(mode)) {
+        return;
+    }
+    if (state.enableScope === mode && !state.scopeGroup) {
+        return;
+    }
+    state.enableScope = mode;
+    state.scopeGroup = null;
+    // 用户自己点了档位，之前记的「退回去」就不要了
+    state.scopeGroupBack = null;
+    refreshScopeOnly(node);
+}
+
+/**
+ * 单击组头 = 让 ✔ ✖ ⇄ 只作用于这一组。
+ *
+ * 再点一次取消；档位同时挪到「分组」，否则胶囊亮着「全部」、
+ * 实际却只动一组，看起来自相矛盾。
+ */
+function toggleScopeGroup(node, category, groupId) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    if (!panel || !state || !groupId || state.category !== category) {
+        return;
+    }
+    if (state.scopeGroup === groupId) {
+        clearScopeGroup(state);
+        refreshScopeOnly(node);
+        return;
+    }
+    narrowToGroup(state, groupId);
+    refreshScopeOnly(node);
+    const record = groupRecord(node, category, groupId);
+    showToast(
+        node,
+        t(
+            "xdatahub.ui.node.xmedialistget.scope_group_toast",
+            "✔ ✖ ⇄ now act on {name} only",
+            { name: groupSeqLabel(record || { id: groupId }) }
+        )
+    );
+}
+
+/**
+ * 只刷新「✔ ✖ ⇄ 的作用范围」相关的零星部件，**不重建列表**。
+ *
+ * 重建列表会换掉所有元素，双击改名的第二下就落到新元素上了，
+ * 于是「双击组名」永远进不去。范围切换本来也不需要动任何一行，
+ * 所以这里只调胶囊、组标签、组头描边和三个按钮的可用状态。
+ */
+function refreshScopeOnly(node) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    if (!panel || !state) {
+        return;
+    }
+    const batchable = scopeRows(state).length > 0;
+    panel.enableAllButton.disabled = !batchable;
+    panel.disableAllButton.disabled = !batchable;
+    panel.invertButton.disabled = !batchable;
+    syncScopeUi(node, { heads: true });
+}
+
+/** 把范围胶囊、组标签、组头高亮跟当前数据对齐。 */
+function syncScopeUi(node, options = {}) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    if (!panel || !state) {
+        return null;
+    }
+    const rows = state.items[state.category] || [];
+    const groups = state.items.groups?.[state.category] || [];
+    // 组已经被解散 / 清空 → 别再指着它
+    if (
+        state.scopeGroup
+        && !groups.some((group) => group.id === state.scopeGroup)
+    ) {
+        // 指着的那一组已经没了：档位一起退回去，别停在「分组」上
+        clearScopeGroup(state);
+    }
+    const counts = {
+        files: rows.filter((row) => row && !row.group).length,
+        groups: rows.filter((row) => row && row.group).length,
+    };
+    counts.all = rows.length;
+    for (const [mode, button] of panel.scopeButtons) {
+        const active = state.enableScope === mode;
+        button.classList.toggle("is-active", active);
+        button.classList.toggle("is-empty", (counts[mode] || 0) < 1);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
+    const scoped = state.scopeGroup;
+    panel.scopeChip.classList.toggle("is-visible", Boolean(scoped));
+    // 收起来的时候别让它还能被 Tab 到（它只是看不见，不是不存在）
+    panel.scopeChip.tabIndex = scoped ? 0 : -1;
+    // 「分组」和后面的组号要拼成同一个胶囊：左半段只收左边圆角，
+    // 组号那半用负外边距顶上去把缝吃掉
+    panel.scopeButtons
+        .get("groups")
+        ?.classList.toggle("is-scoped", Boolean(scoped));
+    if (scoped) {
+        const record = groups.find((group) => group.id === scoped) || {
+            id: scoped,
+        };
+        // 标签上只放号：恒定宽度，名字再长也顶不动工具栏上的按钮
+        const label = groupSeqLabel(record);
+        panel.scopeChipText.textContent = groupSeqNumber(record) || label;
+        panel.scopeChip.dataset.groupId = scoped;
+        // 「组 12 · 名字」这种完整说法放进悬停提示，不占工具栏
+        const name = String(record.name || "").trim();
+        panel.scopeChip.__xmlg_hint = name && name !== label
+            ? `${label} · ${name}`
+            : t(
+                "xdatahub.ui.node.xmedialistget.scope_chip_tooltip",
+                "Only this group — click to clear"
+            );
+        panel.scopeChip.style.setProperty(
+            "--xmlg-group-stripe",
+            groupStripeColor(record || {})
+        );
+    } else {
+        delete panel.scopeChip.dataset.groupId;
+        panel.scopeChip.__xmlg_hint = "";
+    }
+    if (options.heads === false) {
+        return;
+    }
+    for (const head of panel.list.querySelectorAll(".xmlg-group-head")) {
+        head.classList.toggle(
+            "is-scope-target",
+            Boolean(scoped) && (head.dataset.groupId || "") === scoped
+        );
+    }
+}
+
 function setAllEnabled(node, enabled) {
     const panel = node?.__xmlg_panel;
     if (!panel) {
@@ -5172,33 +6335,21 @@ function setAllEnabled(node, enabled) {
     }
     const state = panel.state;
     const items = state.items[state.category] || [];
-    if (!items.length) {
+    // 只动「当前范围」里的文件：全部 / 未分组 / 某一组
+    const targets = scopeRows(state);
+    if (!items.length || !targets.length) {
         return;
     }
-    let remaining = MAX_ENABLED;
-    let overflow = 0;
-    for (const entry of items) {
-        if (!enabled) {
-            entry.enabled = false;
-            continue;
-        }
-        if (remaining > 0) {
-            entry.enabled = true;
-            remaining -= 1;
-        } else {
-            entry.enabled = false;
-            overflow += 1;
-        }
-    }
+    const skipped = applyScopeEnabled(items, targets, enabled, MAX_ENABLED);
     writeItems(node, state.items);
     renderPanel(node);
-    if (overflow > 0) {
+    if (skipped > 0) {
         showToast(
             node,
             t(
-                "xdatahub.ui.node.xmedialistget.limit_enabled_hit",
-                "Already {limit} enabled; the rest stay Disabled",
-                { limit: MAX_ENABLED }
+                "xdatahub.ui.node.xmedialistget.limit_scope_hit",
+                "{count} stayed Disabled — {limit} is the limit",
+                { count: skipped, limit: MAX_ENABLED }
             )
         );
     }
@@ -5214,29 +6365,20 @@ function invertEnabled(node) {
     if (!items.length) {
         return;
     }
-    let remaining = MAX_ENABLED;
-    let overflow = 0;
-    for (const entry of items) {
-        entry.enabled = entry.enabled === false;
-        if (!entry.enabled) {
-            continue;
-        }
-        if (remaining > 0) {
-            remaining -= 1;
-        } else {
-            entry.enabled = false;
-            overflow += 1;
-        }
+    const targets = scopeRows(state);
+    if (!targets.length) {
+        return;
     }
+    const skipped = applyScopeInvert(items, targets, MAX_ENABLED);
     writeItems(node, state.items);
     renderPanel(node);
-    if (overflow > 0) {
+    if (skipped > 0) {
         showToast(
             node,
             t(
-                "xdatahub.ui.node.xmedialistget.limit_enabled_hit",
-                "Already {limit} enabled; the rest stay Disabled",
-                { limit: MAX_ENABLED }
+                "xdatahub.ui.node.xmedialistget.limit_scope_hit",
+                "{count} stayed Disabled — {limit} is the limit",
+                { count: skipped, limit: MAX_ENABLED }
             )
         );
     }
@@ -5257,6 +6399,19 @@ function bindPanelEvents(node) {
     });
     panel.clearButton.addEventListener("click", () => {
         clearCurrentCategory(node);
+    });
+    for (const [mode, button] of panel.scopeButtons) {
+        button.addEventListener("click", () => {
+            selectScope(node, mode);
+        });
+    }
+    panel.scopeChip.addEventListener("click", () => {
+        const state = node.__xmlg_panel?.state;
+        if (!state) {
+            return;
+        }
+        clearScopeGroup(state);
+        refreshScopeOnly(node);
     });
     panel.enableAllButton.addEventListener("click", () => {
         setAllEnabled(node, true);
@@ -5555,14 +6710,15 @@ function ensureDragState(node, dataTransfer) {
  * DOM 小组件可能还没挂进画布，所有行的位置和高度都还是 0，
  * 算出来的竖线只有 3px（等于看不见），必须等布局好了再算一次。
  */
-function layoutGroupRails(panel) {
+function layoutGroupRails(panel, force = false) {
     if (!panel?.railHosts?.size || !panel.list?.isConnected) {
         return;
     }
     // 列表只变高（拖节点上下边）不会挪动任何一行，宽度没变就不用重新量。
     // 省掉的是一次强制重排：300 行的列表约 4ms，拖动时会一帧一次。
+    // 收放动画期间要 force：行的高度一直在变，竖线必须跟着走。
     const width = panel.list.clientWidth;
-    if (panel.railMeasured && panel.railWidth === width) {
+    if (!force && panel.railMeasured && panel.railWidth === width) {
         return;
     }
     // 先把所有位置量完，再统一写样式。边量边写会让浏览器每改一次
@@ -5607,6 +6763,34 @@ function layoutGroupRails(panel) {
     }
     panel.railWidth = width;
     panel.railMeasured = width > 0;
+}
+
+/**
+ * 折叠 / 展开的那 160ms 里，每帧把所有组的竖线重量一次。
+ *
+ * 为什么非跟不可：竖线的 top / height 是缓存下来的绝对坐标，被折叠那组
+ * 一变高变矮，它下面所有组的位置就跟着上下走——只钉死自己的那一根，
+ * 别的组就会错位。（只让被折叠那组动也不行：它下面那些组照样要挪。）
+ */
+function followRailsDuringFold(panel) {
+    if (!panel?.list) {
+        return;
+    }
+    const token = (panel.railToken || 0) + 1;
+    panel.railToken = token;
+    const startedAt = performance.now();
+    const tick = () => {
+        if (!panel.list?.isConnected || panel.railToken !== token) {
+            return;
+        }
+        layoutGroupRails(panel, true);
+        // 多跟 100ms：收拢那 160ms 之后还有一次重画，重画完的位置
+        // 也得量一遍才算齐
+        if (performance.now() - startedAt < SLIDE_MS + 120) {
+            window.requestAnimationFrame(tick);
+        }
+    };
+    window.requestAnimationFrame(tick);
 }
 
 /** 这一组里最后一个还看得见的成员行（都看不见就返回兜底元素）。 */
@@ -5813,6 +6997,8 @@ function beginRowDrag(node, category, row, event) {
         category,
         index: safeIndex,
         ref: row.dataset.ref || "",
+        // 行身份：同一个文件有多份时，要认得出拖的是哪一份
+        key: XMLG_KEY_OF((state.items[category] || [])[safeIndex] || {}),
         rect: {
             left: rect.left,
             top: rect.top,
@@ -6041,7 +7227,7 @@ function liveMoveRow(node, gapIndex, groupId) {
     state.items[state.category] = result.items;
     state.items.groups[state.category] = result.groups;
     const nextIndex = result.items.findIndex(
-        (row) => XMLG_KEY_OF(row) === dragRow.ref
+        (row) => XMLG_KEY_OF(row) === dragRow.key
     );
     if (nextIndex >= 0) {
         dragRow.index = nextIndex;
@@ -6535,21 +7721,46 @@ function resolveLiveRowTarget(node, clientY) {
     };
 }
 
-/** 缝隙那条界线在屏幕上的位置（上下两行都有时取交界）。 */
-function gapBoundaryTop(list, gap) {
-    let above = null;
-    let below = null;
+/** 折叠起来的组头：成员行没渲染，整组在列表里只占这一格。 */
+function isCollapsedGroupHead(el) {
+    return Boolean(
+        el
+        && el.classList.contains("xmlg-group-head")
+        && el.classList.contains("is-collapsed")
+    );
+}
+
+/**
+ * 数据里的第 index 项，在屏幕上落在哪个元素上。
+ *
+ * 有行就用行；折叠组没有成员行，退回去用它的组头（整组就占那么一格）。
+ */
+function flowSlotAt(list, items, index) {
+    const rows = Array.isArray(items) ? items : [];
+    if (!Number.isFinite(index) || index < 0 || index >= rows.length) {
+        return null;
+    }
     for (const row of list.querySelectorAll(".xmlg-row")) {
-        const index = Number(row.dataset.index);
-        if (!Number.isFinite(index)) {
-            continue;
-        }
-        if (index === gap - 1) {
-            above = row;
-        } else if (index === gap) {
-            below = row;
+        if (Number(row.dataset.index) === index) {
+            return row;
         }
     }
+    const groupId = (rows[index] && rows[index].group) || "";
+    if (!groupId) {
+        return null;
+    }
+    for (const head of list.querySelectorAll(".xmlg-group-head")) {
+        if ((head.dataset.groupId || "") === groupId) {
+            return head;
+        }
+    }
+    return null;
+}
+
+/** 缝隙那条界线在屏幕上的位置（上下两格都有时取交界）。 */
+function gapBoundaryTop(list, items, gap) {
+    const above = flowSlotAt(list, items, gap - 1);
+    const below = flowSlotAt(list, items, gap);
     if (above && below) {
         const a = above.getBoundingClientRect();
         const b = below.getBoundingClientRect();
@@ -6583,10 +7794,19 @@ function leanGroupForGap(options) {
     const below = gap >= 0 && gap < items.length ? items[gap] : null;
     const aboveGroup = (above && above.group) || null;
     const belowGroup = (below && below.group) || null;
+    // 折叠起来的组在列表里只占用一格（组头），成员看不见。这时候
+    // 指针从它身上过，只能理解为「插到整组前面 / 后面」——绝不能
+    // 把文件塞进一个看不见成员的组里（用户会以为文件没放下）。
+    if (
+        isCollapsedGroupHead(flowSlotAt(list, items, gap))
+        || isCollapsedGroupHead(flowSlotAt(list, items, gap - 1))
+    ) {
+        return null;
+    }
     if (aboveGroup === belowGroup) {
         return aboveGroup;
     }
-    const boundary = gapBoundaryTop(list, gap);
+    const boundary = gapBoundaryTop(list, items, gap);
     if (boundary === null) {
         return aboveGroup || belowGroup;
     }
@@ -7286,6 +8506,8 @@ function applyDrop(node, payload, target) {
         if (index >= 0 && index < list.length) {
             const previous = list[index];
             list[index] = {
+                // 换的是内容，这一「格」还是原来那一格：uid 留着
+                uid: previous.uid || newRowUid(),
                 ref: entries[0].ref,
                 title: entries[0].title || previous.title,
                 enabled: previous.enabled,
@@ -7324,6 +8546,7 @@ function applyDrop(node, payload, target) {
             slots -= 1;
         }
         return {
+            uid: newRowUid(),
             ref: entry.ref,
             title: entry.title,
             enabled,
@@ -7980,6 +9203,12 @@ function installNodeUi(node) {
             // 多选只用于成组；拖动永远是单行
             selection: new Set(),
             selectionAnchor: null,
+            // ✔ ✖ ⇄ 的作用范围（ENABLE_SCOPES 之一），默认「全部」
+            enableScope: "all",
+            // 单击组头后收窄到这一组；null = 没选中任何组
+            scopeGroup: null,
+            // 收窄之前是哪一档：取消收窄时退回去（点两下 = 没点）
+            scopeGroupBack: null,
             toastTimer: 0,
             drag: null,
             // 列表内拖拽排序（和「从 XDataHub 拖入」的 drag 分开）

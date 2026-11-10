@@ -23,7 +23,7 @@
  *   而且**不渲染组头**（它不是「一个组」，只是「没有组」）
  * - 组记录只认 `id` / `name` / `collapsed`，其余字段原样透传，
  *   这样后续给某个节点加「组强度」之类的字段不用改本模块
- * - 行标识通过 `options.keyOf` 注入（XMediaListGet 用 ref，
+ * - 行标识通过 `options.keyOf` 注入（XMediaListGet 用行 uid，
  *   XLoraGet 用 id），模型不假设字段名
  * - 所有函数都不修改入参，返回新数组
  * - 组不允许为空：最后一个成员离开时组记录立即删除
@@ -75,6 +75,27 @@ function copyRow(row) {
     return row && typeof row === "object" ? row : row;
 }
 
+/**
+ * 组的「序列号」：建组时分配，之后永不改变、永不复用。
+ *
+ * 它是这一组的身份：界面要指代某一组（比如工具栏上「只作用于这一组」）
+ * 只念这个号，不念用户起的名字——名字可以很长、可以随时改，念名字会
+ * 把界面撑变形。
+ */
+function groupSeqOf(record) {
+    const value = Number(record && record.seq);
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+/** 下一个可用的序列号（现有最大值 + 1，删掉的号不回收）。 */
+function nextGroupSeq(groups) {
+    let max = 0;
+    for (const record of Array.isArray(groups) ? groups : []) {
+        max = Math.max(max, groupSeqOf(record));
+    }
+    return max + 1;
+}
+
 function normalizeGroupRecords(groups) {
     if (!Array.isArray(groups)) {
         return [];
@@ -95,7 +116,24 @@ function normalizeGroupRecords(groups) {
             id,
             name: String(entry.name == null ? "" : entry.name),
             collapsed: entry.collapsed === true,
+            seq: groupSeqOf(entry),
         });
+    }
+    // 老数据没有序列号：按出现顺序补「最小的空号」。已经有号的一律不动，
+    // 所以重复整理（每次渲染都会走一遍）不会把号打乱。
+    // 注意这里用「最小空号」而不是「最大号 + 1」：老数据本身就是按建组
+    // 顺序排的，补出来正好是 1、2、3…，不会莫名其妙从 6 开始。
+    const used = new Set(output.map((record) => record.seq).filter(Boolean));
+    let free = 1;
+    for (const record of output) {
+        if (record.seq) {
+            continue;
+        }
+        while (used.has(free)) {
+            free += 1;
+        }
+        record.seq = free;
+        used.add(free);
     }
     return output;
 }
@@ -489,7 +527,7 @@ function createGroupFromSelection(items, groups, keys, name, options) {
     merged.splice(at, 0, ...block);
     const mergedGroups = [
         ...records,
-        { id, name: label, collapsed: false },
+        { id, name: label, collapsed: false, seq: nextGroupSeq(records) },
     ];
     const result = dissolveIfEmpty(merged, mergedGroups);
     return {
@@ -646,6 +684,8 @@ export {
     dissolveIfEmpty,
     groupMembers,
     groupOfGap,
+    groupSeqOf,
+    nextGroupSeq,
     moveGroupToGap,
     moveRowIntoGroup,
     moveRowToGap,
