@@ -38,6 +38,7 @@ import {
     ENABLE_SCOPES,
     groupStyles,
     MAX_ENABLED,
+    sanitizeEnableScope,
     SLIDE_MS,
 } from "./core/group-list.js";
 import {
@@ -77,6 +78,10 @@ const OUTPUT_SLOT_GROUPS = {
 /* 旧版「每页条数」的设置名。分页已经退场，这里只保留名字：
    老节点的属性仍然读得到，不用做数据迁移。 */
 const PAGE_SIZE_PROP = "xmedialistget.pageSize";
+/* ✔ ✖ ⇄ 的作用范围。存进 node.properties（跟着工作流走），
+   不塞进 media_items：那个 JSON 是 Python 侧解析的，多一个字段就多一套
+   解析和迁移；properties 是纯前端的东西，读写都不影响执行。 */
+const ENABLE_SCOPE_PROP = "xmedialistget.enableScope";
 const CATEGORIES = ["image", "video", "audio"];
 /*
  * 行的唯一标识。
@@ -352,6 +357,30 @@ function ensureStorageWidget(node) {
     return widget || null;
 }
 
+/* 范围档位跟着工作流走：读回来洗一遍（脏值退回「全部」） */
+function readEnableScope(node) {
+    const raw = node?.properties?.[ENABLE_SCOPE_PROP];
+    return sanitizeEnableScope(raw);
+}
+
+function writeEnableScope(node, scope) {
+    if (!node) {
+        return;
+    }
+    if (!node.properties || typeof node.properties !== "object") {
+        node.properties = {};
+    }
+    const value = sanitizeEnableScope(scope);
+    if (node.properties[ENABLE_SCOPE_PROP] === value) {
+        return;
+    }
+    node.properties[ENABLE_SCOPE_PROP] = value;
+    // 档位现在是「会存进工作流的数据」，所以要告诉画布「改过了」，
+    // 否则关掉时不会提示保存，用户的选择会悄悄丢掉。
+    node.setDirtyCanvas?.(true, true);
+    node.graph?.change?.();
+}
+
 function readItems(node) {
     const widget = ensureStorageWidget(node);
     const rawWidget = String(widget?.value || "").trim();
@@ -445,6 +474,33 @@ function writeItems(node, items, options = {}) {
     engine.updateUndoButton(node);
 }
 
+
+/**
+ * 面板和存盘重新对齐（configure / loadedGraphNode 之后都要走一遍）。
+ *
+ * 面板是在「建节点那一刻」装好的，那时工作流里的数据还没恢复：widget 值、
+ * node.properties 全是空的。configure 会先把这些恢复好再叫我们，所以
+ * 行、分类、档位都要在这里重新读一次，否则刷新页面后档位会退回「全部」。
+ */
+function reloadPanelFromStorage(node) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    panel.state.items = readItems(node);
+    panel.state.category = readCategory(node);
+    panel.state.missing = new Set();
+    panel.state.undoStack = [];
+    panel.state.redoStack = [];
+    // 档位跟着工作流走：这里读到的才是最终值
+    panel.state.enableScope = readEnableScope(node);
+    panel.state.scopeGroup = null;
+    panel.state.scopeGroupBack = null;
+    renderPanel(node);
+    engine.refreshScopeOnly(node);
+    syncOutputPortType(node);
+    window.setTimeout(() => syncOutputSwitchesFromConnections(node), 0);
+}
 
 function readCategory(node) {
     const widget = findWidget(node, MEDIA_TYPE_WIDGET);
@@ -601,6 +657,8 @@ const engine = createGroupEngine({
     hintHost,
     buildRow,
     applyPointerDragStop,
+    // 用户点档位时落盘（临时收窄不落盘，见引擎里的 selectScope）
+    writeEnableScope,
 });
 
 function ensureStyles() {
@@ -5491,8 +5549,9 @@ function installNodeUi(node) {
             // 多选只用于成组；拖动永远是单行
             selection: new Set(),
             selectionAnchor: null,
-            // ✔ ✖ ⇄ 的作用范围（ENABLE_SCOPES 之一），默认「全部」
-            enableScope: "all",
+            // ✔ ✖ ⇄ 的作用范围（ENABLE_SCOPES 之一）。跟着工作流走：
+            // 上次选的档位会记在 node.properties 里，默认「全部」。
+            enableScope: readEnableScope(node),
             // 单击组头后收窄到这一组；null = 没选中任何组
             scopeGroup: null,
             // 收窄之前是哪一档：取消收窄时退回去（点两下 = 没点）
@@ -5860,20 +5919,7 @@ function initXMediaListGetExtension() {
             nodeType.prototype.onConfigure = function () {
                 originalConfigure?.apply(this, arguments);
                 installNodeUi(this);
-                const panel = this.__xmlg_panel;
-                if (panel) {
-                    panel.state.items = readItems(this);
-                    panel.state.category = readCategory(this);
-                    panel.state.missing = new Set();
-                    panel.state.undoStack = [];
-                    panel.state.redoStack = [];
-                    renderPanel(this);
-                    syncOutputPortType(this);
-                    window.setTimeout(
-                        () => syncOutputSwitchesFromConnections(this),
-                        0
-                    );
-                }
+                reloadPanelFromStorage(this);
             };
             const originalDrawForeground =
                 nodeType.prototype.onDrawForeground;
@@ -5908,20 +5954,7 @@ function initXMediaListGetExtension() {
         },
         async loadedGraphNode(node) {
             installNodeUi(node);
-            const panel = node?.__xmlg_panel;
-            if (panel) {
-                panel.state.items = readItems(node);
-                panel.state.category = readCategory(node);
-                panel.state.missing = new Set();
-                panel.state.undoStack = [];
-                panel.state.redoStack = [];
-                renderPanel(node);
-                syncOutputPortType(node);
-                window.setTimeout(
-                    () => syncOutputSwitchesFromConnections(node),
-                    0
-                );
-            }
+            reloadPanelFromStorage(node);
         },
         async setup() {
             await applyUiLocale();

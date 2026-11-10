@@ -33,6 +33,21 @@ const DROP_AUTOSCROLL_EDGE = 28;
 // groups = 只动组里的。再加上「单击组头 → 只作用于这一组」的临时收窄。
 const ENABLE_SCOPES = ["files", "all", "groups"];
 
+/**
+ * 把「从存盘里读回来的档位」洗一遍。
+ *
+ * 档位跟着工作流走（存在 node.properties 里），所以可能是脏的：老版本
+ * 留下的、手动改过工作流的、或者根本不是档位的东西。认不出来就退回
+ * 「全部」——那是范围最大的一档，也是最少让人意外的默认值。
+ *
+ * @param {unknown} value 存盘里读到的原始值
+ * @returns {"files"|"all"|"groups"}
+ */
+function sanitizeEnableScope(value) {
+    const scope = typeof value === "string" ? value.trim() : "";
+    return ENABLE_SCOPES.includes(scope) ? scope : "all";
+}
+
 /* 组的可选颜色。刻意不用红色系（色板里的 02 / 09 红）：它跟品牌粉太接近，
    画在竖线和胶囊上会被误当成强调色或警告色。橙色系可以用，它和品牌粉
    隔着 30 多度，看得出是两种颜色。
@@ -2405,6 +2420,11 @@ function selectScope(node, mode) {
     state.scopeGroup = null;
     // 用户自己点了档位，之前记的「退回去」就不要了
     state.scopeGroupBack = null;
+    // 只有「用户亲手点档位」才落盘：单击组头那种临时收窄不写，
+    // 否则下次打开工作流会莫名其妙只作用于某一组。
+    if (typeof ctx.writeEnableScope === "function") {
+        ctx.writeEnableScope(node, mode);
+    }
     refreshScopeOnly(node);
 }
 
@@ -4293,5 +4313,6 @@ export {
     ENABLE_SCOPES,
     groupStyles,
     MAX_ENABLED,
+    sanitizeEnableScope,
     SLIDE_MS,
 };

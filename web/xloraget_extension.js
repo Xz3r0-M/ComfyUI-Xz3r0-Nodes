@@ -14,6 +14,7 @@ import {
     createGroupEngine,
     groupStyles,
     MAX_ENABLED,
+    sanitizeEnableScope,
 } from "./core/group-list.js";
 /* 纯数据层的分组函数（整理分组、算归属、算出渲染顺序） */
 import { buildRenderList, normalizeGroups } from "./core/group-model.js";
@@ -36,6 +37,9 @@ const STORAGE_VERSION = 2;
 const PENDING_ROWS_FIELD = "__xloraget_pending_rows";
 const STYLE_ID = "xloraget-extension-style";
 const GLOBAL_CLIP_MODE_PROP = "xloraget.globalSeparateClipStrength";
+/* ✔ ✖ ⇄ 的作用范围（未分组 / 全部 / 分组）也存 properties：
+   跟着工作流走，但不进 lora_stack（那个 JSON 是 Python 侧解析的）。 */
+const ENABLE_SCOPE_PROP = "xloraget.enableScope";
 const DEFAULT_MIN_NODE_WIDTH = 614;
 const DEFAULT_MIN_NODE_HEIGHT = 560;
 const TRIGGER_PANEL_HEIGHT_DELTA = 220;
@@ -916,6 +920,30 @@ function parseDragPayload(dataTransfer) {
     } catch {
         return null;
     }
+}
+
+/* 范围档位跟着工作流走：读回来洗一遍（脏值退回「全部」） */
+function readEnableScope(node) {
+    const raw = node?.properties?.[ENABLE_SCOPE_PROP];
+    return sanitizeEnableScope(raw);
+}
+
+function writeEnableScope(node, scope) {
+    if (!node) {
+        return;
+    }
+    if (!node.properties || typeof node.properties !== "object") {
+        node.properties = {};
+    }
+    const value = sanitizeEnableScope(scope);
+    if (node.properties[ENABLE_SCOPE_PROP] === value) {
+        return;
+    }
+    node.properties[ENABLE_SCOPE_PROP] = value;
+    // 档位现在是「会存进工作流的数据」，所以要告诉画布「改过了」，
+    // 否则关掉时不会提示保存，用户的选择会悄悄丢掉。
+    node.setDirtyCanvas?.(true, true);
+    node.graph?.change?.();
 }
 
 function readGlobalClipMode(node, rows = []) {
@@ -2183,6 +2211,8 @@ const engine = createGroupEngine({
     // 引擎在中途（拖动过程中）就调用这个钩子，所以不会出现「先挪过去、
     // 过一会儿又被弹回原位」的怪象。
     applyOrderConstraints: (node, rows) => enforcePinLayout(rows),
+    // 用户点档位时落盘（临时收窄不落盘，见引擎里的 selectScope）
+    writeEnableScope,
     applyPointerDragStop: (node) => {
         const pending = node?.__xlora_panel?.state?.pointerDrag;
         if (!pending?.active) {
@@ -2936,11 +2966,17 @@ function reloadPanelFromStorage(node) {
     panel.state.selection = new Set();
     panel.state.scopeGroup = null;
     panel.state.scopeGroupBack = null;
+    /* 档位跟着工作流走，但面板是「建节点那一刻」装的，那时 properties
+       还是空的。configure / loadedGraphNode 会把 properties 恢复好再叫
+       这里，所以必须在这重读一次。 */
+    panel.state.enableScope = readEnableScope(node);
     panel.state.undoStack = [];
     panel.state.redoStack = [];
     // 丢失标记也是上一批文件的事，等用户再点一次刷新
     panel.state.missing = new Set();
     renderNodeRows(node);
+    // 档位按钮的高亮要跟着重读出来的档位走
+    engine.refreshScopeOnly(node);
     syncAllRowTriggerWords(node, { force: true });
 }
 
@@ -2969,8 +3005,10 @@ function installNodeUi(node) {
         selection: new Set(),
         // 点过「刷新」后查出来已经不在硬盘上的文件（按 lora_ref 记）
         missing: new Set(),
-        // ✔ ✖ ⇄ 打哪些行：all / files（未分组）/ groups（已分组）
-        enableScope: "all",
+        // ✔ ✖ ⇄ 打哪些行：all / files（未分组）/ groups（已分组）。
+        // 跟着工作流走：上次选的档位存在 node.properties 里（不塞进
+        // lora_stack，那个 JSON 是 Python 侧的，多字段要多一套迁移）。
+        enableScope: readEnableScope(node),
         // 单击组头 = 临时只作用于那一组；scopeGroupBack 记住收窄前的档位
         scopeGroup: null,
         scopeGroupBack: null,
