@@ -13,6 +13,7 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
+import { randomSuffix } from "./core/random-id.js";
 
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
@@ -1623,9 +1624,7 @@ async function openMaskEditorForNode(node) {
                 delete node.properties.image;
             }
         }
-        const sessionToken = `${Date.now()}_${Math.random()
-            .toString(36)
-            .slice(2, 10)}`;
+        const sessionToken = `${Date.now()}_${randomSuffix(8)}`;
         node.__ximageget_mask_editor_session = sessionToken;
         node.__ximageget_mask_editor_prev_imgs = node.imgs;
         node.__ximageget_mask_editor_prev_images = node.images;

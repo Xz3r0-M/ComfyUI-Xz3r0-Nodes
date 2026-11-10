@@ -44,11 +44,12 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
+import { randomSuffix } from "./core/random-id.js";
 import {
     buildRenderList,
     normalizeGroups,
 } from "./core/group-model.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-14";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-15";
 
 const EXT_NAME = "xz3r0.xmedialistget";
 const EXT_GUARD_KEY = "__xmedialistget_extension_registered__";
@@ -88,7 +89,9 @@ const CATEGORIES = ["image", "video", "audio"];
 let rowUidSeed = 0;
 function newRowUid() {
     rowUidSeed += 1;
-    return `r${rowUidSeed.toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    /* 随机尾巴走共享的 randomSuffix（内部用 crypto，不用 Math 里的伪随机）：
+       uid 会被写进元素 id、拖拽数据、存盘 JSON，静态扫描会盯着它。 */
+    return `r${rowUidSeed.toString(36)}${randomSuffix(8)}`;
 }
 
 const XMLG_KEY_OF = (entry) => {
