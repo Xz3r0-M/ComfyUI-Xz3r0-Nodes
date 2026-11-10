@@ -6037,6 +6037,35 @@ def _build_lora_trigger_item(
     }
 
 
+@server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/meta")
+async def api_lora_meta(request: web.Request) -> web.Response:
+    """问一下这个 LoRA 文件还在不在硬盘上（列表的「刷新」按钮用）。
+
+    节点里存的是引用，用户在资源管理器里把文件搬走/删掉，节点是不知道的。
+    这里把引用翻回真实路径、直接看盘上有没有，找不到就 404，前端据此把行
+    标成「文件不存在」。
+    """
+    lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
+    if not lora_ref:
+        return json_error(request, "invalid_payload", 400)
+    rel_path = lora_rel_path_from_ref(lora_ref)
+    if not rel_path:
+        return json_error(request, "file_not_found", 404)
+    root, _ = resolve_lora_dir("")
+    if root is None:
+        return json_error(request, "file_not_found", 404)
+    target = root / rel_path
+    try:
+        inside = is_path_within_root_lexical(target, root)
+        exists = inside and target.is_file()
+    except Exception:
+        exists = False
+    if not exists:
+        return json_error(request, "file_not_found", 404)
+    # 只回「在」，不回路径：前端只需要知道在不在，多说一句都是白送信息
+    return web.json_response({"status": "success", "exists": True})
+
+
 @server.PromptServer.instance.routes.get("/xz3r0/xdatahub/loras/trigger-words")
 async def api_lora_trigger_words_get(request: web.Request) -> web.Response:
     lora_ref = normalize_lora_public_ref(str(request.query.get("ref") or ""))
