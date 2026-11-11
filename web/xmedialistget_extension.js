@@ -3,13 +3,21 @@
  * ==========================
  *
  * 在节点内提供按「图片 / 视频 / 音频」分类管理的媒体列表：
- * - 分类切换、分页显示、启用开关、删除、清空、刷新
+ * - 分类切换、启用开关、删除、清空、刷新
  * - 缩略图懒加载，加载失败自动标红（文件失效）
  * - 从 XDataHub 拖入媒体卡片（插入 / 替换由后续拖拽逻辑处理）
+ * - 列表内拖拽排序、分组（同组连续 = 加载顺序）
  * - 转发中键平移与滚轮缩放，保持画布基础交互
  *
  * 列表数据保存在隐藏 widget media_items 中，格式：
- * { "image": [{ref,title,enabled}], "video": [], "audio": [] }
+ * {
+ *   "image": [{ref,title,enabled,group}],
+ *   "video": [], "audio": [],
+ *   "groups": { "image": [{id,name,collapsed}], "video": [], "audio": [] }
+ * }
+ *
+ * 分页已经退场：分组要求「同组的行连续」，一个组被切到两页就
+ * 说不清组头归谁，跨页也拖不动。现在是一条长列表全量渲染。
  */
 
 import { app } from "../../scripts/app.js";
@@ -21,11 +29,28 @@ import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+/* 分组（组头 / 竖线 / 折叠 / 拖拽 / 范围 / 撤销）是共享引擎，
+   XLoraGet 用的是同一份实现（见 web/core/group-list.js）。
+   顺带取几个引擎里定义的常量：拖动起点、范围档位、名额上限、动画时长。 */
+import {
+    createGroupEngine,
+    DRAG_START_PX,
+    ENABLE_SCOPES,
+    groupStyles,
+    MAX_ENABLED,
+    sanitizeEnableScope,
+    SLIDE_MS,
+} from "./core/group-list.js";
 import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-14";
+import { randomSuffix } from "./core/random-id.js";
+import {
+    buildRenderList,
+    normalizeGroups,
+} from "./core/group-model.js";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-15";
 
 const EXT_NAME = "xz3r0.xmedialistget";
 const EXT_GUARD_KEY = "__xmedialistget_extension_registered__";
@@ -50,17 +75,47 @@ const OUTPUT_SLOT_GROUPS = {
     video: [3, 4],
     audio: [5, 6],
 };
+/* 旧版「每页条数」的设置名。分页已经退场，这里只保留名字：
+   老节点的属性仍然读得到，不用做数据迁移。 */
 const PAGE_SIZE_PROP = "xmedialistget.pageSize";
+/* ✔ ✖ ⇄ 的作用范围。存进 node.properties（跟着工作流走），
+   不塞进 media_items：那个 JSON 是 Python 侧解析的，多一个字段就多一套
+   解析和迁移；properties 是纯前端的东西，读写都不影响执行。 */
+const ENABLE_SCOPE_PROP = "xmedialistget.enableScope";
 const CATEGORIES = ["image", "video", "audio"];
+/*
+ * 行的唯一标识。
+ *
+ * 同一个文件允许在列表里出现多次（用户可能就是想让它多跑一遍），
+ * 所以 ref 不再是身份——拿 ref 当身份的话，点一下就会把所有重复的
+ * 行一起选中，建组也会把副本一起拽走。每行发一个 uid，跟着行走，
+ * 复制行、拖动、重排都不变。
+ */
+let rowUidSeed = 0;
+function newRowUid() {
+    rowUidSeed += 1;
+    /* 随机尾巴走共享的 randomSuffix（内部用 crypto，不用 Math 里的伪随机）：
+       uid 会被写进元素 id、拖拽数据、存盘 JSON，静态扫描会盯着它。 */
+    return `r${rowUidSeed.toString(36)}${randomSuffix(8)}`;
+}
+
+const XMLG_KEY_OF = (entry) => {
+    if (!entry || typeof entry !== "object") {
+        return "";
+    }
+    if (!entry.uid) {
+        // 兜底：老数据、或别处漏掉的行，第一次被认出来时补一个
+        entry.uid = newRowUid();
+    }
+    return String(entry.uid);
+};
 const CATEGORY_EMOJI = {
     image: "🖼️",
     video: "🎞️",
     audio: "🎵",
 };
-const MAX_ENABLED = 50;
-const DEFAULT_PAGE_SIZE = 50;
-const MIN_PAGE_SIZE = 5;
-const MAX_PAGE_SIZE = 50;
+
+
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
 const STYLE_ID = "xmedialistget-extension-style";
 const MIN_NODE_WIDTH = 500;
@@ -73,9 +128,14 @@ const PREVIEW_EYE_ICON_URL = new URL(
     import.meta.url
 ).href;
 const REFRESH_CONCURRENCY = 4;
+
+
 const COMFY_LOCALE_KEY = "Comfy.Locale";
-const TOAST_DURATION_MS = 2600;
-const INSERT_EDGE_PX = 8;
+
+
+/* 列表内部拖拽排序用的标记：带上它就能和「从 XDataHub 拖入」区分开。 */
+
+const DROP_AUTOSCROLL_STEP = 10;
 const TYPE_SWITCH_DELAY_MS = 600;
 const XDATAHUB_TYPE_MIME_PREFIX = "application/x-xdatahub-type-";
 const XDATAHUB_COUNT_MIME_PREFIX = "application/x-xdatahub-count-";
@@ -117,12 +177,22 @@ function formatText(template, vars) {
     return text;
 }
 
-function t(key, fallback = "", vars = null) {
-    const template = uiLocalePrimary?.[key]
+/** 只查表、不填占位符（填占位符的那层要查名词，两者不能互相调用）。 */
+function rawText(key, fallback = "") {
+    return uiLocalePrimary?.[key]
         ?? uiLocaleFallback?.[key]
         ?? fallback
         ?? key;
-    return formatText(template, vars);
+}
+
+function t(key, fallback = "", vars = null) {
+    // {noun} / {nounOne} 统一在这里填：这个列表里装的是「文件」。
+    // 名词走语言包，切语言时会跟着变。
+    return formatText(rawText(key, fallback), {
+        noun: rawText("xdatahub.ui.group.noun_files", "files"),
+        nounOne: rawText("xdatahub.ui.group.noun_file", "file"),
+        ...(vars || {}),
+    });
 }
 
 async function fetchLocaleJson(localeCode) {
@@ -216,8 +286,17 @@ function categoryLabel(category) {
     return t(key, fallback);
 }
 
-function emptyItems() {
+function emptyGroups() {
     return { image: [], video: [], audio: [] };
+}
+
+function emptyItems() {
+    return {
+        image: [],
+        video: [],
+        audio: [],
+        groups: emptyGroups(),
+    };
 }
 
 function normalizeItems(raw) {
@@ -225,8 +304,12 @@ function normalizeItems(raw) {
     if (!raw || typeof raw !== "object") {
         return output;
     }
+    const rawGroups = raw.groups && typeof raw.groups === "object"
+        ? raw.groups
+        : {};
     for (const category of CATEGORIES) {
         const list = Array.isArray(raw[category]) ? raw[category] : [];
+        const rows = [];
         for (const entry of list) {
             if (!entry || typeof entry !== "object") {
                 continue;
@@ -235,15 +318,24 @@ function normalizeItems(raw) {
             if (!ref) {
                 continue;
             }
-            output[category].push({
+            rows.push({
+                uid: String(entry.uid || "").trim() || newRowUid(),
                 ref,
                 title: String(entry.title || ""),
                 enabled: entry.enabled !== false,
+                group: typeof entry.group === "string"
+                    ? entry.group.trim() || null
+                    : null,
                 mask_ref: String(entry.mask_ref || ""),
                 paint_ref: String(entry.paint_ref || ""),
                 transform_state: String(entry.transform_state || ""),
             });
         }
+        // 旧数据完全没有 group 字段，这里必须安静地接受并把
+        // 「同组连续」「不留空组」两条不变量一次落地。
+        const normalized = normalizeGroups(rows, rawGroups[category]);
+        output[category] = normalized.items;
+        output.groups[category] = normalized.groups;
     }
     return output;
 }
@@ -263,6 +355,30 @@ function ensureStorageWidget(node) {
     }
     removeWidgetInput(node, STORAGE_WIDGET);
     return widget || null;
+}
+
+/* 范围档位跟着工作流走：读回来洗一遍（脏值退回「全部」） */
+function readEnableScope(node) {
+    const raw = node?.properties?.[ENABLE_SCOPE_PROP];
+    return sanitizeEnableScope(raw);
+}
+
+function writeEnableScope(node, scope) {
+    if (!node) {
+        return;
+    }
+    if (!node.properties || typeof node.properties !== "object") {
+        node.properties = {};
+    }
+    const value = sanitizeEnableScope(scope);
+    if (node.properties[ENABLE_SCOPE_PROP] === value) {
+        return;
+    }
+    node.properties[ENABLE_SCOPE_PROP] = value;
+    // 档位现在是「会存进工作流的数据」，所以要告诉画布「改过了」，
+    // 否则关掉时不会提示保存，用户的选择会悄悄丢掉。
+    node.setDirtyCanvas?.(true, true);
+    node.graph?.change?.();
 }
 
 function readItems(node) {
@@ -289,13 +405,63 @@ function readItems(node) {
     return items;
 }
 
+/*
+ * 组的两条不变量（同组连续、不留空组）只在一个地方落地：
+ * 每次写入前统一整理。任何新增的「改列表」路径只要走 writeItems
+ * 就不会留下幽灵组，也不会出现同组被拆开。
+ */
+function syncCategoryGroups(items, category) {
+    if (!items.groups || typeof items.groups !== "object") {
+        items.groups = emptyGroups();
+    }
+    const result = normalizeGroups(
+        items[category] || [],
+        items.groups[category]
+    );
+    items[category] = result.items;
+    items.groups[category] = result.groups;
+    return result;
+}
+
+function syncAllGroups(items) {
+    const dissolved = [];
+    for (const category of CATEGORIES) {
+        dissolved.push(...syncCategoryGroups(items, category).dissolved);
+    }
+    return dissolved;
+}
+
 function writeItems(node, items, options = {}) {
     const widget = ensureStorageWidget(node);
     if (!widget) {
         return;
     }
+    // 模型里的操作（移动 / 建组）会当场把空组剔掉，所以它会把
+    // 「刚刚被解散的组」一并交出来；这里只负责提示，不重复整理。
+    const dissolved = [
+        ...(Array.isArray(options.dissolved) ? options.dissolved : []),
+        ...syncAllGroups(items),
+    ];
+    // 组一声不响地消失，会让人以为文件也丢了。必须明确提示。
+    if (dissolved.length && options.recordUndo !== false) {
+        const names = [];
+        for (const record of dissolved) {
+            const label = record.name || record.id;
+            if (label && !names.includes(label)) {
+                names.push(label);
+            }
+        }
+        engine.showToast(
+            node,
+            t(
+                "xdatahub.ui.group.group_dissolved",
+                "Group {name} has no files left, so it was removed",
+                { name: names.join(", ") }
+            )
+        );
+    }
     if (options.recordUndo !== false) {
-        pushUndoSnapshot(node);
+        engine.pushUndoSnapshot(node);
         const panel = node.__xmlg_panel;
         if (panel) {
             // 新修改会岔开历史，之前的重做分支作废。
@@ -305,88 +471,35 @@ function writeItems(node, items, options = {}) {
     widget.value = JSON.stringify(items);
     node.setDirtyCanvas?.(true, true);
     node.graph?.change?.();
-    updateUndoButton(node);
+    engine.updateUndoButton(node);
 }
 
-function pushUndoSnapshot(node) {
+
+/**
+ * 面板和存盘重新对齐（configure / loadedGraphNode 之后都要走一遍）。
+ *
+ * 面板是在「建节点那一刻」装好的，那时工作流里的数据还没恢复：widget 值、
+ * node.properties 全是空的。configure 会先把这些恢复好再叫我们，所以
+ * 行、分类、档位都要在这里重新读一次，否则刷新页面后档位会退回「全部」。
+ */
+function reloadPanelFromStorage(node) {
     const panel = node?.__xmlg_panel;
     if (!panel) {
         return;
     }
-    const widget = ensureStorageWidget(node);
-    const value = String(widget?.value || "{}");
-    const stack = panel.state.undoStack || [];
-    if (stack[stack.length - 1] === value) {
-        return;
-    }
-    stack.push(value);
-    if (stack.length > 30) {
-        stack.shift();
-    }
-    panel.state.undoStack = stack;
-}
-
-function updateUndoButton(node) {
-    const panel = node?.__xmlg_panel;
-    if (!panel) {
-        return;
-    }
-    const undoStack = panel.state.undoStack || [];
-    const redoStack = panel.state.redoStack || [];
-    if (panel.undoButton) {
-        panel.undoButton.disabled = undoStack.length === 0;
-    }
-    if (panel.redoButton) {
-        panel.redoButton.disabled = redoStack.length === 0;
-    }
-}
-
-function applySnapshot(node, raw) {
-    const panel = node?.__xmlg_panel;
-    if (!panel) {
-        return;
-    }
-    let items = emptyItems();
-    try {
-        items = normalizeItems(JSON.parse(raw));
-    } catch {
-        items = emptyItems();
-    }
-    panel.state.items = items;
+    panel.state.items = readItems(node);
+    panel.state.category = readCategory(node);
     panel.state.missing = new Set();
-    writeItems(node, items, { recordUndo: false });
+    panel.state.undoStack = [];
+    panel.state.redoStack = [];
+    // 档位跟着工作流走：这里读到的才是最终值
+    panel.state.enableScope = readEnableScope(node);
+    panel.state.scopeGroup = null;
+    panel.state.scopeGroupBack = null;
     renderPanel(node);
+    engine.refreshScopeOnly(node);
     syncOutputPortType(node);
-}
-
-function undoLastChange(node) {
-    const panel = node?.__xmlg_panel;
-    const stack = panel?.state?.undoStack || [];
-    if (!stack.length) {
-        return;
-    }
-    const current = String(ensureStorageWidget(node)?.value || "{}");
-    const raw = stack.pop();
-    panel.state.redoStack = [
-        ...(panel.state.redoStack || []),
-        current,
-    ];
-    applySnapshot(node, raw);
-}
-
-function redoLastChange(node) {
-    const panel = node?.__xmlg_panel;
-    const stack = panel?.state?.redoStack || [];
-    if (!stack.length) {
-        return;
-    }
-    const current = String(ensureStorageWidget(node)?.value || "{}");
-    const raw = stack.pop();
-    panel.state.undoStack = [
-        ...(panel.state.undoStack || []),
-        current,
-    ];
-    applySnapshot(node, raw);
+    window.setTimeout(() => syncOutputSwitchesFromConnections(node), 0);
 }
 
 function readCategory(node) {
@@ -409,24 +522,6 @@ function readCategory(node) {
     }
     const value = widgetValue || "image";
     return CATEGORIES.includes(value) ? value : "image";
-}
-
-function readPageSize(node) {
-    const value = Number(node?.properties?.[PAGE_SIZE_PROP]);
-    if (!Number.isFinite(value)) {
-        return DEFAULT_PAGE_SIZE;
-    }
-    return Math.min(
-        MAX_PAGE_SIZE,
-        Math.max(MIN_PAGE_SIZE, Math.round(value))
-    );
-}
-
-function writePageSize(node, value) {
-    if (!node.properties || typeof node.properties !== "object") {
-        node.properties = {};
-    }
-    node.properties[PAGE_SIZE_PROP] = value;
 }
 
 function enabledCount(items, category) {
@@ -540,6 +635,32 @@ function ensureNodeMinSize(node) {
     };
 }
 
+/**
+ * 分组引擎实例：媒体节点这一侧只需要告诉它「行身份怎么算、行怎么画、
+ * 存盘怎么写、文案在哪」，剩下的组逻辑全在共享模块里。
+ */
+const engine = createGroupEngine({
+    keyOf: XMLG_KEY_OF,
+    element,
+    t,
+    normalizeItems,
+    emptyItems,
+    writeItems,
+    renderPanel,
+    ensureStorageWidget,
+    scrollRowIntoView,
+    syncOutputPortType,
+    startDropAutoScroll,
+    stopDropAutoScroll,
+    dragCountFromDataTransfer,
+    hideTypeMismatch,
+    hintHost,
+    buildRow,
+    applyPointerDragStop,
+    // 用户点档位时落盘（临时收窄不落盘，见引擎里的 selectScope）
+    writeEnableScope,
+});
+
 function ensureStyles() {
     if (document.getElementById(STYLE_ID)) {
         return;
@@ -547,56 +668,8 @@ function ensureStyles() {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-        .xmlg-panel,
-        .xmlg-preview {
-            /* 颜色收口：优先 XDataHub token（由 web/xdatahub.js 注入宿主页），
-               缺失时回退到品牌色/中性色。面板和全屏预览共用这套变量。 */
-            --xmlg-accent: var(--xdh-clr-primary, #ff385c);
-            --xmlg-accent-muted: color-mix(
-                in srgb,
-                var(--xmlg-accent) 14%,
-                transparent
-            );
-            --xmlg-text: var(--xdh-clr-ink, #ffffff);
-            --xmlg-text-muted: var(--xdh-clr-muted, rgba(255, 255, 255, 0.6));
-            --xmlg-border: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.12));
-            --xmlg-surface: var(--xdh-clr-surface-soft, #161618);
-            --xmlg-surface-strong: var(--xdh-clr-surface-strong, #1d1d20);
-            --xmlg-canvas: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-on-accent: var(--xdh-clr-on-primary, #ffffff);
-            --xmlg-danger: var(--xdh-clr-error, #c13515);
-            --xmlg-danger-bright: #ff0000;
-            --xmlg-danger-text: color-mix(in srgb, var(--xmlg-danger) 55%, white);
-            --xmlg-danger-soft: color-mix(in srgb, var(--xmlg-danger) 12%, transparent);
-            --xmlg-success: #22c55e;
-            --xmlg-success-text: #4ade80;
-            --xmlg-success-glow: color-mix(in srgb, var(--xmlg-success) 65%, transparent);
-            --xmlg-success-glow-fade: color-mix(in srgb, var(--xmlg-success) 0%, transparent);
-            --xmlg-warning: #f59e0b;
-            --xmlg-warning-strong: #fbbf24;
-            /* 提示条：浅色主题用深琥珀字 + 米色底，深色主题反过来，
-               两边都是 6:1 以上的对比，避免「黄字压浅灰」看不清。 */
-            --xmlg-warning-text: color-mix(
-                in srgb,
-                var(--xmlg-warning) 38%,
-                var(--xmlg-text)
-            );
-            --xmlg-warning-surface: color-mix(
-                in srgb,
-                var(--xmlg-warning) 16%,
-                var(--xmlg-surface)
-            );
-            --xmlg-warning-soft: color-mix(in srgb, var(--xmlg-warning) 12%, transparent);
-            --xmlg-warning-ink: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-switch-off: var(--xdh-clr-border-strong, rgba(255, 255, 255, 0.22));
-            --xmlg-scrim: color-mix(in srgb, var(--xmlg-canvas) 72%, transparent);
-            --xmlg-toast-bg: var(--xdh-clr-surface-strong, #1d1d20);
-            --xmlg-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-            --xmlg-thumb-bg: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-scroll-thumb: var(--xdh-scrollbar-thumb, #555);
-            --xmlg-scroll-track: var(--xdh-scrollbar-track, transparent);
-        }
         .xmlg-panel {
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -620,7 +693,7 @@ function ensureStyles() {
             justify-content: center;
             gap: 5px;
             padding: 5px 6px;
-            border-radius: var(--xdh-radius-sm, 6px);
+            border-radius: var(--xdh-radius-sm, 8px);
             border: 1px solid var(--xmlg-border);
             background: var(--xmlg-surface-strong);
             color: inherit;
@@ -776,8 +849,14 @@ function ensureStyles() {
             position: relative;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            /* 靠左挤紧：换行时各行也从头排，不会像 space-between 那样
+               被拉得东一个西一个。状态文字自己用 margin-left:auto 顶右边 */
+            justify-content: flex-start;
             gap: 6px;
+            /* 窄面板放不下一整排（刷新 + 建组 + 三个开关 + 范围胶囊 + 状态）
+               时换行，宁可多占一行也别把按钮裁掉一半 */
+            flex-wrap: wrap;
+            row-gap: 4px;
             min-height: 30px;
             padding: 4px 10px;
             border: none;
@@ -785,14 +864,6 @@ function ensureStyles() {
             border-radius: var(--xdh-radius-sm, 8px) var(--xdh-radius-sm, 8px) 0 0;
             background: var(--xmlg-surface);
             box-sizing: border-box;
-        }
-        .xmlg-list-toolbar .xmlg-status {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            white-space: nowrap;
-            flex: none;
-            text-align: center;
         }
         .xmlg-list-toolbar label {
             display: inline-flex;
@@ -806,10 +877,6 @@ function ensureStyles() {
             align-items: center;
             gap: 4px;
             white-space: nowrap;
-        }
-        .xmlg-range {
-            width: 56px;
-            accent-color: var(--xmlg-accent);
         }
         .xmlg-btn {
             width: 22px;
@@ -825,7 +892,10 @@ function ensureStyles() {
             font: inherit;
             font-size: 12px;
             line-height: 1;
-            border-radius: var(--xdh-radius-xs, 4px);
+            /* 和老一代 x*get（XImageGet / XMediaGet）的小方钮同一个圆角：
+               那边是 --xdh-radius-sm（8px），这里原来用了 4px 所以看着像
+               另一种按钮 */
+            border-radius: var(--xdh-radius-sm, 8px);
             cursor: pointer;
             box-sizing: border-box;
         }
@@ -836,11 +906,32 @@ function ensureStyles() {
             opacity: 0.4;
             cursor: default;
         }
+        /* 「创建分组」不可用时不用真 disabled：真 disabled 的按钮收不到
+           鼠标事件，悬停提示就永远看不到为什么点不动。 */
+        .xmlg-btn.is-disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        /* 底栏里的「已启用 X / 50」：和「共 N 个文件」并排，
+           中间靠 .xmlg-pager-divider 隔开 */
         .xmlg-status {
-            flex: 1 1 auto;
-            text-align: center;
+            flex: 0 0 auto;
             opacity: 0.8;
             font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .xmlg-pager-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+        .xmlg-pager-divider {
+            flex: 0 0 auto;
+            width: 1px;
+            height: 11px;
+            background: var(--xmlg-border);
         }
         .xmlg-list-viewport {
             position: relative;
@@ -874,11 +965,14 @@ function ensureStyles() {
             background: var(--xmlg-scroll-thumb);
             border-radius: 4px;
         }
-        .xmlg-row {
+        .xmlg-row.xmlg-media-row {
             position: relative;
             display: flex;
             align-items: center;
             gap: 6px;
+            /* 按住行是要搬它，不是要选字：一旦选中文字，浏览器会启动
+               原生「拖选文字」，我们的拖动会被 pointercancel 打断 */
+            user-select: none;
             min-height: 44px;
             flex: 0 0 auto;
             padding: 4px 6px;
@@ -888,14 +982,31 @@ function ensureStyles() {
             box-sizing: border-box;
         }
         .xmlg-seq {
+            position: relative;
             flex: 0 0 24px;
+            /* 撑满整行高度：数字上下居中，竖线也才够得到上下边框 */
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             text-align: center;
             font-size: 10px;
             opacity: 0.6;
             font-variant-numeric: tabular-nums;
-            border-right: 1px solid var(--xmlg-border);
             padding-right: 6px;
             box-sizing: border-box;
+        }
+        /* 序号右边那条竖线：绝对定位，上下各拉出内边距那么多，
+           正好顶到行的上下边框上又不越界（负外边距会被 flex 算歪） */
+        .xmlg-seq::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            top: -4px;
+            bottom: -4px;
+            width: 1px;
+            background: var(--xmlg-border);
+            pointer-events: none;
         }
         .xmlg-row-hint {
             position: absolute;
@@ -913,15 +1024,15 @@ function ensureStyles() {
             display: none;
             z-index: 2;
         }
-        .xmlg-row.is-replace-target .xmlg-row-hint {
+        .xmlg-row.xmlg-media-row.is-replace-target .xmlg-row-hint {
             display: inline-flex;
             align-items: center;
             gap: 3px;
         }
-        .xmlg-row:hover {
+        .xmlg-row.xmlg-media-row:hover {
             border-color: var(--xmlg-accent);
         }
-        .xmlg-row.is-disabled {
+        .xmlg-row.xmlg-media-row.is-disabled {
             opacity: 0.5;
         }
         .xmlg-mask-btn {
@@ -939,17 +1050,21 @@ function ensureStyles() {
             filter: none;
             opacity: 1;
         }
+        /* 行的操作按钮之间那条竖线：align-self 撑满行高，再用负外边距
+           吃掉行的上下内边距，线两头正好顶到行边框（原来是固定 16px，
+           上下各留一截空白）。 */
         .xmlg-row-divider {
+            align-self: stretch;
+            margin: -4px 0;
             width: 1px;
-            height: 16px;
-            flex: 0 0 auto;
+            flex: 0 0 1px;
             background: var(--xmlg-border);
         }
-        .xmlg-row.is-missing {
+        .xmlg-row.xmlg-media-row.is-missing {
             border-color: var(--xmlg-danger);
             background: var(--xmlg-danger-soft);
         }
-        .xmlg-row.is-replace-target {
+        .xmlg-row.xmlg-media-row.is-replace-target {
             border-color: var(--xmlg-warning);
             background: var(--xmlg-warning-soft);
         }
@@ -1006,7 +1121,8 @@ function ensureStyles() {
             width: 34px;
             height: 34px;
             flex: 0 0 34px;
-            border-radius: 4px;
+            /* 缩略图统一 --xdh-radius-xs（4px）：和预览条里的缩略图一致 */
+            border-radius: var(--xdh-radius-xs, 4px);
             overflow: hidden;
             background: var(--xmlg-thumb-bg);
             display: flex;
@@ -1082,7 +1198,8 @@ function ensureStyles() {
             min-width: 22px;
             height: 22px;
             border: 1px solid var(--xmlg-border);
-            border-radius: var(--xdh-radius-xs, 4px);
+            /* 和工具栏按钮同圆角（老一代 x*get 的按钮都是 8px） */
+            border-radius: var(--xdh-radius-sm, 8px);
             background: var(--xmlg-surface-strong);
             color: inherit;
             cursor: pointer;
@@ -1114,9 +1231,9 @@ function ensureStyles() {
             box-sizing: border-box;
         }
         .xmlg-pager {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
+            display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
             min-height: 30px;
             padding: 4px 10px;
@@ -1125,26 +1242,18 @@ function ensureStyles() {
             background: var(--xmlg-surface);
             box-sizing: border-box;
         }
-        .xmlg-pager-center {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
         .xmlg-total {
-            justify-self: start;
             font-size: 11px;
             opacity: 0.6;
             white-space: nowrap;
         }
         .xmlg-pager-clear {
-            justify-self: end;
             font-size: 13px;
         }
-        .xmlg-page-status {
-            min-width: 96px;
-            text-align: center;
-            opacity: 0.85;
+        /* 悬停描边用节点的序列号颜色（和徽章上的数字同色）；节点 ID 还没
+           算出来时退回品牌色，不能变成没反应 */
+        .xmlg-pager-clear:hover {
+            border-color: var(--xmlg-node-accent, var(--xmlg-accent));
         }
         .xmlg-overlay {
             position: absolute;
@@ -1160,7 +1269,7 @@ function ensureStyles() {
             background: var(--xmlg-scrim);
             backdrop-filter: blur(1.5px);
             color: var(--xmlg-danger-bright);
-            border-radius: var(--xdh-radius-sm, 6px);
+            border-radius: var(--xdh-radius-sm, 8px);
             pointer-events: none;
             z-index: 5;
         }
@@ -1192,18 +1301,6 @@ function ensureStyles() {
                 transparent
             );
         }
-        .xmlg-insert-line {
-            position: absolute;
-            left: 4px;
-            right: 4px;
-            height: 2px;
-            border-radius: 2px;
-            background: var(--xmlg-warning-strong);
-            box-shadow: 0 0 8px var(--xmlg-warning-strong);
-            pointer-events: none;
-            display: none;
-            z-index: 6;
-        }
         .xmlg-drop-label {
             position: absolute;
             left: 50%;
@@ -1218,37 +1315,6 @@ function ensureStyles() {
             display: none;
             z-index: 7;
             white-space: nowrap;
-        }
-        .xmlg-toast {
-            position: absolute;
-            left: 50%;
-            top: 42px;
-            transform: translateX(-50%);
-            max-width: 92%;
-            padding: 5px 10px;
-            border-radius: var(--xdh-radius-sm, 6px);
-            background: var(--xmlg-toast-bg);
-            border: 1px solid var(--xmlg-accent);
-            color: inherit;
-            font-size: 11px;
-            display: none;
-            z-index: 20;
-            text-align: center;
-            box-sizing: border-box;
-        }
-        .xmlg-toast.is-visible {
-            display: block;
-            animation: xmlg-toast-in 120ms ease-out;
-        }
-        .xmlg-toast.is-warning {
-            border-color: var(--xmlg-warning);
-            background: var(--xmlg-warning-surface);
-            color: var(--xmlg-warning-text);
-            font-weight: 600;
-        }
-        @keyframes xmlg-toast-in {
-            from { opacity: 0; transform: translate(-50%, -4px); }
-            to { opacity: 1; transform: translate(-50%, 0); }
         }
         .xmlg-tooltip {
             /* tooltip 挂在 body 下，不在 .xmlg-panel 作用域内，
@@ -1330,36 +1396,6 @@ function ensureStyles() {
             font-size: 12px;
             font-weight: 600;
         }
-        .xmlg-hint {
-            position: fixed;
-            z-index: 99998;
-            pointer-events: none;
-            display: none;
-            max-width: 260px;
-            padding: 5px 8px;
-            border-radius: var(--xdh-radius-xs, 4px);
-            background: var(
-                --xdh-color-surface-3,
-                var(--xdh-clr-surface-strong, #1d1d20)
-            );
-            border: 1px solid var(
-                --xdh-clr-hairline,
-                rgba(255, 255, 255, 0.12)
-            );
-            color: var(--xdh-color-text-primary, var(--xdh-clr-ink, #ffffff));
-            box-shadow: var(
-                --xdh-shadow-popup,
-                0 8px 24px rgba(0, 0, 0, 0.15)
-            );
-            font-size: 11px;
-            line-height: 1.35;
-            white-space: normal;
-            overflow-wrap: break-word;
-        }
-        .xmlg-hint.is-visible {
-            display: block;
-        }
-
         /* ── 全屏预览 ──────────────────────────────────────────────── */
         .xmlg-preview {
             position: fixed;
@@ -1624,7 +1660,7 @@ function ensureStyles() {
             width: 48px;
             height: 48px;
             overflow: hidden;
-            border-radius: 6px;
+            border-radius: var(--xdh-radius-xs, 4px);
             background: var(--xmlg-thumb-bg);
             box-shadow: inset 0 0 0 1px var(--xmlg-fs-ring);
             font-size: 18px;
@@ -1662,7 +1698,7 @@ function ensureStyles() {
             max-width: 80vw;
             padding: 6px 12px;
             border: 1px solid var(--xmlg-warning);
-            border-radius: var(--xdh-radius-sm, 6px);
+            border-radius: var(--xdh-radius-sm, 8px);
             background: var(--xmlg-warning-surface);
             color: var(--xmlg-warning-text);
             box-shadow: var(--xmlg-fs-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
@@ -1686,6 +1722,7 @@ function ensureStyles() {
             font-size: 10px;
             opacity: 0.65;
         }
+${groupStyles([".xmlg-panel"])}
     `;
     document.head.appendChild(style);
 }
@@ -1914,7 +1951,7 @@ function element(tag, className, text) {
     return node;
 }
 
-function buildPanel() {
+function buildPanel(node) {
     ensureStyles();
     const panel = element("div", "xmlg-panel");
 
@@ -1966,7 +2003,7 @@ function buildPanel() {
     warningToggle.appendChild(warningInput);
     warningToggle.appendChild(warningTrack);
     warningToggle.appendChild(warningText);
-    bindHint(warningToggle, () => t(
+    engine.bindHint(warningToggle, () => t(
         "xdatahub.ui.node.xmedialistget.type_warning_tooltip",
         "Flag a connection when a file here doesn't match the port"
     ));
@@ -1984,27 +2021,32 @@ function buildPanel() {
     disableAllButton.type = "button";
     const invertButton = element("button", "xmlg-btn", "⇄");
     invertButton.type = "button";
+    // 范围胶囊（✔ ✖ ⇄ 这次动哪些行）：和 LoRA 列表共用同一份实现
+    const {
+        scopeControl,
+        scopeChip,
+        scopeChipText,
+        scopeButtons,
+    } = engine.buildScopeControl(node);
     const status = element("div", "xmlg-status", "—");
-    const pageLabel = element("label");
-    const pageText = element("span", null, "Per page");
-    const range = document.createElement("input");
-    range.type = "range";
-    range.className = "xmlg-range";
-    range.min = String(MIN_PAGE_SIZE);
-    range.max = String(MAX_PAGE_SIZE);
-    range.step = "5";
-    range.value = String(DEFAULT_PAGE_SIZE);
-    const rangeValue = element("span", "xmlg-range-value", String(range.value));
-    pageLabel.appendChild(pageText);
-    pageLabel.appendChild(range);
-    pageLabel.appendChild(rangeValue);
+    const groupButton = element("button", "xmlg-btn xmlg-group-btn", "＋");
+    groupButton.type = "button";
+    engine.bindHint(groupButton, () => t(
+        "xdatahub.ui.node.xmedialistget.new_group_tooltip",
+        "Create a group from the selected files that aren't in one yet."
+    ));
+    // 顺序：刷新 → 创建分组 → ✔ ✖ ⇄ → 范围胶囊（组标签长在里面）。
+    // 范围胶囊是唯一会「变宽」的东西（选出某一组时冒出组号），
+    // 所以它必须排在所有按钮**之后**：变宽只会挤到右边，
+    // 谁都不会在手指点到一半时自己挪位置。
     listToolbar.appendChild(refreshButton);
+    listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
+    listToolbar.appendChild(groupButton);
     listToolbar.appendChild(element("span", "xmlg-toolbar-divider"));
     listToolbar.appendChild(enableAllButton);
     listToolbar.appendChild(disableAllButton);
     listToolbar.appendChild(invertButton);
-    listToolbar.appendChild(status);
-    listToolbar.appendChild(pageLabel);
+    listToolbar.appendChild(scopeControl);
 
     const list = element("div", "xmlg-list");
     const overlay = element("div", "xmlg-overlay");
@@ -2029,21 +2071,20 @@ function buildPanel() {
     listViewport.appendChild(overlay);
     listViewport.appendChild(toast);
 
+    // 底栏只剩「共 N 个文件」和「清空本分类」：页码、上一页 /
+    // 下一页、每页条数都随分页一起退场了。
     const pager = element("div", "xmlg-pager");
+    // 两个数字并排：「共 N 个文件」和「已启用 X / 50」中间隔一条细线，
+    // 免得两个数字粘在一起分不清谁是谁
+    const pagerInfo = element("div", "xmlg-pager-info");
     const total = element("span", "xmlg-total", "");
-    const pagerCenter = element("div", "xmlg-pager-center");
-    const prevButton = element("button", "xmlg-btn", "‹");
-    prevButton.type = "button";
-    const pageStatus = element("span", "xmlg-page-status", "1 / 1");
-    const nextButton = element("button", "xmlg-btn", "›");
-    nextButton.type = "button";
+    const pagerDivider = element("span", "xmlg-pager-divider");
     const clearButton = element("button", "xmlg-btn xmlg-pager-clear", "🗑️");
     clearButton.type = "button";
-    pagerCenter.appendChild(prevButton);
-    pagerCenter.appendChild(pageStatus);
-    pagerCenter.appendChild(nextButton);
-    pager.appendChild(total);
-    pager.appendChild(pagerCenter);
+    pagerInfo.appendChild(total);
+    pagerInfo.appendChild(pagerDivider);
+    pagerInfo.appendChild(status);
+    pager.appendChild(pagerInfo);
     pager.appendChild(clearButton);
 
     const listShell = element("div", "xmlg-list-shell");
@@ -2071,13 +2112,15 @@ function buildPanel() {
         panel,
         tabs,
         tabButtons,
-        range,
-        rangeValue,
-        pageText,
         refreshButton,
+        scopeControl,
+        scopeButtons,
+        scopeChip,
+        scopeChipText,
         enableAllButton,
         disableAllButton,
         invertButton,
+        groupButton,
         undoButton,
         redoButton,
         warningToggle,
@@ -2094,9 +2137,6 @@ function buildPanel() {
         dropLabel,
         empty,
         toast,
-        prevButton,
-        pageStatus,
-        nextButton,
         total,
         tooltip,
         tooltipMedia,
@@ -2104,22 +2144,6 @@ function buildPanel() {
     };
 }
 
-function showToast(node, message, options = {}) {
-    const panel = node?.__xmlg_panel;
-    if (!panel || !message) {
-        return;
-    }
-    panel.toast.textContent = message;
-    panel.toast.classList.toggle("is-warning", !!options.warning);
-    panel.toast.classList.add("is-visible");
-    if (panel.state.toastTimer) {
-        clearTimeout(panel.state.toastTimer);
-    }
-    panel.state.toastTimer = window.setTimeout(() => {
-        panel.toast.classList.remove("is-visible");
-        panel.state.toastTimer = 0;
-    }, TOAST_DURATION_MS);
-}
 
 function buildPreviewFallback() {
     const fallback = element("div", "xmlg-tooltip-fallback");
@@ -2139,7 +2163,7 @@ function buildPreviewFallback() {
 function buildThumb(category, ref) {
     if (category === "audio") {
         const icon = element("span", null, "♪");
-        bindHint(icon, "audio");
+        engine.bindHint(icon, "audio");
         return icon;
     }
     const url = `/xz3r0/xdatahub/media/thumb?ref=${
@@ -2162,7 +2186,7 @@ function buildThumb(category, ref) {
             }#t=0.1`;
             video.addEventListener("error", () => {
                 const fallback = element("span", null, "🎬");
-                bindHint(fallback, () => t(
+                engine.bindHint(fallback, () => t(
                     "xdatahub.ui.node.xmedialistget.no_preview",
                     "No preview"
                 ));
@@ -2180,29 +2204,200 @@ function buildThumb(category, ref) {
     return image;
 }
 
+/** 色号 → CSS 颜色（每一项都自带兜底色，主题变量没加载也不会变透明）。 */
+
+
+/**
+ * 组当前用的是哪个色号：用户选过就用选的，没选过按组 id 哈希挑一个。
+ * 传组记录或组 id 都行（老调用点只给 id）。
+ */
+
+
+/** 组色带的 CSS 颜色。 */
+
+
+/* 列表重建时把已经不存在的行从选择里剔掉。 */
+
+
+/**
+ * 行的选择：普通点击选一个，Ctrl/Cmd 加选，Shift 连选一段。
+ *
+ * 选择只用于「成组」，拖动永远是单行 —— 不然拖一行动了一整批
+ * 会变成新的惊吓源。
+ */
+
+
+/** 把当前选中的文件合成一个组（默认名「组 N」）。 */
+/**
+ * 选中的文件里，还没有加入任何分组的那些。
+ *
+ * 「创建分组」只服务于未分组的文件：已经在组里的文件再去建组，
+ * 等于把它从原来的组里拽出来，用户不会预料到这一点 —— 想换组
+ * 应该用拖动（拖到别的组的地盘上），而不是重新建一个组。
+ */
+
+
+/** 给组头找到改名入口（建组后直接用）。 */
+
+
+/** 这一组现在在列表里露出来的成员行（折叠组返回空数组）。 */
+
+
+/**
+ * 折叠前的收拢：把这组的成员行压到 0 高度、竖线缩到只剩组头。
+ * 只改样式不碰数据——数据要等动画放完再改（见 commitGroupCollapsed），
+ * 否则行会「啪」一下直接消失，白动画了。
+ *
+ * 返回 false 表示没东西可收（已经是折叠状态），调用方直接提交数据。
+ */
+
+
+/**
+ * 展开时用：重画出来的组头先摆成「折叠时」的样子，但不要动画。
+ * 新元素没有「上一版宽度」，直接给它撑到折叠时的上限，长开那一步再
+ * 交还给 CSS 过渡——计数胶囊才会跟着行一起收走，而不是当场消失。
+ */
+
+
+/**
+ * 展开后的放行：行从 0 高度长回原样，竖线早在「长开」那一刻量准了，
+ * 所以这 160ms 里不会短一截。
+ */
+
+
+/** 收放动画的后半段：行从 0 长回原样，再把临时样式清干净。 */
+
+
+/** 真正把「折叠 / 展开」写进数据并重画（动画结束后才调）。 */
+
+
+/**
+ * 组设置框：改名、换色、取消组、删除组都放这儿。
+ * 组头只留一个入口 —— 一排小按钮在窄面板里挤成一团，还容易误点。
+ *
+ * 名称/颜色是「即改即生效」（带撤销快照），改完框不关；
+ * 取消组和删除组会关框，删除组还有一次二次确认。
+ */
+
+
+/** 取当前组记录（每次现查，弹框开着时列表可能已经重画过）。 */
+
+
+/** 换组颜色：写回组记录，色带立刻跟着变。 */
+
+
+/**
+ * 删掉某组最后一个成员时，组会跟着消失。删文件本身不可逆，所以这里
+ * 必须停下来问一句 —— 否则用户只看到「文件没了，组头也没了」。
+ * 拖出最后一个成员不做拦截（拖拽可逆，且有 toast 提示）。
+ */
+
+
+/** 折叠组胶囊上的数字：「已启用 / 总数」，和底部那条 Enabled 统计同一个读法。 */
+
+
+/**
+ * 第 index 个（0 开始）预设名。超出池子返回空串。
+ *
+ * 组合名像里程表，**后半（名词）先换**：相邻两个名字看着差别大
+ * （`Amber Falcon` → `Amber Otter`），不会一连几十个都长得一样。
+ */
+
+
+/**
+ * 第 seq 个组该叫什么：从序号对应的名字往后找第一个没人用的。
+ *
+ * 为什么要「避开重名」：用户可能把某组改名成了「Delta」，等号轮到
+ * Delta 时就往后顺延，别让两组装同名。
+ */
+
+
+/** 界面上指代某一组只用序列号：「组 3」。名字只在本组头里显示。 */
+/**
+ * 光秃秃的序列号：「12」。
+ *
+ * 工具栏里那枚标签只用号、不带「组 / Group」：那个词在英文界面里
+ * 会把标签撑长一倍（"Group 12"），而且它紧挨着「分组」那段，
+ * 意思已经够清楚了。需要成句说的地方（提示、toast）用下面的 label。
+ */
+
+
+/** 成句的称呼：「组 12 / Group 12」，给提示和 toast 用。 */
+
+
+/** 组头的标题：用户起的名字优先，没名字就用序列号。 */
+
+
 function buildRow(node, category, entry, index, enabledSeq = 0) {
     const state = node.__xmlg_panel.state;
-    const row = element("div", "xmlg-row");
+    const row = element("div", "xmlg-row xmlg-media-row");
     row.dataset.index = String(index);
     row.dataset.ref = entry.ref;
     row.dataset.category = category;
+    // 拖动重排时这个节点会被搬到新位置，行号也跟着变。闭包里不能
+    // 留着旧 index，否则开关 / 预览 / 移除会作用到别的一行上。
+    const liveIndex = () => {
+        const value = Number(row.dataset.index);
+        return Number.isFinite(value) ? value : 0;
+    };
     if (entry.enabled === false) {
         row.classList.add("is-disabled");
     }
     if (state.missing.has(entry.ref)) {
         row.classList.add("is-missing");
     }
+    if (entry.group) {
+        // 竖线不画在行上（那样组头和第一行之间会断），由整组一根的
+        // .xmlg-group-rail 负责，这里只留「我在哪一组」的标记。
+        row.classList.add("is-grouped");
+        row.dataset.group = entry.group;
+    }
+    if (state.selection?.has(XMLG_KEY_OF(entry))) {
+        row.classList.add("is-selected");
+    }
+    // 点行本身 = 选中；开关 / 缩略图 / 按钮有自己的点击行为，不抢。
+    row.addEventListener("click", (event) => {
+        if (
+            event.target?.closest?.(
+                "button, input, label, .xmlg-thumb, .xmlg-remove"
+            )
+        ) {
+            return;
+        }
+        const panelState = node.__xmlg_panel?.state;
+        // 刚拖完免不了会来一个 click：这时不能再改选中
+        if (
+            panelState?.suppressClickUntil
+            && performance.now() < panelState.suppressClickUntil
+        ) {
+            return;
+        }
+        engine.handleRowSelection(node, category, XMLG_KEY_OF(entry), liveIndex(), event);
+    });
+    // 列表内排序：按住行就能搬。
+    //
+    // 这里不用浏览器自带的拖放（draggable + dragstart）：它的 dragover
+    // 实测只有 10Hz 上下，行会一顿一顿地跳，做不出「其它行平滑滑开」
+    // 的效果。改用指针事件（每帧一次），Chromium 自己的标签条也是这么干的。
+    row.addEventListener("pointerdown", (event) => {
+        engine.armRowPointerDrag(node, category, row, event);
+    });
+    // 缩略图之类的元素默认可以被浏览器拖走，那会把我们的指针拖动静悄悄掐断
+    row.addEventListener("dragstart", (event) => {
+        event.preventDefault();
+    });
 
     const switchLabel = element("label", "xmlg-switch");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = entry.enabled !== false;
-    bindHint(switchLabel, () => (
+    engine.bindHint(switchLabel, () => (
         checkbox.checked
             ? t("xdatahub.ui.node.xmedialistget.enabled", "Enabled")
             : t("xdatahub.ui.node.xmedialistget.disabled", "Disabled")
     ));
     const track = element("span", "xmlg-switch-track");
+    row.__xmlgSwitch = checkbox;
     switchLabel.appendChild(checkbox);
     switchLabel.appendChild(track);
     checkbox.addEventListener("change", () => {
@@ -2212,7 +2407,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         }
         checkbox.checked = entry.enabled !== false;
         if (result.reason === "limit") {
-            showToast(
+            engine.showToast(
                 node,
                 t(
                     "xdatahub.ui.node.xmedialistget.limit_enable_blocked",
@@ -2239,6 +2434,10 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     );
     thumb.appendChild(previewHintIcon);
     thumb.addEventListener("mouseenter", (event) => {
+        // 拖动中不弹预览：它会跟到光标旁边，把要看的落点整个盖住
+        if (event.buttons) {
+            return;
+        }
         showTooltip(node, event, category, entry);
     });
     thumb.addEventListener("mousemove", (event) => {
@@ -2249,7 +2448,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     });
     const openPreviewFromRow = () => {
         hideTooltip(node);
-        openMediaPreview(node, category, index);
+        openMediaPreview(node, category, liveIndex());
     };
     thumb.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -2269,7 +2468,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         "xmlg-name",
         entry.title || entry.ref
     );
-    bindHint(name, () => {
+    engine.bindHint(name, () => {
         const panelState = node.__xmlg_panel?.state;
         const title = entry.title || entry.ref;
         if (panelState?.missing.has(entry.ref)) {
@@ -2285,7 +2484,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
 
     const remove = element("button", "xmlg-remove", "✕");
     remove.type = "button";
-    bindHint(remove, () => t(
+    engine.bindHint(remove, () => t(
         "xdatahub.ui.node.xmedialistget.remove",
         "Remove"
     ));
@@ -2295,18 +2494,22 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         if (!panelState) {
             return;
         }
-        panelState.items[category].splice(index, 1);
+        if (!engine.confirmRemovingGroupMember(node, category, entry)) {
+            return;
+        }
+        panelState.items[category].splice(liveIndex(), 1);
         writeItems(node, panelState.items);
         renderPanel(node);
     });
 
-    row.appendChild(
-        element(
-            "span",
-            "xmlg-seq",
-            enabledSeq > 0 ? String(enabledSeq) : "–"
-        )
+    const seq = element(
+        "span",
+        "xmlg-seq",
+        enabledSeq > 0 ? String(enabledSeq) : "–"
     );
+    // 缓存起来：重排时只需改文字（每行都要重算序号），不必再查一次
+    row.__xmlgSeq = seq;
+    row.appendChild(seq);
     row.appendChild(switchLabel);
     row.appendChild(thumb);
     row.appendChild(name);
@@ -2321,7 +2524,7 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         if (entryHasMaskArtifacts(entry)) {
             maskButton.classList.add("is-set");
         }
-        bindHint(maskButton, () => entryMaskHintText(entry));
+        engine.bindHint(maskButton, () => entryMaskHintText(entry));
         maskButton.addEventListener("click", (event) => {
             event.stopPropagation();
             openMaskEditorForEntry(node, entry);
@@ -2349,6 +2552,7 @@ function showTooltip(node, event, category, entry) {
         return;
     }
     const media = panel.tooltipMedia;
+    stopTooltipVideo(panel);
     media.innerHTML = "";
     media.classList.toggle("is-audio", category === "audio");
     if (category === "audio") {
@@ -2418,8 +2622,59 @@ function moveTooltip(node, event) {
     }
 }
 
+/**
+ * 停掉悬停预览里的视频。
+ *
+ * 为什么必须手动停：CSS 的 `display:none` **不会**暂停视频，隐藏起来
+ * 它还会继续解码、继续播放（静音但照样吃 CPU），换个文件再悬停才会
+ * 被新元素顶掉。所以收起预览时要显式 pause + 卸掉播放源。
+ */
+function stopTooltipVideo(panel) {
+    const video = panel?.tooltipMedia?.querySelector("video");
+    if (!(video instanceof HTMLVideoElement) || !video.hasAttribute("src")) {
+        return;
+    }
+    try {
+        video.pause();
+    } catch {
+        // 忽略：暂停失败也要继续清理播放源
+    }
+    video.removeAttribute("src");
+    video.load?.();
+}
+
+/**
+ * 节点被删掉时收尾：tooltip 是挂在 body 上的，不主动摘掉会一直留着。
+ */
+function disposeNodeUi(node) {
+    stopDropAutoScroll(node?.__xmlg_panel?.state);
+    engine.closeGroupDialog(node);
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    panel.state?.pointerDrag?.cleanup?.();
+    if (panel.state) {
+        panel.state.pointerDrag = null;
+    }
+    panel.railObserver?.disconnect();
+    panel.railObserver = null;
+    // 让位动画的收尾定时器也要停，否则面板拆了还会去碰已经不在的节点
+    window.clearTimeout(panel.slideTimer);
+    panel.slideTimer = 0;
+    hideTooltip(node);
+    panel.tooltip?.remove();
+    panel.tooltip = null;
+    delete node.__xmlg_panel;
+}
+
 function hideTooltip(node) {
-    node?.__xmlg_panel?.tooltip?.classList.remove("is-visible");
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    panel.tooltip?.classList.remove("is-visible");
+    stopTooltipVideo(panel);
 }
 
 // ── 全屏预览 ────────────────────────────────────────────────────────────
@@ -2513,6 +2768,7 @@ function appendEntriesWithLimit(targetList, entries, enabledSlots) {
             disabled += 1;
         }
         targetList.push({
+            uid: newRowUid(),
             ref: entry.ref,
             title: entry.title,
             enabled,
@@ -2627,7 +2883,7 @@ function createPreviewOverlay() {
         nextButton,
     ];
     for (const target of hintTargets) {
-        bindHint(target, () => target.dataset.tooltip || "");
+        engine.bindHint(target, () => target.dataset.tooltip || "");
     }
 
     return {
@@ -2862,7 +3118,7 @@ const PREVIEW_PLAYER_TOOLTIP = {
     },
     bind: (target) => {
         if (target instanceof HTMLElement) {
-            bindHint(target, () => target.dataset.tooltip || "");
+            engine.bindHint(target, () => target.dataset.tooltip || "");
         }
     },
 };
@@ -3028,7 +3284,7 @@ function renderPreviewStrip(preview) {
             item.classList.add("is-disabled");
         }
         item.dataset.tooltip = entry.title || entry.ref;
-        bindHint(item, () => item.dataset.tooltip || "");
+        engine.bindHint(item, () => item.dataset.tooltip || "");
         const thumb = element("div", "xmlg-preview-strip-thumb");
         if (preview.category === "audio") {
             thumb.textContent = "♪";
@@ -3497,7 +3753,7 @@ function installPreviewRuntime() {
 }
 
 // 轻量自绘提示（替换浏览器原生 title），平时挂在 body 上。
-let hintElement = null;
+
 
 /**
  * 提示节点该挂哪儿：预览是「真全屏」时，全屏元素之外的内容浏览器
@@ -3512,70 +3768,6 @@ function hintHost() {
     return document.body;
 }
 
-function ensureHintElement() {
-    const host = hintHost();
-    if (hintElement && hintElement.isConnected
-        && hintElement.parentElement === host) {
-        return hintElement;
-    }
-    if (!hintElement) {
-        hintElement = element("div", "xmlg-hint");
-    }
-    host.appendChild(hintElement);
-    return hintElement;
-}
-
-function positionHint(event) {
-    const hint = hintElement;
-    if (!hint) {
-        return;
-    }
-    const margin = 12;
-    const offsetX = 14;
-    const offsetY = 22;
-    hint.style.left = `${event.clientX + offsetX}px`;
-    hint.style.top = `${event.clientY + offsetY}px`;
-    const rect = hint.getBoundingClientRect();
-    if (rect.right > window.innerWidth - margin) {
-        hint.style.left = `${
-            window.innerWidth - rect.width - margin
-        }px`;
-    }
-    if (rect.bottom > window.innerHeight - margin) {
-        hint.style.top = `${event.clientY - rect.height - 8}px`;
-    }
-}
-
-function showHint(text, event) {
-    const value = String(text || "");
-    if (!value) {
-        hideHint();
-        return;
-    }
-    const hint = ensureHintElement();
-    hint.textContent = value;
-    hint.classList.add("is-visible");
-    positionHint(event);
-}
-
-function hideHint() {
-    hintElement?.classList.remove("is-visible");
-}
-
-function bindHint(target, getText) {
-    if (!(target instanceof HTMLElement)) {
-        return;
-    }
-    target.addEventListener("mouseenter", (event) => {
-        const text = typeof getText === "function" ? getText() : getText;
-        showHint(text, event);
-    });
-    target.addEventListener("mousemove", (event) => {
-        positionHint(event);
-    });
-    target.addEventListener("mouseleave", hideHint);
-    target.addEventListener("pointerdown", hideHint);
-}
 
 function renderPanel(node, options = {}) {
     const panel = node?.__xmlg_panel;
@@ -3630,22 +3822,14 @@ function renderPanel(node, options = {}) {
             state.category === category
         );
     }
-    panel.pageText.textContent = t(
-        "xdatahub.ui.node.xmedialistget.page_size_label",
-        "Per page"
-    );
-    if (document.activeElement !== panel.range) {
-        panel.range.value = String(state.pageSize);
-    }
-    panel.rangeValue.textContent = String(state.pageSize);
     panel.warningText.textContent = t(
         "xdatahub.ui.node.xmedialistget.type_warning",
         "Type warning"
     );
     panel.warningInput.checked = readTypeWarning(node);
-    updateUndoButton(node);
+    engine.updateUndoButton(node);
     panel.status.textContent = t(
-        "xdatahub.ui.node.xmedialistget.enabled_count",
+        "xdatahub.ui.group.enabled_count",
         "Enabled {count} / {limit}",
         {
             count: enabledCount(state.items, state.category),
@@ -3654,28 +3838,29 @@ function renderPanel(node, options = {}) {
     );
 
     const items = state.items[state.category] || [];
-    const hasItems = items.length > 0;
-    panel.enableAllButton.disabled = !hasItems;
-    panel.disableAllButton.disabled = !hasItems;
-    panel.invertButton.disabled = !hasItems;
-    const enabledOrder = new Array(items.length).fill(0);
-    let enabledSeq = 0;
-    for (let index = 0; index < items.length; index += 1) {
-        if (items[index].enabled !== false) {
-            enabledSeq += 1;
-            enabledOrder[index] = enabledSeq;
-        }
-    }
-    const totalPages = Math.max(
-        1,
-        Math.ceil(items.length / state.pageSize)
+    const groups = state.items.groups?.[state.category] || [];
+    engine.pruneSelection(state, items);
+    // 范围胶囊、组标签先对齐（顺手把失效的组范围清掉）。
+    // 组头的高亮要等列表重建完再补，见函数末尾。
+    engine.syncScopeUi(node, { heads: false });
+    // 三个按钮能不能按，看的是「当前范围里有没有文件」：
+    // 范围选「分组」但一个组都没有时，按了也没意义
+    const batchable = engine.scopeRows(state).length > 0;
+    // 只有选中了「还没分组」的文件时才能建组。这里不用真 disabled：
+    // 真 disabled 的按钮收不到悬停事件，用户看不到「为什么点不动」。
+    panel.enableAllButton.disabled = !batchable;
+    panel.disableAllButton.disabled = !batchable;
+    panel.invertButton.disabled = !batchable;
+    const groupable = engine.ungroupedSelection(state, state.category).length;
+    panel.groupButton.classList.toggle("is-disabled", groupable < 1);
+    panel.groupButton.setAttribute(
+        "aria-disabled",
+        groupable < 1 ? "true" : "false"
     );
-    if (state.page > totalPages) {
-        state.page = totalPages;
-    }
-    if (state.page < 1) {
-        state.page = 1;
-    }
+    panel.groupButton.textContent = t(
+        "xdatahub.ui.node.xmedialistget.new_group",
+        "Create group"
+    );
 
     for (const child of Array.from(panel.list.children)) {
         if (
@@ -3690,19 +3875,76 @@ function renderPanel(node, options = {}) {
         child.remove();
     }
 
-    const start = (state.page - 1) * state.pageSize;
-    const visible = items.slice(start, start + state.pageSize);
-    for (let offset = 0; offset < visible.length; offset += 1) {
-        panel.list.appendChild(
-            buildRow(
-                node,
-                state.category,
-                visible[offset],
-                start + offset,
-                enabledOrder[start + offset]
-            )
+    // 一条长列表全量渲染。组头也算一行；序号只数「会加载」的行，
+    // 所以用户看到的数字就是实际加载顺序，跟组与折叠无关。
+    const entries = buildRenderList(items, groups, {
+        keyOf: XMLG_KEY_OF,
+        willLoad: (entry) => entry.enabled !== false,
+    });
+    // 组色带：组头和竖线共用同一个颜色，按组记录算一次。
+    const stripeByGroup = new Map(
+        groups.map((group) => [group.id, engine.groupStripeColor(group)])
+    );
+    const headByGroup = new Map();
+    const lastRowByGroup = new Map();
+    // 行元素按「唯一键」索引，重排时直接拿回来搬位置（不重建，缩略图不重载）
+    const rowByRef = new Map();
+    for (const entry of entries) {
+        if (entry.type === "group") {
+            const head = engine.buildGroupHead(node, state.category, entry);
+            headByGroup.set(entry.groupId, head);
+            panel.list.appendChild(head);
+            continue;
+        }
+        const rowEl = buildRow(
+            node,
+            state.category,
+            entry.row,
+            entry.index,
+            entry.seq
         );
+        if (entry.row.group) {
+            // 序号（以及没序号的「–」）跟着组色走，一眼看出这行属于哪一组
+            rowEl.style.setProperty(
+                "--xmlg-group-stripe",
+                stripeByGroup.get(entry.row.group)
+                    || engine.groupStripeColor(entry.row.group)
+            );
+            lastRowByGroup.set(entry.row.group, rowEl);
+        }
+        rowByRef.set(XMLG_KEY_OF(entry.row), rowEl);
+        panel.list.appendChild(rowEl);
     }
+    panel.rowByRef = rowByRef;
+    panel.headByGroup = headByGroup;
+    // 每组一根竖线：从组头顶端一直画到最后一行底端。
+    // 做成一个绝对定位元素（而不是每行一个伪元素），组头和第一行之间
+    // 才不会断成两截；折叠的组就只贯穿组头那一条。
+    panel.railHosts = new Map();
+    for (const [groupId, head] of headByGroup) {
+        const rail = element("div", "xmlg-group-rail");
+        rail.dataset.group = groupId;
+        rail.style.setProperty(
+            "--xmlg-group-stripe",
+            stripeByGroup.get(groupId) || engine.groupStripeColor(groupId)
+        );
+        panel.list.appendChild(rail);
+        panel.railHosts.set(groupId, {
+            rail,
+            head,
+            last: lastRowByGroup.get(groupId) || head,
+        });
+    }
+    // 换了新的一批组头和行，缓存作废，必须重新量
+    panel.railMeasured = false;
+    engine.layoutGroupRails(panel);
+    engine.ensureRailObserver(panel);
+    // 挂载瞬间布局可能还没算完，下一帧再校一次（幂等，代价很小）
+    window.requestAnimationFrame(() => {
+        if (panel.list?.isConnected) {
+            engine.layoutGroupRails(panel);
+        }
+    });
 
     panel.empty.textContent = items.length
         ? ""
@@ -3712,18 +3954,11 @@ function renderPanel(node, options = {}) {
         );
     panel.empty.style.display = items.length ? "none" : "flex";
 
-    panel.pageStatus.textContent = t(
-        "xdatahub.ui.node.xmedialistget.page_status",
-        "Page {page} of {total}",
-        { page: state.page, total: totalPages }
-    );
     panel.total.textContent = t(
-        "xdatahub.ui.node.xmedialistget.total_items",
-        "{count} files",
+        "xdatahub.ui.group.total_items",
+        "{count} {noun}",
         { count: items.length }
     );
-    panel.prevButton.disabled = state.page <= 1;
-    panel.nextButton.disabled = state.page >= totalPages;
     const targetScrollTop = Number.isFinite(options.scrollTop)
         ? options.scrollTop
         : prevScrollTop;
@@ -3742,7 +3977,32 @@ function renderPanel(node, options = {}) {
         panel.list.scrollTop = targetScrollTop;
         panel.list.scrollLeft = targetScrollLeft;
     });
+    // 刚展开的那一组：行从 0 高度长开。放在量完竖线之后，这样线是先按
+    // 「长开」的尺寸摆好的，动画中途不会短一截；滚动位置也要传进去，
+    // 行缩到 0 的那一帧内容变短，浏览器会把靠底的列表往回顶。
+    if (panel.pendingExpand) {
+        engine.unfoldGroupRowsIn(panel, panel.pendingExpand, targetScrollTop);
+    }
+    // 列表重建完了，才能给「只作用于这一组」的组头描边
+    engine.syncScopeUi(node, { heads: true });
     refreshPreviewForNode(node);
+}
+
+/*
+ * 把某一行滚进视野。分页退场后不再有「第几页」，插入或拖入
+ * 新内容时改用这个，只滚列表本身（用 nearest 不会把整页弹走）。
+ */
+function scrollRowIntoView(node, index) {
+    const panel = node?.__xmlg_panel;
+    if (!panel || !Number.isFinite(Number(index))) {
+        return;
+    }
+    window.requestAnimationFrame(() => {
+        const row = panel.list.querySelector(
+            `.xmlg-row[data-index="${Number(index)}"]`
+        );
+        row?.scrollIntoView?.({ block: "nearest" });
+    });
 }
 
 function setCategory(node, category) {
@@ -3755,7 +4015,11 @@ function setCategory(node, category) {
         return;
     }
     state.category = category;
-    state.page = 1;
+    state.selection.clear();
+    state.selectionAnchor = null;
+    // 组是分类内的，「只作用于某一组」换个标签就失效
+    state.scopeGroup = null;
+    state.scopeGroupBack = null;
     const widget = findWidget(node, MEDIA_TYPE_WIDGET);
     if (widget) {
         widget.value = category;
@@ -3827,82 +4091,75 @@ async function refreshMissing(node) {
     renderPanel(node);
 }
 
-function setAllEnabled(node, enabled) {
-    const panel = node?.__xmlg_panel;
-    if (!panel) {
-        return;
-    }
-    const state = panel.state;
-    const items = state.items[state.category] || [];
-    if (!items.length) {
-        return;
-    }
-    let remaining = MAX_ENABLED;
-    let overflow = 0;
-    for (const entry of items) {
-        if (!enabled) {
-            entry.enabled = false;
-            continue;
-        }
-        if (remaining > 0) {
-            entry.enabled = true;
-            remaining -= 1;
-        } else {
-            entry.enabled = false;
-            overflow += 1;
-        }
-    }
-    writeItems(node, state.items);
-    renderPanel(node);
-    if (overflow > 0) {
-        showToast(
-            node,
-            t(
-                "xdatahub.ui.node.xmedialistget.limit_enabled_hit",
-                "Already {limit} enabled; the rest stay Disabled",
-                { limit: MAX_ENABLED }
-            )
-        );
-    }
-}
+/**
+ * 这一次点击算不算「点在这组的身上」。
+ *
+ * 计数胶囊是纯显示（pointer-events: none），点它的命中目标会变成组头；
+ * 设置按钮和折叠箭头周边也有几个像素的余量——点偏一点点就去改范围，
+ * 用户会觉得「数字和设置被动了」。这些区域一律不算。
+ */
 
-function invertEnabled(node) {
-    const panel = node?.__xmlg_panel;
-    if (!panel) {
-        return;
-    }
-    const state = panel.state;
-    const items = state.items[state.category] || [];
-    if (!items.length) {
-        return;
-    }
-    let remaining = MAX_ENABLED;
-    let overflow = 0;
-    for (const entry of items) {
-        entry.enabled = entry.enabled === false;
-        if (!entry.enabled) {
-            continue;
-        }
-        if (remaining > 0) {
-            remaining -= 1;
-        } else {
-            entry.enabled = false;
-            overflow += 1;
-        }
-    }
-    writeItems(node, state.items);
-    renderPanel(node);
-    if (overflow > 0) {
-        showToast(
-            node,
-            t(
-                "xdatahub.ui.node.xmedialistget.limit_enabled_hit",
-                "Already {limit} enabled; the rest stay Disabled",
-                { limit: MAX_ENABLED }
-            )
-        );
-    }
-}
+
+/**
+ * ✔ ✖ ⇄ 这三个按钮这次要动哪些文件。
+ *
+ * - 单击过某个组头 → 只动这一组的成员（最具体的指令优先）
+ * - 否则按工具栏那枚胶囊：files 只动未分组 / groups 只动已分组 / all 全都动
+ */
+
+
+/**
+ * 把「目标行」设成开 / 关，范围外的行一个都不碰。
+ *
+ * 名额是全局的（上限 MAX_ENABLED）：先数一遍目标行里已经开着的，
+ * 剩下的名额再从前往后分配，没分到的返回数量去提示。
+ * 注意这里「只加不减」——名额不够时不会把用户原本开着的行关掉。
+ */
+
+
+/**
+ * 反相：先只翻转目标行，再按全局名额从后往前收。
+ *
+ * 收的时候优先关掉「这次刚被打开、且在范围内」的那些，范围外原本开着的
+ * 尽量留到最后才动——用户没要求碰它们。
+ */
+
+
+/**
+ * 收窄到某一组：先把当前档位记下来，取消时好退回去。
+ * 连续点不同的组不会把记下的那一档覆盖成「分组」。
+ */
+
+
+/**
+ * 取消「只作用于某一组」，并把档位退回收窄之前那一档。
+ * 只收窄不留退路的话，点两下点了等于没点：组不作用于任何分组，
+ * 胶囊却还亮着「分组」，✔ ✖ ⇄ 就作用在一堆你没打算动的文件上。
+ */
+
+
+/** 切换那枚胶囊的档位（顺手取消「只作用于某一组」）。 */
+
+
+/**
+ * 单击组头 = 让 ✔ ✖ ⇄ 只作用于这一组。
+ *
+ * 再点一次取消；档位同时挪到「分组」，否则胶囊亮着「全部」、
+ * 实际却只动一组，看起来自相矛盾。
+ */
+
+
+/**
+ * 只刷新「✔ ✖ ⇄ 的作用范围」相关的零星部件，**不重建列表**。
+ *
+ * 重建列表会换掉所有元素，双击改名的第二下就落到新元素上了，
+ * 于是「双击组名」永远进不去。范围切换本来也不需要动任何一行，
+ * 所以这里只调胶囊、组标签、组头描边和三个按钮的可用状态。
+ */
+
+
+/** 把范围胶囊、组标签、组头高亮跟当前数据对齐。 */
+
 
 function bindPanelEvents(node) {
     const panel = node.__xmlg_panel;
@@ -3914,44 +4171,6 @@ function bindPanelEvents(node) {
             setCategory(node, category);
         });
     }
-    panel.range.addEventListener("input", () => {
-        const state = node.__xmlg_panel?.state;
-        if (!state) {
-            return;
-        }
-        const value = Math.min(
-            MAX_PAGE_SIZE,
-            Math.max(MIN_PAGE_SIZE, Number(panel.range.value) || DEFAULT_PAGE_SIZE)
-        );
-        state.pageSize = value;
-        state.page = 1;
-        writePageSize(node, value);
-        renderPanel(node);
-    });
-    panel.prevButton.addEventListener("click", () => {
-        const state = node.__xmlg_panel?.state;
-        if (!state || state.page <= 1) {
-            return;
-        }
-        state.page -= 1;
-        renderPanel(node, { scrollTop: 0 });
-    });
-    panel.nextButton.addEventListener("click", () => {
-        const state = node.__xmlg_panel?.state;
-        if (!state) {
-            return;
-        }
-        const items = state.items[state.category] || [];
-        const totalPages = Math.max(
-            1,
-            Math.ceil(items.length / state.pageSize)
-        );
-        if (state.page >= totalPages) {
-            return;
-        }
-        state.page += 1;
-        renderPanel(node, { scrollTop: 0 });
-    });
     panel.refreshButton.addEventListener("click", () => {
         refreshMissing(node).catch(() => {});
     });
@@ -3959,61 +4178,63 @@ function bindPanelEvents(node) {
         clearCurrentCategory(node);
     });
     panel.enableAllButton.addEventListener("click", () => {
-        setAllEnabled(node, true);
+        engine.setAllEnabled(node, true);
     });
     panel.disableAllButton.addEventListener("click", () => {
-        setAllEnabled(node, false);
+        engine.setAllEnabled(node, false);
     });
     panel.invertButton.addEventListener("click", () => {
-        invertEnabled(node);
+        engine.invertEnabled(node);
     });
-    bindHint(panel.enableAllButton, () => t(
+    panel.groupButton.addEventListener("click", () => {
+        engine.createGroupFromCurrentSelection(node);
+    });
+    // 点列表空白处取消选择（点行由行自己处理）
+    panel.list.addEventListener("click", (event) => {
+        const state = node.__xmlg_panel?.state;
+        if (!state || !state.selection.size) {
+            return;
+        }
+        if (event.target?.closest?.(".xmlg-row, .xmlg-group-head")) {
+            return;
+        }
+        state.selection.clear();
+        state.selectionAnchor = null;
+        renderPanel(node);
+    });
+    engine.bindHint(panel.enableAllButton, () => t(
         "xdatahub.ui.node.xmedialistget.enable_all",
         "All enabled"
     ));
-    bindHint(panel.disableAllButton, () => t(
+    engine.bindHint(panel.disableAllButton, () => t(
         "xdatahub.ui.node.xmedialistget.disable_all",
         "All disabled"
     ));
-    bindHint(panel.invertButton, () => t(
+    engine.bindHint(panel.invertButton, () => t(
         "xdatahub.ui.node.xmedialistget.invert_enabled",
         "Invert switches"
     ));
-    for (const target of [panel.pageText, panel.range, panel.rangeValue]) {
-        bindHint(target, () => t(
-            "xdatahub.ui.node.xmedialistget.page_size_tooltip",
-            "How many rows to draw per page."
-        ));
-    }
-    bindHint(panel.refreshButton, () => t(
+    engine.bindHint(panel.refreshButton, () => t(
         "xdatahub.ui.node.xmedialistget.refresh_tooltip",
         "Check again whether these files still exist on disk."
     ));
-    bindHint(panel.clearButton, () => t(
+    engine.bindHint(panel.clearButton, () => t(
         "xdatahub.ui.node.xmedialistget.clear_tooltip",
         "Remove every file in the current category."
     ));
-    bindHint(panel.undoButton, () => t(
+    engine.bindHint(panel.undoButton, () => t(
         "xdatahub.ui.node.xmedialistget.undo_tooltip",
         "Undo last step"
     ));
-    bindHint(panel.redoButton, () => t(
+    engine.bindHint(panel.redoButton, () => t(
         "xdatahub.ui.node.xmedialistget.redo_tooltip",
         "Redo last undo"
     ));
-    bindHint(panel.prevButton, () => t(
-        "xdatahub.ui.node.xmedialistget.page_prev",
-        "Previous"
-    ));
-    bindHint(panel.nextButton, () => t(
-        "xdatahub.ui.node.xmedialistget.page_next",
-        "Next"
-    ));
     panel.undoButton.addEventListener("click", () => {
-        undoLastChange(node);
+        engine.undoLastChange(node);
     });
     panel.redoButton.addEventListener("click", () => {
-        redoLastChange(node);
+        engine.redoLastChange(node);
     });
     panel.warningInput.addEventListener("change", () => {
         const widget = findWidget(node, TYPE_WARNING_WIDGET);
@@ -4129,13 +4350,13 @@ function explainRejectedDrop(node, dataTransfer) {
     const types = payloadMediaTypes(dataTransfer);
     const unsupported = types.filter((type) => !isSupportedCategory(type));
     if (unsupported.length) {
-        showToast(node, unsupportedDropMessage(unsupported), {
+        engine.showToast(node, unsupportedDropMessage(unsupported), {
             warning: true,
         });
         return;
     }
     if (types.length > 1) {
-        showToast(
+        engine.showToast(
             node,
             t(
                 "xdatahub.ui.node.xmedialistget.mixed_type_drop",
@@ -4145,7 +4366,7 @@ function explainRejectedDrop(node, dataTransfer) {
         );
         return;
     }
-    showToast(
+    engine.showToast(
         node,
         t(
             "xdatahub.ui.node.xmedialistget.drop_rejected",
@@ -4246,87 +4467,309 @@ function ensureDragState(node, dataTransfer) {
     return state.drag;
 }
 
-function resolveDropTarget(list, clientY) {
-    const rows = Array.from(list.querySelectorAll(".xmlg-row"));
-    for (const row of rows) {
-        const rect = row.getBoundingClientRect();
-        if (clientY < rect.top || clientY > rect.bottom) {
-            continue;
-        }
-        const index = Number(row.dataset.index);
-        if (clientY - rect.top <= INSERT_EDGE_PX) {
-            return { mode: "insert", index, row };
-        }
-        if (rect.bottom - clientY <= INSERT_EDGE_PX) {
-            return { mode: "insert", index: index + 1, row };
-        }
-        return { mode: "replace", index, row };
-    }
-    const last = rows[rows.length - 1];
-    const index = last ? Number(last.dataset.index) + 1 : 0;
-    return { mode: "insert", index, row: null };
-}
+/**
+ * 按组头和最后一行的实际位置重画每组那根竖线。
+ *
+ * 为什么不能只在 renderPanel 里算一次：节点刚创建 / 刚刷新网页时，
+ * DOM 小组件可能还没挂进画布，所有行的位置和高度都还是 0，
+ * 算出来的竖线只有 3px（等于看不见），必须等布局好了再算一次。
+ */
 
-function clearDragHighlights(panel) {
+
+/**
+ * 折叠 / 展开的那 160ms 里，每帧把所有组的竖线重量一次。
+ *
+ * 为什么非跟不可：竖线的 top / height 是缓存下来的绝对坐标，被折叠那组
+ * 一变高变矮，它下面所有组的位置就跟着上下走——只钉死自己的那一根，
+ * 别的组就会错位。（只让被折叠那组动也不行：它下面那些组照样要挪。）
+ */
+
+
+/** 这一组里最后一个还看得见的成员行（都看不见就返回兜底元素）。 */
+
+
+/** 列表尺寸变化（首次挂载、窗口缩放、节点缩放）就重排竖线。 */
+
+
+/** 某一组在数据里的最后一位之后（折叠组追加到这里）。 */
+
+
+/** 指针当前压在哪个 .xmlg-row 上（压在组头/空白处返回 null）。 */
+
+
+/**
+ * 落点属于哪一组。
+ *
+ * 指针停在哪一组的行上就算哪一组 —— 用户把文件拖到「组的地盘」里，
+ * 意思很明确就是加入这一组，不该只有拖到组头才生效。
+ * 只有指针落在空白处（没有任何行）时，才退回老规则「跟上方那一行」。
+ */
+
+
+/** 组名（提示里要说人话：「插入到「风格」」）。 */
+
+
+/**
+ * 「第几个缝」换算成「抽走自己之后插到第几位」。
+ * 往下拖要减 1：自己被抽走后，下面的行整体前移一格。
+ */
+
+
+function startDropAutoScroll(node, dir) {
+    const panel = node?.__xmlg_panel;
     if (!panel) {
         return;
     }
-    for (const row of panel.list.querySelectorAll(
-        ".xmlg-row.is-replace-target"
-    )) {
-        row.classList.remove("is-replace-target");
+    const state = panel.state;
+    if (state.autoScrollRaf && state.autoScrollDir === dir) {
+        return;
     }
-    panel.insertLine.style.display = "none";
-    panel.dropLabel.style.display = "none";
+    stopDropAutoScroll(state);
+    state.autoScrollDir = dir;
+    const tick = () => {
+        if (!state.autoScrollDir || !panel.list.isConnected) {
+            state.autoScrollRaf = 0;
+            return;
+        }
+        panel.list.scrollTop += state.autoScrollDir * DROP_AUTOSCROLL_STEP;
+        // 指针没动，但列表滚了：落点要跟着重算，否则滚半天不挪位
+        const pending = state.pointerDrag;
+        if (pending?.active) {
+            engine.applyPointerDrag(node, pending.clientY);
+            // 重算落点可能把方向翻了个面（换了新的循环），这里别重复排
+            if (!state.autoScrollDir) {
+                return;
+            }
+        }
+        state.autoScrollRaf = window.requestAnimationFrame(tick);
+    };
+    state.autoScrollRaf = window.requestAnimationFrame(tick);
 }
 
-function placeInsertLine(panel, index) {
-    const rows = Array.from(panel.list.querySelectorAll(".xmlg-row"));
-    let top = 6;
-    let row = rows.find(
-        (entry) => Number(entry.dataset.index) === index
-    );
-    if (row) {
-        top = row.offsetTop - 2;
-    } else if (rows.length) {
-        const last = rows[rows.length - 1];
-        top = last.offsetTop + last.offsetHeight + 1;
+function stopDropAutoScroll(state) {
+    if (!state) {
+        return;
     }
-    panel.insertLine.style.top = `${top}px`;
-    panel.insertLine.style.display = "block";
-    panel.dropLabel.style.top = `${Math.max(0, top - 24)}px`;
-    panel.dropLabel.style.display = "block";
+    if (state.autoScrollRaf) {
+        window.cancelAnimationFrame(state.autoScrollRaf);
+        state.autoScrollRaf = 0;
+    }
+    state.autoScrollDir = 0;
 }
 
-function updateDropIndicator(node, target) {
+/* 拖动时把「即将加入的那一组」圈出来，落点归属一眼可见。 */
+
+
+/** 拖动整组时把这一摞行一起变淡，让人看出搬的是整块。 */
+
+
+/**
+ * 拖整组时，列表里这一组当场折起来，只留组名那一行。
+ *
+ * Chromium 拖标签组也是这么做的（拖起来就把组收成一行）：
+ * 一来拖一整摞的时候，屏幕上还占着一整摞会让人分不清「跟着鼠标的是什么」，
+ * 二来折叠后它只占一行，落点算起来和折叠组完全一致。
+ *
+ * 只改显示，不动数据：拖完 / 取消就恢复展开。
+ */
+
+
+/** 开拖：记下起点、抓取偏移、以及「取消就还原」的快照。 */
+
+
+/** 收尾（已放下）：补上结构性变化，并把这次的组消失提示说一声。 */
+
+
+/** 整组收尾（已放下）：把模型写回去，组消失的提示说一声。 */
+
+
+/** 整段拖动只算一次撤销：第一次真的挪动时才记快照。 */
+
+
+/** 取消拖动：数据回滚到开拖前，撤销栈里那条也撤掉（这次没改成任何东西）。 */
+
+
+/** 整组拖动：落点一变就真的搬过去（不再画插入线）。 */
+
+
+/** 单行拖动：落点一变就真的挪过去，并记住它现在在第几位。 */
+
+
+/* ==========================================================================
+ * 列表内拖动：拖动过程中就真的改顺序（Chromium 标签条的做法）
+ *
+ * 三个要点：
+ * 1. 穿过某一行就把数据真的挑过去，其它行「滑开让位」——
+ *    用户看到的落点就是事实，不再需要插入线。
+ * 2. 行元素不重建，只搬位置；搬完用「先量旧位置、改完再量新位置、
+ *    反向位移做动画」的办法让它滑回去（业界叫 FLIP）。
+ * 3. 归属哪一组用 Chromium 那套：看缝上下两行 + 四分之一行高的中性带
+ *    + 「粘住原组」，不再只看指针压在哪一行上。
+ *
+ * 插入线只留给「从 XDataHub 拖新文件进来」，因为那个场景里还没
+ * 有真位置可展示。
+ * ========================================================================== */
+
+
+/* ---------- 指针拖动引擎（行 / 整组共用） ---------- */
+
+/**
+ * 按下时只记一笔，移动超过 DRAG_START_PX 才算拖动。
+ * 这样单击选中、点开关、点缩略图、点按钮都不受影响。
+ */
+
+
+/**
+ * 按指针位置算落点并当场落地（其它行滑开让位）。
+ *
+ * 防抖：跟上次真挪动时的指针位置差得够远才允许再挪，否则在两条行的
+ * 中线附近会来回抖（Chromium 的 16dip 阈值是同一个思路）。
+ */
+
+
+/** 跟着指针走的「卡片」：源行留在列表里当槽位，这个是纯装饰。 */
+
+
+/**
+ * 把卡片放到「屏幕上」的某个位置。
+ *
+ * 写进去的值要按坐标系换算（页面可能有 zoom、画布有缩放），并且兜一层：
+ * 非有限值一律不写——写成 NaN 浏览器会当成「没有 top」，
+ * 卡片就会掉到页面最下面去。
+ *
+ * left 传 null 表示「横向不动」（拖动只改纵向）。
+ */
+
+
+function applyPointerDragStop(node) {
     const panel = node?.__xmlg_panel;
-    if (!panel || !target) {
+    const pending = panel?.state?.pointerDrag;
+    if (!panel || !pending?.active) {
         return;
     }
-    clearDragHighlights(panel);
-    const count = dragCountFromDataTransfer(
-        panel.state.drag?.dataTransfer
-    );
-    if (target.mode === "replace" && count <= 1) {
-        target.row?.classList.add("is-replace-target");
+    // 松手时按最终位置再算一次，免得最后几像素被阈值吃掉
+    if (pending.kind === "group") {
+        engine.liveMoveGroup(node, engine.resolveGroupGap(node, pending.clientY));
         return;
     }
-    placeInsertLine(panel, target.index);
-    panel.dropLabel.textContent = count > 1
-        ? `+ ${
-            t(
-                "xdatahub.ui.node.xmedialistget.insert_many",
-                "Insert {count} files",
-                { count }
-            )
-        }`
-        : `+ ${
-            t(
-                "xdatahub.ui.node.xmedialistget.insert_here",
-                "Insert here"
-            )
-        }`;
+    const target = engine.resolveLiveRowTarget(node, pending.clientY);
+    engine.liveMoveRow(node, target.gap, target.groupId);
 }
+
+/** Esc / 指针被系统收走：这一趟作废，顺序回到按下之前。 */
+
+
+/**
+ * 指针指向哪一格缝隙。
+ *
+ * 关键在于**一趟扫完行和组胶囊**，用「谁的中线在指针下面」来定缝：
+ *
+ * - 行：缝落在它前面（等于它的下标）
+ * - 组胶囊：缝落在这一组的**第一名成员**前面（折叠组没渲染成员，
+ *   所以只能靠胶囊；上半边算「组前面」，下半边自然落到下一段）
+ * - 都没有：列表末尾
+ *
+ * 这样映射是**单调**的：指针从上往下扫，扫到胶囊中线之前一直是「组前
+ * 面」那一格，越过后才变成「组后面」。以前分成「压在胶囊上就强行进这
+ * 一组」和「按行算」两条路，指针停在胶囊上沿时两者来回抢，就抖起来了。
+ */
+
+
+/**
+ * 指针现在指向哪一格缝隙、归哪一组。
+ *
+ * 归属只看位置（Chromium 那套「中性带 + 粘性」），
+ * 组胶囊不再是一条特殊的「放上来就进组」通道：位置本身就是答案。
+ */
+
+
+/** 折叠起来的组头：成员行没渲染，整组在列表里只占这一格。 */
+
+
+/**
+ * 数据里的第 index 项，在屏幕上落在哪个元素上。
+ *
+ * 有行就用行；折叠组没有成员行，退回去用它的组头（整组就占那么一格）。
+ */
+
+
+/** 缝隙那条界线在屏幕上的位置（上下两格都有时取交界）。 */
+
+
+/**
+ * 这一格缝隙「归哪一组」——照搬 Chromium 标签条的判定。
+ *
+ * 1. 缝上下两行同一组 → 就是这一组
+ * 2. 不同组（含一边没组）→ 以两行交界为界：被拖那一行的中心还没越过
+ *    界（各留四分之一行高的缓冲）就算上一组，越过去才算下一组
+ * 3. 正好卡在缓冲带里 → 不属于任何组（最不容易误判）
+ * 4. 「粘性」：上一组正是开拖时所在的那一组，就把界线往下挪一个缓冲，
+ *    多留一点余地让人留在原组里（Chromium 注释里写明是为了防止在组的
+ *    边缘反复闪来闪去）。
+ */
+
+
+/** 只量「看得见的那几行」的位置，屏幕外的不参与动画。 */
+
+
+/** 把上一次没跑完的让位动画就地收掉（不改布局，只清 transform）。 */
+
+
+/**
+ * 让位动画：先量旧位置、改完再量新位置，然后用「反向位移 → 0」滑回去。
+ *
+ * 之所以量「屏幕位置」而不是 offsetTop：上一次动画可能还没跑完，
+ * 屏幕位置里已经包含了它当前的位移，从这里接着滑才不会跳一下。
+ */
+
+
+/** 列表里第一个「会随数据重排」的子元素（覆盖层、提示等都排在它前面）。 */
+
+
+/**
+ * 按当前数据「就地」摆好列表：复用现有的行 / 组头节点，只搬位置、
+ * 改序号、改归属，再给被挤动的行做滑动动画。
+ *
+ * 为什么不直接 renderPanel：一次全量重建 300 行的列表要 70ms 上下，
+ * 而拖动时每穿过一行就要来一次，手感立刻就垮了。就地搬节点只要几
+ * 毫秒，而且缩略图不会重新加载（不会闪）。
+ */
+
+
+/** 指针压在哪个组头上（展开、折叠都算；没压到返回 null）。 */
+
+
+/** 指针上方最近的可见元素（行或组胶囊）；列表顶端之上返回 null。 */
+
+
+/** 某一组第一行在数据里的位置（用来把整块插到这一组前面）。 */
+
+
+/** 整组拖动的落点：跟单行共用同一套「柜位」算法。 */
+
+
+/** 这一行是不是它所在组的最后一名成员。 */
+
+
+/**
+ * 一个可见元素在数据里的「结束位置」。
+ *
+ * 插入点正好落在这里，插入线就画在它的下沿：
+ * - 普通行：它自己后面那一格
+ * - 折叠的组头：整个组的后面（成员没渲染，组头就是这组的末尾）
+ * - 展开的组头：组里第一名成员那一格（成员行紧接着画在它下面）
+ */
+
+
+/**
+ * 插入线画在哪个高度。
+ *
+ * 基准是「落点上面那一段」的下沿，不是「下一行的上边」：
+ * 落点如果是「某一组的最后一名之后」，下一行属于**另一组**，
+ * 拿下一行当基准就会把线画到下一组组头的下面 —— 看起来像插进了
+ * 下一组，实际却是接在上一组末尾。认上一段的末尾，线和真实落点永远一致。
+ */
+
 
 function showTypeMismatch(node, dragType) {
     const panel = node?.__xmlg_panel;
@@ -4389,20 +4832,6 @@ function showUnsupportedDrag(node, dragType) {
     }
 }
 
-function clearDragUI(node) {
-    const panel = node?.__xmlg_panel;
-    if (!panel) {
-        return;
-    }
-    const state = panel.state;
-    if (state.drag?.pendingTimer) {
-        clearTimeout(state.drag.pendingTimer);
-    }
-    state.drag = null;
-    panel.list.classList.remove("drag-over");
-    clearDragHighlights(panel);
-    hideTypeMismatch(panel);
-}
 
 function applyDrop(node, payload, target) {
     const panel = node?.__xmlg_panel;
@@ -4420,13 +4849,17 @@ function applyDrop(node, payload, target) {
         if (index >= 0 && index < list.length) {
             const previous = list[index];
             list[index] = {
+                // 换的是内容，这一「格」还是原来那一格：uid 留着
+                uid: previous.uid || newRowUid(),
                 ref: entries[0].ref,
                 title: entries[0].title || previous.title,
                 enabled: previous.enabled,
+                // 在组内换文件时留在同一个组，不被默默踢出去
+                group: previous.group || null,
             };
             writeItems(node, items);
             renderPanel(node);
-            showToast(
+            engine.showToast(
                 node,
                 t(
                     "xdatahub.ui.node.xmedialistget.replaced",
@@ -4448,24 +4881,29 @@ function applyDrop(node, payload, target) {
         0,
         MAX_ENABLED - enabledCount(items, category)
     );
+    // 拖到某一组的地盘里落下的文件，直接成为这一组的成员
+    const groupId = target?.group || null;
     const added = entries.map((entry) => {
         const enabled = slots > 0;
         if (enabled) {
             slots -= 1;
         }
         return {
+            uid: newRowUid(),
             ref: entry.ref,
             title: entry.title,
             enabled,
+            group: groupId,
         };
     });
     list.splice(insertIndex, 0, ...added);
     writeItems(node, items);
-    state.page = Math.floor(insertIndex / state.pageSize) + 1;
     renderPanel(node);
+    // 分页退场后不再「翻到某一页」，改成把新插入的第一行滚进视野。
+    scrollRowIntoView(node, insertIndex);
     const disabledCount = added.filter((entry) => !entry.enabled).length;
     if (disabledCount > 0) {
-        showToast(
+        engine.showToast(
             node,
             t(
                 "xdatahub.ui.node.xmedialistget.limit_insert_disabled",
@@ -4474,13 +4912,20 @@ function applyDrop(node, payload, target) {
             )
         );
     } else {
-        showToast(
+        const groupName = engine.groupNameById(node, category, groupId);
+        engine.showToast(
             node,
-            t(
-                "xdatahub.ui.node.xmedialistget.inserted",
-                "Inserted {count} files",
-                { count: added.length }
-            )
+            groupName
+                ? t(
+                    "xdatahub.ui.node.xmedialistget.inserted_into_group",
+                    "Inserted {count} files into \"{name}\"",
+                    { count: added.length, name: groupName }
+                )
+                : t(
+                    "xdatahub.ui.node.xmedialistget.inserted",
+                    "Inserted {count} files",
+                    { count: added.length }
+                )
         );
     }
 }
@@ -4506,7 +4951,7 @@ function bindDragAndDrop(node) {
         drag.dataTransfer = event.dataTransfer;
         list.classList.add("drag-over");
         if (drag.type && !isSupportedCategory(drag.type)) {
-            clearDragHighlights(panel);
+            engine.clearDragHighlights(panel);
             showUnsupportedDrag(node, drag.type);
             return;
         }
@@ -4530,18 +4975,18 @@ function bindDragAndDrop(node) {
         drag.dataTransfer = event.dataTransfer;
         if (drag.type && !isSupportedCategory(drag.type)) {
             showUnsupportedDrag(node, drag.type);
-            clearDragHighlights(panel);
+            engine.clearDragHighlights(panel);
             return;
         }
         if (drag.type && drag.type !== state.category) {
             showTypeMismatch(node, drag.type);
-            clearDragHighlights(panel);
+            engine.clearDragHighlights(panel);
             return;
         }
         hideTypeMismatch(panel);
-        const target = resolveDropTarget(list, event.clientY);
+        const target = engine.resolveDropTarget(node, event.clientY);
         drag.target = target;
-        updateDropIndicator(node, target);
+        engine.updateDropIndicator(node, target);
     });
 
     list.addEventListener("dragleave", (event) => {
@@ -4549,7 +4994,8 @@ function bindDragAndDrop(node) {
         if (related instanceof Node && list.contains(related)) {
             return;
         }
-        clearDragHighlights(panel);
+        stopDropAutoScroll(state);
+        engine.clearDragHighlights(panel);
     });
 
     panel.panel.addEventListener("dragleave", (event) => {
@@ -4557,7 +5003,7 @@ function bindDragAndDrop(node) {
         if (related instanceof Node && panel.panel.contains(related)) {
             return;
         }
-        clearDragUI(node);
+        engine.clearDragUI(node);
     });
 
     // 列表以外的区域（分类标签、工具栏、分页）也要接住不支持的卡片：
@@ -4568,7 +5014,7 @@ function bindDragAndDrop(node) {
             return;
         }
         event.preventDefault();
-        clearDragHighlights(panel);
+        engine.clearDragHighlights(panel);
         showUnsupportedDrag(node, type);
     });
 
@@ -4581,7 +5027,7 @@ function bindDragAndDrop(node) {
         if (event.dataTransfer) {
             event.dataTransfer.dropEffect = "copy";
         }
-        clearDragHighlights(panel);
+        engine.clearDragHighlights(panel);
         showUnsupportedDrag(node, type);
     });
 
@@ -4592,8 +5038,8 @@ function bindDragAndDrop(node) {
         }
         event.preventDefault();
         event.stopPropagation();
-        clearDragUI(node);
-        showToast(node, unsupportedDropMessage([type]), { warning: true });
+        engine.clearDragUI(node);
+        engine.showToast(node, unsupportedDropMessage([type]), { warning: true });
     });
 
     list.addEventListener("drop", (event) => {
@@ -4606,9 +5052,8 @@ function bindDragAndDrop(node) {
             event.stopImmediatePropagation();
         }
         const payload = parseDropPayload(event.dataTransfer);
-        const target = state.drag?.target
-            || resolveDropTarget(list, event.clientY);
-        clearDragUI(node);
+        const target = engine.resolveDropTarget(node, event.clientY);
+        engine.clearDragUI(node);
         if (!payload) {
             // 可能是 LoRA / 文本这类根本不支持的内容，也可能一次拖了
             // 多种类型；以前这里直接 return，用户只看到“拖了但没反应”。
@@ -4616,7 +5061,7 @@ function bindDragAndDrop(node) {
             return;
         }
         if (payload.type !== state.category) {
-            showToast(
+            engine.showToast(
                 node,
                 t(
                     "xdatahub.ui.node.xmedialistget.type_mismatch_title",
@@ -4672,7 +5117,7 @@ function bindDragAndDrop(node) {
             if (drag?.pendingTimer) {
                 clearTimeout(drag.pendingTimer);
             }
-            clearDragUI(node);
+            engine.clearDragUI(node);
             if (!payload || payload.type !== category) {
                 return;
             }
@@ -5051,6 +5496,9 @@ function applyBadge(node) {
         panel.badge.style.borderColor = accentColor;
         panel.badgeSwatch.style.background = accentColor;
         panel.badgeChip.style.color = accentColor;
+        // 节点的序列号用哪个色，底栏那颗「清除」悬停就用哪个色
+        // （其他 X*Get 节点都是这么做的）
+        panel.panel.style.setProperty("--xmlg-node-accent", accentColor);
     }
     return true;
 }
@@ -5091,17 +5539,34 @@ function installNodeUi(node) {
         scheduleSeedApply(node);
         return;
     }
-    const ui = buildPanel();
+    const ui = buildPanel(node);
     node.__xmlg_panel = {
         ...ui,
         state: {
             items: readItems(node),
             category: readCategory(node),
-            page: 1,
-            pageSize: readPageSize(node),
             missing: new Set(),
+            // 多选只用于成组；拖动永远是单行
+            selection: new Set(),
+            selectionAnchor: null,
+            // ✔ ✖ ⇄ 的作用范围（ENABLE_SCOPES 之一）。跟着工作流走：
+            // 上次选的档位会记在 node.properties 里，默认「全部」。
+            enableScope: readEnableScope(node),
+            // 单击组头后收窄到这一组；null = 没选中任何组
+            scopeGroup: null,
+            // 收窄之前是哪一档：取消收窄时退回去（点两下 = 没点）
+            scopeGroupBack: null,
             toastTimer: 0,
             drag: null,
+            // 列表内拖拽排序（和「从 XDataHub 拖入」的 drag 分开）
+            dragRow: null,
+            // 拖整组（拖组头）
+            dragGroup: null,
+            // 按下但还没达到「算拖动」的阈值（指针事件那一套）
+            pointerDrag: null,
+            suppressClickUntil: 0,
+            autoScrollDir: 0,
+            autoScrollRaf: 0,
             undoStack: [],
             redoStack: [],
         },
@@ -5127,7 +5592,6 @@ function installNodeUi(node) {
                 const next = readCategory(node);
                 if (next !== state.category) {
                     state.category = next;
-                    state.page = 1;
                     syncOutputPortType(node);
                     renderPanel(node);
                 }
@@ -5339,10 +5803,9 @@ function handleSendToNode(node, data, ack) {
         MAX_ENABLED - enabledCount(items, category)
     );
     writeItems(node, items);
-    // 跳到新加文件所在的那一页，否则列表长了看不到刚加进来的内容。
-    const pageSize = Math.max(1, Number(state.pageSize) || DEFAULT_PAGE_SIZE);
-    state.page = Math.floor(firstNewIndex / pageSize) + 1;
     renderPanel(node);
+    // 列表长了看不到刚加进来的内容：把第一行新文件滚进视野。
+    scrollRowIntoView(node, firstNewIndex);
     syncOutputPortType(node);
     ack(true, "", {
         accepted: payload.entries.length,
@@ -5450,27 +5913,13 @@ function initXMediaListGetExtension() {
             };
             nodeType.prototype.onRemoved = function () {
                 closeMediaPreviewForNode(this);
+                disposeNodeUi(this);
                 originalRemoved?.apply(this, arguments);
             };
             nodeType.prototype.onConfigure = function () {
                 originalConfigure?.apply(this, arguments);
                 installNodeUi(this);
-                const panel = this.__xmlg_panel;
-                if (panel) {
-                    panel.state.items = readItems(this);
-                    panel.state.category = readCategory(this);
-                    panel.state.pageSize = readPageSize(this);
-                    panel.state.page = 1;
-                    panel.state.missing = new Set();
-                    panel.state.undoStack = [];
-                    panel.state.redoStack = [];
-                    renderPanel(this);
-                    syncOutputPortType(this);
-                    window.setTimeout(
-                        () => syncOutputSwitchesFromConnections(this),
-                        0
-                    );
-                }
+                reloadPanelFromStorage(this);
             };
             const originalDrawForeground =
                 nodeType.prototype.onDrawForeground;
@@ -5505,22 +5954,7 @@ function initXMediaListGetExtension() {
         },
         async loadedGraphNode(node) {
             installNodeUi(node);
-            const panel = node?.__xmlg_panel;
-            if (panel) {
-                panel.state.items = readItems(node);
-                panel.state.category = readCategory(node);
-                panel.state.pageSize = readPageSize(node);
-                panel.state.page = 1;
-                panel.state.missing = new Set();
-                panel.state.undoStack = [];
-                panel.state.redoStack = [];
-                renderPanel(node);
-                syncOutputPortType(node);
-                window.setTimeout(
-                    () => syncOutputSwitchesFromConnections(node),
-                    0
-                );
-            }
+            reloadPanelFromStorage(node);
         },
         async setup() {
             await applyUiLocale();

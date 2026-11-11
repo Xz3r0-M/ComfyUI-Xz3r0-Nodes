@@ -186,6 +186,8 @@ function parsePayload(dataTransfer) {
             media_type: String(item?.media_type || "").toLowerCase(),
             title: String(item?.title || ""),
             thumb_url: String(item?.thumb_url || ""),
+            cover_kind: String(item?.cover_kind || ""),
+            cover_url: String(item?.cover_url || ""),
             strength_model: toOptionalNumber(item?.strength_model),
             strength_clip: toOptionalNumber(item?.strength_clip),
         }))
@@ -304,6 +306,8 @@ function buildLoraSeedRows(payload) {
             lora_ref: loraRef,
             lora_name: loraRef,
             title: String(entry?.title || ""),
+            cover_kind: String(entry?.cover_kind || ""),
+            cover_url: String(entry?.cover_url || ""),
             strength_model: model,
             strength_clip: clip,
             separate_clip_strength: clip !== model,

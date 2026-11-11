@@ -175,6 +175,12 @@ class XLoraGet(io.ComfyNode):
         except Exception:
             LOGGER.warning("[XLoraGet] invalid lora_stack json")
             return []
+        # 新格式是 {"version": 2, "rows": [...], "groups": [...]}
+        # （分组数据跟行一起存），旧格式就是一个行数组。两种都要认，
+        # 否则加载老工作流整条 LoRA 栈会凭空消失。groups 由前端负责，
+        # 执行时用不到。
+        if isinstance(payload, dict):
+            payload = payload.get("rows")
         if not isinstance(payload, list):
             return []
         entries: list[dict[str, Any]] = []

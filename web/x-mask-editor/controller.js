@@ -2,7 +2,7 @@ import {
     canvasToBlob,
     clamp,
     loadImage,
-} from "./utils.js";
+} from "./utils.js?v=20261023-15";
 
 const MIN_ZOOM = 0.01;
 const MAX_ZOOM = 200;
