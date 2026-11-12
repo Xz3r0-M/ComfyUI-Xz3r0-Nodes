@@ -535,6 +535,7 @@
   "xdatahub.ui.node.xcontrolpanel.err.not_git": "当前 ComfyUI 不是用 git 安装的。",
   "xdatahub.ui.node.xcontrolpanel.err.unknown_tag": "该版本已不在列表中，请刷新后重选。",
   "xdatahub.ui.node.xcontrolpanel.err.already_current": "当前已经在该版本。",
+  "xdatahub.ui.node.xcontrolpanel.err.dialog_unavailable": "当前 ComfyUI 界面无法弹出窗口。请刷新页面；如果还不行，就升级 ComfyUI。",
   "xdatahub.ui.node.xcontrolpanel.status.refreshed": "版本列表已刷新。",
   "xdatahub.ui.node.xcontrolpanel.status.from_cache": "网络受限，显示上次拉取的版本列表。",
   "xdatahub.ui.node.xcontrolpanel.btn.token": "GitHub 令牌",

@@ -535,6 +535,7 @@
   "xdatahub.ui.node.xcontrolpanel.err.not_git": "This ComfyUI was not installed with git.",
   "xdatahub.ui.node.xcontrolpanel.err.unknown_tag": "This version is no longer in the list. Refresh and pick again.",
   "xdatahub.ui.node.xcontrolpanel.err.already_current": "ComfyUI is already on this version.",
+  "xdatahub.ui.node.xcontrolpanel.err.dialog_unavailable": "This ComfyUI interface cannot open a pop-up window. Refresh the page; if it still fails, update ComfyUI.",
   "xdatahub.ui.node.xcontrolpanel.status.refreshed": "Version list refreshed.",
   "xdatahub.ui.node.xcontrolpanel.status.from_cache": "Network limited. Showing the last fetched version list.",
   "xdatahub.ui.node.xcontrolpanel.btn.token": "GitHub token",

@@ -1,6 +1,6 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { ComfyDialog } from "../../scripts/ui/dialog.js";
+import { getComfyExport } from "./core/comfy-internals.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XControlPanel";
 var NODE_CLASS = "XControlPanel";
@@ -912,9 +912,36 @@ var restartElapsedTimer = null;
 var restartElapsedEl = null;
 var restartStartedAt = 0;
 
+/**
+ * 取官方的模态对话框类（`ComfyDialog`）。
+ *
+ * 它属于前端内部实现：老写法 `import "../../scripts/ui/dialog.js"` 已被
+ * 官方标记为弃用，新版前端会在控制台打弃用警告（issue #55）。改成读
+ * `window.comfyAPI.dialog.ComfyDialog` 即可，详见 core/comfy-internals.js。
+ *
+ * @returns {Function|null} 取不到时返回 null，调用方回退到 toast。
+ */
+function getComfyDialogClass() {
+    return getComfyExport("dialog", "ComfyDialog");
+}
+
+/**
+ * 前端不提供对话框类时的统一提示：不让点击静默失败。
+ */
+function notifyDialogUnavailable() {
+    toast(
+        tk("err.dialog_unavailable",
+            "This ComfyUI interface cannot open a pop-up window. "
+            + "Refresh the page; if it still fails, update ComfyUI."),
+        "error"
+    );
+}
+
 function ensureRestartModal() {
     if (restartModal) return restartModal;
-    restartModal = new ComfyDialog("div", []);
+    var DialogClass = getComfyDialogClass();
+    if (!DialogClass) return null;
+    restartModal = new DialogClass("div", []);
     return restartModal;
 }
 
@@ -977,9 +1004,10 @@ function makeCloseButton() {
  * @returns {boolean} 是否成功弹出；false 时调用方应回退到 toast。
  */
 function showRestartModal(stage) {
-    if (typeof ComfyDialog !== "function") return false;
+    if (!getComfyDialogClass()) return false;
     try {
         var dialog = ensureRestartModal();
+        if (!dialog) return false;
         var body = document.createElement("div");
         body.className = "xcontrolpanel-dialog-body";
 
@@ -1404,7 +1432,10 @@ async function syncUpdateStatus(state) {
 var updateManagerState = null;
 
 function openVersionManagerWindow(nodeState) {
-    ensureUpdateModal();
+    if (!ensureUpdateModal()) {
+        notifyDialogUnavailable();
+        return;
+    }
     updateModalStage = "manager";
 
     var body = document.createElement("div");
@@ -1817,7 +1848,10 @@ async function saveManagerToken(winState, statusEl) {
 
 // ---------------------------------------------------------------- 令牌配置
 async function showTokenDialog(state) {
-    ensureUpdateModal();
+    if (!ensureUpdateModal()) {
+        notifyDialogUnavailable();
+        return;
+    }
     updateModalStage = "token";
 
     var body = document.createElement("div");
@@ -1930,8 +1964,11 @@ async function saveTokenFromDialog(modeEl, inputEl, body, statusEl) {
 
 // ---------------------------------------------------------------- 更新弹窗与轮询
 function ensureUpdateModal() {
-    if (updateModal) return;
-    updateModal = new ComfyDialog("div", []);
+    if (updateModal) return updateModal;
+    var DialogClass = getComfyDialogClass();
+    if (!DialogClass) return null;
+    updateModal = new DialogClass("div", []);
+    return updateModal;
 }
 
 function setDialogButtons(dialog, buttons) {
@@ -1965,7 +2002,11 @@ function closeUpdateModal() {
 
 function showUpdateConfirm(state) {
     return new Promise(function (resolve) {
-        ensureUpdateModal();
+        if (!ensureUpdateModal()) {
+            notifyDialogUnavailable();
+            resolve(false);
+            return;
+        }
         updateModalStage = "confirm";
         var body = document.createElement("div");
         body.className = "xcontrolpanel-dialog-body";
@@ -2001,7 +2042,10 @@ function showUpdateConfirm(state) {
 }
 
 function openUpdateProgress() {
-    ensureUpdateModal();
+    if (!ensureUpdateModal()) {
+        notifyDialogUnavailable();
+        return;
+    }
     updateModalStage = "progress";
     var body = document.createElement("div");
     body.className = "xcontrolpanel-dialog-body";
