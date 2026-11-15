@@ -2272,23 +2272,82 @@ function hideHint() {
     hintElement?.classList.remove("is-visible");
 }
 
+/*
+ * 悬停提示（.xmlg-hint）的委托。
+ *
+ * 以前是每个小部件各挂 4 个监听器（进入 / 移动 / 离开 / 按下）。一个
+ * 一千行的列表光提示就挂了几万个监听器——建列表时慢、内存也吃。
+ * 现在元素上只记一条「文案怎么算」，整页共一套监听器。
+ */
+let hintDelegationInstalled = false;
+let hintDelegationTarget = null;
+
+function findHintTarget(from) {
+    let el = from instanceof Element ? from : null;
+    while (el) {
+        if (typeof el.__xmlgHintFn === "function") {
+            return el;
+        }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+function installHintDelegation() {
+    if (hintDelegationInstalled || typeof document === "undefined") {
+        return;
+    }
+    hintDelegationInstalled = true;
+    // 用捕获阶段：行 / 按钮里有人 stopPropagation 也拦不住提示
+    document.addEventListener("mouseover", (event) => {
+        // 拖动中不要弹提示：它会一直挂在光标旁边，把要看的落点挡住
+        if (event.buttons) {
+            hintDelegationTarget = null;
+            hideHint();
+            return;
+        }
+        const target = findHintTarget(event.target);
+        if (!target || target === hintDelegationTarget) {
+            return;
+        }
+        hintDelegationTarget = target;
+        showHint(target.__xmlgHintFn(), event);
+    }, true);
+    document.addEventListener("mousemove", (event) => {
+        if (!hintDelegationTarget) {
+            return;
+        }
+        if (!hintElement?.classList.contains("is-visible")) {
+            return;
+        }
+        positionHint(event);
+    }, true);
+    document.addEventListener("mouseout", (event) => {
+        const target = findHintTarget(event.target);
+        if (!target || target !== hintDelegationTarget) {
+            return;
+        }
+        // 在同一块里从子元素挪到子元素，不算离开
+        if (event.relatedTarget && target.contains(event.relatedTarget)) {
+            return;
+        }
+        hintDelegationTarget = null;
+        hideHint();
+    }, true);
+    document.addEventListener("pointerdown", () => {
+        hintDelegationTarget = null;
+        hideHint();
+    }, true);
+}
+
 function bindHint(target, getText) {
     if (!(target instanceof HTMLElement)) {
         return;
     }
-    target.addEventListener("mouseenter", (event) => {
-        // 拖动中不要弹提示：它会一直挂在光标旁边，把要看的落点挡住
-        if (event.buttons) {
-            return;
-        }
-        const text = typeof getText === "function" ? getText() : getText;
-        showHint(text, event);
-    });
-    target.addEventListener("mousemove", (event) => {
-        positionHint(event);
-    });
-    target.addEventListener("mouseleave", hideHint);
-    target.addEventListener("pointerdown", hideHint);
+    target.__xmlgHintFn = typeof getText === "function"
+        ? getText
+        : () => getText;
+    installHintDelegation();
 }
 
 function isPassiveHeadZone(head, event) {

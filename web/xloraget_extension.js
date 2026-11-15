@@ -741,6 +741,94 @@ function missingNoteText(missing, noteText) {
     return note ? `${label} · ${note}` : label;
 }
 
+/*
+ * 悬停提示的委托：元素上只记「要显示什么」，监听器整页一套。
+ *
+ * 以前每个带提示的元素各挂 6 个（进入 / 移动 / 离开 / 按下 / 点击 / 失焦），
+ * 一行里又有很多带提示的小部件，一千行就是几万个监听器。
+ */
+const tooltipDelegated = new WeakSet();
+let tooltipHoverTarget = null;
+
+function findTooltipTarget(from) {
+    let el = from instanceof Element ? from : null;
+    while (el) {
+        if (el.__tooltipData) {
+            return el;
+        }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+function installTooltipDelegation(tooltip) {
+    if (!(tooltip instanceof HTMLElement) || tooltipDelegated.has(tooltip)) {
+        return;
+    }
+    if (typeof document === "undefined") {
+        return;
+    }
+    tooltipDelegated.add(tooltip);
+    const belongs = (target) => {
+        const data = target?.__tooltipData;
+        return !!data && data.tooltip === tooltip;
+    };
+    // 捕获阶段：行 / 按钮里的 stopPropagation 不会把提示吞掉
+    document.addEventListener("mouseover", (event) => {
+        if (event.buttons) {
+            tooltipHoverTarget = null;
+            hideTooltip(tooltip);
+            return;
+        }
+        const target = findTooltipTarget(event.target);
+        if (!target || target === tooltipHoverTarget || !belongs(target)) {
+            return;
+        }
+        tooltipHoverTarget = target;
+        const data = target.__tooltipData;
+        showTooltip(
+            tooltip,
+            event,
+            typeof data.text === "function" ? data.text() : data.text,
+            typeof data.thumbUrl === "function"
+                ? data.thumbUrl()
+                : data.thumbUrl,
+            typeof data.noteText === "function"
+                ? data.noteText()
+                : data.noteText,
+            target,
+            data.coverKind,
+            data.coverUrl
+        );
+    }, true);
+    document.addEventListener("mousemove", (event) => {
+        if (!belongs(tooltipHoverTarget)) {
+            return;
+        }
+        moveTooltip(tooltip, event);
+    }, true);
+    document.addEventListener("mouseout", (event) => {
+        const target = findTooltipTarget(event.target);
+        if (!target || target !== tooltipHoverTarget) {
+            return;
+        }
+        if (event.relatedTarget && target.contains(event.relatedTarget)) {
+            return;
+        }
+        tooltipHoverTarget = null;
+        hideTooltip(tooltip);
+    }, true);
+    for (const type of ["pointerdown", "click"]) {
+        document.addEventListener(type, (event) => {
+            if (!tooltipHoverTarget) {
+                return;
+            }
+            tooltipHoverTarget = null;
+            hideTooltip(tooltip);
+        }, true);
+    }
+}
+
 function bindTooltip(
     target,
     tooltip,
@@ -753,33 +841,18 @@ function bindTooltip(
     if (!(target instanceof HTMLElement)) {
         return;
     }
-    target.addEventListener("mouseenter", (event) => {
-        showTooltip(
-            tooltip,
-            event,
-            text,
-            thumbUrl,
-            noteText,
-            target,
-            coverKind,
-            coverUrl
-        );
-    });
-    target.addEventListener("mousemove", (event) => {
-        moveTooltip(tooltip, event);
-    });
-    target.addEventListener("mouseleave", () => {
-        hideTooltip(tooltip);
-    });
-    target.addEventListener("pointerdown", () => {
-        hideTooltip(tooltip);
-    });
-    target.addEventListener("click", () => {
-        hideTooltip(tooltip);
-    });
-    target.addEventListener("blur", () => {
-        hideTooltip(tooltip);
-    });
+    if (!(tooltip instanceof HTMLElement)) {
+        return;
+    }
+    target.__tooltipData = {
+        tooltip,
+        text,
+        thumbUrl,
+        noteText,
+        coverKind,
+        coverUrl,
+    };
+    installTooltipDelegation(tooltip);
 }
 
 function makeRow(partial = {}) {
@@ -805,7 +878,8 @@ function makeRow(partial = {}) {
         trigger_words: normalizeTriggerWords(partial.trigger_words),
         lora_note: String(partial.lora_note || partial.note || ""),
         trigger_words_loading: false,
-        trigger_words_synced: false,
+        // 只认存盘里明确写着「问过了」的行；没写的一律重问
+        trigger_words_synced: partial.trigger_words_synced === true,
         trigger_words_error: "",
         strength_sync_pending: partial.strength_sync_pending === true,
         thumb_url: String(partial.thumb_url || ""),
@@ -1992,6 +2066,9 @@ function parseStoredRows(raw) {
         return [];
     }
     const list = Array.isArray(payload) ? payload : payload?.rows;
+    // 「问过没有」由每行自己带着（见 serializeStoredRows）。这里不再一刀切
+    // 当成都问过：刚拖进来、还没来得及问的行会被一刀切埋掉，触发词和封面
+    // 就永久空白，只能手动刷新。
     return normalizeRows(list);
 }
 
@@ -2292,7 +2369,8 @@ function consumePendingRows(node) {
     }
     writeStoredRows(node, nextRows);
     renderNodeRows(node);
-    syncAllRowTriggerWords(node, { force: true });
+    // 拖进来几条就只问这几条：已同步过的行安静跳过（以前会全量重拉）
+    syncAllRowTriggerWords(node);
     refreshNodeBadge(node);
     return true;
 }
@@ -2324,6 +2402,10 @@ function serializeStoredRows(rows, globalSeparateClip) {
         cover_url: String(item.cover_url || ""),
         pin: item.pin || "none",
         group: item.group || null,
+        // 触发词到底问过没有。不写这个标记的话，要么每次打开工作流都
+        // 全量重拉，要么（更糟）把「还没问到」的行当成问过了——缩略图和
+        // 触发词就永远停在空白上，只能手动点刷新。
+        trigger_words_synced: item.trigger_words_synced === true,
     }));
 }
 
@@ -2405,6 +2487,155 @@ function applyRowCover(row, kind, thumbUrl, coverUrl) {
     row.thumb_url = String(thumbUrl || "");
 }
 
+/*
+ * 触发词是「一行一件」的活，不能牵动整张表。
+ *
+ * 这里以前图省事，行状态一变就整表重画：N 行一起同步 = N 次「清空 +
+ * 重建全部行」，总成本是行数的平方（200 行要重画 201 遍）。行多了以后
+ * 打开工作流会直接冻住。现在只补这一行的触发词格子 + 每帧最多写一次盘。
+ */
+
+/** 触发词接口同时最多问几行（一次性几百个请求会把后端打满）。 */
+const TRIGGER_SYNC_CONCURRENCY = 6;
+/** 正在等的请求数 / 排队中的请求（全局，按节点无关，接口就一个）。 */
+const triggerSyncGate = { active: 0, waiting: [] };
+
+/** 拿一个「问接口」的名额，拿到就执行；名额满了就排队。 */
+function withTriggerSyncSlot(task) {
+    if (triggerSyncGate.active < TRIGGER_SYNC_CONCURRENCY) {
+        triggerSyncGate.active += 1;
+        return Promise.resolve()
+            .then(task)
+            .finally(() => releaseTriggerSyncSlot());
+    }
+    return new Promise((resolve, reject) => {
+        triggerSyncGate.waiting.push({ task, resolve, reject });
+    });
+}
+
+function releaseTriggerSyncSlot() {
+    triggerSyncGate.active = Math.max(0, triggerSyncGate.active - 1);
+    const next = triggerSyncGate.waiting.shift();
+    if (!next) {
+        return;
+    }
+    triggerSyncGate.active += 1;
+    void Promise.resolve()
+        .then(next.task)
+        .then(next.resolve, next.reject)
+        .finally(() => releaseTriggerSyncSlot());
+}
+
+/** 每帧最多重画一次列表：一批改动合成一次，不再一人一遍。 */
+function scheduleRenderNodeRows(node, after = null) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    if (typeof after === "function") {
+        // 重画完要接着干的事（比如把焦点还给搜索框）攒在这里一起做
+        if (!Array.isArray(panel.renderAfter)) {
+            panel.renderAfter = [];
+        }
+        panel.renderAfter.push(after);
+    }
+    if (panel.renderScheduled) {
+        return;
+    }
+    panel.renderScheduled = true;
+    const run = () => {
+        panel.renderScheduled = false;
+        if (node.__xlora_panel !== panel) {
+            panel.renderAfter = [];
+            return;
+        }
+        renderNodeRows(node);
+        const after2 = panel.renderAfter || [];
+        panel.renderAfter = [];
+        for (const task of after2) {
+            task();
+        }
+    };
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    } else {
+        setTimeout(run, 16);
+    }
+}
+
+/** 每帧最多写一次盘：逐行同步时不用回回都序列化整张表。 */
+function scheduleWriteStoredRows(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    if (panel.writeScheduled) {
+        return;
+    }
+    panel.writeScheduled = true;
+    const run = () => {
+        panel.writeScheduled = false;
+        const live = node.__xlora_panel;
+        if (!live) {
+            return;
+        }
+        writeStoredRows(node, live.state?.rows || []);
+    };
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    } else {
+        setTimeout(run, 16);
+    }
+}
+
+/** 按行身份找回屏幕上那一行的元素（行可能被折叠藏起来，找不到就算了）。 */
+function rowElementFor(node, item) {
+    const panel = node?.__xlora_panel;
+    if (!panel || !item) {
+        return null;
+    }
+    return panel.rowByRef?.get(loraKeyOf(item)) || null;
+}
+
+/**
+ * 把一行的「开关 / 强度 / 序号」按数据对齐（不重建这一行）。
+ *
+ * 开关和强度改完只需要动这一行：整表重画会把别的行的输入框、滚动位置、
+ * 缩略图全部重来一遍，行一多就是几百毫秒的顿感。
+ */
+function applyRowState(node, item, rowEl = null) {
+    const row = rowEl || rowElementFor(node, item);
+    if (!row || !item) {
+        return;
+    }
+    const parts = row.__parts || {};
+    const active = item.active !== false;
+    row.classList.toggle("inactive", !active);
+    if (parts.activeInput) {
+        parts.activeInput.checked = active;
+    }
+    if (parts.modelInput) {
+        parts.modelInput.disabled = !active;
+        parts.modelInput.value = String(item.strength_model);
+    }
+    if (parts.clipInput) {
+        parts.clipInput.disabled = !active;
+        parts.clipInput.value = String(item.strength_clip);
+    }
+}
+
+/** 只重画某一行的触发词格子；这一行不在屏幕上（折叠着）就先不管。 */
+function refreshRowTriggerCell(node, item) {
+    const panel = node?.__xlora_panel;
+    const rowEl = rowElementFor(node, item);
+    const cell = rowEl?.__triggerMain;
+    if (!panel || !cell) {
+        return false;
+    }
+    fillTriggerCell(node, panel.state, item, cell);
+    return true;
+}
+
 function syncRowTriggerWords(node, row, options = {}) {
     if (!node || !row || !row.lora_ref) {
         return;
@@ -2426,20 +2657,42 @@ function syncRowTriggerWords(node, row, options = {}) {
     }
     row.trigger_words_loading = true;
     row.trigger_words_error = "";
-    renderNodeRows(node);
-    void fetchLoraTriggerWords(row.lora_ref)
+    // 只把这一行画成「加载中」，不再拉着整张表一起重画
+    refreshRowTriggerCell(node, row);
+    /**
+     * 回包要写回**现在列表里那一行**。
+     *
+     * 请求在路上时列表可能被重读过（打开工作流、换封面广播、撤销…），
+     * 内存里那一行已经不是这里的闭包对象了。以前直接写闭包，结果整个
+     * 丢掉：触发词和封面一直空白，只能手动点刷新。
+     */
+    const liveRow = () => {
+        const rows = node.__xlora_panel?.state?.rows;
+        if (!Array.isArray(rows)) {
+            return row;
+        }
+        return rows.find((item) => item.lora_ref === row.lora_ref) || row;
+    };
+    void withTriggerSyncSlot(() => fetchLoraTriggerWords(row.lora_ref))
         .then((payload) => {
+            const row = liveRow();
             const words = normalizeTriggerWords(payload?.trigger_words || []);
             row.trigger_words = mergeTriggerWords(row.trigger_words, words);
             row.lora_note = String(payload?.lora_note || "").trim();
             // 封面以服务端为准：目录里换了封面、或从别处拖进来的行，
             // 都能在这里补齐（视频封面需要 kind 才能画第一帧）。
+            const beforeCover = `${row.cover_kind}|${row.cover_url}`
+                + `|${row.thumb_url}`;
             applyRowCover(
                 row,
                 payload?.cover?.kind,
                 payload?.cover?.thumb_url,
                 payload?.cover?.url
             );
+            // 悬停大图是建行时「按当时的值」挂上去的，封面真变了才需要
+            // 重画（而且这里合帧，一批刷新不会变成几百次重画）。
+            const coverChanged = `${row.cover_kind}|${row.cover_url}`
+                + `|${row.thumb_url}` !== beforeCover;
             if (row.strength_sync_pending === true) {
                 const fetchedModel = Number(payload?.strength_model);
                 const fetchedClip = Number(payload?.strength_clip);
@@ -2459,24 +2712,151 @@ function syncRowTriggerWords(node, row, options = {}) {
             }
             row.trigger_words_synced = true;
             row.trigger_words_error = "";
+            if (coverChanged) {
+                scheduleRenderNodeRows(node);
+            }
         })
         .catch(() => {
-            row.strength_sync_pending = false;
-            row.trigger_words_synced = true;
-            row.trigger_words_error = "load_failed";
+            const target = liveRow();
+            target.strength_sync_pending = false;
+            target.trigger_words_synced = true;
+            target.trigger_words_error = "load_failed";
         })
         .finally(() => {
-            row.trigger_words_loading = false;
-            writeStoredRows(node, node.__xlora_panel?.state?.rows || []);
-            renderNodeRows(node);
+            const target = liveRow();
+            target.trigger_words_loading = false;
+            scheduleWriteStoredRows(node);
+            // 回来以后只补这一行：开关和强度万一被服务端纠正，也一起对齐
+            applyRowState(node, target);
+            if (!refreshRowTriggerCell(node, target)) {
+                // 这一行正被折叠藏着，等展开时整表重画自然会带上
+                return;
+            }
         });
 }
 
 function syncAllRowTriggerWords(node, options = {}) {
     const rows = node?.__xlora_panel?.state?.rows || [];
+    const force = options.force === true;
     for (const row of rows) {
+        // 已经同步过的安静跳过，别一开工作流就几百个请求打出去
+        if (!force && row.trigger_words_synced === true) {
+            continue;
+        }
         syncRowTriggerWords(node, row, options);
     }
+}
+
+/**
+ * 一颗触发词胶囊：点一下就是开 / 关。
+ *
+ * 点击不由胶囊自己接（那样一行要挂好几颗），统一交给列表的委托；
+ * 胶囊只把「我代表哪个词」记在元素上。
+ */
+function buildTriggerChip(node, triggerWord) {
+    const tooltip = node?.__xlora_panel?.tooltip || null;
+    const chip = document.createElement("button");
+    chip.className = "xlora-trigger-chip";
+    chip.type = "button";
+    if (triggerWord.enabled === false) {
+        chip.classList.add("is-disabled");
+    }
+    chip.textContent = triggerWord.text;
+    chip.dataset.act = "trigger-word";
+    chip.__triggerWord = triggerWord;
+    bindTooltip(chip, tooltip, triggerWord.text);
+    return chip;
+}
+
+/**
+ * 画一行里的「触发词格子」：刷新按钮 + 前几个词 + 「+N」。
+ *
+ * 单独拿出来是为了能「只重画这一格」。以前逐行同步触发词时整张表重画，
+ * 行数一多就每行一次全表重建（成本是行数的平方）。
+ */
+function fillTriggerCell(node, state, item, cell) {
+    cell.textContent = "";
+    const createTriggerChip = (triggerWord) => buildTriggerChip(
+        node,
+        triggerWord
+    );
+
+    const triggerRefreshBtn = document.createElement("button");
+    triggerRefreshBtn.className = "xlora-trigger-refresh";
+    triggerRefreshBtn.type = "button";
+    triggerRefreshBtn.textContent = "↻";
+    bindTooltip(
+        triggerRefreshBtn,
+        null,
+        t(
+            "xdatahub.ui.node.xloraget.trigger_refresh",
+            "Refresh trigger words and notes from XDataHub"
+        )
+    );
+    triggerRefreshBtn.disabled = item.trigger_words_loading;
+    triggerRefreshBtn.dataset.act = "trigger-refresh";
+    cell.appendChild(triggerRefreshBtn);
+
+    const triggerInline = document.createElement("div");
+    triggerInline.className = "xlora-trigger-inline";
+    if (item.trigger_words_loading) {
+        const loadingChip = document.createElement("span");
+        loadingChip.className = "xlora-trigger-chip is-placeholder";
+        loadingChip.textContent = t(
+            "xdatahub.ui.node.xloraget.loading",
+            "Loading..."
+        );
+        triggerInline.appendChild(loadingChip);
+    } else if (item.trigger_words.length) {
+        const inlineWords = item.trigger_words.slice(
+            0,
+            TRIGGER_WORD_INLINE_LIMIT
+        );
+        inlineWords.forEach((triggerWord) => {
+            triggerInline.appendChild(createTriggerChip(triggerWord));
+        });
+        const extraCount = Math.max(
+            0,
+            item.trigger_words.length - TRIGGER_WORD_INLINE_LIMIT
+        );
+        if (extraCount > 0) {
+            const moreBtn = document.createElement("button");
+            moreBtn.className = "xlora-trigger-more";
+            moreBtn.type = "button";
+            const expanded = state.expandedTriggerRowId === item.id;
+            const moreTooltip = expanded
+                ? t(
+                    "xdatahub.ui.node.xloraget.collapse_title",
+                    "Collapse full trigger word list"
+                )
+                : t(
+                    "xdatahub.ui.node.xloraget.expand_title",
+                    "Expand {count} more trigger words"
+                ).replace("{count}", String(extraCount));
+            moreBtn.textContent = expanded
+                ? t("xdatahub.ui.node.xloraget.collapse", "Collapse")
+                : `+${extraCount}`;
+            bindTooltip(moreBtn, null, moreTooltip);
+            moreBtn.dataset.act = "trigger-more";
+            cell.appendChild(triggerInline);
+            cell.appendChild(moreBtn);
+            return;
+        }
+    } else {
+        const emptyChip = document.createElement("span");
+        emptyChip.className = "xlora-trigger-chip is-placeholder";
+        emptyChip.textContent = item.trigger_words_error
+            ? t(
+                "xdatahub.ui.node.xloraget.trigger_fail",
+                "Failed to load trigger words"
+            )
+            : t(
+                "xdatahub.ui.node.xloraget.no_trigger",
+                "No trigger words"
+            );
+        triggerInline.appendChild(emptyChip);
+    }
+    cell.appendChild(triggerInline);
 }
 
 function buildPanel(node) {
@@ -2781,7 +3161,13 @@ function upsertLoraRowFromMediaRef(
     }
     installNodeUi(node);
     const panel = node.__xlora_panel;
-    const rows = readStoredRows(node);
+    /* 内存里那份才是准的：正在同步触发词的行、刚改过强度的行都只活在内存里。
+       以前这里从存盘重读一遍，等于把整份 rows 换成「刚写下去时的样子」——
+       正在飞的那几个请求回来时，要写的那一行已经不在列表里了，结果全丢。
+       行一多，添加一次要解析/重建的东西也越多，所以越加越慢。 */
+    const rows = Array.isArray(panel?.state?.rows)
+        ? panel.state.rows.slice()
+        : readStoredRows(node);
     const existing = rows.find((item) => item.lora_ref === loraRef);
     const normalizedThumb = String(thumbUrl || "").trim();
     const incomingCoverKind = normalizeCoverKind(
@@ -2993,7 +3379,188 @@ function reloadPanelFromStorage(node) {
     renderNodeRows(node);
     // 档位按钮的高亮要跟着重读出来的档位走
     engine.refreshScopeOnly(node);
-    syncAllRowTriggerWords(node, { force: true });
+    // 注意：不要 force。存盘里已经带着触发词，一开工作流就对每一行
+    // 重新问一遍后端，会出现几百个请求（而且还伴随重画）。
+    // 新拖进来的行没标过「已同步」，它们会自动排队去问。
+    syncAllRowTriggerWords(node);
+}
+
+/**
+ * 行上的事件全部委托到列表上：整张表只挂一套监听器。
+ *
+ * 以前一行自己挂十多个（点选 / 拖动 / 开关 / 强度 / 移除 / 钉住 /
+ * 触发词的刷新和展开），一千行就是上万个监听器。行元素上只留数据
+ * （data-index、data-act、__parts、__triggerWord），由这里现查现算。
+ */
+function bindRowDelegation(node) {
+    const panel = node?.__xlora_panel;
+    const list = panel?.list;
+    if (!list || panel.rowDelegationBound) {
+        return;
+    }
+    panel.rowDelegationBound = true;
+
+    const itemsOf = () => (
+        node.__xlora_panel?.state?.items?.[LORA_CATEGORY]
+        || node.__xlora_panel?.state?.rows
+        || []
+    );
+    const rowHit = (rowEl) => {
+        const state = node.__xlora_panel?.state;
+        const index = Number(rowEl?.dataset?.index);
+        const item = state ? itemsOf()[index] : null;
+        return state && item ? { state, index, item } : null;
+    };
+    const rowOf = (target) => target?.closest?.(".xlora-row") || null;
+
+    list.addEventListener("click", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowHit(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const { state, item } = hit;
+        const action = event.target.closest?.("[data-act]")?.dataset?.act;
+
+        if (action === "remove") {
+            if (state.expandedTriggerRowId === item.id) {
+                setExpandedTriggerPanel(node, state, null);
+            }
+            // 位置会被拖动改掉，建行时记下的 index 早过期了——按元素身上
+            // 现在写着的位置删，否则删掉的是「原来站在这一格」的另一个 LoRA
+            const liveIndex = Number(rowEl.dataset.index);
+            const target = Number.isFinite(liveIndex) ? liveIndex : hit.index;
+            state.rows.splice(target, 1);
+            state.rows = enforcePinLayout(state.rows);
+            writeStoredRows(node, state.rows);
+            renderNodeRows(node);
+            return;
+        }
+        if (action === "pin") {
+            const pinEl = event.target.closest("[data-act]");
+            const position = pinEl?.dataset?.pin;
+            if (position !== "head" && position !== "tail") {
+                return;
+            }
+            const wasPinned = item.pin === position;
+            state.rows.forEach((rowItem) => {
+                if (rowItem.pin === position) {
+                    rowItem.pin = "none";
+                }
+            });
+            item.pin = wasPinned ? "none" : position;
+            applyPinToRow(state, item);
+            writeStoredRows(node, state.rows);
+            renderNodeRows(node);
+            return;
+        }
+        if (action === "trigger-word") {
+            const chip = event.target.closest("[data-act]");
+            const word = chip?.__triggerWord;
+            if (!word) {
+                return;
+            }
+            word.enabled = word.enabled === false;
+            chip.classList.toggle("is-disabled", word.enabled === false);
+            refreshRowTriggerCell(node, item);
+            scheduleWriteStoredRows(node);
+            return;
+        }
+        if (action === "trigger-refresh") {
+            if (
+                state.expandedTriggerRowId != null
+                && String(state.expandedTriggerRowId) === String(item.id)
+            ) {
+                setExpandedTriggerPanel(node, state, null);
+                scheduleRenderNodeRows(node);
+            }
+            syncRowTriggerWords(node, item, { force: true });
+            return;
+        }
+        if (action === "trigger-more") {
+            if (state.expandedTriggerRowId === item.id) {
+                setExpandedTriggerPanel(node, state, null);
+            } else {
+                setExpandedTriggerPanel(node, state, item.id);
+                state.triggerSearchQuery = "";
+            }
+            renderNodeRows(node);
+            return;
+        }
+        // 开关 / 输入框 / 链接之类有自己的行为，不在这里抢
+        if (event.target.closest("button, input, label, .xlora-preview-flag")) {
+            return;
+        }
+        if (
+            state.suppressClickUntil
+            && performance.now() < state.suppressClickUntil
+        ) {
+            return;
+        }
+        engine.handleRowSelection(
+            node,
+            LORA_CATEGORY,
+            loraKeyOf(item),
+            hit.index,
+            event
+        );
+    });
+
+    list.addEventListener("change", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowHit(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const { item } = hit;
+        const parts = rowEl.__parts || {};
+        const target = event.target;
+        if (target === parts.activeInput) {
+            item.active = !!target.checked;
+            // 只对齐这一行 + 重算序号：整表重画会把别的行的输入框、
+            // 滚动位置、缩略图全拉起重来，行一多就是几百毫秒的顿感。
+            applyRowState(node, item, rowEl);
+            refreshLoraRowNumbers(node);
+            scheduleWriteStoredRows(node);
+            return;
+        }
+        if (target === parts.modelInput) {
+            item.strength_model = toFloat(target.value, 1);
+            if (!item.separate_clip_strength) {
+                item.strength_clip = item.strength_model;
+            }
+            // 强度改了就影响「会不会加载」，序号得重算（只改文字）
+            refreshLoraRowNumbers(node);
+            scheduleWriteStoredRows(node);
+            return;
+        }
+        if (target === parts.clipInput) {
+            item.strength_clip = toFloat(target.value, item.strength_model);
+            refreshLoraRowNumbers(node);
+            scheduleWriteStoredRows(node);
+        }
+    });
+
+    // 列表内排序走指针事件（浏览器自带拖放只有 10Hz 上下，一顿一顿的）
+    list.addEventListener("pointerdown", (event) => {
+        const rowEl = rowOf(event.target);
+        if (!rowEl) {
+            return;
+        }
+        const index = Number(rowEl.dataset.index);
+        const rows = itemsOf();
+        if (!canDragRow(rows, index)) {
+            return;
+        }
+        engine.armRowPointerDrag(node, LORA_CATEGORY, rowEl, event);
+    });
+
+    // 行里的图片 / 链接默认能被浏览器拖走，会把我们的拖动静悄悄掐断
+    list.addEventListener("dragstart", (event) => {
+        if (rowOf(event.target)) {
+            event.preventDefault();
+        }
+    });
 }
 
 function installNodeUi(node) {
@@ -3140,8 +3707,12 @@ function installNodeUi(node) {
         renderNodeRows(node);
     });
     bindDnD(node);
+    // 行上的点选 / 拖动 / 开关 / 强度 / 触发词全部由列表委托
+    bindRowDelegation(node);
     renderNodeRows(node);
-    syncAllRowTriggerWords(node, { force: true });
+    // 首次装面板时存盘里的行已经是「已同步」的（见 parseStoredRows），
+    // 所以这里一般不会发请求；只有新拖进来的行才需要问
+    syncAllRowTriggerWords(node);
     refreshNodeBadge(node);
     // 若种子在面板之前就到了（异常时序），这里也会补上。
     consumePendingRows(node);
@@ -3354,7 +3925,8 @@ function refreshLoraRowNumbers(node) {
     });
     for (const el of list.querySelectorAll(".xlora-row")) {
         const text = textByIndex.get(Number(el.dataset.index));
-        const seqEl = el.querySelector(".xlora-seq");
+        // 序号元素建行时就记住了：一千行时每行再查一次选择器会白费几十毫秒
+        const seqEl = el.__parts?.seq;
         if (text === undefined || !seqEl || seqEl.textContent === text) {
             continue;
         }
@@ -3430,6 +4002,157 @@ function updateListFooter(panel, rows) {
     }
 }
 
+/**
+ * 把这一轮的元素摆到正确顺序上，但**尽量别搬**。
+ *
+ * 「加一行」是最常见的重画：那时只有末尾多一个元素，其余几百个原地不动。
+ * 以前的做法是整表清空再一个个 appendChild——每个元素都要重新布局，
+ * 行一多，添加一次就要几十毫秒；而且整表搬动会让浏览器把整个列表重排。
+ *
+ * 这里先看现有顺序是不是目标顺序的子序列（是的话说明只是「插了几个」），
+ * 只插那几个；只有顺序真的乱了（拖动、分组变化）才整体重排。
+ */
+function placeChildren(list, ordered) {
+    if (!list || !Array.isArray(ordered)) {
+        return "none";
+    }
+    const wanted = new Set(ordered);
+    const current = Array.from(list.children).filter((el) => wanted.has(el));
+    let cursor = 0;
+    const missing = new Set();
+    for (const el of ordered) {
+        if (cursor < current.length && current[cursor] === el) {
+            cursor += 1;
+            continue;
+        }
+        missing.add(el);
+    }
+    if (cursor === current.length && !missing.size) {
+        return "none"; // 已经是对的
+    }
+    let ref = null;
+    for (let i = ordered.length - 1; i >= 0; i -= 1) {
+        const el = ordered[i];
+        if (missing.has(el)) {
+            list.insertBefore(el, ref);
+        }
+        ref = el;
+    }
+    if (cursor !== current.length) {
+        // 顺序乱了（不是子序列）：整体按目标顺序搬一遍，保证最终一致
+        for (const el of ordered) {
+            list.appendChild(el);
+        }
+        return "reorder";
+    }
+    return "insert";
+}
+
+/**
+ * 把列表里「这一轮没用到」的元素删掉。
+ *
+ * 保留几个常驻的小家伙：拖放落点、插入线、空列表提示、吐司——
+ * 它们不是行，删了还得重建。
+ */
+function dropUnusedChildren(list, reused) {
+    if (!list) {
+        return 0;
+    }
+    let removed = 0;
+    for (const child of Array.from(list.children)) {
+        if (reused.has(child)) {
+            continue;
+        }
+        const cls = child.classList;
+        if (
+            cls
+            && (cls.contains("xlora-insert-line")
+                || cls.contains("xlora-drop-label")
+                || cls.contains("xlora-empty")
+                || cls.contains("xlora-toast")
+                || cls.contains("xmlg-insert-line")
+                || cls.contains("xmlg-drop-label")
+                || cls.contains("xmlg-empty"))
+        ) {
+            continue;
+        }
+        child.remove();
+        removed += 1;
+    }
+    return removed;
+}
+
+/** 这一行排第几个加载（1 起；没加载算 0）。悬停时才问，不占渲染。 */
+function loraLoadIndex(node, item) {
+    const rows = node?.__xlora_panel?.state?.items?.[LORA_CATEGORY]
+        || node?.__xlora_panel?.state?.rows
+        || [];
+    const clipConnected = isClipConnected(node);
+    let seq = 0;
+    for (const row of rows) {
+        if (rowWillLoad(row, clipConnected)) {
+            seq += 1;
+        }
+        if (row === item) {
+            return seq;
+        }
+    }
+    return seq;
+}
+
+/** 一共几个行会真的加载（名额上限内、开着、强度非 0）。 */
+function loraLoadTotal(node) {
+    const rows = node?.__xlora_panel?.state?.items?.[LORA_CATEGORY]
+        || node?.__xlora_panel?.state?.rows
+        || [];
+    const clipConnected = isClipConnected(node);
+    return rows.filter((row) => rowWillLoad(row, clipConnected)).length;
+}
+
+/**
+ * 一行的「长相指纹」：数据 + 位置 + 选中 / 分组 / 折叠 / 序号。
+ *
+ * 只要指纹没变，这一次重画就可以直接搬用原来那个行元素（连缩略图、
+ * 输入框、提示绑定一起留着），不必重建。行一多，重建是主要开销；
+ * 而「加一行」这种操作其实只有一行变了，其余几百行纯属白干。
+ */
+function loraRowSignature(ctx, item, index) {
+    const state = ctx.state;
+    const missing = !!state.missing?.has(String(item.lora_ref || ""));
+    // 展开的那一行才吃搜索框的内容：搜索只过滤展开面板里的触发词，
+    // 把查询词算进每一行的指纹，等于每敲一个字就把整张表重画一遍。
+    const expanded = String(state.expandedTriggerRowId ?? "") === String(item.id);
+    const words = (item.trigger_words || [])
+        .map((word) => `${word.text}:${word.enabled === false ? 0 : 1}`)
+        .join(",");
+    return [
+        index,
+        item.active !== false ? 1 : 0,
+        item.strength_model,
+        item.strength_clip,
+        item.separate_clip_strength ? 1 : 0,
+        state.globalSeparateClip ? 1 : 0,
+        missing ? 1 : 0,
+        item.group || "",
+        item.group ? ctx.stripeByGroup.get(item.group) || "" : "",
+        state.selection?.has(loraKeyOf(item)) ? 1 : 0,
+        expanded ? 1 : 0,
+        expanded ? String(state.triggerSearchQuery || "") : "",
+        item.title || "",
+        item.lora_note || "",
+        item.thumb_url || "",
+        item.cover_kind || "",
+        item.cover_url || "",
+        item.pin || "",
+        // 行数不进指纹：钉子只认「是不是头尾」，而头尾由 index 决定，
+        // 末尾多一行时只有那一行的 index 变了。把总行数算进来会让每次添加
+        // 都把所有行判成「变了」，白建几百个行元素——正是越加越慢的根源。
+        ctx.loadSeq[index] || 0,
+        canDragRow(ctx.rows, index) ? 1 : 0,
+        words,
+    ].join("|");
+}
+
 function renderNodeRows(node) {
     const panel = node.__xlora_panel;
     if (!panel) {
@@ -3440,7 +4163,18 @@ function renderNodeRows(node) {
     const prevScrollLeft = list.scrollLeft;
     clearDragTarget(state);
     hideTooltip(tooltip);
-    list.innerHTML = "";
+    /* 不再整体清空：这一轮要用的元素（指纹没变的行）直接搬过来接着用，
+       收尾时把没用到的删掉。innerHTML="" 会把几百行、几千个节点全拆一遍，
+       而「加一行」其实只有一行是新的。 */
+    const reused = new Set();
+    const ordered = [];
+    const keepAlive = (el) => {
+        if (el) {
+            reused.add(el);
+            ordered.push(el);
+        }
+        return el;
+    };
     panel.globalToggleInput.checked = !!state.globalSeparateClip;
     const rows = enforcePinLayout(state.rows);
     state.rows = rows;
@@ -3459,6 +4193,7 @@ function renderNodeRows(node) {
         if (state.expandedTriggerRowId != null) {
             setExpandedTriggerPanel(node, state, null);
         }
+        dropUnusedChildren(list, reused);
         list.appendChild(empty);
         // 行 / 组 / 竖线的索引一起清空，免得后面的就地重排拿着旧元素
         panel.rowByRef = new Map();
@@ -3494,16 +4229,33 @@ function renderNodeRows(node) {
         keyOf: loraKeyOf,
         willLoad: (entry) => entry.enabled !== false,
     });
+    // 上一次画出来的行元素：指纹没变的直接搬过来（见 loraRowSignature）
+    const prevRowByRef = panel.rowByRef instanceof Map
+        ? panel.rowByRef
+        : new Map();
+    const rowCtx = {
+        state,
+        rows: rowsNow,
+        loadSeq,
+        stripeByGroup,
+    };
     entries.forEach((entry) => {
         // 组的头：和媒体列表同一套胶囊（序号 / 名字 / 计数 / 设置）
         if (entry.type === "group") {
             const head = engine.buildGroupHead(node, LORA_CATEGORY, entry);
             headByGroup.set(entry.groupId, head);
-            list.appendChild(head);
+            keepAlive(head);
             return;
         }
         const item = entry.row;
         const index = entry.index;
+        const signature = loraRowSignature(rowCtx, item, index);
+        const cached = prevRowByRef.get(loraKeyOf(item));
+        if (cached && cached.__sig === signature) {
+            rowByRef.set(loraKeyOf(item), cached);
+            keepAlive(cached);
+            return;
+        }
         const row = document.createElement("div");
         row.className = "xlora-row xmlg-row";
         const rowBody = document.createElement("div");
@@ -3545,7 +4297,7 @@ function renderNodeRows(node) {
             t("xdatahub.ui.node.xloraget.load_order", "Load order"),
             "",
             willLoad
-                ? `${loadIndex} / ${loadTotal}`
+                ? () => `${loraLoadIndex(node, item)} / ${loraLoadTotal(node)}`
                 : t(
                     item.active === false
                         ? "xdatahub.ui.node.xloraget.load_order_off"
@@ -3560,10 +4312,10 @@ function renderNodeRows(node) {
         row.appendChild(seq);
 
         const pinPosition = pinPositionForIndex(index, rowsNow.length);
+        let pinBtn = null;
         if (pinPosition) {
-            rowMain.appendChild(
-                buildPinButton(node, item, pinPosition, tooltip)
-            );
+            pinBtn = buildPinButton(node, item, pinPosition, tooltip);
+            rowMain.appendChild(pinBtn);
         }
 
         const active = document.createElement("label");
@@ -3584,11 +4336,6 @@ function renderNodeRows(node) {
             tooltip,
             t("xdatahub.ui.node.xloraget.activate", "Activate this Lora")
         );
-        activeInput.addEventListener("change", () => {
-            item.active = !!activeInput.checked;
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
         active.appendChild(activeInput);
         active.appendChild(activeTrack);
         rowMain.appendChild(active);
@@ -3631,36 +4378,23 @@ function renderNodeRows(node) {
         modelInput.step = "0.01";
         modelInput.value = String(item.strength_model);
         modelInput.disabled = item.active === false;
-        modelInput.addEventListener("change", () => {
-            item.strength_model = toFloat(modelInput.value, 1);
-            if (!item.separate_clip_strength) {
-                item.strength_clip = item.strength_model;
-            }
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
         controls.appendChild(modelInput);
 
+        let clipInput = null;
         if (state.globalSeparateClip) {
             const clipLabel = document.createElement("span");
             clipLabel.className = "xlora-label xlora-label-clip";
             clipLabel.textContent = "C";
             controls.appendChild(clipLabel);
 
-            const clipInput = document.createElement("input");
-            clipInput.className = "xlora-input";
-            clipInput.type = "number";
-            clipInput.step = "0.01";
-            clipInput.value = String(item.strength_clip);
-            clipInput.disabled = item.active === false;
-            clipInput.addEventListener("change", () => {
-                item.strength_clip = toFloat(
-                    clipInput.value,
-                    item.strength_model
-                );
-                writeStoredRows(node, state.rows);
-            });
-            controls.appendChild(clipInput);
+            const clipInputEl = document.createElement("input");
+            clipInputEl.className = "xlora-input";
+            clipInputEl.type = "number";
+            clipInputEl.step = "0.01";
+            clipInputEl.value = String(item.strength_clip);
+            clipInputEl.disabled = item.active === false;
+            controls.appendChild(clipInputEl);
+            clipInput = clipInputEl;
         }
         rowMain.appendChild(controls);
 
@@ -3673,131 +4407,16 @@ function renderNodeRows(node) {
             t("xdatahub.ui.node.xloraget.remove", "Remove")
         );
         removeBtn.textContent = "✕";
-        removeBtn.addEventListener("click", () => {
-            if (state.expandedTriggerRowId === item.id) {
-                setExpandedTriggerPanel(node, state, null);
-            }
-            // 位置会被拖动改掉，建行时记下的 index 早过期了——按元素身上
-            // 现在写着的位置删，否则删掉的是「原来站在这一格」的另一个 LoRA
-            const liveIndex = Number(row.dataset.index);
-            const target = Number.isFinite(liveIndex) ? liveIndex : index;
-            state.rows.splice(target, 1);
-            state.rows = enforcePinLayout(state.rows);
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
+        removeBtn.dataset.act = "remove";
 
         const triggerRow = document.createElement("div");
         triggerRow.className = "xlora-trigger-row";
-        const toggleTriggerWord = (triggerWord) => {
-            triggerWord.enabled = triggerWord.enabled === false;
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        };
-        const createTriggerChip = (triggerWord) => {
-            const chip = document.createElement("button");
-            chip.className = "xlora-trigger-chip";
-            chip.type = "button";
-            if (triggerWord.enabled === false) {
-                chip.classList.add("is-disabled");
-            }
-            chip.textContent = triggerWord.text;
-            bindTooltip(chip, tooltip, triggerWord.text);
-            chip.addEventListener("click", () => {
-                toggleTriggerWord(triggerWord);
-            });
-            return chip;
-        };
-
         const triggerMain = document.createElement("div");
         triggerMain.className = "xlora-trigger-row-main";
-        const triggerRefreshBtn = document.createElement("button");
-        triggerRefreshBtn.className = "xlora-trigger-refresh";
-        triggerRefreshBtn.type = "button";
-        triggerRefreshBtn.textContent = "↻";
-        bindTooltip(
-            triggerRefreshBtn,
-            tooltip,
-            t(
-                "xdatahub.ui.node.xloraget.trigger_refresh",
-                "Refresh trigger words and notes from XDataHub"
-            )
-        );
-        triggerRefreshBtn.disabled = item.trigger_words_loading;
-        triggerRefreshBtn.addEventListener("click", () => {
-            const panelState = node.__xlora_panel?.state;
-            if (
-                panelState
-                && panelState.expandedTriggerRowId != null
-                && String(panelState.expandedTriggerRowId)
-                    === String(item.id)
-            ) {
-                setExpandedTriggerPanel(node, panelState, null);
-                renderNodeRows(node);
-            }
-            syncRowTriggerWords(node, item, { force: true });
-        });
-        triggerMain.appendChild(triggerRefreshBtn);
-
-        const triggerInline = document.createElement("div");
-        triggerInline.className = "xlora-trigger-inline";
-        if (item.trigger_words_loading) {
-            const loadingChip = document.createElement("span");
-            loadingChip.className = "xlora-trigger-chip is-placeholder";
-            loadingChip.textContent = t("xdatahub.ui.node.xloraget.loading", "Loading...");
-            triggerInline.appendChild(loadingChip);
-        } else if (item.trigger_words.length) {
-            const inlineWords = item.trigger_words.slice(
-                0,
-                TRIGGER_WORD_INLINE_LIMIT
-            );
-            inlineWords.forEach((triggerWord) => {
-                triggerInline.appendChild(createTriggerChip(triggerWord));
-            });
-            const extraCount = Math.max(
-                0,
-                item.trigger_words.length - TRIGGER_WORD_INLINE_LIMIT
-            );
-            if (extraCount > 0) {
-                const moreBtn = document.createElement("button");
-                moreBtn.className = "xlora-trigger-more";
-                moreBtn.type = "button";
-                const expanded = state.expandedTriggerRowId === item.id;
-                const moreTooltip = expanded
-                    ? t(
-                        "xdatahub.ui.node.xloraget.collapse_title",
-                        "Collapse full trigger word list"
-                    )
-                    : t(
-                        "xdatahub.ui.node.xloraget.expand_title",
-                        "Expand {count} more trigger words"
-                    ).replace("{count}", String(extraCount));
-                moreBtn.textContent = expanded
-                    ? t("xdatahub.ui.node.xloraget.collapse", "Collapse")
-                    : `+${extraCount}`;
-                bindTooltip(moreBtn, tooltip, moreTooltip);
-                moreBtn.addEventListener("click", () => {
-                    if (state.expandedTriggerRowId === item.id) {
-                        setExpandedTriggerPanel(node, state, null);
-                    } else {
-                        setExpandedTriggerPanel(node, state, item.id);
-                        state.triggerSearchQuery = "";
-                    }
-                    renderNodeRows(node);
-                });
-                triggerMain.appendChild(moreBtn);
-            }
-        } else {
-            const emptyChip = document.createElement("span");
-            emptyChip.className = "xlora-trigger-chip is-placeholder";
-            emptyChip.textContent = item.trigger_words_error
-                ? t("xdatahub.ui.node.xloraget.trigger_fail", "Failed to load trigger words")
-                : t("xdatahub.ui.node.xloraget.no_trigger", "No trigger words");
-            triggerInline.appendChild(emptyChip);
-        }
-
-        triggerMain.appendChild(triggerInline);
+        fillTriggerCell(node, state, item, triggerMain);
         triggerRow.appendChild(triggerMain);
+        // 逐行同步触发词时只重画这一格（不牵动整张表）
+        row.__triggerMain = triggerMain;
 
         if (
             state.expandedTriggerRowId === item.id
@@ -3821,32 +4440,44 @@ function renderNodeRows(node) {
                 state.triggerSearchQuery = String(searchInput.value || "");
                 const start = searchInput.selectionStart;
                 const end = searchInput.selectionEnd;
-                renderNodeRows(node);
-                const nextInput = node.__xlora_panel?.panel?.querySelector(
-                    ".xlora-trigger-search"
-                );
-                if (nextInput instanceof HTMLInputElement) {
-                    nextInput.focus();
-                    if (start != null && end != null) {
-                        nextInput.setSelectionRange(start, end);
+                // 边打字边筛：合帧重画，并把光标还给搜索框
+                scheduleRenderNodeRows(node, () => {
+                    const nextInput = node.__xlora_panel?.panel?.querySelector(
+                        ".xlora-trigger-search"
+                    );
+                    if (nextInput instanceof HTMLInputElement) {
+                        nextInput.focus();
+                        if (start != null && end != null) {
+                            nextInput.setSelectionRange(start, end);
+                        }
                     }
-                }
+                });
             });
             panelHeader.appendChild(searchInput);
 
             const actions = document.createElement("div");
             actions.className = "xlora-trigger-actions";
 
+            const setAllTriggerWords = (enabled) => {
+                item.trigger_words.forEach((triggerWord) => {
+                    triggerWord.enabled = enabled;
+                });
+                // 展开面板里的胶囊就地改颜色，只顺手刷新行内那几个
+                for (const chip of panelList.querySelectorAll(
+                    ".xlora-trigger-chip"
+                )) {
+                    chip.classList.toggle("is-disabled", !enabled);
+                }
+                refreshRowTriggerCell(node, item);
+                scheduleWriteStoredRows(node);
+            };
+
             const enableAllBtn = document.createElement("button");
             enableAllBtn.className = "xlora-trigger-action";
             enableAllBtn.type = "button";
             enableAllBtn.textContent = t("xdatahub.ui.node.xloraget.enable_all", "Enable all");
             enableAllBtn.addEventListener("click", () => {
-                item.trigger_words.forEach((triggerWord) => {
-                    triggerWord.enabled = true;
-                });
-                writeStoredRows(node, state.rows);
-                renderNodeRows(node);
+                setAllTriggerWords(true);
             });
             actions.appendChild(enableAllBtn);
 
@@ -3855,11 +4486,7 @@ function renderNodeRows(node) {
             disableAllBtn.type = "button";
             disableAllBtn.textContent = t("xdatahub.ui.node.xloraget.disable_all", "Disable all");
             disableAllBtn.addEventListener("click", () => {
-                item.trigger_words.forEach((triggerWord) => {
-                    triggerWord.enabled = false;
-                });
-                writeStoredRows(node, state.rows);
-                renderNodeRows(node);
+                setAllTriggerWords(false);
             });
             actions.appendChild(disableAllBtn);
             panelHeader.appendChild(actions);
@@ -3917,7 +4544,10 @@ function renderNodeRows(node) {
                 panelList.appendChild(emptyTips);
             } else {
                 filteredWords.forEach((triggerWord) => {
-                    panelList.appendChild(createTriggerChip(triggerWord));
+                    panelList.appendChild(buildTriggerChip(
+                        node,
+                        triggerWord
+                    ));
                 });
             }
 
@@ -3940,47 +4570,29 @@ function renderNodeRows(node) {
         removeCell.appendChild(removeBtn);
         row.appendChild(removeCell);
 
-        // 点行本身 = 选中（开关 / 输入框 / 按钮有自己的点击行为，不抢）
-        row.addEventListener("click", (event) => {
-            if (
-                event.target?.closest?.(
-                    "button, input, label, .xlora-preview-flag"
-                )
-            ) {
-                return;
-            }
-            const panelState = node.__xlora_panel?.state;
-            if (
-                panelState?.suppressClickUntil
-                && performance.now() < panelState.suppressClickUntil
-            ) {
-                return;
-            }
-            const liveIndex = Number(row.dataset.index);
-            engine.handleRowSelection(
-                node,
-                LORA_CATEGORY,
-                loraKeyOf(item),
-                Number.isFinite(liveIndex) ? liveIndex : index,
-                event
-            );
-        });
-        // 列表内排序走指针事件（浏览器自带拖放只有 10Hz 上下，一顿一顿的）
-        row.addEventListener("pointerdown", (event) => {
-            if (!canDragRow(state.rows, index)) {
-                return;
-            }
-            engine.armRowPointerDrag(node, LORA_CATEGORY, row, event);
-        });
-        // 行里的图片/链接默认能被浏览器拖走，会把我们的拖动静悄悄掐断
-        row.addEventListener("dragstart", (event) => {
-            event.preventDefault();
-        });
+        // 点选 / 拖动 / 开关 / 强度 / 触发词 / 钉住 / 移除全部由列表委托
+        // （见 bindRowDelegation）：一行挂十来个监听器的话，一千行就是
+        // 上万个，建列表时明显拖慢。
+        // 只改一行时（开关 / 强度 / 触发词）靠这几个引用当场对齐，
+        // 不用整表重画
+        row.__parts = {
+            activeInput,
+            modelInput,
+            clipInput,
+            name,
+            main: rowMain,
+            seq,
+            pinBtn,
+        };
 
+        row.__sig = signature;
         // 引擎就地重排时要能找回这一行（不重建，缩略图不重载）
         rowByRef.set(loraKeyOf(item), row);
-        list.appendChild(row);
+        keepAlive(row);
     });
+    // 这一轮没用到的旧行 / 旧组头一起收走（放在建竖线之前，位置才算得准）
+    const removedCount = dropUnusedChildren(list, reused);
+    const placement = placeChildren(list, ordered);
     panel.rowByRef = rowByRef;
     // 每组一根贯穿竖线：从组头顶端画到最后一行底端（折叠组只到组头）
     panel.railHosts = new Map();
@@ -4011,8 +4623,22 @@ function renderNodeRows(node) {
         engine.unfoldGroupRowsIn(panel, panel.pendingExpand, list.scrollTop);
     }
     writeStoredRows(node, rowsNow);
-    list.scrollTop = prevScrollTop;
-    list.scrollLeft = prevScrollLeft;
+    /**
+     * 滚动位置只在「真有东西被删掉 / 顺序被重排」时才需要摆回去。
+     *
+     * 只往末尾加一行时，上面的内容一个都没动，滚动位置自然不会变；
+     * 这时候去读一次 scrollTop 会逼浏览器立刻把整张列表布局完（几百行
+     * 要十几毫秒），纯属白等。读都省了，也就不写——写在值没变时同样
+     * 会触发一次重排。
+     */
+    if (removedCount > 0 || placement === "reorder") {
+        if (list.scrollTop !== prevScrollTop) {
+            list.scrollTop = prevScrollTop;
+        }
+        if (list.scrollLeft !== prevScrollLeft) {
+            list.scrollLeft = prevScrollLeft;
+        }
+    }
 }
 
 /**
@@ -4080,22 +4706,8 @@ function buildPinButton(node, item, position, tooltip) {
     if (item.pin === position) {
         lockBtn.classList.add("active");
     }
-    lockBtn.addEventListener("click", () => {
-        const state = node?.__xlora_panel?.state;
-        if (!state) {
-            return;
-        }
-        const wasPinned = item.pin === position;
-        state.rows.forEach((rowItem) => {
-            if (rowItem.pin === position) {
-                rowItem.pin = "none";
-            }
-        });
-        item.pin = wasPinned ? "none" : position;
-        applyPinToRow(state, item);
-        writeStoredRows(node, state.rows);
-        renderNodeRows(node);
-    });
+    // 点击交给列表委托（dataset.pin 已经写明钉哪一头）
+    lockBtn.dataset.act = "pin";
     return lockBtn;
 }
 
@@ -4116,27 +4728,29 @@ function syncRowPinButtons(node) {
     for (const el of list.querySelectorAll(".xlora-row")) {
         const index = Number(el.dataset.index);
         const item = rows[index];
-        const main = el.querySelector(".xlora-row-main");
+        const parts = el.__parts;
+        const main = parts?.main;
         if (!item || !main) {
             continue;
         }
         const wanted = pinPositionForIndex(index, rows.length);
-        const current = el.querySelector(".xlora-lock-btn");
+        const current = parts.pinBtn;
         if (current && current.dataset.pin === wanted) {
             current.classList.toggle("active", !!wanted && item.pin === wanted);
             continue;
         }
         if (current) {
             current.remove();
+            parts.pinBtn = null;
         }
         if (!wanted) {
             continue;
         }
         // 钉子永远排在开关前面
-        main.insertBefore(
-            buildPinButton(node, item, wanted, panel.tooltip),
-            main.querySelector(".xlora-active") || main.firstChild
-        );
+        const next = buildPinButton(node, item, wanted, panel.tooltip);
+        main.insertBefore(next, parts.activeInput?.closest(".xlora-active")
+            || main.firstChild);
+        parts.pinBtn = next;
     }
 }
 
@@ -4384,7 +4998,10 @@ function insertLoraRowsAt(node, entries, index) {
     if (!panel?.state) {
         return;
     }
-    const rows = readStoredRows(node);
+    // 和「拖进来」那条路一样：以内存为准，别从存盘重读（会把正在同步的行换掉）
+    const rows = Array.isArray(panel.state.rows)
+        ? panel.state.rows.slice()
+        : readStoredRows(node);
     const existingRefs = new Set(rows.map((row) => String(row.lora_ref || "")));
     const fresh = [];
     let skipped = 0;

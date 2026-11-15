@@ -657,6 +657,8 @@ const engine = createGroupEngine({
     hintHost,
     buildRow,
     applyPointerDragStop,
+    // 就地重排（拖动）不重画列表，序号得由这里补
+    refreshRowNumbers: refreshXmlgRowNumbers,
     // 用户点档位时落盘（临时收窄不落盘，见引擎里的 selectScope）
     writeEnableScope,
 });
@@ -2174,33 +2176,10 @@ function buildThumb(category, ref) {
     image.decoding = "async";
     image.alt = "";
     image.src = url;
-    image.addEventListener("error", () => {
-        if (category === "video" && image.dataset.fallback !== "1") {
-            image.dataset.fallback = "1";
-            const video = document.createElement("video");
-            video.preload = "metadata";
-            video.muted = true;
-            video.playsInline = true;
-            video.src = `/xz3r0/xdatahub/media/file?ref=${
-                encodeURIComponent(ref)
-            }#t=0.1`;
-            video.addEventListener("error", () => {
-                const fallback = element("span", null, "🎬");
-                engine.bindHint(fallback, () => t(
-                    "xdatahub.ui.node.xmedialistget.no_preview",
-                    "No preview"
-                ));
-                video.replaceWith(fallback);
-            });
-            image.replaceWith(video);
-            return;
-        }
-        image.classList.add("is-missing");
-        const node = image.closest(".xmlg-row");
-        if (node) {
-            node.classList.add("is-missing");
-        }
-    });
+    // 加载失败怎么兜底由列表统一处理（<img> 的 error 不冒泡，用捕获阶段接）
+    image.dataset.thumbRole = "image";
+    image.dataset.thumbCategory = category;
+    image.dataset.thumbRef = ref;
     return image;
 }
 
@@ -2355,37 +2334,8 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     if (state.selection?.has(XMLG_KEY_OF(entry))) {
         row.classList.add("is-selected");
     }
-    // 点行本身 = 选中；开关 / 缩略图 / 按钮有自己的点击行为，不抢。
-    row.addEventListener("click", (event) => {
-        if (
-            event.target?.closest?.(
-                "button, input, label, .xmlg-thumb, .xmlg-remove"
-            )
-        ) {
-            return;
-        }
-        const panelState = node.__xmlg_panel?.state;
-        // 刚拖完免不了会来一个 click：这时不能再改选中
-        if (
-            panelState?.suppressClickUntil
-            && performance.now() < panelState.suppressClickUntil
-        ) {
-            return;
-        }
-        engine.handleRowSelection(node, category, XMLG_KEY_OF(entry), liveIndex(), event);
-    });
-    // 列表内排序：按住行就能搬。
-    //
-    // 这里不用浏览器自带的拖放（draggable + dragstart）：它的 dragover
-    // 实测只有 10Hz 上下，行会一顿一顿地跳，做不出「其它行平滑滑开」
-    // 的效果。改用指针事件（每帧一次），Chromium 自己的标签条也是这么干的。
-    row.addEventListener("pointerdown", (event) => {
-        engine.armRowPointerDrag(node, category, row, event);
-    });
-    // 缩略图之类的元素默认可以被浏览器拖走，那会把我们的指针拖动静悄悄掐断
-    row.addEventListener("dragstart", (event) => {
-        event.preventDefault();
-    });
+    // 点选 / 拖动 / 开关 / 缩略图都由列表统一接管（见 bindRowDelegation）：
+    // 一行挂十来个监听器的话，一千行就是上万个，建列表时明显拖慢。
 
     const switchLabel = element("label", "xmlg-switch");
     const checkbox = document.createElement("input");
@@ -2400,23 +2350,6 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
     row.__xmlgSwitch = checkbox;
     switchLabel.appendChild(checkbox);
     switchLabel.appendChild(track);
-    checkbox.addEventListener("change", () => {
-        const result = setEntryEnabled(node, category, entry, checkbox.checked);
-        if (result.ok) {
-            return;
-        }
-        checkbox.checked = entry.enabled !== false;
-        if (result.reason === "limit") {
-            engine.showToast(
-                node,
-                t(
-                    "xdatahub.ui.node.xmedialistget.limit_enable_blocked",
-                    "Already {limit} enabled; turn one off first",
-                    { limit: MAX_ENABLED }
-                )
-            );
-        }
-    });
 
     const thumb = element("div", "xmlg-thumb");
     if (category === "audio") {
@@ -2433,34 +2366,11 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         element("span", "xmlg-thumb-preview-icon")
     );
     thumb.appendChild(previewHintIcon);
-    thumb.addEventListener("mouseenter", (event) => {
-        // 拖动中不弹预览：它会跟到光标旁边，把要看的落点整个盖住
-        if (event.buttons) {
-            return;
-        }
-        showTooltip(node, event, category, entry);
-    });
-    thumb.addEventListener("mousemove", (event) => {
-        moveTooltip(node, event);
-    });
-    thumb.addEventListener("mouseleave", () => {
-        hideTooltip(node);
-    });
-    const openPreviewFromRow = () => {
-        hideTooltip(node);
-        openMediaPreview(node, category, liveIndex());
-    };
-    thumb.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openPreviewFromRow();
-    });
-    thumb.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        openPreviewFromRow();
+    // 悬停预览的参数记在元素上：鼠标事件由列表统一派发
+    thumb.__xmlgTip = () => ({
+        category,
+        entry,
+        index: liveIndex(),
     });
 
     const name = element(
@@ -2488,19 +2398,6 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
         "xdatahub.ui.node.xmedialistget.remove",
         "Remove"
     ));
-    remove.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const panelState = node.__xmlg_panel?.state;
-        if (!panelState) {
-            return;
-        }
-        if (!engine.confirmRemovingGroupMember(node, category, entry)) {
-            return;
-        }
-        panelState.items[category].splice(liveIndex(), 1);
-        writeItems(node, panelState.items);
-        renderPanel(node);
-    });
 
     const seq = element(
         "span",
@@ -2525,10 +2422,6 @@ function buildRow(node, category, entry, index, enabledSeq = 0) {
             maskButton.classList.add("is-set");
         }
         engine.bindHint(maskButton, () => entryMaskHintText(entry));
-        maskButton.addEventListener("click", (event) => {
-            event.stopPropagation();
-            openMaskEditorForEntry(node, entry);
-        });
         row.appendChild(maskButton);
         row.appendChild(element("span", "xmlg-row-divider"));
     }
@@ -2800,7 +2693,16 @@ function setEntryEnabled(node, category, entry, enabled) {
     }
     entry.enabled = nextEnabled;
     writeItems(node, items);
-    renderPanel(node);
+    // 只补齐这一行的样子 + 序号 + 底栏计数，不把整张列表拆了重建
+    const rowEl = panel.rowByRef?.get(XMLG_KEY_OF(entry)) || null;
+    rowEl?.classList.toggle("is-disabled", !nextEnabled);
+    const box = rowEl?.__xmlgSwitch;
+    if (box) {
+        box.checked = nextEnabled;
+    }
+    refreshXmlgRowNumbers(node);
+    syncPanelCounts(node);
+    engine.refreshScopeOnly(node);
     return { ok: true };
 }
 
@@ -3778,64 +3680,7 @@ function renderPanel(node, options = {}) {
     const prevScrollLeft = panel.list.scrollLeft;
     const state = panel.state;
     state.items = normalizeItems(state.items);
-    const outputCount = enabledCount(state.items, state.category);
-    node.__xmlg_enabled_counts = {
-        image: enabledCount(state.items, "image"),
-        video: enabledCount(state.items, "video"),
-        audio: enabledCount(state.items, "audio"),
-    };
-    if (node.__xmlg_enabled_count !== outputCount) {
-        node.__xmlg_enabled_count = outputCount;
-    }
-    // 三个分类的启用数任一变化都要通知下游（下游可能用的不是当前分类）。
-    const countsKey = [
-        node.__xmlg_enabled_counts.image,
-        node.__xmlg_enabled_counts.video,
-        node.__xmlg_enabled_counts.audio,
-    ].join("|");
-    if (node.__xmlg_enabled_counts_key !== countsKey) {
-        node.__xmlg_enabled_counts_key = countsKey;
-        document.dispatchEvent(
-            new CustomEvent("xmedialistget:count-changed")
-        );
-    }
-
-    panel.kindEmoji.textContent = "🗂️";
-    if (!applyBadge(node)) {
-        scheduleBadgeRefresh(node);
-    }
-
-    for (const category of CATEGORIES) {
-        const tab = panel.tabButtons[category];
-        tab.button.classList.toggle(
-            "is-output-off",
-            !readOutputEnabled(node, category)
-        );
-        tab.label.textContent = `${
-            CATEGORY_EMOJI[category] || ""
-        } ${categoryLabel(category)}`;
-        tab.count.textContent = String(
-            enabledCount(state.items, category)
-        );
-        tab.button.classList.toggle(
-            "is-active",
-            state.category === category
-        );
-    }
-    panel.warningText.textContent = t(
-        "xdatahub.ui.node.xmedialistget.type_warning",
-        "Type warning"
-    );
-    panel.warningInput.checked = readTypeWarning(node);
-    engine.updateUndoButton(node);
-    panel.status.textContent = t(
-        "xdatahub.ui.group.enabled_count",
-        "Enabled {count} / {limit}",
-        {
-            count: enabledCount(state.items, state.category),
-            limit: MAX_ENABLED,
-        }
-    );
+    syncPanelCounts(node);
 
     const items = state.items[state.category] || [];
     const groups = state.items.groups?.[state.category] || [];
@@ -4005,6 +3850,135 @@ function scrollRowIntoView(node, index) {
     });
 }
 
+/**
+ * 把「开关数量」相关的东西补齐：徽章、三个分类页签的计数、
+ * 底栏「已启用 N / 上限」。
+ *
+ * 单独拿出来是因为「切换一个开关」只需要重算这些文字，
+ * 不必把整张列表拆了重建（行一多那就是几百毫秒的顿感）。
+ */
+function syncPanelCounts(node) {
+    const panel = node?.__xmlg_panel;
+    const state = panel?.state;
+    if (!panel || !state) {
+        return;
+    }
+    const outputCount = enabledCount(state.items, state.category);
+    node.__xmlg_enabled_counts = {
+        image: enabledCount(state.items, "image"),
+        video: enabledCount(state.items, "video"),
+        audio: enabledCount(state.items, "audio"),
+    };
+    if (node.__xmlg_enabled_count !== outputCount) {
+        node.__xmlg_enabled_count = outputCount;
+    }
+    // 三个分类的启用数任一变化都要通知下游（下游可能用的不是当前分类）。
+    const countsKey = [
+        node.__xmlg_enabled_counts.image,
+        node.__xmlg_enabled_counts.video,
+        node.__xmlg_enabled_counts.audio,
+    ].join("|");
+    if (node.__xmlg_enabled_counts_key !== countsKey) {
+        node.__xmlg_enabled_counts_key = countsKey;
+        document.dispatchEvent(
+            new CustomEvent("xmedialistget:count-changed")
+        );
+    }
+
+    panel.kindEmoji.textContent = "🗂️";
+    if (!applyBadge(node)) {
+        scheduleBadgeRefresh(node);
+    }
+
+    for (const category of CATEGORIES) {
+        const tab = panel.tabButtons[category];
+        tab.button.classList.toggle(
+            "is-output-off",
+            !readOutputEnabled(node, category)
+        );
+        tab.label.textContent = `${
+            CATEGORY_EMOJI[category] || ""
+        } ${categoryLabel(category)}`;
+        tab.count.textContent = String(
+            enabledCount(state.items, category)
+        );
+        tab.button.classList.toggle(
+            "is-active",
+            state.category === category
+        );
+    }
+    panel.warningText.textContent = t(
+        "xdatahub.ui.node.xmedialistget.type_warning",
+        "Type warning"
+    );
+    panel.warningInput.checked = readTypeWarning(node);
+    engine.updateUndoButton(node);
+    panel.status.textContent = t(
+        "xdatahub.ui.group.enabled_count",
+        "Enabled {count} / {limit}",
+        {
+            count: enabledCount(state.items, state.category),
+            limit: MAX_ENABLED,
+        }
+    );
+}
+
+/**
+ * 只重写序号文字（开关变化 / 拖动改顺序之后走这里，不重建列表）。
+ *
+ * 序号按「数据里的位置」数，不按屏幕上看得见的行数：折叠起来的组里
+ * 那些文件照样会加载、照样占号。
+ */
+function refreshXmlgRowNumbers(node) {
+    const panel = node?.__xmlg_panel;
+    const list = panel?.list;
+    const state = panel?.state;
+    if (!list || !state) {
+        return;
+    }
+    const items = state.items?.[state.category] || [];
+    const textByIndex = new Map();
+    let seq = 0;
+    items.forEach((row, index) => {
+        const willLoad = row?.enabled !== false;
+        if (willLoad) {
+            seq += 1;
+        }
+        textByIndex.set(index, willLoad ? String(seq) : "–");
+    });
+    for (const el of list.querySelectorAll(".xmlg-row")) {
+        const text = textByIndex.get(Number(el.dataset.index));
+        const seqEl = el.__xmlgSeq;
+        if (text === undefined || !seqEl || seqEl.textContent === text) {
+            continue;
+        }
+        seqEl.textContent = text;
+    }
+}
+
+/** 每帧最多重画一次列表（一批改动合成一次）。 */
+function scheduleRenderPanel(node) {
+    const panel = node?.__xmlg_panel;
+    if (!panel) {
+        return;
+    }
+    if (panel.renderScheduled) {
+        return;
+    }
+    panel.renderScheduled = true;
+    const run = () => {
+        panel.renderScheduled = false;
+        if (node.__xmlg_panel === panel) {
+            renderPanel(node);
+        }
+    };
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    } else {
+        setTimeout(run, 16);
+    }
+}
+
 function setCategory(node, category) {
     const panel = node?.__xmlg_panel;
     if (!panel || !CATEGORIES.includes(category)) {
@@ -4161,6 +4135,223 @@ async function refreshMissing(node) {
 /** 把范围胶囊、组标签、组头高亮跟当前数据对齐。 */
 
 
+/**
+ * 行上的事件全部委托到列表上：整张表只挂一套监听器。
+ *
+ * 以前一行自己要挂十多个（点选 / 拖动 / 开关 / 缩略图预览 / 移除 /
+ * 蒙版 / 悬停提示），一千行就是上万个监听器，建列表和内存都吃不消。
+ * 行元素上只留数据（data-index / data-category、__xmlgSwitch、__xmlgTip），
+ * 由这里按「谁被点到」现查现算。
+ */
+function bindRowDelegation(node) {
+    const panel = node.__xmlg_panel;
+    const list = panel?.list;
+    if (!list || panel.rowDelegationBound) {
+        return;
+    }
+    panel.rowDelegationBound = true;
+
+    const rowEntryAt = (rowEl) => {
+        const state = node.__xmlg_panel?.state;
+        const category = rowEl?.dataset?.category;
+        const index = Number(rowEl?.dataset?.index);
+        if (!state || !category || !Number.isFinite(index)) {
+            return null;
+        }
+        const entry = state.items?.[category]?.[index];
+        return entry ? { state, category, index, entry } : null;
+    };
+    const rowOf = (target) => target?.closest?.(".xmlg-row") || null;
+
+    list.addEventListener("click", (event) => {
+        const rowEl = rowOf(event.target);
+        if (!rowEl) {
+            return;
+        }
+        const hit = rowEntryAt(rowEl);
+        if (!hit) {
+            return;
+        }
+        const { state, category, index, entry } = hit;
+        if (event.target.closest(".xmlg-remove")) {
+            if (!engine.confirmRemovingGroupMember(node, category, entry)) {
+                return;
+            }
+            state.items[category].splice(index, 1);
+            writeItems(node, state.items);
+            // 删行本来就是重画（行数与序号全变），但连点几下 ✕ 只该画一次
+            scheduleRenderPanel(node);
+            return;
+        }
+        if (event.target.closest(".xmlg-mask-btn")) {
+            openMaskEditorForEntry(node, entry);
+            return;
+        }
+        if (event.target.closest(".xmlg-thumb")) {
+            hideTooltip(node);
+            openMediaPreview(node, category, index);
+            return;
+        }
+        // 开关、其它按钮 / 输入框自己有行为，不在这里抢
+        if (event.target.closest("button, input, label")) {
+            return;
+        }
+        // 刚拖完免不了会来一个 click：这时不能再改选中
+        if (
+            state.suppressClickUntil
+            && performance.now() < state.suppressClickUntil
+        ) {
+            return;
+        }
+        engine.handleRowSelection(node, category, XMLG_KEY_OF(entry), index, event);
+    });
+
+    // 列表内排序：按住行就能搬。
+    //
+    // 这里不用浏览器自带的拖放（draggable + dragstart）：它的 dragover
+    // 实测只有 10Hz 上下，行会一顿一顿地跳，做不出「其它行平滑滑开」
+    // 的效果。改用指针事件（每帧一次），Chromium 自己的标签条也是这么干的。
+    list.addEventListener("pointerdown", (event) => {
+        const rowEl = rowOf(event.target);
+        if (!rowEl || !rowEntryAt(rowEl)) {
+            return;
+        }
+        engine.armRowPointerDrag(node, rowEl.dataset.category, rowEl, event);
+    });
+
+    // 缩略图之类的元素默认可以被浏览器拖走，那会把我们的指针拖动静悄悄掐断
+    list.addEventListener("dragstart", (event) => {
+        if (rowOf(event.target)) {
+            event.preventDefault();
+        }
+    });
+
+    list.addEventListener("change", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowEntryAt(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const box = event.target;
+        if (box !== rowEl.__xmlgSwitch) {
+            return;
+        }
+        const { category, entry } = hit;
+        const result = setEntryEnabled(node, category, entry, box.checked);
+        if (result.ok) {
+            return;
+        }
+        box.checked = entry.enabled !== false;
+        if (result.reason === "limit") {
+            engine.showToast(
+                node,
+                t(
+                    "xdatahub.ui.node.xmedialistget.limit_enable_blocked",
+                    "Already {limit} enabled; turn one off first",
+                    { limit: MAX_ENABLED }
+                )
+            );
+        }
+    });
+
+    // 缩略图加载失败：<img> 的 error 事件不冒泡，用捕获阶段接住。
+    // 视频封面拿不到就退一步试着抽第一帧，再不行显示一个占位符。
+    list.addEventListener("error", (event) => {
+        const el = event.target;
+        const role = el?.dataset?.thumbRole;
+        if (!role) {
+            return;
+        }
+        if (role === "image") {
+            if (
+                el.dataset.thumbCategory === "video"
+                && el.dataset.fallback !== "1"
+            ) {
+                el.dataset.fallback = "1";
+                const video = document.createElement("video");
+                video.preload = "metadata";
+                video.muted = true;
+                video.playsInline = true;
+                video.dataset.thumbRole = "video";
+                video.src = `/xz3r0/xdatahub/media/file?ref=${
+                    encodeURIComponent(el.dataset.thumbRef || "")
+                }#t=0.1`;
+                el.replaceWith(video);
+                return;
+            }
+            el.classList.add("is-missing");
+            const rowEl = rowOf(el);
+            if (rowEl) {
+                rowEl.classList.add("is-missing");
+            }
+            return;
+        }
+        if (role === "video") {
+            const fallback = element("span", null, "🎬");
+            engine.bindHint(fallback, () => t(
+                "xdatahub.ui.node.xmedialistget.no_preview",
+                "No preview"
+            ));
+            el.replaceWith(fallback);
+        }
+    }, true);
+
+    // 缩略图悬停大图：一张列表一套监听器
+    let tipThumb = null;
+    list.addEventListener("mouseover", (event) => {
+        const thumb = event.target.closest?.(".xmlg-thumb");
+        if (!thumb || thumb === tipThumb) {
+            return;
+        }
+        // 拖动中不弹预览：它会跟到光标旁边，把要看的落点整个盖住
+        if (event.buttons) {
+            return;
+        }
+        const info = thumb.__xmlgTip?.();
+        if (!info) {
+            return;
+        }
+        tipThumb = thumb;
+        showTooltip(node, event, info.category, info.entry);
+    });
+    list.addEventListener("mousemove", (event) => {
+        if (!tipThumb) {
+            return;
+        }
+        moveTooltip(node, event);
+    });
+    list.addEventListener("mouseout", (event) => {
+        const thumb = event.target.closest?.(".xmlg-thumb");
+        if (!thumb || thumb !== tipThumb) {
+            return;
+        }
+        if (event.relatedTarget && thumb.contains(event.relatedTarget)) {
+            return;
+        }
+        tipThumb = null;
+        hideTooltip(node);
+    });
+
+    // 缩略图既然是「按钮」，键盘也得能开预览
+    list.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+        const thumb = event.target.closest?.(".xmlg-thumb");
+        if (!thumb) {
+            return;
+        }
+        const info = thumb.__xmlgTip?.();
+        if (!info) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        hideTooltip(node);
+        openMediaPreview(node, info.category, info.index);
+    });
+}
+
 function bindPanelEvents(node) {
     const panel = node.__xmlg_panel;
     if (!panel) {
@@ -4200,7 +4391,7 @@ function bindPanelEvents(node) {
         }
         state.selection.clear();
         state.selectionAnchor = null;
-        renderPanel(node);
+        scheduleRenderPanel(node);
     });
     engine.bindHint(panel.enableAllButton, () => t(
         "xdatahub.ui.node.xmedialistget.enable_all",
@@ -5578,6 +5769,8 @@ function installNodeUi(node) {
     }
     bindPanelEvents(node);
     bindDragAndDrop(node);
+    // 行上的点选 / 拖动 / 开关 / 预览全部由列表委托，不逐行挂监听器
+    bindRowDelegation(node);
     bindCanvasForwarding(ui.panel);
     ensureNodeMinSize(node);
 
