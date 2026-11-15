@@ -21,6 +21,22 @@ var PROPERTY_COLLAPSED = "xanytostring_collapsed";
 var MIN_NODE_W = 280;
 var MIN_NODE_H_COLLAPSED = 88;
 var MIN_NODE_H_EXPANDED = 170;
+/*
+ * 面板本身（标题 + 文字框那块）有多高才算够用。
+ *
+ * 这个数要交给 ComfyUI（见 applyPanelHeightRequest）：自定义面板默认只报
+ * 50px，节点排布时就不会为它多留地方。于是「展开」只是把 setSize 的数字
+ * 改大，下一次排版又按「面板只要 50px」算回去，看着就像一点都没变高。
+ */
+var PANEL_MIN_H_EXPANDED = 120;
+var PANEL_MIN_H_COLLAPSED = 0;
+/*
+ * 新节点从没展开过时，「展开」一次长到多高。
+ *
+ * 只按最小高度长的话只有两百出头，文字框刚够露一条缝；给一个像样的默认值，
+ * 第一次展开就能直接看内容。用户自己拉过以后，就照他拉的那个尺寸来。
+ */
+var DEFAULT_EXPANDED_HEIGHT = 320;
 var LOCALE_PREFIX = "xdatahub.ui.node.xanytostring";
 var LOCALE_SYNC_INTERVAL = 1000;
 var uiLocalePrimary = null;
@@ -353,6 +369,37 @@ function resolveMinHeight(state) {
         : MIN_NODE_H_COLLAPSED;
 }
 
+/**
+ * 告诉 ComfyUI 这个自定义面板需要多高。
+ *
+ * ComfyUI 用元素上的 --comfy-widget-min-height / --comfy-widget-height 两个
+ * CSS 变量来问「这个 DOM 面板最少要留多少地方」。不写就按 50px 算：节点
+ * 排版时永远只给一点点高度，折叠能压下去（内容藏起来了），展开却顶不上来。
+ *
+ * 折叠时给 0（好让节点真的能缩到最小），展开时给一个能放下标题和文字框
+ * 的高度，剩下的空间照样由用户自己拉。
+ */
+function applyPanelHeightRequest(state) {
+    var wrap = state && state.wrap;
+    if (!wrap || !wrap.style) return;
+    var minHeight = state.collapsed
+        ? PANEL_MIN_H_COLLAPSED
+        : PANEL_MIN_H_EXPANDED;
+    wrap.style.setProperty("--comfy-widget-min-height", minHeight + "px");
+    // 不写 --comfy-widget-height：那是「首选高度」，写死了用户拉高节点时
+    // 多出来的空间就分不到文字框了
+    wrap.style.removeProperty("--comfy-widget-height");
+}
+
+/** 折叠前的高度，展开时照原样还回去（用户自己拉高过的尺寸也算数）。 */
+function rememberExpandedHeight(state) {
+    if (!state || !state.node || state.collapsed) return;
+    var curH = (state.node.size && state.node.size[1]) || 0;
+    if (curH > 0) {
+        state.expandedHeight = Math.max(curH, MIN_NODE_H_EXPANDED);
+    }
+}
+
 function clampNodeSize(node, state) {
     if (!node) return;
 
@@ -407,6 +454,13 @@ function clampNodeSize(node, state) {
         var nw = Math.max((src && src[0]) || 0, resizeMinW);
         var nh = Math.max((src && src[1]) || 0, resizeMinH);
         this.size = [nw, nh];
+        // 展开状态下用户拉过的尺寸记下来，折叠再展开能还回去
+        if (st && !st.collapsed && nh > 0) {
+            st.expandedHeight = Math.max(
+                st.expandedHeight || 0,
+                nh
+            );
+        }
         this.setDirtyCanvas && this.setDirtyCanvas(true, true);
         if (typeof origOnResize === "function") {
             origOnResize.apply(this, arguments);
@@ -440,7 +494,20 @@ function persistCollapsed(state) {
 
 function setCollapsed(state, collapsed, options) {
     if (!state) return;
+    if (collapsed) {
+        // 压下去之前先记着：现在多高，展开时就还多高
+        rememberExpandedHeight(state);
+    } else if (!state.expandedHeight) {
+        // 从没展开过（刚拖出来的新节点、旧工作流里存成折叠的节点）：
+        // 用户亲手点展开时给一个像样的默认高度，别只露出两百来像素
+        state.expandedHeight = options && options.userAction
+            ? DEFAULT_EXPANDED_HEIGHT
+            : 0;
+    }
     state.collapsed = !!collapsed;
+    // 先改面板的高度需求，再算节点尺寸——顺序反了的话，clampNodeSize 里
+    // 的 computeSize() 读到的还是上一次（折叠时）的 0，展开又顶不上去
+    applyPanelHeightRequest(state);
     if (!options || options.persist !== false) {
         persistCollapsed(state);
     }
@@ -469,9 +536,16 @@ function resizeNodeToFit(state) {
     var minH = resolveMinHeight(state);
     var curW = (node.size && node.size[0]) || MIN_NODE_W;
     var curH = (node.size && node.size[1]) || 0;
+    /*
+     * 折叠：压到最小。
+     * 展开：回到折叠前的高度（没有记录就按最小高度）。
+     *   以前展开只写 Math.max(当前高度, 最小高度)——折叠后当前高度本来就
+     *   已经被压到最小了，这个式子算出来永远等于「最小高度」，身高一点都
+     *   不涨，用户看到的就是「展开没反应」。
+     */
     var targetH = state.collapsed
-        ? Math.min(curH, minH)
-        : Math.max(curH, minH);
+        ? Math.min(curH || minH, minH)
+        : Math.max(state.expandedHeight || 0, curH, minH);
     if (typeof node.setSize === "function") {
         node.setSize([Math.max(curW, MIN_NODE_W), targetH]);
     } else {
@@ -529,12 +603,14 @@ function createDisplayUI(node) {
         toggleBtn: toggleBtn,
         displayEl: display,
         collapsed: resolveStoredCollapsed(node),
+        // 折叠前的高度；展开时照这个还回去
+        expandedHeight: 0,
     };
     node.__xanytostringState = state;
     nodeStates[String(node.id)] = state;
 
     toggleBtn.addEventListener("click", function () {
-        setCollapsed(state, !state.collapsed);
+        setCollapsed(state, !state.collapsed, { userAction: true });
     });
 
     if (typeof node.addDOMWidget === "function") {
