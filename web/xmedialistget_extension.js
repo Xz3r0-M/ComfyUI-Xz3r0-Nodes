@@ -29,6 +29,7 @@ import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import { outputConnected, outputLinkIds } from "./core/slot-links.js";
 /* 分组（组头 / 竖线 / 折叠 / 拖拽 / 范围 / 撤销）是共享引擎，
    XLoraGet 用的是同一份实现（见 web/core/group-list.js）。
    顺带取几个引擎里定义的常量：拖动起点、范围档位、名额上限、动画时长。 */
@@ -51,6 +52,8 @@ import {
     normalizeGroups,
 } from "./core/group-model.js";
 import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-15";
+import { createHoverGuard } from "./core/hover-guard.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 const EXT_NAME = "xz3r0.xmedialistget";
 const EXT_GUARD_KEY = "__xmedialistget_extension_registered__";
@@ -2570,6 +2573,23 @@ function hideTooltip(node) {
     stopTooltipVideo(panel);
 }
 
+/**
+ * 现在哪个节点的大图预览是显示着的。
+ *
+ * 窗口失焦 / 切到别的标签页 / 滚轮滚动时都要收掉——那些时候鼠标其实
+ * 已经不在缩略图上了，但「鼠标移出」事件可能不会来（尤其进出子图、
+ * 列表重建的时候），于是预览图就粘在屏幕上了。
+ */
+let activeThumbTipNode = null;
+
+function hideActiveThumbTip() {
+    const node = activeThumbTipNode;
+    activeThumbTipNode = null;
+    if (node) {
+        hideTooltip(node);
+    }
+}
+
 // ── 全屏预览 ────────────────────────────────────────────────────────────
 
 const PREVIEW_ZOOM_STEP = 1.2;
@@ -4143,6 +4163,27 @@ async function refreshMissing(node) {
  * 行元素上只留数据（data-index / data-category、__xmlgSwitch、__xmlgTip），
  * 由这里按「谁被点到」现查现算。
  */
+/**
+ * 窗口失焦、切到别的标签页时收掉缩略图大图。
+ *
+ * 这两个时刻鼠标其实已经不在缩略图上了，但页面收不到「鼠标移出」，
+ * 大图就会一直挂在屏幕上。
+ */
+let thumbTipDismissersInstalled = false;
+
+function installThumbTipDismissers() {
+    if (thumbTipDismissersInstalled || typeof window === "undefined") {
+        return;
+    }
+    thumbTipDismissersInstalled = true;
+    window.addEventListener("blur", hideActiveThumbTip);
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+            hideActiveThumbTip();
+        }
+    });
+}
+
 function bindRowDelegation(node) {
     const panel = node.__xmlg_panel;
     const list = panel?.list;
@@ -4298,9 +4339,36 @@ function bindRowDelegation(node) {
 
     // 缩略图悬停大图：一张列表一套监听器
     let tipThumb = null;
+    /*
+     * 兜底：进出子图、切图、列表重建时，「鼠标移出」的事件可能永远不来，
+     * 大图预览就会粘在屏幕上。这里在显示期间每 200ms 确认一次鼠标是否
+     * 还在那张缩略图上。
+     */
+    const tipGuard = createHoverGuard({
+        getTarget: () => tipThumb,
+        isVisible: () => !!panel.tooltip?.classList.contains("is-visible"),
+        hide: () => {
+            tipThumb = null;
+            if (activeThumbTipNode === node) {
+                activeThumbTipNode = null;
+            }
+            hideTooltip(node);
+        },
+    });
     list.addEventListener("mouseover", (event) => {
         const thumb = event.target.closest?.(".xmlg-thumb");
-        if (!thumb || thumb === tipThumb) {
+        if (!thumb) {
+            if (tipThumb) {
+                tipThumb = null;
+                tipGuard.stop();
+                if (activeThumbTipNode === node) {
+                    activeThumbTipNode = null;
+                }
+                hideTooltip(node);
+            }
+            return;
+        }
+        if (thumb === tipThumb) {
             return;
         }
         // 拖动中不弹预览：它会跟到光标旁边，把要看的落点整个盖住
@@ -4312,7 +4380,9 @@ function bindRowDelegation(node) {
             return;
         }
         tipThumb = thumb;
+        activeThumbTipNode = node;
         showTooltip(node, event, info.category, info.entry);
+        tipGuard.start();
     });
     list.addEventListener("mousemove", (event) => {
         if (!tipThumb) {
@@ -4329,8 +4399,25 @@ function bindRowDelegation(node) {
             return;
         }
         tipThumb = null;
+        tipGuard.stop();
+        if (activeThumbTipNode === node) {
+            activeThumbTipNode = null;
+        }
         hideTooltip(node);
     });
+
+    // 滚轮滚动时缩略图会从光标底下溜走，先把预览收掉
+    list.addEventListener("wheel", () => {
+        if (!tipThumb) {
+            return;
+        }
+        tipThumb = null;
+        tipGuard.stop();
+        if (activeThumbTipNode === node) {
+            activeThumbTipNode = null;
+        }
+        hideTooltip(node);
+    }, { passive: true });
 
     // 缩略图既然是「按钮」，键盘也得能开预览
     list.addEventListener("keydown", (event) => {
@@ -5417,11 +5504,12 @@ function drawWarningOutputRing(node, ctx) {
     }
     for (let slot = 0; slot < node.outputs.length; slot += 1) {
         const output = node.outputs[slot];
-        if (!output?.links?.length) {
+        const linkIds = outputLinkIds(node, output);
+        if (!linkIds.length) {
             continue;
         }
         let hasWarning = false;
-        for (const linkId of output.links) {
+        for (const linkId of linkIds) {
             if (getLinkWarning(getLinkInfo(linkId, node.graph), node.graph)) {
                 hasWarning = true;
                 break;
@@ -5472,7 +5560,7 @@ function installLinkWarningHook() {
     canvas.__xmlgTypeWarningInstalled = true;
     const colorIndex = original.length >= 7 ? 6 : 5;
     canvas.renderLink = function (ctx, start, end, link) {
-        const graph = this.graph || app.graph;
+        const graph = this.graph || rootGraphOf(app);
         const warning = getLinkWarning(link, graph);
         if (!warning) {
             return original.apply(this, arguments);
@@ -5619,7 +5707,7 @@ function syncOutputSwitchesFromConnections(node) {
     for (const category of CATEGORIES) {
         const slots = OUTPUT_SLOT_GROUPS[category] || [];
         const connected = slots.some(
-            (slot) => (node.outputs?.[slot]?.links?.length || 0) > 0
+            (slot) => outputConnected(node, node.outputs?.[slot])
         );
         const widget = findWidget(node, OUTPUT_WIDGETS[category]);
         if (widget && widget.value !== connected) {
@@ -5653,7 +5741,7 @@ function getScopedIdForNode(node) {
         return "";
     }
     let found = "";
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (rootGraph) {
         forEachNodeInGraphTree(rootGraph, (candidate, scopedId) => {
             if (candidate === node) {
@@ -5835,7 +5923,7 @@ function forEachNodeInGraphTree(rootGraph, visitor) {
 }
 
 function installExistingNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -5845,7 +5933,7 @@ function installExistingNodes() {
 }
 
 function refreshAllPanels() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -5858,7 +5946,7 @@ function refreshAllPanels() {
 
 function collectNodes() {
     const result = [];
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return result;
     }
@@ -5902,7 +5990,7 @@ function getNodeById(nodeId) {
     if (!id) {
         return null;
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return null;
     }
@@ -6155,6 +6243,7 @@ function initXMediaListGetExtension() {
             installExistingNodes();
             installMessageHandler();
             installLinkWarningHook();
+            installThumbTipDismissers();
         },
     });
     setTimeout(() => {

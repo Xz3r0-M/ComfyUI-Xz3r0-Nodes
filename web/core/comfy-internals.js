@@ -29,14 +29,26 @@
  */
 
 /**
+ * 从 `window.comfyAPI` 取一个导出（不限类型）。
+ * @param {string} moduleName 模块名（源文件名去扩展名）
+ * @param {string} exportName 导出名
+ * @returns {*} 取不到时返回 null
+ */
+export function getComfyValue(moduleName, exportName) {
+    const bag = window.comfyAPI && window.comfyAPI[moduleName];
+    if (!bag) return null;
+    const value = bag[exportName];
+    return value === undefined ? null : value;
+}
+
+/**
  * 从 `window.comfyAPI` 取一个导出。
  * @param {string} moduleName 模块名（源文件名去扩展名），如 "dialog"、"button"
  * @param {string} exportName 导出名，如 "ComfyDialog"
  * @returns {Function|null} 取不到时返回 null
  */
 export function getComfyExport(moduleName, exportName) {
-    const bag = window.comfyAPI && window.comfyAPI[moduleName];
-    const value = bag ? bag[exportName] : null;
+    const value = getComfyValue(moduleName, exportName);
     return typeof value === "function" ? value : null;
 }
 

@@ -8,6 +8,7 @@ import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import { inputConnected } from "./core/slot-links.js";
 /* 分组（组头 / 竖线 / 折叠 / 拖拽 / 范围 / 撤销）是共享引擎，
    XMediaListGet 用的是同一份实现（见 web/core/group-list.js）。 */
 import {
@@ -18,6 +19,8 @@ import {
 } from "./core/group-list.js";
 /* 纯数据层的分组函数（整理分组、算归属、算出渲染顺序） */
 import { buildRenderList, normalizeGroups } from "./core/group-model.js";
+import { createHoverGuard } from "./core/hover-guard.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 const EXT_NAME = "xz3r0.xloraget";
 const EXT_GUARD_KEY = "__xloraget_extension_registered__";
@@ -275,7 +278,7 @@ function getScopedNodeId(node) {
     if (!node) {
         return "";
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return "";
     }
@@ -293,7 +296,7 @@ function getNodeById(nodeId) {
     if (!id) {
         return null;
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return null;
     }
@@ -319,7 +322,7 @@ function getNodeById(nodeId) {
 }
 
 function collectXLoraNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return [];
     }
@@ -643,6 +646,8 @@ function showTooltip(
     tooltip.classList.toggle("has-thumb", shown);
     tooltip.style.display = "block";
     positionTooltip(tooltip, event);
+    shownTooltip = tooltip;
+    tooltipGuard.start();
 }
 
 function moveTooltip(tooltip, event) {
@@ -657,6 +662,10 @@ function hideTooltip(tooltip) {
         return;
     }
     tooltip.style.display = "none";
+    if (shownTooltip === tooltip) {
+        shownTooltip = null;
+        tooltipGuard.stop();
+    }
     // 视频封面一直挂着会继续解码、占内存，收起来时顺手卸掉
     stopTooltipVideo(tooltip.querySelector("video"));
 }
@@ -749,6 +758,27 @@ function missingNoteText(missing, noteText) {
  */
 const tooltipDelegated = new WeakSet();
 let tooltipHoverTarget = null;
+// 现在挂在屏幕上的那条提示（同一时刻只会有一条）
+let shownTooltip = null;
+
+/*
+ * 兜底：提示条显示期间每 200ms 确认一次「鼠标还在那个元素上、元素还在页面
+ * 里」。进出子图、切图、节点面板重建时，鼠标移出的事件可能永远不来，提示条
+ * 就会一直粘在屏幕上——这一步专门收这种漏网的。
+ */
+const tooltipGuard = createHoverGuard({
+    getTarget: () => tooltipHoverTarget,
+    isVisible: () => !!shownTooltip
+        && shownTooltip.isConnected !== false
+        && shownTooltip.style.display === "block",
+    hide: () => {
+        tooltipHoverTarget = null;
+        const tooltip = shownTooltip;
+        if (tooltip) {
+            hideTooltip(tooltip);
+        }
+    },
+});
 
 function findTooltipTarget(from) {
     let el = from instanceof Element ? from : null;
@@ -781,7 +811,16 @@ function installTooltipDelegation(tooltip) {
             return;
         }
         const target = findTooltipTarget(event.target);
-        if (!target || target === tooltipHoverTarget || !belongs(target)) {
+        if (!target) {
+            // 移到了不该有提示的地方：立刻收掉。
+            // 只靠「移出原元素」来收是不够的——元素被换掉时那个事件不会来。
+            if (tooltipHoverTarget) {
+                tooltipHoverTarget = null;
+                hideTooltip(tooltip);
+            }
+            return;
+        }
+        if (target === tooltipHoverTarget || !belongs(target)) {
             return;
         }
         tooltipHoverTarget = target;
@@ -818,8 +857,8 @@ function installTooltipDelegation(tooltip) {
         tooltipHoverTarget = null;
         hideTooltip(tooltip);
     }, true);
-    for (const type of ["pointerdown", "click"]) {
-        document.addEventListener(type, (event) => {
+    for (const type of ["pointerdown", "click", "wheel"]) {
+        document.addEventListener(type, () => {
             if (!tooltipHoverTarget) {
                 return;
             }
@@ -827,6 +866,17 @@ function installTooltipDelegation(tooltip) {
             hideTooltip(tooltip);
         }, true);
     }
+    // 切到别的窗口 / 标签页时鼠标其实已经不在元素上了，事件却不会来
+    window.addEventListener("blur", () => {
+        tooltipHoverTarget = null;
+        hideTooltip(tooltip);
+    });
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+            tooltipHoverTarget = null;
+            hideTooltip(tooltip);
+        }
+    });
 }
 
 function bindTooltip(
@@ -3243,7 +3293,7 @@ function refreshRowsByLoraRef(loraRef) {
     if (!target) {
         return;
     }
-    const nodes = (app.graph?._nodes || []).filter(
+    const nodes = (rootGraphOf(app)?._nodes || []).filter(
         (node) => String(node?.comfyClass || "") === TARGET_NODE_CLASS
     );
     for (const node of nodes) {
@@ -3884,7 +3934,7 @@ function isClipConnected(node) {
     if (!clipInput) {
         return true;
     }
-    return clipInput.link != null;
+    return inputConnected(node, clipInput);
 }
 
 /** 重新排版加载序号（接线变化时用）。 */
@@ -4051,8 +4101,12 @@ function placeChildren(list, ordered) {
 /**
  * 把列表里「这一轮没用到」的元素删掉。
  *
- * 保留几个常驻的小家伙：拖放落点、插入线、空列表提示、吐司——
- * 它们不是行，删了还得重建。
+ * 只留两个常驻的：拖放落点和插入线（每次重画都会重新摆到末尾，删了就是白折腾）。
+ *
+ * **空列表那句提示不能留**：它只是「没有行时贴上去的一句话」，没有显示/隐藏
+ * 的开关。以前整表清空时会跟着消失，现在改成「只删没用到的」以后，如果连它
+ * 也一起留着，那么从空列表拖进第一张卡之后，这句「拖拽卡片到这里」会一直
+ * 盖在列表上面不下来。
  */
 function dropUnusedChildren(list, reused) {
     if (!list) {
@@ -4068,11 +4122,8 @@ function dropUnusedChildren(list, reused) {
             cls
             && (cls.contains("xlora-insert-line")
                 || cls.contains("xlora-drop-label")
-                || cls.contains("xlora-empty")
-                || cls.contains("xlora-toast")
                 || cls.contains("xmlg-insert-line")
-                || cls.contains("xmlg-drop-label")
-                || cls.contains("xmlg-empty"))
+                || cls.contains("xmlg-drop-label"))
         ) {
             continue;
         }
@@ -5210,7 +5261,7 @@ function applyPanelLocale(panelInfo) {
 }
 
 function refreshAllPanelLocales() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -5233,7 +5284,7 @@ async function applyUiLocale(localeOverride = null) {
 }
 
 function installExistingNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }

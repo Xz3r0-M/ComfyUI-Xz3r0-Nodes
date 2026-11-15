@@ -7,10 +7,12 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { inputConnected, inputLinkId } from "./core/slot-links.js";
 import {
     scheduleXPipeRefresh,
 } from "./xpipe_extension.js";
 import { forEachNodeByComfyClass } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var NODE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
@@ -27,7 +29,7 @@ function findCountPort(node) {
         if (input && input.name === "count") {
             return {
                 idx: index,
-                linkId: input.link != null ? input.link : null,
+                linkId: inputLinkId(node, input),
             };
         }
     }
@@ -70,7 +72,7 @@ function countActiveInputs(node) {
     var count = 0;
     for (var index = 0; index < node.inputs.length; index++) {
         var input = node.inputs[index];
-        if (!input || input.link == null) continue;
+        if (!input || !inputConnected(node, input)) continue;
         if (resolveAutogrowSlotNumber(input.name) > 0) {
             count += 1;
         }
@@ -83,7 +85,7 @@ function findNamedInputLink(node, name) {
     for (var index = 0; index < node.inputs.length; index++) {
         var input = node.inputs[index];
         if (!input || input.name !== name) continue;
-        return input.link != null ? input.link : null;
+        return inputLinkId(node, input);
     }
     return null;
 }
@@ -202,9 +204,9 @@ app.registerExtension({
             document.addEventListener(
                 "xmedialistget:count-changed",
                 function () {
-                    if (!app.graph) return;
+                    if (!rootGraphOf(app)) return;
                     forEachNodeByComfyClass(
-                        app.graph,
+                        rootGraphOf(app),
                         NODE_CLASS,
                         function (node) {
                             syncCountWidget(node);
@@ -218,8 +220,8 @@ app.registerExtension({
 
     afterConfigureGraph: function () {
         // Full graph tree so ToPipe nodes inside subgraphs sync too.
-        if (!app.graph) return;
-        forEachNodeByComfyClass(app.graph, NODE_CLASS, function (node) {
+        if (!rootGraphOf(app)) return;
+        forEachNodeByComfyClass(rootGraphOf(app), NODE_CLASS, function (node) {
             syncCountWidget(node);
         });
         refreshDownstream();

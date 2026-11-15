@@ -1,4 +1,10 @@
 import { app } from "../../scripts/app.js";
+import {
+    inputConnected,
+    inputLinkId,
+    outputLinkIds,
+} from "./core/slot-links.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 // XLinker 连线显隐透传节点前端扩展
 // ===================================
@@ -53,7 +59,7 @@ function warningGlowBlur() {
 function activeGraph() {
     return (app.canvas && app.canvas.getCurrentGraph && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
-        || app.graph;
+        || rootGraphOf(app);
 }
 function nodeKey(node) {
     return String(node && node.id);
@@ -750,9 +756,10 @@ function getXLinkerLinkWarning(link, graph) {
 }
 function xlinkerOutputHasWarning(node) {
     var output = node && node.outputs ? node.outputs[0] : null;
-    if (!output || !output.links) return false;
-    for (var i = 0; i < output.links.length; i++) {
-        if (getXLinkerLinkWarning(getLinkInfo(output.links[i], node.graph), node.graph)) {
+    if (!output) return false;
+    var linkIds = outputLinkIds(node, output);
+    for (var i = 0; i < linkIds.length; i++) {
+        if (getXLinkerLinkWarning(getLinkInfo(linkIds[i], node.graph), node.graph)) {
             return true;
         }
     }
@@ -771,16 +778,17 @@ function syncXLinkerOutputTypeFromInput(node) {
     var output = node.outputs[0];
     if (!output) return;
 
-    if (!input || input.link == null) {
+    var inputLink = input ? inputLinkId(node, input) : null;
+    if (inputLink == null) {
         // 无输入连接：输出回退为通配符
         if (output.type !== "*") {
             output.type = "*";
-            syncLinkTypes(output, node.graph);
+            syncLinkTypes(node, output);
         }
         return;
     }
 
-    var link = getLinkInfo(input.link, node.graph);
+    var link = getLinkInfo(inputLink, node.graph);
     if (!link) return;
 
     // 快速路径：link.type 已与 output.type 一致且非通配符 → 跳过
@@ -797,15 +805,17 @@ function syncXLinkerOutputTypeFromInput(node) {
 
     if (output.type !== srcType) {
         output.type = srcType;
-        syncLinkTypes(output, node.graph);
+        syncLinkTypes(node, output);
     }
 }
-function syncLinkTypes(output, graph) {
+
+function syncLinkTypes(node, output) {
     // 将输出端口类型同步到所有下游链接的 type 元数据
-    if (!output || !output.links || !graph) return;
+    if (!node || !output || !node.graph) return;
     var newType = output.type;
-    for (var i = 0; i < output.links.length; i++) {
-        var outLink = getLinkInfo(output.links[i], graph);
+    var linkIds = outputLinkIds(node, output);
+    for (var i = 0; i < linkIds.length; i++) {
+        var outLink = getLinkInfo(linkIds[i], node.graph);
         if (outLink) outLink.type = newType;
     }
 }
@@ -966,8 +976,9 @@ function installXLinkerSlotMenu(nodeType) {
         var graph = this.graph;
         if (!graph) return options;
 
-        var hasOutputLinks = !!(slot.output && slot.output.links && slot.output.links.length > 0);
-        var hasInputLink = !!(slot.input && slot.input.link != null);
+        var hasOutputLinks = !!(slot.output
+            && outputLinkIds(this, slot.output).length > 0);
+        var hasInputLink = !!(slot.input && inputConnected(this, slot.input));
 
         if (!hasOutputLinks && !hasInputLink) return options;
 
@@ -1007,10 +1018,10 @@ function installXLinkerSlotMenu(nodeType) {
 
 function convertOutputToXLinker(node, slotIndex, graph, canvas) {
     var output = node.outputs[slotIndex];
-    if (!output || !output.links || output.links.length === 0) return;
 
-    // 复制链接引用（断开前）
-    var linkIds = output.links.slice();
+    // 先取链接 id（断开后就连线库也查不到了）
+    var linkIds = outputLinkIds(node, output);
+    if (linkIds.length === 0) return;
 
     // 收集目标信息
     var targets = [];
@@ -1068,9 +1079,9 @@ function convertOutputToXLinker(node, slotIndex, graph, canvas) {
 
 function convertInputToXLinker(node, slotIndex, graph, canvas) {
     var input = node.inputs[slotIndex];
-    if (!input || input.link == null) return;
 
-    var linkId = input.link;
+    var linkId = input ? inputLinkId(node, input) : null;
+    if (linkId == null) return;
     var linkInfo = getLinkInfo(linkId, graph);
     if (!linkInfo) return;
 

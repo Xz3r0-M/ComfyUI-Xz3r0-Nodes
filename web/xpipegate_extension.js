@@ -15,10 +15,15 @@ import {
     setSlotHidden,
 } from "./x_stable_slots.js";
 import {
+    inputLinkId,
+    slotLinkIds as coreSlotLinkIds,
+} from "./core/slot-links.js";
+import {
     forEachNodeByComfyClass,
     getLinkInfo,
     getNodeById,
 } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var NODE_CLASS = "XPipeGate";
 var XPIPE_CLASS = "XPipe";
@@ -97,12 +102,7 @@ function slotIndexByName(slots, name) {
 }
 
 function slotLinkIds(slot) {
-    if (!slot) return [];
-    if (Array.isArray(slot.linkIds)) return slot.linkIds.slice();
-    if (Array.isArray(slot.links)) return slot.links.slice();
-    if (slot.linkId != null) return [slot.linkId];
-    if (slot.link != null) return [slot.link];
-    return [];
+    return coreSlotLinkIds(null, slot);
 }
 
 function isXPipeGate(node) {
@@ -126,7 +126,7 @@ function isGateFamily(node) {
 function linkTouchesGateFamily(node, link) {
     if (isGateFamily(node)) return true;
     if (!link) return false;
-    var graph = node.graph || app.graph;
+    var graph = node.graph || rootGraphOf(app);
     return isGateFamily(getNodeById(graph, link.origin_id))
         || isGateFamily(getNodeById(graph, link.target_id));
 }
@@ -213,7 +213,7 @@ function applyUiLocale() {
         .then(function (results) {
             uiLocaleFallback = results[0];
             uiLocalePrimary = normalized === "en" ? results[0] : results[1];
-            forEachPipeGate(app.graph, function (node) {
+            forEachPipeGate(rootGraphOf(app), function (node) {
                 updateControlWidgets(node);
                 refreshNodeLayout(node);
                 applyInitialNodeSize(node);
@@ -371,10 +371,10 @@ function highestUsedChannel(node) {
             var input = node.inputs[inputIndex];
             var dataChannel = channelInputNumber(input && input.name);
             var enableChannel = channelEnableNumber(input && input.name);
-            if (dataChannel && slotLinkIds(input).length) {
+            if (dataChannel && coreSlotLinkIds(node, input).length) {
                 highest = Math.max(highest, dataChannel);
             }
-            if (enableChannel && slotLinkIds(input).length) {
+            if (enableChannel && coreSlotLinkIds(node, input).length) {
                 highest = Math.max(highest, enableChannel);
             }
         }
@@ -385,7 +385,7 @@ function highestUsedChannel(node) {
             outputIndex++) {
             var output = node.outputs[outputIndex];
             var outputChannel = channelOutputNumber(output && output.name);
-            if (outputChannel && slotLinkIds(output).length) {
+            if (outputChannel && coreSlotLinkIds(node, output).length) {
                 highest = Math.max(highest, outputChannel);
             }
         }
@@ -696,7 +696,10 @@ function syncDynamicChannels(state) {
         if (enableIndex >= 0) {
             var enableSlot = state.node.inputs[enableIndex];
             // 已连线的 enable 口保持可见（与通道口保持一致）。
-            var enableLinked = slotLinkIds(enableSlot).length > 0;
+            var enableLinked = coreSlotLinkIds(
+                state.node,
+                enableSlot,
+            ).length > 0;
             setSlotHidden(enableSlot, enableCh > count && !enableLinked);
         }
     }
@@ -713,8 +716,9 @@ function directInputSource(state, channel) {
         "input_" + channel,
     );
     var input = index >= 0 ? state.node.inputs[index] : null;
-    if (!input || input.link == null) return null;
-    var link = getLinkInfo(state.node.graph, input.link);
+    var linkId = input ? inputLinkId(state.node, input) : null;
+    if (linkId == null) return null;
+    var link = getLinkInfo(state.node.graph, linkId);
     var source = link && getNodeById(state.node.graph, link.origin_id);
     var output = source && source.outputs
         ? source.outputs[link.origin_slot]
@@ -782,7 +786,11 @@ function refreshChannelMetadata(state) {
                 || cleanType(direct.output && direct.output.type)
                 || cleanType(direct.link.type)
             : cleanType(upstream && upstream.types[channel - 1]);
-        if (!nextType && output && slotLinkIds(output).length) {
+        if (
+            !nextType
+            && output
+            && coreSlotLinkIds(state.node, output).length
+        ) {
             nextType = state.types[channel - 1];
         }
         var nextName = direct
@@ -855,7 +863,7 @@ function applyChannelTypes(state) {
         if (outputIndex < 0) continue;
         var output = state.node.outputs[outputIndex];
         output.type = socketType(state.types[channel - 1]);
-        var ids = slotLinkIds(output);
+        var ids = coreSlotLinkIds(state.node, output);
         for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
             var link = getLinkInfo(state.node.graph, ids[linkIndex]);
             if (link) link.type = output.type;
@@ -958,7 +966,8 @@ function hideNamesWidget(node) {
     if (widget.element) widget.element.style.display = "none";
     if (widget.inputEl) widget.inputEl.style.display = "none";
     var inputIndex = slotIndexByName(node.inputs, NAMES_WIDGET);
-    if (inputIndex < 0 || slotLinkIds(node.inputs[inputIndex]).length) return;
+    if (inputIndex < 0) return;
+    if (coreSlotLinkIds(node, node.inputs[inputIndex]).length) return;
     if (typeof node.removeInput === "function") node.removeInput(inputIndex);
     else node.inputs.splice(inputIndex, 1);
     refreshInputLinkTargets(node);
@@ -1084,7 +1093,7 @@ function refreshPortStatus(node) {
 
 function refreshAllPipeGate() {
     var states = [];
-    forEachPipeGate(app.graph, function (node) {
+    forEachPipeGate(rootGraphOf(app), function (node) {
         var state = ensurePipeGate(node);
         if (state) states.push(state);
     });
@@ -1214,7 +1223,7 @@ function installCanvasHooks() {
     // 一次性判定，避免硬编码索引在新旧版本间静默失效。
     var colorIndex = originalRenderLink.length >= 7 ? 6 : 5;
     canvas.renderLink = function (ctx, start, end, link) {
-        var graph = this.graph || app.graph;
+        var graph = this.graph || rootGraphOf(app);
         var entry = cachedLinkRender(link, graph);
         if (!entry) return originalRenderLink.apply(this, arguments);
         if (entry.bundleHidden || entry.valueHidden) return;
@@ -1258,7 +1267,7 @@ app.registerExtension({
         // which can bypass the incremental onNodeCreated/onRemoved count;
         // rebuild the count from the graph so the gate stays accurate.
         gateNodeCount = 0;
-        forEachPipeGate(app.graph, function (node) {
+        forEachPipeGate(rootGraphOf(app), function (node) {
             node.__xpipeGateCounted = true;
             gateNodeCount++;
             // 先去掉内部 port_names 的输入圆点，再处理 enable 状态。

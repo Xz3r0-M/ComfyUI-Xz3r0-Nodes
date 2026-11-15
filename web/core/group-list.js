@@ -9,6 +9,7 @@
  * 引擎不认识「文件」「LoRA」这些词，也不知道行里有什么——行的长相、行身份、
  * 存盘、文案全部由调用方通过 ctx 注入（见 createGroupEngine 的注释）。
  */
+import { createHoverGuard } from "./hover-guard.js";
 import {
     buildRenderList,
     createGroupFromSelection,
@@ -2265,11 +2266,17 @@ function showHint(text, event) {
     hint.textContent = value;
     hint.classList.add("is-visible");
     positionHint(event);
+    activeHintElement = hint;
+    hintGuard.start();
 }
 
 /** 收掉悬停提示：提示元素和状态都在引擎里，媒体层不用管。 */
 function hideHint() {
     hintElement?.classList.remove("is-visible");
+    if (activeHintElement === hintElement) {
+        activeHintElement = null;
+    }
+    hintGuard.stop();
 }
 
 /*
@@ -2281,6 +2288,25 @@ function hideHint() {
  */
 let hintDelegationInstalled = false;
 let hintDelegationTarget = null;
+// 现在挂在屏幕上的那一条提示（提示元素归各引擎所有，这里只记引用）
+let activeHintElement = null;
+
+/*
+ * 兜底：提示显示期间每 200ms 确认鼠标是不是还停在那个元素上。
+ *
+ * 进出子图、切图、折叠展开始终会换掉一批元素，那时候「鼠标移出」的事件
+ * 可能永远不来，提示就会一直粘在屏幕上（用户只能点一下别处才收掉）。
+ */
+const hintGuard = createHoverGuard({
+    getTarget: () => hintDelegationTarget,
+    isVisible: () => !!activeHintElement
+        && activeHintElement.classList.contains("is-visible"),
+    hide: () => {
+        hintDelegationTarget = null;
+        activeHintElement?.classList.remove("is-visible");
+        activeHintElement = null;
+    },
+});
 
 function findHintTarget(from) {
     let el = from instanceof Element ? from : null;
@@ -2307,7 +2333,17 @@ function installHintDelegation() {
             return;
         }
         const target = findHintTarget(event.target);
-        if (!target || target === hintDelegationTarget) {
+        if (!target) {
+            // 移到不该有提示的地方：立刻收掉（元素被换掉时移出事件不会来）
+            if (hintDelegationTarget) {
+                hintDelegationTarget = null;
+                hintGuard.stop();
+                activeHintElement?.classList.remove("is-visible");
+                activeHintElement = null;
+            }
+            return;
+        }
+        if (target === hintDelegationTarget) {
             return;
         }
         hintDelegationTarget = target;

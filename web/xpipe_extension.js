@@ -11,6 +11,11 @@ import {
     setSlotHidden,
 } from "./x_stable_slots.js";
 import {
+    inputConnected,
+    inputLinkId,
+    slotLinkIds as coreSlotLinkIds,
+} from "./core/slot-links.js";
+import {
     findLinkInGraphTree as sgFindLinkInGraphTree,
     findLinkToNodeInput,
     findMatchingSlotIndex,
@@ -25,6 +30,7 @@ import {
     isSubgraphInputNode,
     slotAt,
 } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var NODE_CLASS = "XPipe";
 var PIPE_TYPE = "xpipe";
@@ -107,25 +113,20 @@ function slotIndexOfName(slots, name) {
 }
 
 function slotLinkIds(slot) {
-    if (!slot) return [];
-    if (Array.isArray(slot.linkIds)) return slot.linkIds.slice();
-    if (Array.isArray(slot.links)) return slot.links.slice();
-    if (slot.linkId != null) return [slot.linkId];
-    if (slot.link != null) return [slot.link];
-    return [];
+    return coreSlotLinkIds(null, slot);
 }
 
 // Thin wrappers keep call sites stable; rootGraph defaults to app.graph.
 function findParentSubgraphNode(childGraph) {
-    return sgFindParentSubgraphNode(childGraph, app.graph);
+    return sgFindParentSubgraphNode(childGraph, rootGraphOf(app));
 }
 
 function findLinkInGraphTree(linkId, preferredGraph) {
-    return sgFindLinkInGraphTree(linkId, preferredGraph, app.graph);
+    return sgFindLinkInGraphTree(linkId, preferredGraph, rootGraphOf(app));
 }
 
 function findSlotOwner(slot, direction, preferredGraph) {
-    return sgFindSlotOwner(slot, direction, preferredGraph, app.graph);
+    return sgFindSlotOwner(slot, direction, preferredGraph, rootGraphOf(app));
 }
 
 function isXPipe(node) {
@@ -210,7 +211,7 @@ function isXpipeFamily(node) {
 function linkTouchesXpipeFamily(node, link) {
     if (isXpipeFamily(node)) return true;
     if (!link) return false;
-    var graph = node.graph || app.graph;
+    var graph = node.graph || rootGraphOf(app);
     return isXpipeFamily(getNodeById(graph, link.origin_id))
         || isXpipeFamily(getNodeById(graph, link.target_id));
 }
@@ -240,7 +241,7 @@ function countXListCreateActiveInputs(node) {
     var count = 0;
     for (var index = 0; index < node.inputs.length; index++) {
         var input = node.inputs[index];
-        if (!input || input.link == null) continue;
+        if (!input || !inputConnected(node, input)) continue;
         var name = String(input.name || "");
         if (/(?:^|[._])input\d+$/.test(name)) {
             count += 1;
@@ -252,8 +253,9 @@ function countXListCreateActiveInputs(node) {
 function resolveXListToPipeCount(node) {
     // Same priority as XListPull: connected count port first, else widget.
     var countInput = findInputByName(node, "count");
-    if (countInput && countInput.link != null && node.graph) {
-        var link = getLinkInfo(node.graph, countInput.link);
+    var countLinkId = countInput ? inputLinkId(node, countInput) : null;
+    if (countLinkId != null && node.graph) {
+        var link = getLinkInfo(node.graph, countLinkId);
         var source = link && getNodeById(node.graph, link.origin_id);
         if (isXListCreate(source)) {
             var listCount = countXListCreateActiveInputs(source);
@@ -264,8 +266,11 @@ function resolveXListToPipeCount(node) {
         if (isXListRestore(source)) {
             // Restore.count = slot_map.width; resolve via Create inputs.
             var slotMapInput = findInputByName(source, "slot_map");
-            if (slotMapInput && slotMapInput.link != null) {
-                var mapLink = getLinkInfo(source.graph, slotMapInput.link);
+            var slotMapLinkId = slotMapInput
+                ? inputLinkId(source, slotMapInput)
+                : null;
+            if (slotMapLinkId != null) {
+                var mapLink = getLinkInfo(source.graph, slotMapLinkId);
                 var mapSource =
                     mapLink && getNodeById(source.graph, mapLink.origin_id);
                 if (isXListCreate(mapSource)) {
@@ -300,8 +305,9 @@ function resolveXListToPipeCount(node) {
 function resolveXListToPipeElementType(node) {
     // List is homogeneous: one element type applies to every expanded slot.
     var listInput = findInputByName(node, "list_input");
-    if (!listInput || listInput.link == null || !node.graph) return "";
-    var link = getLinkInfo(node.graph, listInput.link);
+    var listLinkId = listInput ? inputLinkId(node, listInput) : null;
+    if (listLinkId == null || !node.graph) return "";
+    var link = getLinkInfo(node.graph, listLinkId);
     if (!link) return "";
     var source = getNodeById(node.graph, link.origin_id);
     var output = source && source.outputs
@@ -430,7 +436,7 @@ function applyUiLocale() {
         .then(function (results) {
             uiLocaleFallback = results[0];
             uiLocalePrimary = normalized === "en" ? results[0] : results[1];
-            forEachXPipe(app.graph, function (node) {
+            forEachXPipe(rootGraphOf(app), function (node) {
                 updateControlWidgets(node);
                 if (node.__xpipeState) {
                     syncNameWidgets(node.__xpipeState);
@@ -832,7 +838,7 @@ function highestConnectedValueSlot(node) {
             var slot = valueSlotNumber(
                 node.inputs[index] && node.inputs[index].name,
             );
-            if (slot && slotLinkIds(node.inputs[index]).length) {
+            if (slot && coreSlotLinkIds(node, node.inputs[index]).length) {
                 highest = Math.max(highest, slot);
             }
         }
@@ -842,7 +848,7 @@ function highestConnectedValueSlot(node) {
             var outSlot = valueSlotNumber(
                 node.outputs[outIndex] && node.outputs[outIndex].name,
             );
-            if (outSlot && slotLinkIds(node.outputs[outIndex]).length) {
+            if (outSlot && coreSlotLinkIds(node, node.outputs[outIndex]).length) {
                 highest = Math.max(highest, outSlot);
             }
         }
@@ -860,8 +866,9 @@ function desiredDirectVisibleCount(node) {
 function upstreamBundleState(node) {
     var index = slotIndexOfName(node.inputs, BUNDLE_INPUT_NAME);
     var input = index >= 0 ? node.inputs[index] : null;
-    if (!input || input.link == null) return null;
-    var link = getLinkInfo(node.graph, input.link);
+    var inputLink = input ? inputLinkId(node, input) : null;
+    if (inputLink == null) return null;
+    var link = getLinkInfo(node.graph, inputLink);
     return resolveBundleStateFromLink(node.graph, link, {});
 }
 
@@ -876,25 +883,25 @@ function passthroughInputIndex(node, outputIndex) {
             BUNDLE_INPUT_NAME,
         );
         return gateInputIndex >= 0
-            && node.inputs[gateInputIndex].link != null
+            && inputConnected(node, node.inputs[gateInputIndex])
             ? gateInputIndex
             : -1;
     }
     if (String(node.comfyClass || node.type || "") === "XLinker") {
         return outputIndex === 0 && node.inputs[0]
-            && node.inputs[0].link != null ? 0 : -1;
+            && inputConnected(node, node.inputs[0]) ? 0 : -1;
     }
     var outputName = cleanName(output.name);
     for (var index = 0; index < node.inputs.length; index++) {
         var input = node.inputs[index];
-        if (!input || input.link == null) continue;
+        if (!input || !inputConnected(node, input)) continue;
         var inputType = cleanType(input.type);
         var outputType = cleanType(output.type);
         if (inputType && outputType && inputType !== outputType) continue;
         if (outputName && cleanName(input.name) === outputName) return index;
     }
     if (!outputName && node.inputs.length === 1
-        && node.inputs[0].link != null) return 0;
+        && inputConnected(node, node.inputs[0])) return 0;
     return -1;
 }
 
@@ -952,21 +959,25 @@ function resolveBundleStateFromSlot(slot, graph, seen) {
         var input = inputIndex >= 0
             ? outputOwner.node.inputs[inputIndex]
             : null;
-        if (input && input.link != null) {
+        var inputLink = input ? inputLinkId(outputOwner.node, input) : null;
+        if (inputLink != null) {
             return resolveBundleStateFromLink(
                 outputOwner.node.graph,
-                getLinkInfo(outputOwner.node.graph, input.link),
+                getLinkInfo(outputOwner.node.graph, inputLink),
                 seen,
             );
         }
     }
     var inputOwner = findSlotOwner(slot, "input", graph);
-    if (inputOwner && inputOwner.slot.link != null) {
-        return resolveBundleStateFromLink(
-            inputOwner.node.graph,
-            getLinkInfo(inputOwner.node.graph, inputOwner.slot.link),
-            seen,
-        );
+    if (inputOwner) {
+        var ownerLink = inputLinkId(inputOwner.node, inputOwner.slot);
+        if (ownerLink != null) {
+            return resolveBundleStateFromLink(
+                inputOwner.node.graph,
+                getLinkInfo(inputOwner.node.graph, ownerLink),
+                seen,
+            );
+        }
     }
     var ids = slotLinkIds(slot);
     for (var index = 0; index < ids.length; index++) {
@@ -1014,10 +1025,13 @@ function resolveBundleStateFromLink(graph, link, seen) {
         var parentInput = parentNode && parentNode.inputs
             ? parentNode.inputs[link.origin_slot]
             : null;
-        if (parentInput && parentInput.link != null) {
+        var parentInputLink = parentInput
+            ? inputLinkId(parentNode, parentInput)
+            : null;
+        if (parentInputLink != null) {
             return resolveBundleStateFromLink(
                 parentNode.graph,
-                getLinkInfo(parentNode.graph, parentInput.link),
+                getLinkInfo(parentNode.graph, parentInputLink),
                 seen,
             );
         }
@@ -1050,10 +1064,13 @@ function resolveBundleStateFromLink(graph, link, seen) {
         var parentInput = parent && parent.inputs
             ? parent.inputs[inputIndex]
             : null;
-        if (parentInput && parentInput.link != null) {
+        var parentInputLink = parentInput
+            ? inputLinkId(parent, parentInput)
+            : null;
+        if (parentInputLink != null) {
             return resolveBundleStateFromLink(
                 parent.graph,
-                getLinkInfo(parent.graph, parentInput.link),
+                getLinkInfo(parent.graph, parentInputLink),
                 seen,
             );
         }
@@ -1101,10 +1118,11 @@ function resolveBundleStateFromLink(graph, link, seen) {
     var input = inputIndex >= 0 && source.inputs
         ? source.inputs[inputIndex]
         : null;
-    return input && input.link != null
+    var inputLink = input ? inputLinkId(source, input) : null;
+    return inputLink != null
         ? resolveBundleStateFromLink(
             source.graph,
-            getLinkInfo(source.graph, input.link),
+            getLinkInfo(source.graph, inputLink),
             seen,
         )
         : null;
@@ -1113,10 +1131,11 @@ function resolveBundleStateFromLink(graph, link, seen) {
 export function resolveXPipeStateForInput(node, inputName) {
     var index = slotIndexOfName(node && node.inputs, inputName);
     var input = index >= 0 ? node.inputs[index] : null;
-    if (!input || input.link == null || !node.graph) return null;
+    var inputLink = input ? inputLinkId(node, input) : null;
+    if (inputLink == null || !node.graph) return null;
     return resolveBundleStateFromLink(
         node.graph,
-        getLinkInfo(node.graph, input.link),
+        getLinkInfo(node.graph, inputLink),
         {},
     );
 }
@@ -1153,21 +1172,25 @@ function resolveValueMetadataFromSlot(slot, graph, seen) {
         var input = inputIndex >= 0
             ? outputOwner.node.inputs[inputIndex]
             : null;
-        if (input && input.link != null) {
+        var inputLink = input ? inputLinkId(outputOwner.node, input) : null;
+        if (inputLink != null) {
             return resolveValueMetadataFromLink(
                 outputOwner.node.graph,
-                getLinkInfo(outputOwner.node.graph, input.link),
+                getLinkInfo(outputOwner.node.graph, inputLink),
                 seen,
             );
         }
     }
     var inputOwner = findSlotOwner(slot, "input", graph);
-    if (inputOwner && inputOwner.slot.link != null) {
-        return resolveValueMetadataFromLink(
-            inputOwner.node.graph,
-            getLinkInfo(inputOwner.node.graph, inputOwner.slot.link),
-            seen,
-        );
+    if (inputOwner) {
+        var ownerLink = inputLinkId(inputOwner.node, inputOwner.slot);
+        if (ownerLink != null) {
+            return resolveValueMetadataFromLink(
+                inputOwner.node.graph,
+                getLinkInfo(inputOwner.node.graph, ownerLink),
+                seen,
+            );
+        }
     }
     var ids = slotLinkIds(slot);
     for (var index = 0; index < ids.length; index++) {
@@ -1218,10 +1241,13 @@ function resolveValueMetadataFromLink(graph, link, seen) {
         var parentInput = parentNode && parentNode.inputs
             ? parentNode.inputs[link.origin_slot]
             : null;
-        if (parentInput && parentInput.link != null) {
+        var parentInputLink = parentInput
+            ? inputLinkId(parentNode, parentInput)
+            : null;
+        if (parentInputLink != null) {
             return resolveValueMetadataFromLink(
                 parentNode.graph,
-                getLinkInfo(parentNode.graph, parentInput.link),
+                getLinkInfo(parentNode.graph, parentInputLink),
                 seen,
             );
         }
@@ -1242,10 +1268,13 @@ function resolveValueMetadataFromLink(graph, link, seen) {
         var parentInput = parent && parent.inputs
             ? parent.inputs[inputIndex]
             : null;
-        if (parentInput && parentInput.link != null) {
+        var parentInputLink = parentInput
+            ? inputLinkId(parent, parentInput)
+            : null;
+        if (parentInputLink != null) {
             return resolveValueMetadataFromLink(
                 parent.graph,
-                getLinkInfo(parent.graph, parentInput.link),
+                getLinkInfo(parent.graph, parentInputLink),
                 seen,
             );
         }
@@ -1297,10 +1326,13 @@ function resolveValueMetadataFromLink(graph, link, seen) {
     var passthroughInput = passthroughIndex >= 0 && source.inputs
         ? source.inputs[passthroughIndex]
         : null;
-    return passthroughInput && passthroughInput.link != null
+    var passthroughLink = passthroughInput
+        ? inputLinkId(source, passthroughInput)
+        : null;
+    return passthroughLink != null
         ? resolveValueMetadataFromLink(
             source.graph,
-            getLinkInfo(source.graph, passthroughInput.link),
+            getLinkInfo(source.graph, passthroughLink),
             seen,
         )
         : null;
@@ -1309,10 +1341,11 @@ function resolveValueMetadataFromLink(graph, link, seen) {
 export function resolveXPipeValueMetadataForInput(node, inputName) {
     var index = slotIndexOfName(node && node.inputs, inputName);
     var input = index >= 0 ? node.inputs[index] : null;
-    if (!input || input.link == null || !node.graph) return null;
+    var inputLink = input ? inputLinkId(node, input) : null;
+    if (inputLink == null || !node.graph) return null;
     return resolveValueMetadataFromLink(
         node.graph,
-        getLinkInfo(node.graph, input.link),
+        getLinkInfo(node.graph, inputLink),
         {},
     );
 }
@@ -1404,8 +1437,11 @@ function subgraphInputOutput(node, link, source) {
                 parentInput = parent.inputs[link.origin_slot] || null;
             }
         }
-        if (parentInput && parentInput.link != null) {
-            var boundary = getLinkInfo(parent.graph, parentInput.link);
+        var boundaryLinkId = parentInput
+            ? inputLinkId(parent, parentInput)
+            : null;
+        if (boundaryLinkId != null) {
+            var boundary = getLinkInfo(parent.graph, boundaryLinkId);
             type = cleanType(boundary && boundary.type);
         }
     }
@@ -1421,8 +1457,9 @@ function subgraphInputOutput(node, link, source) {
 function directInputSource(node, slot) {
     var index = slotIndexOfName(node.inputs, "value_" + slot);
     var input = index >= 0 ? node.inputs[index] : null;
-    if (!input || input.link == null) return null;
-    var link = getLinkInfo(node.graph, input.link);
+    var inputLink = input ? inputLinkId(node, input) : null;
+    if (inputLink == null) return null;
+    var link = getLinkInfo(node.graph, inputLink);
     if (!link) return null;
     var source = getNodeById(node.graph, link.origin_id);
     if (!source) {
@@ -1906,11 +1943,11 @@ function ensureXPipe(node) {
 
 function refreshAllXPipe() {
     // 先把外壳上错位的控件撤下来，再同步内部状态。
-    forEachNode(app.graph, function (node) {
+    forEachNode(rootGraphOf(app), function (node) {
         if (node && node.subgraph) demoteValuePortWidgets(node);
     });
     var nodes = [];
-    forEachXPipe(app.graph, function (node) {
+    forEachXPipe(rootGraphOf(app), function (node) {
         nodes.push(node);
         ensureXPipe(node);
     });
@@ -2057,7 +2094,7 @@ function installCanvasHooks() {
     // 一次性判定，避免硬编码索引在新旧版本间静默失效。
     var colorIndex = originalRenderLink.length >= 7 ? 6 : 5;
     canvas.renderLink = function (ctx, start, end, link) {
-        var graph = this.graph || app.graph;
+        var graph = this.graph || rootGraphOf(app);
         var entry = cachedLinkRender(link, graph);
         if (!entry) return originalRenderLink.apply(this, arguments);
         if (entry.bundleHidden || entry.valueHidden) return;
@@ -2111,7 +2148,7 @@ app.registerExtension({
         // which can bypass the incremental onNodeCreated/onRemoved count;
         // rebuild the count from the graph so the gate stays accurate.
         xpipeNodeCount = 0;
-        forEachXPipe(app.graph, function (node) {
+        forEachXPipe(rootGraphOf(app), function (node) {
             node.__xpipeCounted = true;
             xpipeNodeCount++;
         });

@@ -15,6 +15,7 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XSeed";
 var NODE_CLASS = "XSeed";
@@ -108,7 +109,7 @@ function refreshAllSeedLocales() {
     var graph = (app.canvas && app.canvas.getCurrentGraph
         && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
-        || app.graph;
+        || rootGraphOf(app);
     var nodes = (graph && (graph._nodes || graph.nodes)) || [];
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
@@ -882,7 +883,7 @@ app.registerExtension({
             var graph = (app.canvas && app.canvas.getCurrentGraph
                 && app.canvas.getCurrentGraph())
                 || (app.canvas && app.canvas.graph)
-                || app.graph;
+                || rootGraphOf(app);
             if (!graph) return;
             var node = graph.getNodeById
                 ? graph.getNodeById(detail.node)

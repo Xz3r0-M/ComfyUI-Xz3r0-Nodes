@@ -17,6 +17,7 @@ import {
     removeWidgetInput,
 } from "./core/hidden-widget.js";
 import { forEachNode } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 // =========================================================================
 // 本地化 Key 常量（参照 XImageGet2 模式）
@@ -2276,7 +2277,7 @@ app.registerExtension({
         // 清理浮层（残留上一张预览图）。
         function _getAllStates() {
             var result = [];
-            forEachNode(app.graph, function (node) {
+            forEachNode(rootGraphOf(app), function (node) {
                 var state = node && node.__xcompareState;
                 if (state && state._previewOverlay) {
                     result.push(state);

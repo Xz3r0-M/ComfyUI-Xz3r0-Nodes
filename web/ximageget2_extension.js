@@ -9,6 +9,7 @@ import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -140,7 +141,7 @@ async function loadUiLocaleBundle(localeOverride = null) {
 }
 
 function refreshAllPanelLocales() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -1844,11 +1845,11 @@ function forEachNodeInGraphTree(rootGraph, visitor) {
 }
 
 function getScopedNodeId(node) {
-    if (!node || !app.graph) {
+    if (!node || !rootGraphOf(app)) {
         return "";
     }
     let scopedId = "";
-    forEachNodeInGraphTree(app.graph, (graphNode, graphScopedId) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (graphNode, graphScopedId) => {
         if (!scopedId && graphNode === node) {
             scopedId = graphScopedId;
         }
@@ -1858,12 +1859,12 @@ function getScopedNodeId(node) {
 
 function getNodeById(nodeId) {
     const targetId = String(nodeId ?? "").trim();
-    if (!targetId || !app.graph) {
+    if (!targetId || !rootGraphOf(app)) {
         return null;
     }
     let scopedMatch = null;
     let plainMatch = null;
-    forEachNodeInGraphTree(app.graph, (node, scopedId) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (node, scopedId) => {
         if (scopedMatch) {
             return;
         }
@@ -1884,11 +1885,11 @@ function getNodeById(nodeId) {
 
 function collectNodesByClass(nodeClass) {
     const targetClass = String(nodeClass || "");
-    if (!SUPPORTED_NODE_CLASSES.has(targetClass) || !app.graph) {
+    if (!SUPPORTED_NODE_CLASSES.has(targetClass) || !rootGraphOf(app)) {
         return [];
     }
     const items = [];
-    forEachNodeInGraphTree(app.graph, (node, scopedId) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (node, scopedId) => {
         if (node?.comfyClass !== targetClass) {
             return;
         }
@@ -1926,10 +1927,10 @@ function updateNodeMediaRef(node, mediaRef, title) {
 }
 
 function installExistingNodes() {
-    if (!app.graph) {
+    if (!rootGraphOf(app)) {
         return;
     }
-    forEachNodeInGraphTree(app.graph, (node) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (node) => {
         installNodeUi(node);
         if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
             getStorageWidget(node);

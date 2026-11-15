@@ -14,6 +14,8 @@ import {
     buildVideoPlayer,
 } from "./core/media-player.js";
 import { randomSuffix } from "./core/random-id.js";
+import { rootGraphOf } from "./core/root-graph.js";
+import { selectOnlyNode } from "./core/canvas-selection.js";
 
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
@@ -973,7 +975,7 @@ function applyPanelLocale(panelInfo) {
 }
 
 function refreshAllPanelLocales() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -1401,23 +1403,7 @@ function createPreviewImageFromNode(node) {
 }
 
 function selectNodeForMaskEditor(node) {
-    const canvas = app?.canvas;
-    if (!canvas || !node) {
-        return;
-    }
-    try {
-        canvas.deselectAllNodes?.();
-    } catch {
-        // ignore
-    }
-    try {
-        canvas.selectNode?.(node, false);
-    } catch {
-        // ignore
-    }
-    canvas.current_node = node;
-    canvas.node_selected = node;
-    canvas.selected_nodes = { [node.id]: node };
+    selectOnlyNode(app?.canvas, node);
 }
 
 function clearTemporaryMaskEditorState(node) {
@@ -2272,7 +2258,7 @@ function restoreStoredData(node, stored, storedTitle = "") {
 }
 
 function installExistingNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -2330,7 +2316,7 @@ function getScopedNodeId(node) {
     if (!node) {
         return "";
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return "";
     }
@@ -2348,7 +2334,7 @@ function getNodeById(nodeId) {
     if (!targetId) {
         return null;
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return null;
     }
@@ -2415,7 +2401,7 @@ function collectNodesByClass(nodeClass) {
     if (!SUPPORTED_NODE_CLASSES.has(targetClass)) {
         return [];
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return [];
     }

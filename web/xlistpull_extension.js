@@ -13,6 +13,11 @@
 
 import { app } from "../../scripts/app.js";
 import {
+    inputConnected,
+    inputLinkId,
+    outputLinkIds,
+} from "./core/slot-links.js";
+import {
     applyVisibleSlotWindow,
     installStableSlotView,
     refreshOutputLinkSources,
@@ -24,6 +29,7 @@ import {
     forEachNodeByComfyClass,
     getLinkInfo as subgraphGetLinkInfo,
 } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var NODE_CLASS = "XListPull";
 var LIST_CREATE_CLASS = "XListCreate";
@@ -79,10 +85,7 @@ function outputLinkCount(node, index) {
     if (!node || index < 0 || index >= node.outputs.length) return 0;
     var output = node.outputs[index];
     if (!output) return 0;
-    if (Array.isArray(output.linkIds)) return output.linkIds.length;
-    if (Array.isArray(output.links)) return output.links.length;
-    if (output.linkId != null || output.link != null) return 1;
-    return 0;
+    return outputLinkIds(node, output).length;
 }
 
 function dataSlotNumber(name) {
@@ -172,7 +175,7 @@ function countActiveInputs(node) {
     for (var i = 0; i < node.inputs.length; i++) {
         var input = node.inputs[i];
         if (!input) continue;
-        if (isXListCreateAutogrowInput(input.name) && input.link != null) {
+        if (isXListCreateAutogrowInput(input.name) && inputConnected(node, input)) {
             cnt++;
         }
     }
@@ -185,7 +188,7 @@ function findNamedInputLink(node, name) {
     for (var i = 0; i < node.inputs.length; i++) {
         var inp = node.inputs[i];
         if (!inp || inp.name !== name) continue;
-        return inp.link != null ? inp.link : null;
+        return inputLinkId(node, inp);
     }
     return null;
 }
@@ -214,7 +217,7 @@ function findCountPort(node) {
         var inp = node.inputs[i];
         if (!inp) continue;
         if (inp.name === "count")
-            return { idx: i, linkId: inp.link != null ? inp.link : null };
+            return { idx: i, linkId: inputLinkId(node, inp) };
     }
     return { idx: -1, linkId: null };
 }
@@ -291,13 +294,14 @@ function getListInputType(node) {
             break;
         }
     }
-    if (listInp && listInp.link != null && node.graph) {
-        var linkObj = getLinkInfo(node.graph, listInp.link);
+    var listLinkId = listInp ? inputLinkId(node, listInp) : null;
+    if (listLinkId != null && node.graph) {
+        var linkObj = getLinkInfo(node.graph, listLinkId);
         if (linkObj) {
             // 上游 list 输出端口的实时类型优先。连线建立时的 link.type 可能
             // 还是 “*”（那时 XListCreate 还没接输入、类型未确定），只读
             // link.type 会把下游 Data 端口也卡在 “*”。
-            var upstream = getUpstreamNode(node.graph, listInp.link);
+            var upstream = getUpstreamNode(node.graph, listLinkId);
             if (upstream && Array.isArray(upstream.outputs)) {
                 var originSlot = linkObj.origin_slot;
                 var upstreamOut = originSlot != null
@@ -669,7 +673,7 @@ function syncXListCreateInputLabels(node) {
 
 function fixXListCreateSizes(rootGraph) {
     // Walk the whole graph tree so Create nodes inside subgraphs are sized.
-    var root = rootGraph || app.graph;
+    var root = rootGraph || rootGraphOf(app);
     if (!root) return;
     forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
         normalizeXListCreate(node);
@@ -685,12 +689,12 @@ function scheduleRefreshAll(_graph) {
     _refreshTimer = setTimeout(function () {
         _refreshTimer = null;
         // Always refresh from the app root so nested subgraph Pulls update.
-        doRefreshAll(app.graph);
+        doRefreshAll(rootGraphOf(app));
     }, 50);
 }
 
 function doRefreshAll(rootGraph) {
-    var root = rootGraph || app.graph;
+    var root = rootGraph || rootGraphOf(app);
     if (!root) return;
     // 先把 XListCreate 的端口顺序与类型弄对，下游 XListPull 再按新类型同步。
     forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
@@ -713,14 +717,14 @@ app.registerExtension({
 
     afterConfigureGraph: function () {
         // Full tree: Pull/Create may live inside nested subgraphs.
-        doRefreshAll(app.graph);
-        fixXListCreateSizes(app.graph);
+        doRefreshAll(rootGraphOf(app));
+        fixXListCreateSizes(rootGraphOf(app));
         if (!window.__xlistpullMediaListListenerInstalled) {
             window.__xlistpullMediaListListenerInstalled = true;
             document.addEventListener(
                 "xmedialistget:count-changed",
                 function () {
-                    scheduleRefreshAll(app.graph);
+                    scheduleRefreshAll(rootGraphOf(app));
                 }
             );
         }
