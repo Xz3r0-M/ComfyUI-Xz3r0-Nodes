@@ -13,11 +13,15 @@ import {
 } from "./xpipe_extension.js";
 import { forEachNodeByComfyClass } from "./x_subgraph_utils.js";
 import { rootGraphOf } from "./core/root-graph.js";
+import {
+    isXMediaListGet,
+    mediaListEnabledCount,
+    upstreamSource,
+} from "./core/media-list-source.js";
 
 var NODE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
-var MEDIA_LIST_CLASS = "XMediaListGet";
 var PIPE_SLOTS = 50;
 
 function findCountPort(node) {
@@ -46,19 +50,6 @@ function findCountWidget(node) {
     return null;
 }
 
-function getUpstreamNode(graph, linkId) {
-    if (!graph || linkId == null) return null;
-    var link = graph.links
-        ? graph.links[linkId] || linkId
-        : linkId;
-    if (!link || typeof link !== "object") return null;
-    var originId = link.origin_id;
-    if (originId == null) return null;
-    return graph.getNodeById
-        ? graph.getNodeById(originId)
-        : graph._nodes_by_id && graph._nodes_by_id[originId];
-}
-
 function resolveAutogrowSlotNumber(name) {
     var raw = String(name || "");
     var match = raw.match(/(?:^|[._])input(\d+)$/);
@@ -80,68 +71,26 @@ function countActiveInputs(node) {
     return Math.max(0, Math.min(PIPE_SLOTS, count));
 }
 
-function findNamedInputLink(node, name) {
-    if (!node || !Array.isArray(node.inputs)) return null;
-    for (var index = 0; index < node.inputs.length; index++) {
-        var input = node.inputs[index];
-        if (!input || input.name !== name) continue;
-        return inputLinkId(node, input);
-    }
-    return null;
-}
-
 /** Restore.count ≈ Create 已连接 Autogrow 槽位数（slot_map.width）。 */
 function resolveRestoreWidth(restoreNode) {
     if (!restoreNode || !restoreNode.graph) return 0;
-    var linkId = findNamedInputLink(restoreNode, "slot_map");
-    if (linkId == null) return 0;
-    var source = getUpstreamNode(restoreNode.graph, linkId);
-    if (source && source.comfyClass === LIST_CREATE_CLASS) {
-        return countActiveInputs(source);
-    }
-    return 0;
-}
-
-
-function isXMediaListGet(node) {
-    return !!(
-        node
-        && String(node.comfyClass || node.type || "") === MEDIA_LIST_CLASS
+    var mapSource = upstreamSource(
+        restoreNode,
+        "slot_map",
+        rootGraphOf(app),
     );
-}
-
-/**
- * XMediaListGet 的图片 / 视频 / 音频数量分别从输出槽位 2 / 4 / 6 出去。
- * 面板改动时会把启用数写到节点上，这里读它即可，不必等到执行。
- */
-function mediaListEnabledCount(node, originSlot) {
-    if (!isXMediaListGet(node)) return 0;
-    var counts = node.__xmlg_enabled_counts || null;
-    var key = originSlot === 2
-        ? "image"
-        : originSlot === 4
-            ? "video"
-            : originSlot === 6
-                ? "audio"
-                : "";
-    if (counts && key && counts[key] != null) {
-        return Math.max(
-            1,
-            Math.min(PIPE_SLOTS, Math.round(Number(counts[key])) || 0),
-        );
-    }
-    var total = Number(node.__xmlg_enabled_count);
-    if (Number.isFinite(total) && total > 0) {
-        return Math.max(1, Math.min(PIPE_SLOTS, Math.round(total)));
+    if (mapSource && mapSource.node.comfyClass === LIST_CREATE_CLASS) {
+        return countActiveInputs(mapSource.node);
     }
     return 0;
 }
+
 
 function resolveCount(node) {
     if (!node) return 1;
-    var countPort = findCountPort(node);
-    if (countPort.linkId != null && node.graph) {
-        var upstream = getUpstreamNode(node.graph, countPort.linkId);
+    var countSource = upstreamSource(node, "count", rootGraphOf(app));
+    if (countSource) {
+        var upstream = countSource.node;
         if (upstream && upstream.comfyClass === LIST_CREATE_CLASS) {
             var listCount = countActiveInputs(upstream);
             if (listCount > 0) {
@@ -155,15 +104,12 @@ function resolveCount(node) {
             }
         }
         if (isXMediaListGet(upstream)) {
-            var link = node.graph.links
-                ? node.graph.links[countPort.linkId] || countPort.linkId
-                : countPort.linkId;
-            var originSlot = link && typeof link === "object"
-                ? link.origin_slot
-                : null;
-            var mediaCount = mediaListEnabledCount(upstream, originSlot);
+            var mediaCount = mediaListEnabledCount(
+                upstream,
+                countSource.slot,
+            );
             if (mediaCount > 0) {
-                return mediaCount;
+                return Math.max(1, Math.min(PIPE_SLOTS, mediaCount));
             }
         }
     }

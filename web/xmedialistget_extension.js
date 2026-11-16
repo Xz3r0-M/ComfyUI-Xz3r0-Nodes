@@ -70,13 +70,14 @@ const OUTPUT_WIDGETS = {
     audio: "output_audios",
 };
 // 某一类只要任一相关输出端口有连线，就加载该类。
-// 0 images / 1 masks / 2 image_count
-// 3 videos / 4 video_count
-// 5 audios / 6 audio_count
+// 每一类的端口挨在一起：列表 / 遮罩 / 数量 / 名称，所以索引是断开的。
+// 0 images / 1 masks / 2 image_count / 3 image_names
+// 4 videos / 5 video_count / 6 video_names
+// 7 audios / 8 audio_count / 9 audio_names
 const OUTPUT_SLOT_GROUPS = {
-    image: [0, 1, 2],
-    video: [3, 4],
-    audio: [5, 6],
+    image: [0, 1, 2, 3],
+    video: [4, 5, 6],
+    audio: [7, 8, 9],
 };
 /* 旧版「每页条数」的设置名。分页已经退场，这里只保留名字：
    老节点的属性仍然读得到，不用做数据迁移。 */
@@ -531,6 +532,18 @@ function enabledCount(items, category) {
     return (items[category] || []).filter(
         (entry) => entry.enabled !== false
     ).length;
+}
+
+/**
+ * 当前启用的文件名（按面板顺序，和 Python 侧输出的一一对应）。
+ *
+ * 给下游 XListToPipe / XPipe / XPipeGate 实时显示槽位名用。以前那里
+ * 只有空名字，用户得在命名面板里手打最多 50 个。
+ */
+function enabledNames(items, category) {
+    return (items[category] || [])
+        .filter((entry) => entry.enabled !== false)
+        .map((entry) => String(entry.title || "").trim());
 }
 
 function hasAnyItems(items) {
@@ -3898,8 +3911,25 @@ function syncPanelCounts(node) {
         node.__xmlg_enabled_counts.video,
         node.__xmlg_enabled_counts.audio,
     ].join("|");
-    if (node.__xmlg_enabled_counts_key !== countsKey) {
-        node.__xmlg_enabled_counts_key = countsKey;
+    /*
+     * 同时把「每个启用文件的文件名」摆到节点上：下游（XListToPipe →
+     * XPipe / XPipeGate）就靠这个实时算槽位名。只拿数量不够：
+     * 排序变了、或者在同一个位置换了个文件，数量一点没变，但名字
+     * 全得跟着换，所以下面的变化判断要把名字也算进去。
+     */
+    node.__xmlg_enabled_names = {
+        image: enabledNames(state.items, "image"),
+        video: enabledNames(state.items, "video"),
+        audio: enabledNames(state.items, "audio"),
+    };
+    const namesKey = [
+        node.__xmlg_enabled_names.image.join("\u0001"),
+        node.__xmlg_enabled_names.video.join("\u0001"),
+        node.__xmlg_enabled_names.audio.join("\u0001"),
+    ].join("\u0002");
+    const nextKey = `${countsKey}\u0003${namesKey}`;
+    if (node.__xmlg_enabled_counts_key !== nextKey) {
+        node.__xmlg_enabled_counts_key = nextKey;
         document.dispatchEvent(
             new CustomEvent("xmedialistget:count-changed")
         );

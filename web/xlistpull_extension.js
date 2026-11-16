@@ -27,14 +27,18 @@ import {
 } from "./x_stable_slots.js";
 import {
     forEachNodeByComfyClass,
-    getLinkInfo as subgraphGetLinkInfo,
+    getLinkInfo,
+    resolveLinkSource,
 } from "./x_subgraph_utils.js";
 import { rootGraphOf } from "./core/root-graph.js";
+import {
+    isXMediaListGet,
+    mediaListEnabledCount,
+} from "./core/media-list-source.js";
 
 var NODE_CLASS = "XListPull";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
-var MEDIA_LIST_CLASS = "XMediaListGet";
 var MAX_OUTPUTS = 50;
 
 /** 获取当前 ComfyUI 语言设置 */
@@ -106,10 +110,6 @@ function stableDataName(num) {
     return "data_" + num;
 }
 
-function getLinkInfo(graph, linkId) {
-    return subgraphGetLinkInfo(graph, linkId);
-}
-
 function ensureOutputOrder(node) {
     if (!node || !Array.isArray(node.outputs)) return;
     var channels = [];
@@ -156,17 +156,21 @@ function ensureOutputOrder(node) {
     });
 }
 
+/**
+ * 上游节点。会穿过子图边界：子图里的一根线，源头是子图输入代理节点时，
+ * 真正的数据源在外层（详见 x_subgraph_utils 的 resolveLinkSource）。
+ */
 function getUpstreamNode(graph, linkId) {
+    var source = getUpstreamSource(graph, linkId);
+    return source ? source.node : null;
+}
+
+function getUpstreamSource(graph, linkId) {
     if (!graph || linkId == null) return null;
-    var link = graph.links
-        ? graph.links[linkId] || linkId
-        : linkId;
-    if (!link || typeof link !== "object") return null;
-    var originId = link.origin_id;
-    if (originId == null) return null;
-    return graph.getNodeById
-        ? graph.getNodeById(originId)
-        : graph._nodes_by_id && graph._nodes_by_id[originId];
+    // 调用方有时直接给连线对象，有时给 id，两种都收。
+    var link = typeof linkId === "object" ? linkId : getLinkInfo(graph, linkId);
+    if (!link) return null;
+    return resolveLinkSource(graph, link, rootGraphOf(app));
 }
 
 function countActiveInputs(node) {
@@ -250,24 +254,14 @@ function resolveCount(node) {
             }
         }
         // XMediaListGet：三个 count 端口分别对应图片/视频/音频的启用数。
-        // 端口索引：0 images / 1 masks / 2 image_count / 3 videos /
-        // 4 video_count / 5 audios / 6 audio_count。
-        if (upstream && upstream.comfyClass === MEDIA_LIST_CLASS) {
-            var linkObj = getLinkInfo(node.graph, cp.linkId);
-            var originSlot = linkObj ? linkObj.origin_slot : null;
-            var counts = upstream.__xmlg_enabled_counts || null;
-            var countKey = originSlot === 2
-                ? "image"
-                : originSlot === 4
-                    ? "video"
-                    : originSlot === 6
-                        ? "audio"
-                        : "";
-            if (counts && countKey && counts[countKey] != null) {
-                return Math.min(Number(counts[countKey]), MAX_OUTPUTS);
-            }
-            var mediaCount = Number(upstream.__xmlg_enabled_count);
-            if (Number.isFinite(mediaCount) && mediaCount > 0) {
+        // 端口号和分类怎么对应，统一在 core/media-list-source.js 里。
+        if (isXMediaListGet(upstream)) {
+            var mediaSource = getUpstreamSource(node.graph, cp.linkId);
+            var mediaCount = mediaListEnabledCount(
+                upstream,
+                mediaSource ? mediaSource.slot : null,
+            );
+            if (mediaCount > 0) {
                 return Math.min(mediaCount, MAX_OUTPUTS);
             }
         }

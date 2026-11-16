@@ -31,6 +31,12 @@ import {
     slotAt,
 } from "./x_subgraph_utils.js";
 import { rootGraphOf } from "./core/root-graph.js";
+import {
+    isXMediaListGet,
+    mediaListEnabledCount,
+    mediaListEnabledNames,
+    upstreamSource,
+} from "./core/media-list-source.js";
 
 var NODE_CLASS = "XPipe";
 var PIPE_TYPE = "xpipe";
@@ -45,7 +51,6 @@ var PIPE_GATE_CLASS = "XPipeGate";
 var LIST_TO_PIPE_CLASS = "XListToPipe";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
-var MEDIA_LIST_CLASS = "XMediaListGet";
 var NAMES_WIDGET = "port_names";
 var TYPE_WARNING_WIDGET = "type_warning";
 var HIDE_STATE_PROP = "xpipe_hide_links_state";
@@ -164,39 +169,28 @@ function isXListRestore(node) {
     );
 }
 
-function isXMediaListGet(node) {
-    return !!(
-        node
-        && String(node.comfyClass || node.type || "") === MEDIA_LIST_CLASS
-    );
-}
-
 /**
- * XMediaListGet 的「图片数量 / 视频数量 / 音频数量」分别对应输出槽位
- * 2 / 4 / 6；面板每次变化都会把三个分类的启用数写到节点上，这里直接读，
- * 免得等到真正执行才知道有几路。
+ * XListToPipe 的槽位名：从 names 输入端口的上下游（XMediaListGet 的文件
+ * 名列表）实时算，和 XPipe 家族「名字永远是图上算出来的」保持一致。
+ *
+ * 取名条数跟 count 一样卡：多出来的槽位本来就没值，名子也不该占位。
  */
-function mediaListEnabledCount(node, originSlot) {
-    if (!isXMediaListGet(node)) return 0;
-    var counts = node.__xmlg_enabled_counts || null;
-    var key = originSlot === 2
-        ? "image"
-        : originSlot === 4
-            ? "video"
-            : originSlot === 6
-                ? "audio"
-                : "";
-    if (counts && key && counts[key] != null) {
-        return Math.max(
-            1,
-            Math.min(PIPE_SLOTS, Math.round(Number(counts[key])) || 0),
-        );
+function resolveXListToPipeNames(node) {
+    var names = padArray([], PIPE_SLOTS, "");
+    var source = upstreamSource(node, "names", rootGraphOf(app));
+    var list = source
+        ? mediaListEnabledNames(source.node, source.slot)
+        : null;
+    if (!list) return names;
+    var limit = Math.min(
+        list.length,
+        resolveXListToPipeCount(node),
+        PIPE_SLOTS,
+    );
+    for (var index = 0; index < limit; index++) {
+        names[index] = cleanName(list[index]);
     }
-    var total = Number(node.__xmlg_enabled_count);
-    if (Number.isFinite(total) && total > 0) {
-        return Math.max(1, Math.min(PIPE_SLOTS, Math.round(total)));
-    }
-    return 0;
+    return names;
 }
 
 
@@ -252,11 +246,9 @@ function countXListCreateActiveInputs(node) {
 
 function resolveXListToPipeCount(node) {
     // Same priority as XListPull: connected count port first, else widget.
-    var countInput = findInputByName(node, "count");
-    var countLinkId = countInput ? inputLinkId(node, countInput) : null;
-    if (countLinkId != null && node.graph) {
-        var link = getLinkInfo(node.graph, countLinkId);
-        var source = link && getNodeById(node.graph, link.origin_id);
+    var countSource = upstreamSource(node, "count", rootGraphOf(app));
+    if (countSource) {
+        var source = countSource.node;
         if (isXListCreate(source)) {
             var listCount = countXListCreateActiveInputs(source);
             if (listCount > 0) {
@@ -265,29 +257,27 @@ function resolveXListToPipeCount(node) {
         }
         if (isXListRestore(source)) {
             // Restore.count = slot_map.width; resolve via Create inputs.
-            var slotMapInput = findInputByName(source, "slot_map");
-            var slotMapLinkId = slotMapInput
-                ? inputLinkId(source, slotMapInput)
-                : null;
-            if (slotMapLinkId != null) {
-                var mapLink = getLinkInfo(source.graph, slotMapLinkId);
-                var mapSource =
-                    mapLink && getNodeById(source.graph, mapLink.origin_id);
-                if (isXListCreate(mapSource)) {
-                    var restoreWidth = countXListCreateActiveInputs(mapSource);
-                    if (restoreWidth > 0) {
-                        return Math.max(
-                            1,
-                            Math.min(PIPE_SLOTS, restoreWidth),
-                        );
-                    }
+            var mapSource = upstreamSource(
+                source,
+                "slot_map",
+                rootGraphOf(app),
+            );
+            if (mapSource && isXListCreate(mapSource.node)) {
+                var restoreWidth = countXListCreateActiveInputs(
+                    mapSource.node,
+                );
+                if (restoreWidth > 0) {
+                    return Math.max(
+                        1,
+                        Math.min(PIPE_SLOTS, restoreWidth),
+                    );
                 }
             }
         }
         if (isXMediaListGet(source)) {
-            var mediaCount = mediaListEnabledCount(source, link.origin_slot);
+            var mediaCount = mediaListEnabledCount(source, countSource.slot);
             if (mediaCount > 0) {
-                return mediaCount;
+                return Math.max(1, Math.min(PIPE_SLOTS, mediaCount));
             }
         }
         // Other INT sources fall back to widget until execute.
@@ -304,17 +294,12 @@ function resolveXListToPipeCount(node) {
 
 function resolveXListToPipeElementType(node) {
     // List is homogeneous: one element type applies to every expanded slot.
-    var listInput = findInputByName(node, "list_input");
-    var listLinkId = listInput ? inputLinkId(node, listInput) : null;
-    if (listLinkId == null || !node.graph) return "";
-    var link = getLinkInfo(node.graph, listLinkId);
-    if (!link) return "";
-    var source = getNodeById(node.graph, link.origin_id);
-    var output = source && source.outputs
-        ? source.outputs[link.origin_slot]
-        : null;
+    var listSource = upstreamSource(node, "list_input", rootGraphOf(app));
+    if (!listSource) return "";
+    var outputs = listSource.node && listSource.node.outputs;
+    var output = Array.isArray(outputs) ? outputs[listSource.slot] : null;
     return cleanType(output && output.type)
-        || cleanType(link.type)
+        || cleanType(listSource.link && listSource.link.type)
         || "";
 }
 
@@ -335,7 +320,7 @@ function ensureXListToPipeState(node) {
     );
     var state = {
         node: node,
-        names: padArray([], PIPE_SLOTS, ""),
+        names: resolveXListToPipeNames(node),
         types: types,
         visibleCount: visibleCount,
     };

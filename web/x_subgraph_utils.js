@@ -163,6 +163,105 @@ export function findSubgraphOutputNode(graph) {
 }
 
 /**
+ * 新版前端的转接点住在 graph.reroutes 里（Map 或普通对象），不在节点表里。
+ */
+function findReroute(graph, id) {
+    if (!graph || id == null) return null;
+    var reroutes = graph.reroutes;
+    if (!reroutes) return null;
+    if (typeof reroutes.get === "function") {
+        return reroutes.get(id) || null;
+    }
+    return reroutes[id] || null;
+}
+
+/**
+ * 顺着「某个输出口」往回追，直到找到真正产出数据的节点，穿过子图边界。
+ *
+ * 为什么要穿：
+ * - 子图里的一根线，源头往往是「子图输入」代理节点。它自己不产出数据，
+ *   数据来自外层接在同一个槽位上的那根线。
+ * - 反过来，源头的类型是「子图外壳」时，数据其实在子图内部。
+ * 只看 origin_id 的话这两种情况都会认错人——数量、元素类型、名字就全估不
+ * 出来（表现为画布上一直显示手填的旧值，或者名字一片空白）。
+ *
+ * @param {object} graph     连线所在的图
+ * @param {object} link      连线对象（必须已解析成对象，不是 id）
+ * @param {object} rootGraph 图树的根（通常是 app.graph）
+ * @param {number} [depth]   递归深度，内部用
+ * @returns {{graph: object, link: object, node: object, slot: number}|null}
+ */
+export function resolveLinkSource(graph, link, rootGraph, depth) {
+    var level = depth || 0;
+    if (!graph || !link || level > 16) return null;
+    var origin = getNodeById(graph, link.origin_id);
+    if (!origin && graph && graph.inputNode
+        && String(link.origin_id) === String(graph.inputNode.id)) {
+        // 子图输入代理不在普通节点表里（getNodeById 找不到），单独认领。
+        origin = graph.inputNode;
+    }
+    if (!origin) {
+        // 转接点（Reroute）不是普通节点，得去连线库的转接点表里找。
+        var rerouteNode = findReroute(graph, link.origin_id);
+        if (!rerouteNode) return null;
+        var beforeReroute = findLinkToNodeInput(graph, rerouteNode, 0);
+        return beforeReroute
+            ? resolveLinkSource(graph, beforeReroute, rootGraph, level + 1)
+            : null;
+    }
+
+    // 老式转接点是普通节点，只有一个入口，一样继续往上游走。
+    if (normalizedNodeType(origin).indexOf("reroute") >= 0) {
+        var throughReroute = findLinkToNodeInput(graph, origin, 0);
+        return throughReroute
+            ? resolveLinkSource(graph, throughReroute, rootGraph, level + 1)
+            : null;
+    }
+
+    if (isSubgraphInputNode(origin, graph)) {
+        // 子图输入代理：往外层同名的槽位继续找。
+        var parent = findParentSubgraphNode(graph, rootGraph);
+        if (!parent) return null;
+        var outerGraph = parent.graph || rootGraph;
+        var proxySlot = Array.isArray(origin.outputs)
+            ? origin.outputs[link.origin_slot]
+            : null;
+        // 外壳节点的输入槽和子图输入一一对应，先按名字认，认不出用序号。
+        var slotIndex = findMatchingSlotIndex(parent.inputs, proxySlot, -1);
+        if (slotIndex < 0) slotIndex = link.origin_slot;
+        var outerLink = findLinkToNodeInput(outerGraph, parent, slotIndex);
+        if (!outerLink) return null;
+        return resolveLinkSource(outerGraph, outerLink, rootGraph, level + 1);
+    }
+
+    if (origin.subgraph) {
+        // 子图外壳的输出口：钻进子图，找内部真正产出数据的那个节点。
+        var inner = origin.subgraph;
+        var subOutput = Array.isArray(inner.outputs)
+            ? inner.outputs[link.origin_slot]
+            : null;
+        var ids = (subOutput && (subOutput.linkIds || subOutput.links)) || [];
+        for (var index = 0; index < ids.length; index++) {
+            var found = resolveLinkSource(
+                inner,
+                getLinkInfo(inner, ids[index]),
+                rootGraph,
+                level + 1,
+            );
+            if (found) return found;
+        }
+        return null;
+    }
+
+    return {
+        graph: graph,
+        link: link,
+        node: origin,
+        slot: link.origin_slot,
+    };
+}
+
+/**
  * Find the shell node whose .subgraph === childGraph.
  * @param {object} childGraph
  * @param {object} rootGraph  required (typically app.graph)

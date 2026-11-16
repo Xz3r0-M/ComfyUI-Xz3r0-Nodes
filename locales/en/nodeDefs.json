@@ -1545,7 +1545,7 @@
   },
   "XListToPipe": {
     "display_name": "XListToPipe",
-    "description": "Turn a list into an XPipe bundle so it can flow through the XPipe family. Items fill slots 1..N (up to 50); unused slots stay empty (None). The count input sets how many slots the bundle has.",
+    "description": "Turn a list into an XPipe bundle so it can flow through the XPipe family. Items fill slots 1..N (up to 50); unused slots stay empty (None). The count input sets how many slots the bundle has. Connect the names input to give each slot a real name.",
     "inputs": {
       "list_input": {
         "name": "List",
@@ -1558,6 +1558,10 @@
       "count_display": {
         "name": "Count",
         "tooltip": "How many slots the bundle has. Auto-disabled when the count port is connected; otherwise set it manually here."
+      },
+      "names": {
+        "name": "Names",
+        "tooltip": "Optional slot names, one per item, in the same order as the list. Connect XMediaListGet's image_names / video_names / audio_names so the bundle carries real file names instead of blank slots. Shorter than the list: the rest stay blank. Leave unconnected for blank names."
       }
     },
     "outputs": {
@@ -2861,20 +2865,32 @@
         "tooltip": "How many images were output. Connect to XListPull's count to size its split ports automatically."
       },
       "3": {
+        "name": "Image Names",
+        "tooltip": "File name of each image, in the same order as the image list. Disabled and missing files are skipped here too, so it always lines up one-to-one."
+      },
+      "4": {
         "name": "Video List",
         "tooltip": "Enabled videos in panel order. When there are none, one empty value is output."
       },
-      "4": {
+      "5": {
         "name": "Video Count",
         "tooltip": "How many videos were output."
       },
-      "5": {
+      "6": {
+        "name": "Video Names",
+        "tooltip": "File name of each video, in the same order as the video list."
+      },
+      "7": {
         "name": "Audio List",
         "tooltip": "Enabled audio files in panel order. When there is none, one empty value is output."
       },
-      "6": {
+      "8": {
         "name": "Audio Count",
         "tooltip": "How many audio files were output."
+      },
+      "9": {
+        "name": "Audio Names",
+        "tooltip": "File name of each audio file, in the same order as the audio list."
       }
     }
   },
