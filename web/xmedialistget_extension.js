@@ -967,21 +967,50 @@ function ensureStyles() {
             border: none;
             border-radius: 0;
             background: var(--xmlg-surface-strong);
-            padding: 6px;
+            /* 右边不留白。滑块自己带 2px 内缩，所以卡片贴着槽 → 卡片到
+               滑块 2px、滑块到列表边缘也是 2px，左右正好 1:1；只要再给
+               padding 就会变成「左边比右边宽一倍」。——和 XLoraGet 同值。 */
+            padding: 6px 0 6px 6px;
             box-sizing: border-box;
             overflow-x: hidden;
             overflow-y: scroll;
             scrollbar-gutter: stable;
-            scrollbar-width: auto;
-            scrollbar-color: var(--xmlg-scroll-thumb) var(--xmlg-scroll-track);
         }
+        /* 滚动条：和 XLoraGet 的 .xlora-list **完全一致**。
+           以前这里写的是 var(--xmlg-scroll-thumb)，而它定义在分组引擎的样式
+           块里（要等引擎注入才存在）；没拿到值时整条 scrollbar-color 失效 →
+           浏览器退回另一套滚动条渲染，于是两个节点的滚动条宽度、位置都不同。
+           这里一律用带字面兜底的 var(--xdh-scrollbar-thumb, …)。 */
         .xmlg-list::-webkit-scrollbar {
             width: 10px;
             height: 10px;
         }
+        .xmlg-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
         .xmlg-list::-webkit-scrollbar-thumb {
-            background: var(--xmlg-scroll-thumb);
-            border-radius: 4px;
+            /* 透明边框 + background-clip：滑块只画中间 6px，两边各留
+               2px，看起来是一条悬着的小圆条，而不是贴着边缘的宽条 */
+            background: var(--xdh-scrollbar-thumb, #555);
+            background-clip: content-box;
+            border: 2px solid transparent;
+            border-radius: 999px;
+        }
+        .xmlg-list::-webkit-scrollbar-thumb:hover {
+            background: var(--xdh-scrollbar-thumb-hover, #777);
+            background-clip: content-box;
+        }
+        .xmlg-list::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+        /* Chromium / Edge：上面那套 ::-webkit-scrollbar 生效。
+           Firefox 不认这个伪元素 → 走标准属性（细条 + 同样的颜色）。 */
+        @supports not selector(::-webkit-scrollbar) {
+            .xmlg-list {
+                scrollbar-width: thin;
+                scrollbar-color:
+                    var(--xdh-scrollbar-thumb, #555) transparent;
+            }
         }
         .xmlg-row.xmlg-media-row {
             position: relative;

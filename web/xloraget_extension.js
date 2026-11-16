@@ -1378,7 +1378,10 @@ function ensureStyles() {
             border: none;
             background: transparent;
             border-radius: 0;
-            padding: 8px;
+            /* 右边不留白（和 XMediaListGet 的 .xmlg-list 同值）：滑块自己
+               带 2px 内缩，卡片到滑块 2px、滑块到列表边缘 2px，左右 1:1；
+               再给 padding 就会变成「左边比右边宽一倍」。 */
+            padding: 8px 0 8px 8px;
             box-sizing: border-box;
             /* 和 XMediaListGet 的 .xmlg-list 一致：横向永不出现滚动条，
                竖直方向常驻预留一条的位置。否则清单长到能滚/缩到不能滚
@@ -1387,22 +1390,39 @@ function ensureStyles() {
             overflow-y: scroll;
             scrollbar-gutter: stable;
             overflow-anchor: none;
-            scrollbar-width: auto;
-            scrollbar-color: var(--xdh-scrollbar-thumb, #555) var(--xdh-scrollbar-track, transparent);
         }
+        /* 滚动条：和 XMediaListGet 的 .xmlg-list **完全一致**（那边以前用的
+           变量要等分组引擎注入才存在，拿不到值时整条声明失效，两个节点就
+           渲染成了两套不同的滚动条）。 */
         .xlora-list::-webkit-scrollbar {
             width: 10px;
             height: 10px;
         }
         .xlora-list::-webkit-scrollbar-track {
-            background: var(--xdh-scrollbar-track, transparent);
+            background: transparent;
         }
         .xlora-list::-webkit-scrollbar-thumb {
+            /* 透明边框 + background-clip：滑块只画中间 6px，两边各留
+               2px，看起来是一条悬着的小圆条，而不是贴着边缘的宽条 */
             background: var(--xdh-scrollbar-thumb, #555);
-            border-radius: 4px;
+            background-clip: content-box;
+            border: 2px solid transparent;
+            border-radius: 999px;
         }
         .xlora-list::-webkit-scrollbar-thumb:hover {
             background: var(--xdh-scrollbar-thumb-hover, #777);
+            background-clip: content-box;
+        }
+        .xlora-list::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+        /* Firefox 不认 ::-webkit-scrollbar → 走标准属性 */
+        @supports not selector(::-webkit-scrollbar) {
+            .xlora-list {
+                scrollbar-width: thin;
+                scrollbar-color:
+                    var(--xdh-scrollbar-thumb, #555) transparent;
+            }
         }
         /* 工具栏里成组按钮之间的细竖线：刷新 / 建组 / 批量开关
            是三件事，挨在一起会看成一组 */
