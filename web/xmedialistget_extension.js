@@ -659,6 +659,12 @@ const engine = createGroupEngine({
     keyOf: XMLG_KEY_OF,
     element,
     t,
+    // 引擎文案里的 {noun} / {nounOne} 由这两个现取（语言包是异步到的）。
+    // 不传的话引擎会退回写死的英文 "files"，中文界面就变成
+    // 「将此分组和 files 从列表中移除」——因为引擎传进来的 noun 会盖掉
+    // t() 里已经翻好的那一个。
+    nounMany: () => rawText("xdatahub.ui.group.noun_files", "files"),
+    nounOne: () => rawText("xdatahub.ui.group.noun_file", "file"),
     normalizeItems,
     emptyItems,
     writeItems,
