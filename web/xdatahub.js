@@ -54,6 +54,7 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 import { loadComfyExport } from "./core/comfy-internals.js";
+import { installWheelScrollGuard } from "./core/wheel-scroll-guard.js";
 
 /**
  * 菜单按钮引用
@@ -1433,6 +1434,9 @@ app.registerExtension({
      * 创建样式表并添加菜单按钮
      */
     async setup() {
+        // Nodes 2.0 的覆盖层会在捕获阶段把滚轮拿去缩放画布，导致面板里的
+        // 列表滚不动。这里装一次兜底，让能滚的容器保留原生滚动（幂等）。
+        installWheelScrollGuard();
         await applyHostUiLocale();
         installLocaleSync();
         await loadHostBehaviorSettings();

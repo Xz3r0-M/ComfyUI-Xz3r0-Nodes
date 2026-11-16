@@ -1407,22 +1407,22 @@ function handleVueSlotContextMenu(event) {
         else stats.byPoint += 1;
     }
 
-    var node = hit.node;
-    if (!node) return slotMenuNote("no-node");
-    if (isXLinker(node)) return slotMenuNote("self");
+    var target = hit.node;
+    if (!target) return slotMenuNote("no-node");
+    if (isXLinker(target)) return slotMenuNote("self");
 
     var slot = hit.isOutput
-        ? (node.outputs || [])[hit.index]
-        : (node.inputs || [])[hit.index];
+        ? (target.outputs || [])[hit.index]
+        : (target.inputs || [])[hit.index];
     if (!slot) return slotMenuNote("no-slot-object");
 
     var connected = hit.isOutput
-        ? outputLinkIds(node, slot).length > 0
-        : inputConnected(node, slot);
+        ? outputLinkIds(target, slot).length > 0
+        : inputConnected(target, slot);
     if (!connected) return slotMenuNote("not-connected");
 
     if (stats) stats.menus += 1;
-    showSlotMenu(node, hit.index, hit.isOutput, slot, event);
+    showSlotMenu(target, hit.index, hit.isOutput, slot, event);
 }
 
 function installVueSlotMenu() {
@@ -1446,15 +1446,15 @@ function linkMenuExtraItems(segment, canvas) {
     var graph = (canvas && canvas.graph) || currentCanvasGraph();
     var index = Number(segment.origin_slot);
     if (!Number.isInteger(index) || index < 0) return [];
-    var node = resolveNodeByLooseId(graph, segment.origin_id);
-    if (!node || isXLinker(node)) return [];
-    var slot = (node.outputs || [])[index];
+    var upstream = resolveNodeByLooseId(graph, segment.origin_id);
+    if (!upstream || isXLinker(upstream)) return [];
+    var slot = (upstream.outputs || [])[index];
     if (!slot) return [];
-    if (outputLinkIds(node, slot).length === 0) return [];
+    if (outputLinkIds(upstream, slot).length === 0) return [];
     return [{
         content: tk("convert_output_to_xlinker", "Convert Output to XLinker"),
         callback: function () {
-            convertOutputToXLinker(node, index, node.graph, canvas);
+            convertOutputToXLinker(upstream, index, upstream.graph, canvas);
         },
     }];
 }
