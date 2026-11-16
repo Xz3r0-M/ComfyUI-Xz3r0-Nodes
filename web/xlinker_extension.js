@@ -32,7 +32,8 @@ var HIGHLIGHT_BUTTON_TEXTS = ["☆", "★"];
 var BUTTON_GROUP = "xlinker_button_group";
 var BUTTON_GROUP_MARGIN = 15;
 var BUTTON_GROUP_GAP = 4;
-var BUTTON_GROUP_HEIGHT = 24;
+var BUTTON_GROUP_HEIGHT = 24;   // 胶囊那一行
+var SWITCH_ROW_HEIGHT = 18;     // 三个开关那一行
 var LINKER_EXTRA_HEIGHT = 10;
 var BUTTON_GROUP_STYLE_ID = "xlinker-button-group-style";
 var uiLocalePrimary = null;
@@ -336,10 +337,6 @@ function setHiddenState(node, state) {
     }
 }
 
-function nextState(state) {
-    return (state + 1) % 4;
-}
-
 function updateTitleButtons(node) {
     ensureButtonGroupWidget(node);
     updateButtonGroupWidget(node);
@@ -352,37 +349,37 @@ function hideTitleKey(state) {
     return "show_all_links";
 }
 
-function clickHideButton(node) {
-    setHiddenState(node, nextState(hiddenState(node)));
-    updateTitleButtons(node);
+function markCanvasDirty() {
     if (app.canvas && typeof app.canvas.setDirty === "function") {
         app.canvas.setDirty(true, true);
     }
 }
 
-function clickHighlightButton(node) {
-    var key = nodeKey(node);
-    linkerLinksHighlighted[key] = !linkerLinksHighlighted[key];
+/** 胶囊点哪档就切到哪档（不再循环点） */
+function applyHideState(node, state) {
+    setHiddenState(node, state);
     updateTitleButtons(node);
-    if (app.canvas && typeof app.canvas.setDirty === "function") {
-        app.canvas.setDirty(true, true);
-    }
+    markCanvasDirty();
 }
 
-function clickTitleSyncButton(node) {
-    setTitleSyncEnabled(node, !titleSyncEnabled(node));
+function applyHighlight(node, enabled) {
+    linkerLinksHighlighted[nodeKey(node)] = !!enabled;
+    updateTitleButtons(node);
+    markCanvasDirty();
+}
+
+function applyTitleSync(node, enabled) {
+    setTitleSyncEnabled(node, !!enabled);
     updateTitleButtons(node);
     if (titleSyncEnabled(node)) {
         syncTitleFromNoteText(node);
     }
-    if (app.canvas && typeof app.canvas.setDirty === "function") {
-        app.canvas.setDirty(true, true);
-    }
+    markCanvasDirty();
 }
 
-function clickPortSyncButton(node) {
+function applyPortSync(node, enabled) {
     var wasEnabled = portSyncEnabled(node);
-    setPortSyncEnabled(node, !wasEnabled);
+    setPortSyncEnabled(node, !!enabled);
     updateTitleButtons(node);
     if (!wasEnabled) {
         // 刚刚开启，同步端口名称
@@ -391,9 +388,7 @@ function clickPortSyncButton(node) {
         // 刚刚关闭，还原原始端口名称
         resetPortNames(node);
     }
-    if (app.canvas && typeof app.canvas.setDirty === "function") {
-        app.canvas.setDirty(true, true);
-    }
+    markCanvasDirty();
 }
 
 function syncTitleFromNoteText(node) {
@@ -517,48 +512,133 @@ function ensureButtonGroupStyles() {
         "  flex-direction: column;",
         "  gap: " + BUTTON_GROUP_GAP + "px;",
         "}",
-        ".xlinker-button-row {",
-        "  display: flex;",
-        "  align-items: stretch;",
-        "  gap: " + BUTTON_GROUP_GAP + "px;",
-        "  width: 100%;",
-        "  min-height: " + BUTTON_GROUP_HEIGHT + "px;",
-        "}",
-        ".xlinker-button {",
+        /* 两行都写死高度：图形/文字换成别的也不会把节点顶高 */
+        ".xlinker-row {",
         "  display: flex;",
         "  align-items: center;",
-        "  justify-content: center;",
-        "  flex: 1 1 0;",
-        "  min-width: 0;",
+        "  gap: 6px;",
+        "  width: 100%;",
+        "  box-sizing: border-box;",
+        "}",
+        ".xlinker-pill-row {",
         "  height: " + BUTTON_GROUP_HEIGHT + "px;",
-        "  min-height: " + BUTTON_GROUP_HEIGHT + "px;",
-        "  padding: 0 8px;",
-        "  border: 1px solid var(--border-color, #555);",
-        "  border-radius: 4px;",
-        "  background: transparent;",
-        "  color: var(--input-text, #ddd);",
-        "  font: 12px sans-serif;",
+        "}",
+        ".xlinker-switch-row {",
+        "  height: " + SWITCH_ROW_HEIGHT + "px;",
+        "  justify-content: space-between;",
+        "}",
+        ".xlinker-row-label {",
+        "  flex: 0 0 auto;",
+        "  font: 11px sans-serif;",
         "  line-height: 1;",
+        "  opacity: 0.72;",
+        "  white-space: nowrap;",
+        "}",
+        /* 胶囊切换（跟 XLoraGet 的「未分组/全部/已分组」同一种） */
+        ".xlinker-pill {",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  gap: 2px;",
+        "  padding: 2px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 999px;",
+        "  background: color-mix(in srgb, currentColor 7%, transparent);",
+        "  box-sizing: border-box;",
+        "  flex: 0 0 auto;",
+        "}",
+        ".xlinker-pill-btn {",
+        "  padding: 2px 7px;",
+        "  border: none;",
+        "  border-radius: 999px;",
+        "  background: transparent;",
+        "  color: inherit;",
+        "  font: 11px/1.4 sans-serif;",
         "  letter-spacing: 0;",
-        "  text-align: center;",
         "  white-space: nowrap;",
         "  cursor: pointer;",
-        "  transition: border-color 120ms ease, color 120ms ease;",
+        "  opacity: 0.62;",
+        "  transition: background 120ms, opacity 120ms;",
         "  appearance: none;",
         "}",
-        ".xlinker-button:hover {",
-        "  border-color: var(--xdh-brand-pink, #ff385c);",
+        ".xlinker-pill-btn:hover {",
+        "  opacity: 0.9;",
         "}",
-        ".xlinker-button.active {",
-        "  color: var(--xdh-brand-pink, #ff385c);",
+        ".xlinker-pill-btn.is-active {",
+        "  opacity: 1;",
+        "  background: color-mix(",
+        "    in srgb, var(--xdh-brand-pink, #ff385c) 26%, transparent);",
+        "  box-shadow: inset 0 0 0 1px color-mix(",
+        "    in srgb, var(--xdh-brand-pink, #ff385c) 45%, transparent);",
+        "}",
+        /* 圆点开关（跟 XLoraGet 的 Clip 开关同一种） */
+        ".xlinker-switch {",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  gap: 5px;",
+        "  font: 11px sans-serif;",
+        "  line-height: 1;",
+        "  color: var(--input-text, #ddd);",
+        "  user-select: none;",
+        "  white-space: nowrap;",
+        "  cursor: pointer;",
+        /* 节点被拖窄时允许收缩（文字末尾出省略号），而不是溢出到节点外 */
+        "  flex: 0 1 auto;",
+        "  min-width: 0;",
+        "}",
+        ".xlinker-switch-text {",
+        "  overflow: hidden;",
+        "  text-overflow: ellipsis;",
+        "}",
+        ".xlinker-switch-input {",
+        "  position: absolute;",
+        "  opacity: 0;",
+        "  width: 0;",
+        "  height: 0;",
+        "  pointer-events: none;",
+        "}",
+        ".xlinker-switch-track {",
+        "  position: relative;",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  flex: 0 0 auto;",
+        "  width: 22px;",
+        "  min-width: 22px;",
+        "  height: 12px;",
+        "  border-radius: 999px;",
+        "  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);",
+        "  background: color-mix(in srgb, currentColor 10%, transparent);",
+        "  box-sizing: border-box;",
+        "  transition: background 150ms ease, border-color 150ms ease,",
+        "    box-shadow 150ms ease;",
+        "}",
+        ".xlinker-switch-track::after {",
+        "  content: \"\";",
+        "  position: absolute;",
+        "  top: 1px;",
+        "  left: 1px;",
+        "  width: 8px;",
+        "  height: 8px;",
+        "  border-radius: 50%;",
+        "  background: currentColor;",
+        "  opacity: 0.7;",
+        "  transition: transform 150ms ease, background 150ms ease,",
+        "    opacity 150ms ease;",
+        "}",
+        ".xlinker-switch-input:checked + .xlinker-switch-track {",
+        "  border-color: var(--xdh-brand-pink, #ff385c);",
+        "  background: color-mix(",
+        "    in srgb, var(--xdh-brand-pink, #ff385c) 30%, transparent);",
+        "}",
+        ".xlinker-switch-input:checked + .xlinker-switch-track::after {",
+        "  transform: translateX(10px);",
+        "  background: var(--xdh-brand-pink, #ff385c);",
+        "  opacity: 1;",
+        "}",
+        ".xlinker-switch-input:focus-visible + .xlinker-switch-track {",
+        "  box-shadow: 0 0 0 1px var(--xdh-brand-pink, #ff385c);",
         "}",
     ].join("\n");
     (document.head || document.documentElement).appendChild(style);
-}
-
-function applyButtonVisual(button, active) {
-    if (!button) return;
-    button.classList.toggle("active", !!active);
 }
 
 function forwardPanelWheel(panel) {
@@ -609,6 +689,34 @@ function forwardPanelMiddleButton(panel) {
     });
 }
 
+/** 圆点开关：文字 + 轨道 + 圆点（跟 XLoraGet 的 Clip 开关同一种）。 */
+function createLinkerSwitch(opts) {
+    var label = document.createElement("label");
+    label.className = "xlinker-switch";
+
+    var input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "xlinker-switch-input";
+
+    var track = document.createElement("span");
+    track.className = "xlinker-switch-track";
+    track.setAttribute("aria-hidden", "true");
+
+    var text = document.createElement("span");
+    text.className = "xlinker-switch-text";
+    text.textContent = opts.label;
+
+    label.appendChild(input);
+    label.appendChild(track);
+    label.appendChild(text);
+
+    input.addEventListener("change", function () {
+        opts.onChange(!!input.checked);
+    });
+
+    return { label: label, input: input, track: track, text: text };
+}
+
 function createButtonGroupPanel(node) {
     if (!node || typeof document === "undefined") return null;
     ensureButtonGroupStyles();
@@ -619,60 +727,61 @@ function createButtonGroupPanel(node) {
     var wrap = document.createElement("div");
     wrap.className = "xlinker-button-group";
 
+    // 第1行：连线 [◀▶ | ◁▶ | ◀▷ | ◁▷]
+    // 四档直接点，比原来「点一下轮一个」省事，也一眼看出当前哪档
     var row1 = document.createElement("div");
-    row1.className = "xlinker-button-row";
+    row1.className = "xlinker-row xlinker-pill-row";
+
+    var linksLabel = document.createElement("span");
+    linksLabel.className = "xlinker-row-label";
+    linksLabel.textContent = hideButtonLabel();
+    row1.appendChild(linksLabel);
+
+    var hidePill = document.createElement("span");
+    hidePill.className = "xlinker-pill";
+    var hideButtons = [];
+    for (var state = HIDE_NONE; state <= HIDE_BOTH; state++) {
+        var seg = document.createElement("button");
+        seg.type = "button";
+        seg.className = "xlinker-pill-btn";
+        seg.textContent = HIDE_BUTTON_TEXTS[state];
+        seg.setAttribute("data-hide", String(state));
+        seg.addEventListener("click", (function (target) {
+            return function () { applyHideState(node, target); };
+        })(state));
+        hidePill.appendChild(seg);
+        hideButtons.push(seg);
+    }
+    row1.appendChild(hidePill);
     wrap.appendChild(row1);
 
-    var hideButton = document.createElement("button");
-    hideButton.type = "button";
-    hideButton.className = "xlinker-button";
-    hideButton.textContent = hideButtonLabel() + " " + HIDE_BUTTON_TEXTS[HIDE_NONE];
-    hideButton.title = buttonGroupTooltip(node, "hide");
-    hideButton.setAttribute("aria-label", hideButton.title);
-    hideButton.addEventListener("click", function () {
-        clickHideButton(node);
-    });
-
-    var highlightButton = document.createElement("button");
-    highlightButton.type = "button";
-    highlightButton.className = "xlinker-button";
-    highlightButton.textContent = highlightButtonLabel()
-        + " " + HIGHLIGHT_BUTTON_TEXTS[0];
-    highlightButton.title = buttonGroupTooltip(node, "highlight");
-    highlightButton.setAttribute("aria-label", highlightButton.title);
-    highlightButton.addEventListener("click", function () {
-        clickHighlightButton(node);
-    });
-
-    row1.appendChild(hideButton);
-    row1.appendChild(highlightButton);
-
+    // 第2行：三个开关（高亮 / 标题 / 端口）
     var row2 = document.createElement("div");
-    row2.className = "xlinker-button-row";
+    row2.className = "xlinker-row xlinker-switch-row";
+
+    var highlightSwitch = createLinkerSwitch({
+        label: highlightButtonLabel(),
+        onChange: function (on) {
+            applyHighlight(node, on);
+        },
+    });
+    var titleSyncSwitch = createLinkerSwitch({
+        label: titleSyncButtonLabel(),
+        onChange: function (on) {
+            applyTitleSync(node, on);
+        },
+    });
+    var portSyncSwitch = createLinkerSwitch({
+        label: portSyncButtonLabel(),
+        onChange: function (on) {
+            applyPortSync(node, on);
+        },
+    });
+
+    row2.appendChild(highlightSwitch.label);
+    row2.appendChild(titleSyncSwitch.label);
+    row2.appendChild(portSyncSwitch.label);
     wrap.appendChild(row2);
-
-    var titleSyncButton = document.createElement("button");
-    titleSyncButton.type = "button";
-    titleSyncButton.className = "xlinker-button";
-    titleSyncButton.textContent = titleSyncButtonLabel();
-    titleSyncButton.title = buttonGroupTooltip(node, "title_sync");
-    titleSyncButton.setAttribute("aria-label", titleSyncButton.title);
-    titleSyncButton.addEventListener("click", function () {
-        clickTitleSyncButton(node);
-    });
-
-    var portSyncButton = document.createElement("button");
-    portSyncButton.type = "button";
-    portSyncButton.className = "xlinker-button";
-    portSyncButton.textContent = portSyncButtonLabel();
-    portSyncButton.title = buttonGroupTooltip(node, "port_sync");
-    portSyncButton.setAttribute("aria-label", portSyncButton.title);
-    portSyncButton.addEventListener("click", function () {
-        clickPortSyncButton(node);
-    });
-
-    row2.appendChild(titleSyncButton);
-    row2.appendChild(portSyncButton);
 
     forwardPanelWheel(wrap);
     forwardPanelMiddleButton(wrap);
@@ -681,7 +790,8 @@ function createButtonGroupPanel(node) {
         node.addDOMWidget(BUTTON_GROUP, "custom", wrap, {
             serialize: false,
             getMinHeight: function () {
-                return BUTTON_GROUP_HEIGHT * 2 + BUTTON_GROUP_GAP;
+                return BUTTON_GROUP_HEIGHT + SWITCH_ROW_HEIGHT
+                    + BUTTON_GROUP_GAP;
             },
             margin: 4,
         });
@@ -689,10 +799,12 @@ function createButtonGroupPanel(node) {
 
     node.__xlinkerButtonPanel = {
         wrap: wrap,
-        hideButton: hideButton,
-        highlightButton: highlightButton,
-        titleSyncButton: titleSyncButton,
-        portSyncButton: portSyncButton,
+        linksLabel: linksLabel,
+        hidePill: hidePill,
+        hideButtons: hideButtons,
+        highlightSwitch: highlightSwitch,
+        titleSyncSwitch: titleSyncSwitch,
+        portSyncSwitch: portSyncSwitch,
     };
     return node.__xlinkerButtonPanel;
 }
@@ -714,23 +826,43 @@ function updateButtonGroupWidget(node) {
     var titleSyncOn = titleSyncEnabled(node);
     var portSyncOn = portSyncEnabled(node);
 
-    panel.hideButton.textContent = hideButtonLabel() + " " + HIDE_BUTTON_TEXTS[hideState];
-    panel.highlightButton.textContent = highlightButtonLabel() + " "
-        + HIGHLIGHT_BUTTON_TEXTS[highlightOn ? 1 : 0];
-    panel.titleSyncButton.textContent = titleSyncButtonLabel();
-    panel.portSyncButton.textContent = portSyncButtonLabel();
-    panel.hideButton.title = buttonGroupTooltip(node, "hide");
-    panel.highlightButton.title = buttonGroupTooltip(node, "highlight");
-    panel.titleSyncButton.title = buttonGroupTooltip(node, "title_sync");
-    panel.portSyncButton.title = buttonGroupTooltip(node, "port_sync");
-    panel.hideButton.setAttribute("aria-label", panel.hideButton.title);
-    panel.highlightButton.setAttribute("aria-label", panel.highlightButton.title);
-    panel.titleSyncButton.setAttribute("aria-label", panel.titleSyncButton.title);
-    panel.portSyncButton.setAttribute("aria-label", panel.portSyncButton.title);
-    applyButtonVisual(panel.hideButton, hideState !== HIDE_NONE);
-    applyButtonVisual(panel.highlightButton, highlightOn);
-    applyButtonVisual(panel.titleSyncButton, titleSyncOn);
-    applyButtonVisual(panel.portSyncButton, portSyncOn);
+    // 胶囊：当前那档实心
+    if (panel.linksLabel) {
+        panel.linksLabel.textContent = hideButtonLabel();
+    }
+    if (panel.hidePill) {
+        panel.hidePill.title = tk(hideTitleKey(hideState), "Show or hide links");
+        panel.hidePill.setAttribute("aria-label", panel.hidePill.title);
+    }
+    if (panel.hideButtons) {
+        for (var i = 0; i < panel.hideButtons.length; i++) {
+            var seg = panel.hideButtons[i];
+            if (i === hideState) {
+                seg.classList.add("is-active");
+            } else {
+                seg.classList.remove("is-active");
+            }
+            seg.title = tk(hideTitleKey(i), "Show or hide links");
+        }
+    }
+
+    // 开关：文字 + 勾选态 + 悬停解释
+    var switches = [
+        { box: panel.highlightSwitch, on: highlightOn, label: highlightButtonLabel() },
+        { box: panel.titleSyncSwitch, on: titleSyncOn, label: titleSyncButtonLabel() },
+        { box: panel.portSyncSwitch, on: portSyncOn, label: portSyncButtonLabel() },
+    ];
+    var roles = ["highlight", "title_sync", "port_sync"];
+    for (var k = 0; k < switches.length; k++) {
+        var item = switches[k];
+        if (!item.box) continue;
+        if (item.box.input) item.box.input.checked = !!item.on;
+        if (item.box.text) item.box.text.textContent = item.label;
+        if (item.box.label) {
+            item.box.label.title = buttonGroupTooltip(node, roles[k]);
+            item.box.label.setAttribute("aria-label", item.box.label.title);
+        }
+    }
 }
 
 
