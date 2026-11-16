@@ -3242,6 +3242,9 @@ function liveMoveRow(node, gapIndex, groupId) {
     return true;
 }
 
+/** 拖动跟踪统一挂在 window 捕获阶段（见 armPointerDrag 里的说明）。 */
+const DRAG_LISTEN = { capture: true };
+
 function armPointerDrag(node, event, intent) {
     const panel = panelOf(node);
     if (!panel || event.button !== 0 || event.isPrimary === false) {
@@ -3251,8 +3254,15 @@ function armPointerDrag(node, event, intent) {
         return;
     }
     const state = panel.state;
-    if (state.pointerDrag?.active) {
-        return;
+    if (state.pointerDrag) {
+        // 上一轮没收拾干净（松手发生在窗口外、pointerup 丢了）时必须先结掉，
+        // 否则 `pointerDrag` 一直占着，列表从此「再也拖不动」。
+        // 同一根指针不可能在按着的同时又按下一次，所以这里放心收尾。
+        cancelPointerDrag(node);
+        if (state.pointerDrag && !state.pointerDrag.active) {
+            state.pointerDrag.cleanup?.();
+            state.pointerDrag = null;
+        }
     }
     const pending = {
         ...intent,
@@ -3281,16 +3291,22 @@ function armPointerDrag(node, event, intent) {
         keyEvent.preventDefault();
         cancelPointerDrag(node);
     };
+    // 🔴 必须用**捕获阶段**：
+    // Nodes 2.0 里每个自定义面板都被套在一个 Vue 容器上，它写着
+    //   @pointerdown.stop @pointermove.stop @pointerup.stop
+    // （见前端 WidgetDOM.vue）。冒泡到 window 的指针事件在面板里就被掐断了，
+    // 挂 window 冒泡的拖动跟踪会表现成「动一下就卡住 / 松手后还停不下来，
+    // 之后再也拖不动」。捕获阶段先于任何 stopPropagation，才收得到。
     pending.cleanup = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("pointermove", onMove, DRAG_LISTEN);
+        window.removeEventListener("pointerup", onUp, DRAG_LISTEN);
+        window.removeEventListener("pointercancel", onUp, DRAG_LISTEN);
         window.removeEventListener("keydown", onKey, true);
     };
     state.pointerDrag = pending;
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointermove", onMove, DRAG_LISTEN);
+    window.addEventListener("pointerup", onUp, DRAG_LISTEN);
+    window.addEventListener("pointercancel", onUp, DRAG_LISTEN);
     window.addEventListener("keydown", onKey, true);
 }
 
