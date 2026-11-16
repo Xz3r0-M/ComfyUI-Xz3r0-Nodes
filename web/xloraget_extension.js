@@ -4,6 +4,7 @@ import {
     getModuloAccentIndex as getNodeAccentIndex,
     getHexAccentFromModuloId as getNodeAccentColor,
 } from "./core/node-accent.js";
+import { copyText } from "./core/clipboard.js";
 import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
@@ -1727,17 +1728,24 @@ function ensureStyles() {
             min-height: 24px;
             height: 24px;
             flex: 0 0 auto;
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-start;
+            /* 用 block 而不是 inline-flex：inline-flex 会把文字变成一个
+               匿名弹性项，text-overflow: ellipsis 就失效了，长词只能被
+               硬切（"a very long trigger w"）。block + 行高居中就能出
+               省略号。 */
+            display: block;
+            text-align: left;
             border: 1px solid var(--xdh-clr-primary, #ff385c);
             background: color-mix(in srgb, var(--xlora-brand) 12%, transparent);
             color: var(--xdh-clr-ink, #f2f2f2);
             border-radius: var(--xdh-radius-full, 999px);
-            padding: 0 10px;
+            /* 右端常驻留出复制图标的位置（图标悬停才浮出来）。
+               不在悬停时才加内边距：那样鼠标一进胶囊文字就跳一下。 */
+            padding: 0 22px 0 10px;
+            position: relative;
             box-sizing: border-box;
             font-size: 11px;
-            line-height: 1.3;
+            /* 24px 高的胶囊，上下各 1px 边框：行高 22px 正好居中 */
+            line-height: 22px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -1854,6 +1862,37 @@ function ensureStyles() {
             background: var(--xdh-clr-surface-soft, #161618);
             border-color: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
             color: var(--xdh-clr-ink, #f2f2f2);
+        }
+        /* 胶囊右端的「复制」小图标：平时藏着，鼠标进胶囊才浮出来。
+           加它之前，想把某个触发词填进自己的提示词只能一个字一个字抄。 */
+        .xlora-trigger-copy {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--xdh-radius-full, 999px);
+            color: var(--xdh-clr-ink, #f2f2f2);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+        }
+        .xlora-trigger-chip:hover .xlora-trigger-copy,
+        .xlora-trigger-chip:focus-visible .xlora-trigger-copy {
+            opacity: 0.7;
+            pointer-events: auto;
+        }
+        .xlora-trigger-chip:hover .xlora-trigger-copy:hover {
+            opacity: 1;
+            background: color-mix(
+                in srgb,
+                var(--xdh-clr-primary, #ff385c) 45%,
+                transparent
+            );
         }
         /* 行内「刷新触发词」按钮：和工具栏的小方钮同一套外观。
            以前用的是 V2 应用里才有的 token，节点面板里根本取不到值，
@@ -2614,6 +2653,22 @@ function scheduleRenderNodeRows(node, after = null) {
 }
 
 /** 每帧最多写一次盘：逐行同步时不用回回都序列化整张表。 */
+/**
+ * 立刻把当前列表写回存盘 widget（不等下一帧）。
+ *
+ * 「改完马上排队」是常规动作，而排队时 ComfyUI 是同步读 widget 值的。
+ * 只要写入被推到下一帧，那一瞬间读到的就是上一次的内容——看到的和跑的
+ * 不是一个数，出图自然对不上。
+ */
+function flushStoredRows(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    // 之前排过队的合帧写入照旧会跑，写两次内容一样（幂等），不用管它
+    writeStoredRows(node, panel.state?.rows || []);
+}
+
 function scheduleWriteStoredRows(node) {
     const panel = node?.__xlora_panel;
     if (!panel) {
@@ -2797,8 +2852,58 @@ function syncAllRowTriggerWords(node, options = {}) {
     }
 }
 
+/* 复制图标的线条（Lucide copy 的形状）。用内联 SVG 不用 ⧉ 字符：
+   字符在不同字体下胖瘦不一，缩到 12px 会糊成一个小点。 */
+const COPY_GLYPH_PATHS = [
+    "M9 9V6.5A2.5 2.5 0 0 1 11.5 4h6A2.5 2.5 0 0 1 20 6.5v6"
+        + "a2.5 2.5 0 0 1-2.5 2.5H15",
+    "M4.5 9h6A2.5 2.5 0 0 1 13 11.5v6A2.5 2.5 0 0 1 10.5 20h-6"
+        + "A2.5 2.5 0 0 1 2 17.5v-6A2.5 2.5 0 0 1 4.5 9Z",
+];
+
 /**
- * 一颗触发词胶囊：点一下就是开 / 关。
+ * 胶囊右端那颗「复制」图标。
+ *
+ * 它是 span 不是 button：胶囊本身已经是 button，按钮套按钮浏览器不认。
+ * 点击同样交给列表的委托（`data-act="trigger-copy"`），一行还是只挂
+ * 一个监听器。
+ */
+function buildTriggerCopyIcon(triggerWord) {
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const icon = document.createElement("span");
+    icon.className = "xlora-trigger-copy";
+    icon.dataset.act = "trigger-copy";
+    icon.__triggerWord = triggerWord;
+    icon.setAttribute("role", "button");
+    icon.setAttribute(
+        "aria-label",
+        t(
+            "xdatahub.ui.node.xloraget.copy_trigger",
+            "Copy this trigger word"
+        )
+    );
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "12");
+    svg.setAttribute("height", "12");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    for (const d of COPY_GLYPH_PATHS) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+    }
+    icon.appendChild(svg);
+    return icon;
+}
+
+/**
+ * 一颗触发词胶囊：点一下就是开 / 关，右端小图标复制这个词。
  *
  * 点击不由胶囊自己接（那样一行要挂好几颗），统一交给列表的委托；
  * 胶囊只把「我代表哪个词」记在元素上。
@@ -2811,10 +2916,21 @@ function buildTriggerChip(node, triggerWord) {
     if (triggerWord.enabled === false) {
         chip.classList.add("is-disabled");
     }
+    // 先写文字再挂图标：直接写 textContent 会把已经挂上去的子元素清掉
     chip.textContent = triggerWord.text;
     chip.dataset.act = "trigger-word";
     chip.__triggerWord = triggerWord;
-    bindTooltip(chip, tooltip, triggerWord.text);
+    chip.appendChild(buildTriggerCopyIcon(triggerWord));
+    bindTooltip(
+        chip,
+        tooltip,
+        triggerWord.text,
+        "",
+        t(
+            "xdatahub.ui.node.xloraget.trigger_chip_hint",
+            "Click toggles Enabled / Disabled, the icon on the right copies"
+        )
+    );
     return chip;
 }
 
@@ -3504,6 +3620,39 @@ function bindRowDelegation(node) {
             renderNodeRows(node);
             return;
         }
+        if (action === "trigger-copy") {
+            const icon = event.target.closest("[data-act]");
+            const word = icon?.__triggerWord;
+            if (!word || !word.text) {
+                return;
+            }
+            /* 点复制图标不能再往下跌进「点一下=开关」那一段（图标就在
+               胶囊内部，closest 找到的是图标自己）。 */
+            event.preventDefault();
+            event.stopPropagation();
+            hideTooltip(node?.__xlora_panel?.tooltip);
+            copyText(String(word.text)).then((ok) => {
+                if (ok) {
+                    showPanelToast(
+                        node,
+                        t(
+                            "xdatahub.ui.node.xloraget.copied",
+                            "Copied: {text}",
+                            { text: word.text }
+                        )
+                    );
+                    return;
+                }
+                showPanelToast(
+                    node,
+                    t(
+                        "xdatahub.ui.node.xloraget.copy_failed",
+                        "Could not copy, please select the text yourself"
+                    )
+                );
+            });
+            return;
+        }
         if (action === "trigger-word") {
             const chip = event.target.closest("[data-act]");
             const word = chip?.__triggerWord;
@@ -3571,7 +3720,7 @@ function bindRowDelegation(node) {
             // 滚动位置、缩略图全拉起重来，行一多就是几百毫秒的顿感。
             applyRowState(node, item, rowEl);
             refreshLoraRowNumbers(node);
-            scheduleWriteStoredRows(node);
+            flushStoredRows(node);
             return;
         }
         if (target === parts.modelInput) {
@@ -3581,14 +3730,58 @@ function bindRowDelegation(node) {
             }
             // 强度改了就影响「会不会加载」，序号得重算（只改文字）
             refreshLoraRowNumbers(node);
-            scheduleWriteStoredRows(node);
+            flushStoredRows(node);
             return;
         }
         if (target === parts.clipInput) {
             item.strength_clip = toFloat(target.value, item.strength_model);
             refreshLoraRowNumbers(node);
-            scheduleWriteStoredRows(node);
+            flushStoredRows(node);
         }
+    });
+
+    /**
+     * 边打字边把强度记下来。
+     *
+     * `change` 只在「回车或离开输入框」时才来。用户改完强度直接按
+     * Ctrl+Enter 排队，输入框没失焦 → 根本没 change → 状态和存盘里还是
+     * 旧值，界面上明明写着 0.8，实际按老值（常见是 1.0）算。
+     * 节点的图，一半的锅是这种「看到的和跑的不是一个数」。
+     */
+    list.addEventListener("input", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowHit(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const { item } = hit;
+        const parts = rowEl.__parts || {};
+        const target = event.target;
+        const isModel = target === parts.modelInput;
+        const isClip = target === parts.clipInput;
+        if (!isModel && !isClip) {
+            return;
+        }
+        // 半截输入（""、"-"、"0."）先不动状态，等它变成一个数
+        const value = Number(String(target.value ?? "").replace(",", "."));
+        if (!Number.isFinite(value)) {
+            return;
+        }
+        if (isModel) {
+            if (item.strength_model === value) {
+                return;
+            }
+            item.strength_model = value;
+            if (!item.separate_clip_strength) {
+                item.strength_clip = value;
+            }
+        } else {
+            if (item.strength_clip === value) {
+                return;
+            }
+            item.strength_clip = value;
+        }
+        flushStoredRows(node);
     });
 
     // 列表内排序走指针事件（浏览器自带拖放只有 10Hz 上下，一顿一顿的）
