@@ -1478,6 +1478,8 @@ function createCompareUI(node) {
         panel.addEventListener("pointerdown", function(e) {
             if (e.button !== 1) return;
             e.preventDefault();
+            // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+            panel.setPointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseDown !== "function") return;
             cvs.processMouseDown(e);
@@ -1490,6 +1492,7 @@ function createCompareUI(node) {
         });
         panel.addEventListener("pointerup", function(e) {
             if (e.button !== 1) return;
+            panel.releasePointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseUp !== "function") return;
             cvs.processMouseUp(e);

@@ -96,6 +96,8 @@ class XPipe(io.ComfyNode):
                 # bind this toggle to a data slot when merging into a
                 # subgraph, which shows up as a stray switch on the shell.
                 socketless=True,
+                # 调好就不动的纯显示开关：Nodes 2.0 下折进「显示高级输入」
+                advanced=True,
                 tooltip="Show visual warning on links and output "
                 "ports when a type mismatch is detected. "
                 "Disable to hide the warning effect.",

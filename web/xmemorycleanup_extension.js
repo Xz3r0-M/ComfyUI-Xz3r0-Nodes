@@ -424,6 +424,8 @@ function bindCanvasForwarding(panel) {
     panel.addEventListener("pointerdown", function (event) {
         if (event.button !== 1) return;
         event.preventDefault();
+        // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+        panel.setPointerCapture?.(event.pointerId);
         var canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseDown !== "function") return;
         canvas.processMouseDown(event);
@@ -436,6 +438,7 @@ function bindCanvasForwarding(panel) {
     });
     panel.addEventListener("pointerup", function (event) {
         if (event.button !== 1) return;
+        panel.releasePointerCapture?.(event.pointerId);
         var canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseUp !== "function") return;
         canvas.processMouseUp(event);

@@ -5447,6 +5447,9 @@ const WARNING_LINE = "#ffffff";
 const WARNING_BREATH_SPEED = 0.012;
 const LINK_WARNING_RETRY_MS = 250;
 const LINK_WARNING_MAX_RETRIES = 20;
+// 哪些端口需要画警告环：纯读取的记忆化有效期。绘制钩子每帧都跑，
+// 而判定一次要走全图遍历（getLinkWarning → getNodeByIdInGraph）。
+const WARNING_SLOTS_TTL_MS = 200;
 let linkWarningHookRetries = 0;
 
 function cleanType(value) {
@@ -5524,6 +5527,37 @@ function getLinkWarning(link, graph) {
     return { source, outputType: outType, inputType: inType };
 }
 
+/**
+ * 哪些输出端口需要画警告环。
+ *
+ * 纯读取的记忆化（不是节点/图的状态）：每 WARNING_SLOTS_TTL_MS 最多算一次。
+ * 绘制钩子每帧都跑，而 getLinkWarning 里有 getNodeByIdInGraph（O(n) 遍历），
+ * 不记忆化的话大图会卡。
+ */
+function warningSlotsFor(node) {
+    const now = Date.now();
+    const cache = node.__xmlgWarningSlots;
+    if (cache && now - cache.at < WARNING_SLOTS_TTL_MS) {
+        return cache.slots;
+    }
+    const slots = [];
+    const outputs = node.outputs || [];
+    for (let slot = 0; slot < outputs.length; slot += 1) {
+        const linkIds = outputLinkIds(node, outputs[slot]);
+        if (!linkIds.length) {
+            continue;
+        }
+        for (const linkId of linkIds) {
+            if (getLinkWarning(getLinkInfo(linkId, node.graph), node.graph)) {
+                slots.push(slot);
+                break;
+            }
+        }
+    }
+    node.__xmlgWarningSlots = { at: now, slots };
+    return slots;
+}
+
 function drawWarningOutputRing(node, ctx) {
     if (!ctx || !isMediaListNode(node) || !node.outputs) {
         return;
@@ -5532,23 +5566,16 @@ function drawWarningOutputRing(node, ctx) {
     if (widget && !widget.value) {
         return;
     }
-    for (let slot = 0; slot < node.outputs.length; slot += 1) {
+    const slots = warningSlotsFor(node);
+    if (!slots.length) {
+        return;
+    }
+    const glow = warningGlowBlur();
+    for (const slot of slots) {
         const output = node.outputs[slot];
-        const linkIds = outputLinkIds(node, output);
-        if (!linkIds.length) {
+        if (!output) {
             continue;
         }
-        let hasWarning = false;
-        for (const linkId of linkIds) {
-            if (getLinkWarning(getLinkInfo(linkId, node.graph), node.graph)) {
-                hasWarning = true;
-                break;
-            }
-        }
-        if (!hasWarning) {
-            continue;
-        }
-        const glow = warningGlowBlur();
         const pos = typeof node.getConnectionPos === "function"
             ? node.getConnectionPos(false, slot)
             : null;
@@ -5618,6 +5645,48 @@ function installLinkWarningHook() {
         original.apply(this, args);
         ctx.restore();
     };
+
+    // 输出端口呼吸光环：画布级，Nodes 2.0 下同样生效
+    installWarningRingHook();
+}
+
+/**
+ * 输出端口类型不兼容的呼吸光环。
+ *
+ * 以前挂在节点级的 node.onDrawForeground 上，Nodes 2.0（Vue 节点）下
+ * LGraphCanvas.drawNode() 直接 return，那个钩子完全不执行 → 光环消失。
+ * 现在改挂**画布级** canvas.onDrawForeground：两种渲染器下都会执行。
+ *
+ * 坐标：此处的 ctx 已含画布缩放/平移，且与节点用同一套坐标，
+ * 所以平移到 node.pos 后就能复用原来的绘制函数。
+ */
+function installWarningRingHook() {
+    const canvas = app.canvas;
+    if (!canvas || canvas.__xmlgWarningRingInstalled) {
+        return;
+    }
+    canvas.__xmlgWarningRingInstalled = true;
+    const original = canvas.onDrawForeground;
+    canvas.onDrawForeground = function (ctx, area) {
+        if (original) {
+            original.apply(this, arguments);
+        }
+        try {
+            const graph = this.graph || rootGraphOf(app);
+            const nodes = (graph && (graph._nodes || graph.nodes)) || [];
+            for (const node of nodes) {
+                if (!isMediaListNode(node) || !node.pos) {
+                    continue;
+                }
+                ctx.save();
+                ctx.translate(node.pos[0], node.pos[1]);
+                drawWarningOutputRing(node, ctx);
+                ctx.restore();
+            }
+        } catch {
+            // 忽略绘制失败，不影响画布其他内容
+        }
+    };
 }
 
 function bindCanvasForwarding(panel) {
@@ -5672,6 +5741,8 @@ function bindCanvasForwarding(panel) {
             return;
         }
         event.preventDefault();
+        // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+        panel.setPointerCapture?.(event.pointerId);
         const canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseDown !== "function") {
             return;
@@ -5692,6 +5763,7 @@ function bindCanvasForwarding(panel) {
         if (event.button !== 1) {
             return;
         }
+        panel.releasePointerCapture?.(event.pointerId);
         const canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseUp !== "function") {
             return;
@@ -6231,16 +6303,6 @@ function initXMediaListGetExtension() {
                 originalConfigure?.apply(this, arguments);
                 installNodeUi(this);
                 reloadPanelFromStorage(this);
-            };
-            const originalDrawForeground =
-                nodeType.prototype.onDrawForeground;
-            nodeType.prototype.onDrawForeground = function (ctx) {
-                originalDrawForeground?.apply(this, arguments);
-                try {
-                    drawWarningOutputRing(this, ctx);
-                } catch {
-                    // 忽略绘制失败，不影响画布其他内容
-                }
             };
             const originalConnectionsChange =
                 nodeType.prototype.onConnectionsChange;
