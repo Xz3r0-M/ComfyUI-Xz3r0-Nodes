@@ -2571,9 +2571,10 @@
       },
       "edge_mode": {
         "name": "Scale Mode",
-        "tooltip": "Select scaling mode: Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
+        "tooltip": "Select scaling mode: None=keep the original size, Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
         "options": {
-          "Long": "Long Edge (width for landscape, height for portrait)",
+          "None": "None (keep the original size, only divisible, offset and pad apply)",
+                        "Long": "Long Edge (width for landscape, height for portrait)",
           "Short": "Short Edge (height for landscape, width for portrait)",
           "Megapixels": "Megapixels (scale to exact pixel count)",
           "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
@@ -2622,6 +2623,22 @@
         "name": "Height Offset",
         "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
       },
+      "pad_enabled": {
+        "name": "Pad to Canvas",
+        "tooltip": "When enabled, the image is placed in the middle of a canvas of the target width and height, and the empty area is filled with the pad color. Nothing is cropped: a side already larger than its target keeps its own size, and if both sides are already large enough, the image is output unchanged. Padding runs after scaling, so if the scale mode already made the image bigger than the target nothing is padded — pick scale mode None to pad the original picture without scaling it."
+      },
+      "pad_width": {
+        "name": "Pad Width",
+        "tooltip": "Target canvas width in pixels. Only pads when the image is narrower than this value; ignored when pad is disabled."
+      },
+      "pad_height": {
+        "name": "Pad Height",
+        "tooltip": "Target canvas height in pixels. Only pads when the image is shorter than this value; ignored when pad is disabled."
+      },
+      "pad_color": {
+        "name": "Pad Color",
+        "tooltip": "Color of the padded area as #RRGGBB hex, for example #FFFFFF for white. Masks ignore the color: the padded area always counts as not masked."
+      },
       "skip_on_empty": {
         "name": "Skip on Empty",
         "tooltip": "When enabled, outputs None for all ports if no input image is connected, instead of raising an error."
@@ -2643,6 +2660,10 @@
       "3": {
         "name": "Resize Settings Out",
         "tooltip": "Outputs chain settings for downstream nodes. If valid upstream settings exist, this output keeps forwarding the chain-origin settings."
+      },
+      "4": {
+        "name": "Pad Mask",
+        "tooltip": "Mask of the newly added area: 1 where the canvas was filled, 0 on the original picture. Connect it to a sampling node's mask input to repaint only the new border. All 0 when nothing was padded."
       }
     }
   },

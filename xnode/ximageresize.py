@@ -6,6 +6,7 @@
 """
 
 import math
+import re
 from typing import Any
 
 import comfy.utils
@@ -20,6 +21,11 @@ except ImportError:
 # 常量定义
 PIXELS_PER_MEGAPIXEL = 1_000_000  # 每百万像素的像素数
 MAX_MEGAPIXELS = 100.0  # 最大百万像素限制（防止显存溢出）
+MAX_CANVAS_SIZE = 16384  # 补边目标画布的最大边长
+DEFAULT_PAD_SIZE = 1024  # 补边目标宽高的默认值
+DEFAULT_PAD_COLOR = "#FFFFFF"  # 补边颜色默认值（白）
+# 补边颜色只认十六进制：#RRGGBB 或 #RGB，井号可省略
+PAD_COLOR_PATTERN = re.compile(r"^#?(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})$")
 LOGGER = get_logger(__name__)
 ResizeSettingsIO = io.Custom("XZ3R0_RESIZE_SETTINGS")
 SETTINGS_FIELDS = (
@@ -33,6 +39,10 @@ SETTINGS_FIELDS = (
     "divisible",
     "width_offset",
     "height_offset",
+    "pad_enabled",
+    "pad_width",
+    "pad_height",
+    "pad_color",
 )
 VALID_SCALE_MODES = {
     "Nearest-exact",
@@ -42,6 +52,7 @@ VALID_SCALE_MODES = {
     "Lanczos",
 }
 VALID_EDGE_MODES = {
+    "None",
     "Long",
     "Short",
     "Megapixels",
@@ -76,6 +87,8 @@ class XImageResize(io.ComfyNode):
         - 保持原始宽高比，永不变形
         - 支持分辨率整除调整（适配模型要求）
         - 支持分辨率偏移调整（适配特殊模型要求）
+        - 支持补边到目标画布（居中放置，按指定颜色填底，永不裁切）
+        - 补边时自动生成「补出来的那一块」的遮罩，可直接交给采样节点重绘
         - 支持批量图像处理（图片序列）
         - 支持多种插值算法（双线性/双三次/最近邻/区域/Lanczos）
 
@@ -94,6 +107,10 @@ class XImageResize(io.ComfyNode):
         divisible_mode: 整除模式 (STRING)
         width_offset: 宽度偏移 (INT, 范围 -128 到 128)
         height_offset: 高度偏移 (INT, 范围 -128 到 128)
+        pad_enabled: 是否补边到目标画布 (BOOLEAN，默认关闭)
+        pad_width: 补边目标画布宽 (INT, 范围 16-16384)
+        pad_height: 补边目标画布高 (INT, 范围 16-16384)
+        pad_color: 补边颜色 (STRING, #RRGGBB 十六进制)
         skip_on_empty: 无输入时输出 None (BOOLEAN，默认关闭)
 
     输出：
@@ -101,6 +118,7 @@ class XImageResize(io.ComfyNode):
         width: 输出分辨率宽度
         height: 输出分辨率高度
         resize_settings_out: 继续传递给下游的专用设置链或空值
+        pad_mask: 新补出来的区域遮罩（1=补出来的，0=原画面）
     """
 
     @classmethod
@@ -114,8 +132,8 @@ class XImageResize(io.ComfyNode):
         return io.Schema(
             node_id="XImageResize",
             display_name="XImageResize",
-            description="Automatic image resize with batch-unified scaling "
-            "and divisible adjustment support",
+            description="Automatic image resize with batch-unified scaling, "
+            "divisible adjustment and canvas padding support",
             category="♾️ Xz3r0/Workflow-Processing",
             inputs=[
                 io.MatchType.Input(
@@ -170,14 +188,17 @@ class XImageResize(io.ComfyNode):
                 io.Combo.Input(
                     "edge_mode",
                     options=[
+                        "None",
                         "Long",
                         "Short",
                         "Megapixels",
                         "Scale Multiplier",
                     ],
                     default="Long",
-                    tooltip="Select scaling mode: Long=long edge, "
-                    "Short=short edge, Megapixels=target pixels, "
+                    tooltip="Select scaling mode: None=keep the original "
+                    "size (only divisible, offset and pad apply), "
+                    "Long=long edge, Short=short edge, "
+                    "Megapixels=target pixels, "
                     "Scale Multiplier=scale by multiplier",
                 ),
                 io.Combo.Input(
@@ -266,6 +287,51 @@ class XImageResize(io.ComfyNode):
                     "(positive=increase, negative=decrease, default=0)",
                 ),
                 io.Boolean.Input(
+                    "pad_enabled",
+                    default=False,
+                    label_on="Enabled",
+                    label_off="Disabled",
+                    tooltip="When enabled, the image is placed in the "
+                    "middle of a canvas of the target width and height, "
+                    "and the empty area is filled with the pad color. "
+                    "Nothing is cropped: a side that is already larger "
+                    "than its target keeps its own size, and if both "
+                    "sides are already large enough, the image is output "
+                    "unchanged. Padding runs after scaling, so if the "
+                    "scale mode already made the image bigger than the "
+                    "target nothing is padded - pick scale mode None to "
+                    "pad the original picture without scaling it.",
+                ),
+                io.Int.Input(
+                    "pad_width",
+                    default=DEFAULT_PAD_SIZE,
+                    min=16,
+                    max=MAX_CANVAS_SIZE,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Target canvas width in pixels. Only pads when "
+                    "the image is narrower than this value; ignored when "
+                    "pad is disabled.",
+                ),
+                io.Int.Input(
+                    "pad_height",
+                    default=DEFAULT_PAD_SIZE,
+                    min=16,
+                    max=MAX_CANVAS_SIZE,
+                    step=1,
+                    display_mode=io.NumberDisplay.number,
+                    tooltip="Target canvas height in pixels. Only pads when "
+                    "the image is shorter than this value; ignored when "
+                    "pad is disabled.",
+                ),
+                io.String.Input(
+                    "pad_color",
+                    default=DEFAULT_PAD_COLOR,
+                    tooltip="Color of the padded area as #RRGGBB hex, for "
+                    "example #FFFFFF for white. Masks ignore the color: "
+                    "padded area always counts as not masked.",
+                ),
+                io.Boolean.Input(
                     "skip_on_empty",
                     default=False,
                     label_on="Enabled",
@@ -297,6 +363,14 @@ class XImageResize(io.ComfyNode):
                         "forwarding the chain-origin settings."
                     ),
                 ),
+                io.Mask.Output(
+                    "pad_mask",
+                    tooltip="Mask of the newly added area: 1 where the "
+                    "canvas was filled, 0 on the original picture. "
+                    "Connect it to a sampling node's mask input to "
+                    "repaint only the new border. All 0 when nothing "
+                    "was padded.",
+                ),
             ],
         )
 
@@ -314,6 +388,10 @@ class XImageResize(io.ComfyNode):
         divisible: int,
         width_offset: int,
         height_offset: int,
+        pad_enabled: bool = False,
+        pad_width: int = DEFAULT_PAD_SIZE,
+        pad_height: int = DEFAULT_PAD_SIZE,
+        pad_color: str = DEFAULT_PAD_COLOR,
         resize_settings_in: Any = None,
         use_passed_settings: bool = True,
         output_resize_settings: bool = True,
@@ -325,28 +403,62 @@ class XImageResize(io.ComfyNode):
         Returns:
             True if valid, or error message string if invalid
         """
-        if scale_mode not in VALID_SCALE_MODES:
+        # 接了上游线的输入，在「校验阶段」拿到的是 None —— 上游还没算，
+        # 真实值只有执行时才知道（ComfyUI 的 execution.get_input_data 对
+        # 链接输入写的就是 None）。所以这些项在有值时才检查，None 直接放行，
+        # 否则会抛 `'<=' not supported between 'int' and 'NoneType'`。
+        if scale_mode is not None and scale_mode not in VALID_SCALE_MODES:
             return "Invalid scale_mode value"
-        if edge_mode not in VALID_EDGE_MODES:
+        if edge_mode is not None and edge_mode not in VALID_EDGE_MODES:
             return "Invalid edge_mode value"
-        if divisible_mode not in VALID_DIVISIBLE_MODES:
+        if (
+            divisible_mode is not None
+            and divisible_mode not in VALID_DIVISIBLE_MODES
+        ):
             return "Invalid divisible_mode value"
-        if resize_condition not in VALID_RESIZE_CONDITIONS:
+        if (
+            resize_condition is not None
+            and resize_condition not in VALID_RESIZE_CONDITIONS
+        ):
             return "Invalid resize_condition value"
 
-        if not (64 <= target_edge <= 8192):
+        if target_edge is not None and not (64 <= target_edge <= 8192):
             return "target_edge must be between 64 and 8192"
-        if not (1 <= divisible <= 128):
+        if divisible is not None and not (1 <= divisible <= 128):
             return "divisible must be between 1 and 128"
-        if not (-128 <= width_offset <= 128):
+        if width_offset is not None and not (-128 <= width_offset <= 128):
             return "width_offset must be between -128 and 128"
-        if not (-128 <= height_offset <= 128):
+        if height_offset is not None and not (-128 <= height_offset <= 128):
             return "height_offset must be between -128 and 128"
 
-        if edge_mode == "Megapixels" and megapixels <= 0:
+        if (
+            edge_mode == "Megapixels"
+            and megapixels is not None
+            and megapixels <= 0
+        ):
             return "Megapixels mode requires megapixels > 0"
-        if edge_mode == "Scale Multiplier" and scale_multiplier <= 0:
+        if (
+            edge_mode == "Scale Multiplier"
+            and scale_multiplier is not None
+            and scale_multiplier <= 0
+        ):
             return "Scale Multiplier mode requires scale_multiplier > 0"
+
+        # 补边关闭时这三项不参与计算，不把旧值当成错误拦下来
+        if pad_enabled:
+            if pad_width is not None and not (
+                16 <= pad_width <= MAX_CANVAS_SIZE
+            ):
+                return f"pad_width must be 16-{MAX_CANVAS_SIZE}"
+            if pad_height is not None and not (
+                16 <= pad_height <= MAX_CANVAS_SIZE
+            ):
+                return f"pad_height must be 16-{MAX_CANVAS_SIZE}"
+            if (
+                pad_color is not None
+                and cls._parse_pad_color(pad_color) is None
+            ):
+                return "pad_color must be a hex color such as #FFFFFF"
 
         return True
 
@@ -364,6 +476,10 @@ class XImageResize(io.ComfyNode):
         divisible: int,
         width_offset: int,
         height_offset: int,
+        pad_enabled: bool = False,
+        pad_width: int = DEFAULT_PAD_SIZE,
+        pad_height: int = DEFAULT_PAD_SIZE,
+        pad_color: str = DEFAULT_PAD_COLOR,
         resize_settings_in: Any = None,
         use_passed_settings: bool = True,
         output_resize_settings: bool = True,
@@ -397,6 +513,10 @@ class XImageResize(io.ComfyNode):
                 divisible=divisible,
                 width_offset=width_offset,
                 height_offset=height_offset,
+                pad_enabled=pad_enabled,
+                pad_width=pad_width,
+                pad_height=pad_height,
+                pad_color=pad_color,
                 skip_on_empty=skip_on_empty,
             )
             passed_settings = cls._parse_settings_input(
@@ -408,7 +528,7 @@ class XImageResize(io.ComfyNode):
             settings_out: dict[str, Any] | None = settings_for_output
             if not output_resize_settings:
                 settings_out = None
-            return io.NodeOutput(None, None, None, settings_out)
+            return io.NodeOutput(None, None, None, settings_out, None)
 
         tensor, input_kind, original_dims = cls._normalize_input_tensor(
             image_or_mask
@@ -425,6 +545,10 @@ class XImageResize(io.ComfyNode):
             divisible=divisible,
             width_offset=width_offset,
             height_offset=height_offset,
+            pad_enabled=pad_enabled,
+            pad_width=pad_width,
+            pad_height=pad_height,
+            pad_color=pad_color,
             skip_on_empty=skip_on_empty,
         )
         passed_settings = cls._parse_settings_input(resize_settings_in)
@@ -452,6 +576,10 @@ class XImageResize(io.ComfyNode):
         divisible = effective_settings["divisible"]
         width_offset = effective_settings["width_offset"]
         height_offset = effective_settings["height_offset"]
+        pad_enabled = bool(effective_settings["pad_enabled"])
+        pad_width = effective_settings["pad_width"]
+        pad_height = effective_settings["pad_height"]
+        pad_color = effective_settings["pad_color"]
 
         _, height, width, _ = tensor.shape
 
@@ -485,6 +613,10 @@ class XImageResize(io.ComfyNode):
         elif edge_mode == "Scale Multiplier":
             new_width = round(width * scale_multiplier)
             new_height = round(height * scale_multiplier)
+        elif edge_mode == "None":
+            # 不缩放：只留原尺寸，后面的整除/偏移/补边照常生效
+            new_width = width
+            new_height = height
         else:
             if edge_mode == "Long":
                 base_edge = long_edge
@@ -528,6 +660,51 @@ class XImageResize(io.ComfyNode):
         if scaled_batch.dim() != data_batch.dim():
             scaled_batch = scaled_batch.movedim(-1, -2).unsqueeze(1)
         output_tensor = scaled_batch.movedim(1, -1)
+
+        # 补边放在缩放、整除、偏移之后：先把画面缩好，再放进目标画布。
+        # 遮罩输入时把它自己的遮罩带进画布，补出来的那一圈统一记为 1。
+        content_mask = output_tensor[..., 0] if input_kind == "mask" else None
+        pad_mask = None
+        if pad_enabled:
+            pad_rgb = cls._parse_pad_color(pad_color)
+            if pad_rgb is None:
+                raise ValueError(
+                    "pad_color must be a hex color such as #FFFFFF"
+                )
+            before_width = output_tensor.shape[2]
+            before_height = output_tensor.shape[1]
+            output_tensor, new_width, new_height, pad_mask = (
+                cls._pad_to_target(
+                    output_tensor,
+                    pad_width,
+                    pad_height,
+                    input_kind,
+                    pad_rgb,
+                    content_mask,
+                )
+            )
+            # 补边是「只补不裁」：画面本来就比目标大时什么都不做。这种
+            # 情况安静地不补最容易被当成 bug（常见原因：缩放已经把画面
+            # 放大到超过补边目标），所以留一行日志。
+            if new_width == before_width and new_height == before_height:
+                LOGGER.info(
+                    "Pad skipped: image %sx%s already reaches the pad "
+                    "target %sx%s",
+                    before_width,
+                    before_height,
+                    pad_width,
+                    pad_height,
+                )
+        if pad_mask is None:
+            # 没补边：没有需要重绘的地方，遮罩全 0
+            pad_mask = output_tensor.new_zeros(
+                (
+                    output_tensor.shape[0],
+                    output_tensor.shape[1],
+                    output_tensor.shape[2],
+                )
+            )
+
         restored_output = cls._restore_output_tensor(
             output_tensor,
             input_kind,
@@ -546,6 +723,7 @@ class XImageResize(io.ComfyNode):
             new_width,
             new_height,
             settings_out,
+            pad_mask,
         )
 
     @staticmethod
@@ -608,6 +786,10 @@ class XImageResize(io.ComfyNode):
         divisible: int,
         width_offset: int,
         height_offset: int,
+        pad_enabled: bool = False,
+        pad_width: int = DEFAULT_PAD_SIZE,
+        pad_height: int = DEFAULT_PAD_SIZE,
+        pad_color: str = DEFAULT_PAD_COLOR,
         skip_on_empty: bool = False,
     ) -> dict[str, Any]:
         """
@@ -624,6 +806,10 @@ class XImageResize(io.ComfyNode):
             "divisible": divisible,
             "width_offset": width_offset,
             "height_offset": height_offset,
+            "pad_enabled": pad_enabled,
+            "pad_width": pad_width,
+            "pad_height": pad_height,
+            "pad_color": pad_color,
             "skip_on_empty": skip_on_empty,
         }
 
@@ -651,6 +837,10 @@ class XImageResize(io.ComfyNode):
         divisible = resize_settings_in["divisible"]
         width_offset = resize_settings_in["width_offset"]
         height_offset = resize_settings_in["height_offset"]
+        pad_enabled = resize_settings_in["pad_enabled"]
+        pad_width = resize_settings_in["pad_width"]
+        pad_height = resize_settings_in["pad_height"]
+        pad_color = resize_settings_in["pad_color"]
         skip_on_empty = resize_settings_in["skip_on_empty"]
 
         if scale_mode not in VALID_SCALE_MODES:
@@ -676,6 +866,14 @@ class XImageResize(io.ComfyNode):
 
         if not isinstance(skip_on_empty, bool):
             return None
+        if not isinstance(pad_enabled, bool):
+            return None
+        if not cls._is_int_value(pad_width):
+            return None
+        if not cls._is_int_value(pad_height):
+            return None
+        if not isinstance(pad_color, str):
+            return None
 
         if target_edge < 64 or target_edge > 8192:
             return None
@@ -690,6 +888,17 @@ class XImageResize(io.ComfyNode):
         if megapixels <= 0:
             return None
 
+        if pad_width < 16 or pad_width > MAX_CANVAS_SIZE:
+            return None
+        if pad_height < 16 or pad_height > MAX_CANVAS_SIZE:
+            return None
+        if cls._parse_pad_color(pad_color) is None:
+            # 补边关闭时颜色不参与计算：旧的错写值统一成默认值，
+            # 不因此掐断整条设置链
+            if pad_enabled:
+                return None
+            pad_color = DEFAULT_PAD_COLOR
+
         return cls._build_settings(
             scale_mode=scale_mode,
             edge_mode=edge_mode,
@@ -701,8 +910,72 @@ class XImageResize(io.ComfyNode):
             divisible=divisible,
             width_offset=width_offset,
             height_offset=height_offset,
+            pad_enabled=pad_enabled,
+            pad_width=pad_width,
+            pad_height=pad_height,
+            pad_color=pad_color,
             skip_on_empty=skip_on_empty,
         )
+
+    @staticmethod
+    def _parse_pad_color(value: Any) -> tuple[float, float, float] | None:
+        """
+        把 #RRGGBB / #RGB 转成 0-1 的 RGB 三元组；格式不对返回 None。
+        """
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not PAD_COLOR_PATTERN.match(text):
+            return None
+        digits = text.lstrip("#")
+        if len(digits) == 3:
+            digits = "".join(char * 2 for char in digits)
+        return (
+            int(digits[0:2], 16) / 255.0,
+            int(digits[2:4], 16) / 255.0,
+            int(digits[4:6], 16) / 255.0,
+        )
+
+    @staticmethod
+    def _pad_to_target(
+        tensor: torch.Tensor,
+        target_width: int,
+        target_height: int,
+        input_kind: str,
+        color: tuple[float, float, float],
+        content_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, int, int, torch.Tensor]:
+        """
+        把画面居中放进目标画布；已经够大的边保持原样，绝不裁切。
+
+        同时给出「补出来的那一圈」在哪的遮罩：补出来的地方是 1，原画面
+        保持自己的遮罩（图像输入就是 0）。下游采样节点拿着这个遮罩就只
+        重绘新补的边。
+        """
+        batch, height, width, channels = tensor.shape
+        canvas_width = max(width, target_width)
+        canvas_height = max(height, target_height)
+        if content_mask is None:
+            content_mask = tensor.new_zeros((batch, height, width))
+        # 先整块当成「都是新补的」，再把原画面那块盖回去
+        canvas_mask = tensor.new_ones((batch, canvas_height, canvas_width))
+
+        if canvas_width == width and canvas_height == height:
+            canvas_mask[:, :, :] = content_mask
+            return tensor, width, height, canvas_mask
+
+        left = (canvas_width - width) // 2
+        top = (canvas_height - height) // 2
+        canvas = tensor.new_zeros(
+            (batch, canvas_height, canvas_width, channels)
+        )
+        # 图像用指定颜色填底；遮罩默认就是 0（等于「这里没选中」）
+        if input_kind == "image":
+            for index in range(min(3, channels)):
+                canvas[..., index] = color[index]
+        canvas[:, top : top + height, left : left + width, :] = tensor
+        canvas_mask[:, top : top + height, left : left + width] = content_mask
+        return canvas, canvas_width, canvas_height, canvas_mask
 
     @staticmethod
     def _is_real_number(value: Any) -> bool:
