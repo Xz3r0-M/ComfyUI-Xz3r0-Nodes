@@ -464,6 +464,13 @@ function writeItems(node, items, options = {}) {
             )
         );
     }
+    if (options.skipStore) {
+        // 拖动过程中的中间态：模型已经改好了，但先不落盘。
+        // 每翻一格都序列化一遍整个列表（几百行时每次 1~2ms）纯属白烧，
+        // 而且会让「工作流有未保存改动」的标记一直闪。
+        // 收尾那次写盘会把最终结果一次写进去。
+        return;
+    }
     if (options.recordUndo !== false) {
         engine.pushUndoSnapshot(node);
         const panel = node.__xmlg_panel;
@@ -473,8 +480,13 @@ function writeItems(node, items, options = {}) {
         }
     }
     widget.value = JSON.stringify(items);
-    node.setDirtyCanvas?.(true, true);
-    node.graph?.change?.();
+    if (!options.deferCanvas) {
+        // 拖动期间画布上什么都没变，不用每翻一格就整块重绘
+        // （重绘代价随节点数上涨）。收尾那次写盘不带这个标记，
+        // 会统一重绘一次。
+        node.setDirtyCanvas?.(true, true);
+        node.graph?.change?.();
+    }
     engine.updateUndoButton(node);
 }
 
@@ -5131,6 +5143,7 @@ function showTypeMismatch(node, dragType) {
         { category: categoryLabel(dragType) }
     );
     panel.overlay.classList.add("is-visible");
+    panel.state.mismatchShown = true;
     for (const category of CATEGORIES) {
         const tab = panel.tabButtons[category];
         tab.button.classList.toggle("is-target", category === dragType);
@@ -5145,6 +5158,12 @@ function hideTypeMismatch(panel) {
     if (!panel) {
         return;
     }
+    // dragover 每次都调这里。没显示过就别碰 DOM —— 删类名会让浏览器
+    // 重新算样式，紧接着的落点测量就要多吃一次重排。
+    if (!panel.state.mismatchShown) {
+        return;
+    }
+    panel.state.mismatchShown = false;
     panel.overlay.classList.remove("is-visible");
     for (const category of CATEGORIES) {
         const button = panel.tabButtons[category].button;
@@ -5168,6 +5187,7 @@ function showUnsupportedDrag(node, dragType) {
     );
     panel.overlayHint.textContent = unsupportedTypeHint(dragType);
     panel.overlay.classList.add("is-visible");
+    panel.state.mismatchShown = true;
     for (const category of CATEGORIES) {
         const button = panel.tabButtons[category].button;
         button.classList.remove("is-target", "is-switching");
@@ -5316,6 +5336,14 @@ function bindDragAndDrop(node) {
             return;
         }
         drag.dataTransfer = event.dataTransfer;
+        // 手指（鼠标）没动，落点不可能变：连量位置都省掉
+        const sameSpot = drag.lastClientY === event.clientY
+            && drag.lastClientX === event.clientX;
+        drag.lastClientY = event.clientY;
+        drag.lastClientX = event.clientX;
+        if (sameSpot) {
+            return;
+        }
         if (drag.type && !isSupportedCategory(drag.type)) {
             showUnsupportedDrag(node, drag.type);
             engine.clearDragHighlights(panel);
@@ -5338,6 +5366,11 @@ function bindDragAndDrop(node) {
             return;
         }
         stopDropAutoScroll(state);
+        // 下一次拖拽的落点要从头算
+        if (state.drag) {
+            state.drag.lastClientY = undefined;
+            state.drag.lastClientX = undefined;
+        }
         engine.clearDragHighlights(panel);
     });
 

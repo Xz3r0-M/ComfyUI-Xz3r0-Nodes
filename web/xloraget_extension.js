@@ -2308,7 +2308,12 @@ function writeLoraItems(node, items, options = {}) {
             groups: { image: groups, video: [], audio: [] },
         };
     }
-    writeStoredRows(node, rows);
+    if (options.skipStore) {
+        // 拖动过程中的中间态：模型已经改好了，但先不落盘（理由同媒体列表）
+        engine.updateUndoButton(node);
+        return;
+    }
+    writeStoredRows(node, rows, { deferCanvas: options.deferCanvas });
     engine.updateUndoButton(node);
 }
 
@@ -2518,7 +2523,7 @@ function serializeStoredRows(rows, globalSeparateClip) {
     }));
 }
 
-function writeStoredRows(node, rows) {
+function writeStoredRows(node, rows, options = {}) {
     const panel = node.__xlora_panel;
     const globalSeparateClip = !!panel?.state?.globalSeparateClip;
     const widget = ensureStorageWidget(node);
@@ -2532,7 +2537,11 @@ function writeStoredRows(node, rows) {
     widget.value = JSON.stringify(
         serializeStoredPayload(rows, groups, globalSeparateClip)
     );
-    node.setDirtyCanvas?.(true, true);
+    if (!options.deferCanvas) {
+        // 拖动期间画布上什么都没变，不用每翻一格就整块重绘一次
+        // （重绘代价随节点数上涨）。收尾那次写盘会统一重绘。
+        node.setDirtyCanvas?.(true, true);
+    }
 }
 
 /**
@@ -5055,8 +5064,9 @@ function clampInsertIndex(rows, index) {
  * 这一说——LoRA 行还带着强度、触发词和备注，静默替换会把它们一起
  * 丢掉，代价太大。
  */
-function resolveInsertIndex(list, rows, clientY) {
-    const rowEls = Array.from(list.querySelectorAll(".xlora-row"));
+function resolveInsertIndex(list, rows, clientY, cachedEls) {
+    const rowEls = cachedEls
+        || Array.from(list.querySelectorAll(".xlora-row"));
     let index = rowEls.length;
     for (const rowEl of rowEls) {
         const rect = rowEl.getBoundingClientRect();
@@ -5081,6 +5091,9 @@ function clearDropIndicator(panel) {
     if (panel.dropLabel) {
         panel.dropLabel.style.display = "none";
     }
+    // 忘掉「上次画的是哪个落点」和缓存的行走表，下次要能重新画
+    panel.dropSignature = "";
+    panel.dragRowEls = null;
 }
 
 /** 列表每次重画都会清空 innerHTML，画完把指示线挂回去。 */
@@ -5101,11 +5114,26 @@ function showDropIndicator(panel, rows, index, count, kind = "insert") {
     if (!panel?.list || !panel.insertLine || !panel.dropLabel) {
         return;
     }
+    // dragover 每秒几十次，落点大多没变。不变就一句话都别做：
+    // 每次事件都读计算样式 + 扫一遍行元素 + 写样式，会让浏览器
+    // 反复重排，节点一多就明显卡。
+    const signature = `${kind}|${index}|${count}`;
+    if (panel.dropSignature === signature) {
+        return;
+    }
+    panel.dropSignature = signature;
     panel.dropKind = kind;
-    const rowEls = Array.from(panel.list.querySelectorAll(".xlora-row"));
-    const padding = Number.parseFloat(
-        getComputedStyle(panel.list).paddingTop
-    ) || 0;
+    const rowEls = panel.dragRowEls
+        || (panel.dragRowEls = Array.from(
+            panel.list.querySelectorAll(".xlora-row")
+        ));
+    // 列表的内边距是固定值，量一次记住，不要每个事件都读计算样式
+    if (panel.listPaddingTop === undefined) {
+        panel.listPaddingTop = Number.parseFloat(
+            getComputedStyle(panel.list).paddingTop
+        ) || 0;
+    }
+    const padding = panel.listPaddingTop;
     let top = padding;
     const nextRow = rowEls.find(
         (rowEl) => Number(rowEl.dataset.index) === index
@@ -5400,8 +5428,19 @@ function bindDnD(node) {
         if (event.dataTransfer) {
             event.dataTransfer.dropEffect = "copy";
         }
+        // 手指（鼠标）没动，落点不可能变：连量位置都省掉
+        if (panel.dragSpotY === event.clientY
+            && panel.dragSpotX === event.clientX) {
+            return;
+        }
+        panel.dragSpotY = event.clientY;
+        panel.dragSpotX = event.clientX;
         const rows = panel.state.rows;
-        const index = resolveInsertIndex(list, rows, event.clientY);
+        const rowEls = panel.dragRowEls
+            || (panel.dragRowEls = Array.from(
+                list.querySelectorAll(".xlora-row")
+            ));
+        const index = resolveInsertIndex(list, rows, event.clientY, rowEls);
         panel.dropIndex = index;
         panel.dropCount = dropCountFromDataTransfer(event.dataTransfer);
         showDropIndicator(panel, rows, index, panel.dropCount);
@@ -5417,6 +5456,9 @@ function bindDnD(node) {
     });
     list.addEventListener("dragleave", (event) => {
         consume(event);
+        // 下一次拖拽的落点要从头算
+        panel.dragSpotY = undefined;
+        panel.dragSpotX = undefined;
         const related = event.relatedTarget;
         if (related instanceof Node && list.contains(related)) {
             return;

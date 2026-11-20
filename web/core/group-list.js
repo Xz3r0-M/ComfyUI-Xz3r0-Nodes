@@ -3173,7 +3173,15 @@ function liveMoveGroup(node, gapIndex) {
     collectDissolved(dragGroup, result.dissolved);
     ensureDragUndo(node);
     applyOrderInPlace(node, { animate: true });
-    writeItems(node, state.items, { recordUndo: false });
+    // 拖动中每翻一格就整块重绘画布、还把整个列表序列化一遍写进
+    // widget —— 这两件都随「工作流越大 / 列表越长」成正比，正是
+    // 「拖一下就卡」的来源。收尾那次写盘（finishRowDrag /
+    // finishGroupDrag）会把最终结果一次写完并重绘一次。
+    writeItems(node, state.items, {
+        recordUndo: false,
+        deferCanvas: true,
+        skipStore: true,
+    });
     return true;
 }
 
@@ -3238,7 +3246,15 @@ function liveMoveRow(node, gapIndex, groupId) {
     collectDissolved(dragRow, result.dissolved);
     ensureDragUndo(node);
     applyOrderInPlace(node, { animate: true });
-    writeItems(node, state.items, { recordUndo: false });
+    // 拖动中每翻一格就整块重绘画布、还把整个列表序列化一遍写进
+    // widget —— 这两件都随「工作流越大 / 列表越长」成正比，正是
+    // 「拖一下就卡」的来源。收尾那次写盘（finishRowDrag /
+    // finishGroupDrag）会把最终结果一次写完并重绘一次。
+    writeItems(node, state.items, {
+        recordUndo: false,
+        deferCanvas: true,
+        skipStore: true,
+    });
     return true;
 }
 
@@ -3344,6 +3360,12 @@ function movePointerDrag(node, event) {
         startPointerDrag(node, pending, event);
         return;
     }
+    // 同一像素的重复事件（高频鼠标 / 触控板）不必再算一遍：
+    // 下面的落点换算要扫一遍行、量一堆矩形
+    if (pending.lastMoveY === event.clientY) {
+        return;
+    }
+    pending.lastMoveY = event.clientY;
     event.preventDefault();
     moveGhost(node, event.clientY);
     applyPointerDrag(node, event.clientY);
@@ -3402,9 +3424,16 @@ function applyPointerDrag(node, clientY) {
         if (far && liveMoveRow(node, target.gap, target.groupId)) {
             dragRow.lastY = clientY;
         }
-        markGroupTarget(panel, dragRow.groupId || null);
+        // 只有归属真的换了才动 DOM（drop-target 类名）
+        const markGroup = dragRow.groupId || null;
+        if (dragRow.markedGroup !== markGroup) {
+            dragRow.markedGroup = markGroup;
+            markGroupTarget(panel, markGroup);
+        }
     }
-    const rect = panel.list.getBoundingClientRect();
+    // 列表的位置在拖动期间不会变，量一次记住
+    const rect = pending.listRect
+        || (pending.listRect = panel.list.getBoundingClientRect());
     if (clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
         startDropAutoScroll(node, -1);
     } else if (rect.bottom - clientY < DROP_AUTOSCROLL_EDGE) {
@@ -4185,7 +4214,7 @@ function resolveDropTarget(node, clientY) {
     };
 }
 
-function clearDragHighlights(panel) {
+function clearDragHighlights(panel, options = {}) {
     if (!panel) {
         return;
     }
@@ -4198,6 +4227,11 @@ function clearDragHighlights(panel) {
     panel.dropLabel.style.display = "none";
     for (const target of panel.list.querySelectorAll(".is-drop-target")) {
         target.classList.remove("is-drop-target");
+    }
+    // 忘掉上次落点，否则收回指示线之后同一个落点再也画不出来。
+    // updateDropIndicator 自己清理时要留着（它刚刚才记下新的落点）
+    if (!options.keepSignature) {
+        panel.state.dropSignature = "";
     }
 }
 
@@ -4248,12 +4282,16 @@ function insertLineTop(panel, index) {
     return anchor.offsetTop + anchor.offsetHeight + 1;
 }
 
-function placeInsertLine(panel, index) {
-    const top = insertLineTop(panel, index);
+/** 只写样式，不量任何位置（要和量位置的那一步分开）。 */
+function applyInsertLine(panel, top) {
     panel.insertLine.style.top = `${top}px`;
     panel.insertLine.style.display = "block";
     panel.dropLabel.style.top = `${Math.max(0, top - 24)}px`;
     panel.dropLabel.style.display = "block";
+}
+
+function placeInsertLine(panel, index) {
+    applyInsertLine(panel, insertLineTop(panel, index));
 }
 
 function updateDropIndicator(node, target) {
@@ -4261,15 +4299,31 @@ function updateDropIndicator(node, target) {
     if (!panel || !target) {
         return;
     }
-    clearDragHighlights(panel);
+    // dragover 每秒几十次，落点大多没变。不变就一件事都别做：
+    // 读位置和写样式交替出现会让浏览器反复整页重排，而重排的代价
+    // 随节点数（Nodes 2.0 里每个节点都是 DOM）一起上涨。
     const count = dragCountFromDataTransfer(
         panel.state.drag?.dataTransfer
     );
+    const signature = target.mode === "replace"
+        ? `replace|${panel.state.drag?.pendingIndex ?? ""}|${count}`
+        : `insert|${target.index}|${target.group || ""}|${count}`;
+    if (panel.state.dropSignature === signature) {
+        return;
+    }
+    panel.state.dropSignature = signature;
+    // 先量后写：反过来会让「上一次的写」把布局弄脏，紧跟着的读就要
+    // 强制重排一次，每个事件都白付一次重排的钱。
+    const top = target.mode === "replace" ? 0 : insertLineTop(
+        panel,
+        target.index
+    );
+    clearDragHighlights(panel, { keepSignature: true });
     if (target.mode === "replace" && count <= 1) {
         target.row?.classList.add("is-replace-target");
         return;
     }
-    placeInsertLine(panel, target.index);
+    applyInsertLine(panel, top);
     // 落点落在某一组里：把那组圈出来，提示里直接写组名
     markGroupTarget(panel, target.group);
     const groupName = groupNameById(node, panel.state.category, target.group);
