@@ -27,6 +27,8 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { inputLinkId } from "./core/slot-links.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 const QUEUE_PROMPT_WRAPPED_MARK = Symbol(
     "ComfyUI.Xz3r0.XWorkflowSave.queuePromptWrapped"
@@ -155,7 +157,7 @@ app.registerExtension({
         // 遍历完整图树（含嵌套子图），发现所有 XWorkflowSave 节点
         const targetNodes = [];
         forEachNodeInGraphTree(
-            app.graph,
+            rootGraphOf(app),
             function (node, scopedId) {
                 if (node?.type !== "XWorkflowSave") {
                     return;
@@ -290,20 +292,15 @@ app.registerExtension({
      */
     captureWorkflow() {
         try {
-            if (!app.graph) {
+            if (!rootGraphOf(app)) {
                 return null;
             }
 
-            // 尝试多种方法获取 workflow
-            let workflow = null;
-
-            if (app.workflowManager?.activeWorkflow) {
-                workflow = app.workflowManager.activeWorkflow.save();
-            } else if (app.saveWorkflow) {
-                workflow = app.saveWorkflow();
-            } else {
-                workflow = app.graph.serialize();
-            }
+            // 取当前工作流数据。
+            // 老前端曾经有 app.workflowManager / app.saveWorkflow 两种取法，
+            // 现在这两个成员已经从 ComfyUI 前端移除（不是弃用，是删掉了），
+            // 只会走 graph.serialize()：它输出的就是工作流 json 结构。
+            let workflow = rootGraphOf(app).serialize();
 
             // 补充缺失数据
             if (workflow?.nodes) {
@@ -332,7 +329,7 @@ app.registerExtension({
         // 遍历完整图树构建节点映射，确保子图中的节点也能匹配
         const graphNodeMap = new Map();
         forEachNodeInGraphTree(
-            app.graph,
+            rootGraphOf(app),
             function (node) {
                 if (node && node.id != null) {
                     graphNodeMap.set(node.id, node);
@@ -361,7 +358,7 @@ app.registerExtension({
                         node.inputs.push({
                             name: input.name,
                             type: input.type,
-                            link: input.link || null,
+                            link: inputLinkId(graphNode, input) || null,
                             localized_name: input.localized_name || input.name,
                             widget: input.widget ?
                                 {name: input.widget.name} : undefined

@@ -10,6 +10,8 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { outputLinkIds } from "./core/slot-links.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XController";
 var NODE_CLASS = "XController";
@@ -437,7 +439,7 @@ function refreshAllControlLocales() {
     var graph = (app.canvas && app.canvas.getCurrentGraph
         && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
-        || app.graph;
+        || rootGraphOf(app);
     var nodes = (graph && (graph._nodes || graph.nodes)) || [];
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
@@ -534,7 +536,7 @@ function setWidgetValue(node, name, value) {
     w.callback?.(value);
     syncWidgetValues(node);
     node.setDirtyCanvas && node.setDirtyCanvas(true, true);
-    app.graph?.setDirtyCanvas?.(true, true);
+    rootGraphOf(app)?.setDirtyCanvas?.(true, true);
 }
 
 function syncWidgetValues(node) {
@@ -790,8 +792,7 @@ function outputTypeForName(name) {
 
 function outputLinkCountByIndex(node, index) {
     if (!node || index < 0 || index >= (node.outputs || []).length) return 0;
-    var output = node.outputs[index];
-    return (output && output.links && output.links.length) || 0;
+    return outputLinkIds(node, node.outputs[index]).length;
 }
 
 function getGraphLink(graph, linkId) {
@@ -818,9 +819,9 @@ function fixLinkOriginSlots(graph, links, slotIndex) {
 function rewriteAllOutputOriginSlots(node) {
     if (!node || !node.graph || !Array.isArray(node.outputs)) return;
     for (var i = 0; i < node.outputs.length; i++) {
-        var out = node.outputs[i];
-        if (out && out.links && out.links.length) {
-            fixLinkOriginSlots(node.graph, out.links, i);
+        var ids = outputLinkIds(node, node.outputs[i]);
+        if (ids.length) {
+            fixLinkOriginSlots(node.graph, ids, i);
         }
     }
 }
@@ -925,6 +926,8 @@ function remapSerializedOutputs(node, info) {
         var existing = byName[def.name];
         if (existing) {
             // 加载路径：links 已在 graph 中，先对齐到 schema 索引
+            // 注意：这里的 existing 是工作流 json 里的普通对象（不是画布上的
+            // 节点口），读它的 .links 不会触发弃用警告。
             fixLinkOriginSlots(graph, existing.links, k);
             existing.name = def.name;
             existing.type = def.type;
@@ -973,10 +976,11 @@ function prepareOutputsForSerialize(node, serialised) {
         var def = SCHEMA_OUTPUTS[k];
         var existing = byName[def.name];
         if (existing) {
+            var linkIds = outputLinkIds(node, existing);
             expanded.push({
                 name: def.name,
                 type: def.type,
-                links: existing.links ? existing.links.slice() : null,
+                links: linkIds.length ? linkIds : null,
                 localized_name: existing.localized_name,
                 label: existing.label,
                 shape: existing.shape,
@@ -2544,7 +2548,7 @@ app.registerExtension({
     async afterConfigureGraph() {
         // 兜底：部分路径可能不逐个触发 loadedGraphNode
         try {
-            finalizeAllXControllerPorts(app.graph);
+            finalizeAllXControllerPorts(rootGraphOf(app));
         } catch (err) {
             console.error("[XController] afterConfigureGraph error:", err);
         }

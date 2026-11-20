@@ -53,6 +53,8 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { loadComfyExport } from "./core/comfy-internals.js";
+import { installWheelScrollGuard } from "./core/wheel-scroll-guard.js";
 
 /**
  * 菜单按钮引用
@@ -134,7 +136,7 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20261023-7";
+const XDATAHUB_ASSET_VER = "20261023-8";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
@@ -1432,6 +1434,9 @@ app.registerExtension({
      * 创建样式表并添加菜单按钮
      */
     async setup() {
+        // Nodes 2.0 的覆盖层会在捕获阶段把滚轮拿去缩放画布，导致面板里的
+        // 列表滚不动。这里装一次兜底，让能滚的容器保留原生滚动（幂等）。
+        installWheelScrollGuard();
         await applyHostUiLocale();
         installLocaleSync();
         await loadHostBehaviorSettings();
@@ -2047,9 +2052,16 @@ app.registerExtension({
         document.head.appendChild(style);
 
         // 尝试在新版 ComfyUI UI 中添加菜单按钮
+        // 按钮类属于前端内部实现，取用方式见 core/comfy-internals.js：
+        // 优先读 window.comfyAPI，避开已弃用的 scripts/ui/... 导入（issue #55）
         if (app.menu?.settingsGroup) {
             try {
-                const { ComfyButton } = await import("../../scripts/ui/components/button.js");
+                const ComfyButton = await loadComfyExport(
+                    "button", "ComfyButton", "/scripts/ui/components/button.js"
+                );
+                if (!ComfyButton) {
+                    throw new Error("ComfyButton is unavailable");
+                }
                 menuButton = new ComfyButton({
                     action: () => XDataHub.toggle(),
                     tooltip: t("menuTooltip", "XDataHub"),

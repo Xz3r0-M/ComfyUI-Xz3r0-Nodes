@@ -4,11 +4,12 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-14";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-15";
 import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 const EXT_NAME = "xz3r0.ximageget";
 const EXT_GUARD_KEY = "__ximageget_extension_registered__";
@@ -140,7 +141,7 @@ async function loadUiLocaleBundle(localeOverride = null) {
 }
 
 function refreshAllPanelLocales() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -1712,6 +1713,8 @@ function installNodeUi(node) {
         panel.addEventListener("pointerdown", function(e) {
             if (e.button !== 1) return;
             e.preventDefault();
+            // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+            panel.setPointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseDown !== "function") return;
             cvs.processMouseDown(e);
@@ -1724,6 +1727,7 @@ function installNodeUi(node) {
         });
         panel.addEventListener("pointerup", function(e) {
             if (e.button !== 1) return;
+            panel.releasePointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseUp !== "function") return;
             cvs.processMouseUp(e);
@@ -1844,11 +1848,11 @@ function forEachNodeInGraphTree(rootGraph, visitor) {
 }
 
 function getScopedNodeId(node) {
-    if (!node || !app.graph) {
+    if (!node || !rootGraphOf(app)) {
         return "";
     }
     let scopedId = "";
-    forEachNodeInGraphTree(app.graph, (graphNode, graphScopedId) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (graphNode, graphScopedId) => {
         if (!scopedId && graphNode === node) {
             scopedId = graphScopedId;
         }
@@ -1858,12 +1862,12 @@ function getScopedNodeId(node) {
 
 function getNodeById(nodeId) {
     const targetId = String(nodeId ?? "").trim();
-    if (!targetId || !app.graph) {
+    if (!targetId || !rootGraphOf(app)) {
         return null;
     }
     let scopedMatch = null;
     let plainMatch = null;
-    forEachNodeInGraphTree(app.graph, (node, scopedId) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (node, scopedId) => {
         if (scopedMatch) {
             return;
         }
@@ -1884,11 +1888,11 @@ function getNodeById(nodeId) {
 
 function collectNodesByClass(nodeClass) {
     const targetClass = String(nodeClass || "");
-    if (!SUPPORTED_NODE_CLASSES.has(targetClass) || !app.graph) {
+    if (!SUPPORTED_NODE_CLASSES.has(targetClass) || !rootGraphOf(app)) {
         return [];
     }
     const items = [];
-    forEachNodeInGraphTree(app.graph, (node, scopedId) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (node, scopedId) => {
         if (node?.comfyClass !== targetClass) {
             return;
         }
@@ -1926,10 +1930,10 @@ function updateNodeMediaRef(node, mediaRef, title) {
 }
 
 function installExistingNodes() {
-    if (!app.graph) {
+    if (!rootGraphOf(app)) {
         return;
     }
-    forEachNodeInGraphTree(app.graph, (node) => {
+    forEachNodeInGraphTree(rootGraphOf(app), (node) => {
         installNodeUi(node);
         if (SUPPORTED_NODE_CLASSES.has(String(node?.comfyClass || ""))) {
             getStorageWidget(node);

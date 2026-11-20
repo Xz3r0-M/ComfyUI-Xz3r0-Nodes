@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from comfy_api.latest import io
@@ -40,7 +41,8 @@ class XListToPipe(io.ComfyNode):
                 "Turn a list into an XPipe bundle so it can flow through "
                 "the XPipe family. Items fill slots 1..N (up to 50); "
                 "unused slots stay empty (None). The count input sets "
-                "how many slots the bundle has."
+                "how many slots the bundle has. Connect the names input "
+                "to give each slot a real name."
             ),
             category="♾️ Xz3r0/Workflow-Processing",
             is_input_list=True,
@@ -79,6 +81,19 @@ class XListToPipe(io.ComfyNode):
                         "unconnected to use the number field above."
                     ),
                 ),
+                io.String.Input(
+                    "names",
+                    force_input=True,
+                    optional=True,
+                    tooltip=(
+                        "Optional slot names, one per item, in the same "
+                        "order as the list. Connect XMediaListGet's "
+                        "image_names / video_names / audio_names so the "
+                        "bundle carries real file names instead of blank "
+                        "slots. Shorter than the list: the rest stay "
+                        "blank. Leave unconnected for blank names."
+                    ),
+                ),
             ],
             outputs=[
                 XPipeBundle.Output(
@@ -99,6 +114,7 @@ class XListToPipe(io.ComfyNode):
         list_input: Any = None,
         count_display: Any = 1,
         count: Any = 0,
+        names: Any = None,
     ) -> io.NodeOutput:
         """将 list 按 count 展开为 50 槽合法 XPipe 数据束。"""
 
@@ -129,12 +145,19 @@ class XListToPipe(io.ComfyNode):
         # count 决定有效前缀长度；list 更短则后半仍为 None
         active = list(items[:cnt])
         values = active + [None] * (PIPE_SLOTS - len(active))
-        names = [""] * PIPE_SLOTS
+        slot_names = [""] * PIPE_SLOTS
+        # 名字按位置对应：上游（例如 XMediaListGet 的 image_names）给几个
+        # 就填几个，多的截掉、少的留空。不接这个口就全是空名字，和以前
+        # 一模一样。
+        for index, name in enumerate(cls._split_names(names)[:cnt]):
+            text = str(name or "").strip()
+            if text:
+                slot_names[index] = text
         xpipe_out = {
             "__xpipe_bundle__": True,
             "__xpipe_version__": 1,
             "values": values,
-            "names": names,
+            "names": slot_names,
         }
         LOGGER.debug(
             "XListToPipe built bundle with count=%d, list_len=%d",
@@ -142,3 +165,31 @@ class XListToPipe(io.ComfyNode):
             len(items),
         )
         return io.NodeOutput(xpipe_out)
+
+    @staticmethod
+    def _split_names(value: Any) -> list[str]:
+        """把 names 输入摊平成一串名字。
+
+        三种形状都认：连接来的列表（直接就是 `["a.png", "b.png"]`）、
+        包了一层的批量列表（`[["a.png", "b.png"]]`）、以及一行一个的纯
+        字符串。认不出来就当没给。
+        """
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [
+                part.strip()
+                for part in re.split(r"[\r\n]+", value)
+                if part.strip()
+            ]
+        if isinstance(value, (list, tuple)):
+            flattened: list[str] = []
+            for item in value:
+                if isinstance(item, (list, tuple)):
+                    flattened.extend(
+                        str(sub) for sub in item if sub is not None
+                    )
+                elif item is not None:
+                    flattened.append(str(item))
+            return flattened
+        return [str(value)]

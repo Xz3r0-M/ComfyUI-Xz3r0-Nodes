@@ -1,3 +1,5 @@
+import { randomSuffix } from "../core/random-id.js";
+
 export function clamp(value, min, max) {
     const number = Number(value);
     if (!Number.isFinite(number)) {
@@ -17,7 +19,9 @@ export function sanitizeFileBase(value, fallback = "ximageget") {
 }
 
 export function nextClipspaceName(prefix = "x-mask") {
-    const seed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    /* 随机段走共享的 randomSuffix（内部用 crypto）：静态扫描会把 Math
+       里那个伪随机函数的结果报成「不安全的随机数」，而这个串是文件名。 */
+    const seed = `${Date.now()}-${randomSuffix(6)}`;
     return `${prefix}-${seed}.png`;
 }
 

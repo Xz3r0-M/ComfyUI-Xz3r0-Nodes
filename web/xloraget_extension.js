@@ -4,28 +4,55 @@ import {
     getModuloAccentIndex as getNodeAccentIndex,
     getHexAccentFromModuloId as getNodeAccentColor,
 } from "./core/node-accent.js";
+import { copyText } from "./core/clipboard.js";
 import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
 } from "./core/hidden-widget.js";
+import { inputConnected } from "./core/slot-links.js";
+/* 分组（组头 / 竖线 / 折叠 / 拖拽 / 范围 / 撤销）是共享引擎，
+   XMediaListGet 用的是同一份实现（见 web/core/group-list.js）。 */
+import {
+    createGroupEngine,
+    groupStyles,
+    MAX_ENABLED,
+    sanitizeEnableScope,
+} from "./core/group-list.js";
+/* 纯数据层的分组函数（整理分组、算归属、算出渲染顺序） */
+import { buildRenderList, normalizeGroups } from "./core/group-model.js";
+import { createHoverGuard } from "./core/hover-guard.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 const EXT_NAME = "xz3r0.xloraget";
 const EXT_GUARD_KEY = "__xloraget_extension_registered__";
 const ROOT = globalThis;
 const TARGET_NODE_CLASS = "XLoraGet";
 const XDATAHUB_MEDIA_MIME = "application/x-xdatahub-media+json";
-const XLORA_ROW_MIME = "application/x-xloraget-row";
+/* 拖到列表边缘多少像素内开始自动滚动，以及每次滚多少。 */
+const DROP_AUTOSCROLL_EDGE = 28;
+const DROP_AUTOSCROLL_STEP = 10;
+const TOAST_DURATION_MS = 2200;
 const STORAGE_WIDGET = "lora_stack";
+/* 存盘格式版本。2 = {version, rows, groups}：
+   分组数据（组名、颜色、折叠状态、序号）跟行一起存，Python 只读 rows。 */
+const STORAGE_VERSION = 2;
 // 画布拖拽建节点时，建节点方通过 createNode options 预置的种子行。
 // 只消费一次，避免节点恢复时又被种子拉回。
 const PENDING_ROWS_FIELD = "__xloraget_pending_rows";
 const STYLE_ID = "xloraget-extension-style";
 const GLOBAL_CLIP_MODE_PROP = "xloraget.globalSeparateClipStrength";
+/* ✔ ✖ ⇄ 的作用范围（未分组 / 全部 / 分组）也存 properties：
+   跟着工作流走，但不进 lora_stack（那个 JSON 是 Python 侧解析的）。 */
+const ENABLE_SCOPE_PROP = "xloraget.enableScope";
 const DEFAULT_MIN_NODE_WIDTH = 614;
 const DEFAULT_MIN_NODE_HEIGHT = 560;
 const TRIGGER_PANEL_HEIGHT_DELTA = 220;
 const AUTO_RESIZE_TRIGGER_PANEL = false;
 const TRIGGER_WORDS_ENDPOINT = "/xz3r0/xdatahub/loras/trigger-words";
+/* 「刷新」按钮逐个问后端：这些 LoRA 文件还在不在硬盘上。
+   和 XMediaListGet 用同一个思路（问一个、回来一个，最多 4 个同时在问）。 */
+const LORA_META_ENDPOINT = "/xz3r0/xdatahub/loras/meta";
+const REFRESH_CONCURRENCY = 4;
 const TRIGGER_WORD_INLINE_LIMIT = 3;
 const COMFY_LOCALE_KEY = "Comfy.Locale";
 const LOCALE_SYNC_INTERVAL_MS = 1000;
@@ -69,8 +96,19 @@ function readUiText(key, fallback) {
     return fallback;
 }
 
-function t(key, fallback = "") {
-    return readUiText(key, fallback || key);
+function formatText(template, vars) {
+    let text = String(template || "");
+    if (!vars || typeof vars !== "object") {
+        return text;
+    }
+    for (const [key, value] of Object.entries(vars)) {
+        text = text.split(`{${key}}`).join(String(value ?? ""));
+    }
+    return text;
+}
+
+function t(key, fallback = "", vars = null) {
+    return formatText(readUiText(key, fallback || key), vars);
 }
 
 async function fetchLocaleJson(localeCode) {
@@ -241,7 +279,7 @@ function getScopedNodeId(node) {
     if (!node) {
         return "";
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return "";
     }
@@ -259,7 +297,7 @@ function getNodeById(nodeId) {
     if (!id) {
         return null;
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return null;
     }
@@ -285,7 +323,7 @@ function getNodeById(nodeId) {
 }
 
 function collectXLoraNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return [];
     }
@@ -405,6 +443,7 @@ async function fetchLoraTriggerWords(loraRef) {
             trigger_words: [],
             strength_model: null,
             strength_clip: null,
+            cover: null,
         };
     }
     const response = await api.fetchApi(
@@ -426,7 +465,92 @@ async function fetchLoraTriggerWords(loraRef) {
         strength_clip: Number.isFinite(strengthClip)
             ? strengthClip
             : null,
+        // 这个接口顺带带了封面信息，省一次请求（视频封面就靠它）
+        cover: item.cover || null,
     };
+}
+
+/** 封面类型：只有 image / video 两种，其余一律当「没有封面」。 */
+function normalizeCoverKind(value) {
+    const kind = String(value || "").trim().toLowerCase();
+    return kind === "video" || kind === "image" ? kind : "";
+}
+
+/**
+ * 视频封面在 tooltip 里直接播放。
+ *
+ * 悬停才出现的封面本来就是「看一眼」，静态第一帧的信息量太少，
+ * 所以这里静音自动循环播放（静音才不会被浏览器拦）。
+ * 地址带 `#t=0.1`：万一系统禁止自动播放，也至少停在第一帧而
+ * 不是一块黑。
+ */
+function playTooltipVideo(video, url) {
+    if (!(video instanceof HTMLVideoElement)) {
+        return;
+    }
+    const base = String(url || "").split("#")[0];
+    if (!base) {
+        return;
+    }
+    video.src = `${base}#t=0.1`;
+    video.style.display = "block";
+    const started = video.play?.();
+    if (started && typeof started.catch === "function") {
+        // 自动播放被拦下来不算错，停在第一帧也挺好看
+        started.catch(() => {});
+    }
+}
+
+function stopTooltipVideo(video) {
+    if (!(video instanceof HTMLVideoElement) || !video.hasAttribute("src")) {
+        return;
+    }
+    try {
+        video.pause();
+    } catch {
+        // 没有可播源时 pause 可能抛错，忽略
+    }
+    video.removeAttribute("src");
+    video.load?.();
+    video.style.display = "none";
+}
+
+/**
+ * tooltip 里那块封面的内容：图片封面用 `<img>`，视频封面用 `<video>`。
+ *
+ * 视频走 `<video>` 而不是服务端抽的静帧：静帧只能看到一帧，而封面
+ * 是悬停才出现的，动起来才看得出内容。这样也不依赖 ffmpeg。
+ * @returns {boolean} 是否显示出了内容
+ */
+function applyTooltipMedia(tooltip, thumbUrl, coverKind, coverUrl) {
+    const img = tooltip?.querySelector("img");
+    const video = tooltip?.querySelector("video");
+    if (!(img instanceof HTMLImageElement)
+        || !(video instanceof HTMLVideoElement)) {
+        return false;
+    }
+    const stillUrl = String(thumbUrl || "").trim();
+    const sourceUrl = String(coverUrl || "").trim();
+    const isVideo = normalizeCoverKind(coverKind) === "video";
+    stopTooltipVideo(video);
+    if (isVideo && sourceUrl) {
+        img.removeAttribute("src");
+        img.onerror = null;
+        img.style.display = "none";
+        playTooltipVideo(video, sourceUrl);
+        return true;
+    }
+    img.onerror = () => {
+        img.style.display = "none";
+    };
+    if (!stillUrl) {
+        img.removeAttribute("src");
+        img.style.display = "none";
+        return false;
+    }
+    img.style.display = "block";
+    img.src = stillUrl;
+    return true;
 }
 
 function positionTooltip(tooltip, event) {
@@ -483,15 +607,15 @@ function showTooltip(
     text,
     thumbUrl = "",
     noteText = "",
-    target = null
+    target = null,
+    coverKind = "",
+    coverUrl = ""
 ) {
-    const img = tooltip?.querySelector("img");
     const label = tooltip?.querySelector(".xlora-tooltip-name");
     const divider = tooltip?.querySelector(".xlora-tooltip-divider");
     const note = tooltip?.querySelector(".xlora-tooltip-note");
     if (!(tooltip instanceof HTMLElement)
         || !(label instanceof HTMLElement)
-        || !(img instanceof HTMLImageElement)
         || !(divider instanceof HTMLElement)
         || !(note instanceof HTMLElement)) {
         return;
@@ -499,9 +623,14 @@ function showTooltip(
     const resolvedText = resolveTooltipContent(text, target);
     const resolvedThumbUrl = resolveTooltipContent(thumbUrl, target);
     const resolvedNoteText = resolveTooltipContent(noteText, target);
+    const resolvedCoverKind = resolveTooltipContent(coverKind, target);
+    const resolvedCoverUrl = resolveTooltipContent(coverUrl, target);
     const displayName = extractLoraFilename(String(resolvedText || ""));
     const displayNote = String(resolvedNoteText || "").trim();
-    if (!displayName && !displayNote && !resolvedThumbUrl) {
+    const isVideoCover = normalizeCoverKind(resolvedCoverKind) === "video";
+    const hasCover = !!String(resolvedThumbUrl || "").trim()
+        || (isVideoCover && !!String(resolvedCoverUrl || "").trim());
+    if (!displayName && !displayNote && !hasCover) {
         hideTooltip(tooltip);
         return;
     }
@@ -509,17 +638,17 @@ function showTooltip(
     note.textContent = displayNote;
     divider.style.display = displayNote ? "block" : "none";
     note.style.display = displayNote ? "block" : "none";
-    if (resolvedThumbUrl) {
-        img.src = resolvedThumbUrl;
-        img.style.display = "block";
-        tooltip.classList.add("has-thumb");
-    } else {
-        img.removeAttribute("src");
-        img.style.display = "none";
-        tooltip.classList.remove("has-thumb");
-    }
+    const shown = applyTooltipMedia(
+        tooltip,
+        resolvedThumbUrl,
+        resolvedCoverKind,
+        resolvedCoverUrl
+    );
+    tooltip.classList.toggle("has-thumb", shown);
     tooltip.style.display = "block";
     positionTooltip(tooltip, event);
+    shownTooltip = tooltip;
+    tooltipGuard.start();
 }
 
 function moveTooltip(tooltip, event) {
@@ -530,9 +659,225 @@ function moveTooltip(tooltip, event) {
 }
 
 function hideTooltip(tooltip) {
-    if (tooltip instanceof HTMLElement) {
-        tooltip.style.display = "none";
+    if (!(tooltip instanceof HTMLElement)) {
+        return;
     }
+    tooltip.style.display = "none";
+    if (shownTooltip === tooltip) {
+        shownTooltip = null;
+        tooltipGuard.stop();
+    }
+    // 视频封面一直挂着会继续解码、占内存，收起来时顺手卸掉
+    stopTooltipVideo(tooltip.querySelector("video"));
+}
+
+/**
+ * 刷新：挨个问后端「这个 LoRA 文件还在不在硬盘上」，问不到就算丢失。
+ *
+ * 和 XMediaListGet 的 ↻ 一样——文件是用户自己在硬盘上搬来搬去的，
+ * 节点里存的是路径，盘上的东西不打招呼就走了，所以留个按钮现场核对。
+ */
+async function refreshLoraMissing(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    const state = panel.state;
+    const refs = [];
+    for (const item of state.rows || []) {
+        const ref = String(item?.lora_ref || "");
+        if (ref && !refs.includes(ref)) {
+            refs.push(ref);
+        }
+    }
+    const missing = new Set();
+    const queue = refs.slice();
+    const worker = async () => {
+        while (queue.length) {
+            const ref = queue.shift();
+            try {
+                const response = await fetch(
+                    `${LORA_META_ENDPOINT}?ref=${encodeURIComponent(ref)}`
+                );
+                if (!response.ok) {
+                    missing.add(ref);
+                }
+            } catch {
+                missing.add(ref);
+            }
+        }
+    };
+    const workers = [];
+    for (let index = 0; index < REFRESH_CONCURRENCY; index += 1) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
+    const lost = [...missing].length;
+    state.missing = missing;
+    renderNodeRows(node);
+    if (lost > 0) {
+        showPanelToast(
+            node,
+            t(
+                "xdatahub.ui.node.xloraget.refresh_found_missing",
+                "{count} file(s) not found on disk. Red rows are gone.",
+                { count: String(lost) }
+            )
+        );
+    } else {
+        showPanelToast(
+            node,
+            t(
+                "xdatahub.ui.node.xloraget.refresh_all_there",
+                "All {count} file(s) are still on disk.",
+                { count: String(refs.length) }
+            )
+        );
+    }
+}
+
+/**
+ * 名字提示里的一句话：文件没了就顶到最前面说清楚，再跟在后面的备注。
+ */
+function missingNoteText(missing, noteText) {
+    if (!missing) {
+        return noteText;
+    }
+    const label = t(
+        "xdatahub.ui.node.xloraget.item_missing",
+        "File is missing"
+    );
+    const note = String(noteText || "").trim();
+    return note ? `${label} · ${note}` : label;
+}
+
+/*
+ * 悬停提示的委托：元素上只记「要显示什么」，监听器整页一套。
+ *
+ * 以前每个带提示的元素各挂 6 个（进入 / 移动 / 离开 / 按下 / 点击 / 失焦），
+ * 一行里又有很多带提示的小部件，一千行就是几万个监听器。
+ */
+const tooltipDelegated = new WeakSet();
+let tooltipHoverTarget = null;
+// 现在挂在屏幕上的那条提示（同一时刻只会有一条）
+let shownTooltip = null;
+
+/*
+ * 兜底：提示条显示期间每 200ms 确认一次「鼠标还在那个元素上、元素还在页面
+ * 里」。进出子图、切图、节点面板重建时，鼠标移出的事件可能永远不来，提示条
+ * 就会一直粘在屏幕上——这一步专门收这种漏网的。
+ */
+const tooltipGuard = createHoverGuard({
+    getTarget: () => tooltipHoverTarget,
+    isVisible: () => !!shownTooltip
+        && shownTooltip.isConnected !== false
+        && shownTooltip.style.display === "block",
+    hide: () => {
+        tooltipHoverTarget = null;
+        const tooltip = shownTooltip;
+        if (tooltip) {
+            hideTooltip(tooltip);
+        }
+    },
+});
+
+function findTooltipTarget(from) {
+    let el = from instanceof Element ? from : null;
+    while (el) {
+        if (el.__tooltipData) {
+            return el;
+        }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+function installTooltipDelegation(tooltip) {
+    if (!(tooltip instanceof HTMLElement) || tooltipDelegated.has(tooltip)) {
+        return;
+    }
+    if (typeof document === "undefined") {
+        return;
+    }
+    tooltipDelegated.add(tooltip);
+    const belongs = (target) => {
+        const data = target?.__tooltipData;
+        return !!data && data.tooltip === tooltip;
+    };
+    // 捕获阶段：行 / 按钮里的 stopPropagation 不会把提示吞掉
+    document.addEventListener("mouseover", (event) => {
+        if (event.buttons) {
+            tooltipHoverTarget = null;
+            hideTooltip(tooltip);
+            return;
+        }
+        const target = findTooltipTarget(event.target);
+        if (!target) {
+            // 移到了不该有提示的地方：立刻收掉。
+            // 只靠「移出原元素」来收是不够的——元素被换掉时那个事件不会来。
+            if (tooltipHoverTarget) {
+                tooltipHoverTarget = null;
+                hideTooltip(tooltip);
+            }
+            return;
+        }
+        if (target === tooltipHoverTarget || !belongs(target)) {
+            return;
+        }
+        tooltipHoverTarget = target;
+        const data = target.__tooltipData;
+        showTooltip(
+            tooltip,
+            event,
+            typeof data.text === "function" ? data.text() : data.text,
+            typeof data.thumbUrl === "function"
+                ? data.thumbUrl()
+                : data.thumbUrl,
+            typeof data.noteText === "function"
+                ? data.noteText()
+                : data.noteText,
+            target,
+            data.coverKind,
+            data.coverUrl
+        );
+    }, true);
+    document.addEventListener("mousemove", (event) => {
+        if (!belongs(tooltipHoverTarget)) {
+            return;
+        }
+        moveTooltip(tooltip, event);
+    }, true);
+    document.addEventListener("mouseout", (event) => {
+        const target = findTooltipTarget(event.target);
+        if (!target || target !== tooltipHoverTarget) {
+            return;
+        }
+        if (event.relatedTarget && target.contains(event.relatedTarget)) {
+            return;
+        }
+        tooltipHoverTarget = null;
+        hideTooltip(tooltip);
+    }, true);
+    for (const type of ["pointerdown", "click", "wheel"]) {
+        document.addEventListener(type, () => {
+            if (!tooltipHoverTarget) {
+                return;
+            }
+            tooltipHoverTarget = null;
+            hideTooltip(tooltip);
+        }, true);
+    }
+    // 切到别的窗口 / 标签页时鼠标其实已经不在元素上了，事件却不会来
+    window.addEventListener("blur", () => {
+        tooltipHoverTarget = null;
+        hideTooltip(tooltip);
+    });
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+            tooltipHoverTarget = null;
+            hideTooltip(tooltip);
+        }
+    });
 }
 
 function bindTooltip(
@@ -540,29 +885,25 @@ function bindTooltip(
     tooltip,
     text,
     thumbUrl = "",
-    noteText = ""
+    noteText = "",
+    coverKind = "",
+    coverUrl = ""
 ) {
     if (!(target instanceof HTMLElement)) {
         return;
     }
-    target.addEventListener("mouseenter", (event) => {
-        showTooltip(tooltip, event, text, thumbUrl, noteText, target);
-    });
-    target.addEventListener("mousemove", (event) => {
-        moveTooltip(tooltip, event);
-    });
-    target.addEventListener("mouseleave", () => {
-        hideTooltip(tooltip);
-    });
-    target.addEventListener("pointerdown", () => {
-        hideTooltip(tooltip);
-    });
-    target.addEventListener("click", () => {
-        hideTooltip(tooltip);
-    });
-    target.addEventListener("blur", () => {
-        hideTooltip(tooltip);
-    });
+    if (!(tooltip instanceof HTMLElement)) {
+        return;
+    }
+    target.__tooltipData = {
+        tooltip,
+        text,
+        thumbUrl,
+        noteText,
+        coverKind,
+        coverUrl,
+    };
+    installTooltipDelegation(tooltip);
 }
 
 function makeRow(partial = {}) {
@@ -588,13 +929,21 @@ function makeRow(partial = {}) {
         trigger_words: normalizeTriggerWords(partial.trigger_words),
         lora_note: String(partial.lora_note || partial.note || ""),
         trigger_words_loading: false,
-        trigger_words_synced: false,
+        // 只认存盘里明确写着「问过了」的行；没写的一律重问
+        trigger_words_synced: partial.trigger_words_synced === true,
         trigger_words_error: "",
         strength_sync_pending: partial.strength_sync_pending === true,
         thumb_url: String(partial.thumb_url || ""),
+        // 封面类型与封面原图：视频封面靠它们才能在 tooltip 里画出来
+        cover_kind: normalizeCoverKind(
+            partial.cover_kind || partial.coverKind
+        ),
+        cover_url: String(partial.cover_url || partial.coverUrl || ""),
         pin: partial.pin === "head" || partial.pin === "tail"
             ? partial.pin
             : "none",
+        // 属于哪一组（组 id）；null = 没分组
+        group: String(partial.group || "").trim() || null,
     };
 }
 
@@ -643,12 +992,20 @@ function parseDragPayload(dataTransfer) {
         }
         const title = String(payload?.title || "lora");
         const thumbUrl = String(payload?.thumb_url || "");
+        const coverKind = normalizeCoverKind(
+            payload?.cover_kind || payload?.coverKind
+        );
+        const coverUrl = String(
+            payload?.cover_url || payload?.coverUrl || ""
+        );
         const strengthModel = Number(payload?.strength_model);
         const strengthClip = Number(payload?.strength_clip);
         const topLevel = {
             lora_ref: loraRef,
             title,
             thumb_url: thumbUrl,
+            cover_kind: coverKind,
+            cover_url: coverUrl,
             strength_model: Number.isFinite(strengthModel)
                 ? strengthModel
                 : null,
@@ -670,6 +1027,12 @@ function parseDragPayload(dataTransfer) {
                         .toLowerCase(),
                     title: String(item?.title || "lora"),
                     thumb_url: String(item?.thumb_url || ""),
+                    cover_kind: normalizeCoverKind(
+                        item?.cover_kind || item?.coverKind
+                    ),
+                    cover_url: String(
+                        item?.cover_url || item?.coverUrl || ""
+                    ),
                     strength_model: Number.isFinite(model) ? model : null,
                     strength_clip: Number.isFinite(clip) ? clip : null,
                 };
@@ -684,11 +1047,28 @@ function parseDragPayload(dataTransfer) {
     }
 }
 
-function isInternalRowDrag(dataTransfer) {
-    if (!dataTransfer || typeof dataTransfer.types?.includes !== "function") {
-        return false;
+/* 范围档位跟着工作流走：读回来洗一遍（脏值退回「全部」） */
+function readEnableScope(node) {
+    const raw = node?.properties?.[ENABLE_SCOPE_PROP];
+    return sanitizeEnableScope(raw);
+}
+
+function writeEnableScope(node, scope) {
+    if (!node) {
+        return;
     }
-    return dataTransfer.types.includes(XLORA_ROW_MIME);
+    if (!node.properties || typeof node.properties !== "object") {
+        node.properties = {};
+    }
+    const value = sanitizeEnableScope(scope);
+    if (node.properties[ENABLE_SCOPE_PROP] === value) {
+        return;
+    }
+    node.properties[ENABLE_SCOPE_PROP] = value;
+    // 档位现在是「会存进工作流的数据」，所以要告诉画布「改过了」，
+    // 否则关掉时不会提示保存，用户的选择会悄悄丢掉。
+    node.setDirtyCanvas?.(true, true);
+    node.graph?.change?.();
 }
 
 function readGlobalClipMode(node, rows = []) {
@@ -713,7 +1093,184 @@ function ensureStyles() {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
+        /* 列表卡片：工具栏 + 列表合成一个整块（和 XMediaListGet 一样，
+           工具栏是卡片的顶盖，不是另外一条悬在外面的栏）。 */
+        .xlora-list-shell {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 0;
+            min-height: 0;
+            border: 1px solid var(
+                --xdh-clr-hairline,
+                rgba(255, 255, 255, 0.14)
+            );
+            border-radius: var(--xdh-radius-sm, 8px);
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
+            overflow: hidden;
+        }
+        /* 卡片顶盖上的按钮：建组 / ✔ ✖ ⇄ / 范围胶囊。
+           范围胶囊本身的样式在共享引擎里（见 groupStyles）。 */
+        .xlora-list-toolbar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            row-gap: 4px;
+            min-height: 30px;
+            padding: 4px 10px;
+            flex: 0 0 auto;
+            border: none;
+            border-bottom: 1px solid var(
+                --xdh-clr-hairline,
+                rgba(255, 255, 255, 0.14)
+            );
+            border-radius: var(--xdh-radius-sm, 8px) var(--xdh-radius-sm, 8px) 0 0;
+            /* 和 XMediaListGet 的工具栏同一个底色（surface-soft） */
+            background: var(--xdh-clr-surface-soft, #161618);
+            box-sizing: border-box;
+        }
+        .xlora-tbtn {
+            width: 22px;
+            min-width: 22px;
+            height: 22px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            border-radius: var(--xdh-radius-sm, 8px);
+            background: var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92));
+            color: inherit;
+            font: inherit;
+            font-size: 12px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .xlora-tbtn:hover {
+            border-color: var(--xlora-brand);
+        }
+        /* 「创建分组」是文字按钮（图标 ＋ 和 ✔ ✖ ⇄ 挤在一起分不清），
+           所以宽度跟着文字走，不用 22px 的方形格子 */
+        .xlora-group-btn {
+            width: auto;
+            min-width: 0;
+            padding: 0 10px;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+        .xlora-group-btn.is-disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .xlora-tbtn:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+        /* 底栏：一共几条 / 开了几条（和 XMediaListGet 的底栏对齐） */
+        .xlora-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            min-height: 30px;
+            padding: 4px 10px;
+            flex: 0 0 auto;
+            border-top: 1px solid var(
+                --xdh-clr-hairline,
+                rgba(255, 255, 255, 0.14)
+            );
+            border-radius: 0 0 var(--xdh-radius-sm, 8px) var(--xdh-radius-sm, 8px);
+            background: var(--xdh-clr-surface-soft, #161618);
+            box-sizing: border-box;
+        }
+        .xlora-footer-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+        .xlora-total {
+            flex: 0 0 auto;
+            font-size: 11px;
+            opacity: 0.6;
+            white-space: nowrap;
+        }
+        /* 两个数字并排：中间一条细线，免得粘在一起分不清谁是谁 */
+        .xlora-footer-divider {
+            flex: 0 0 auto;
+            width: 1px;
+            height: 11px;
+            background: var(
+                --xdh-clr-hairline,
+                rgba(255, 255, 255, 0.14)
+            );
+        }
+        .xlora-status {
+            flex: 0 0 auto;
+            opacity: 0.8;
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .xlora-clear {
+            flex: 0 0 auto;
+            margin-left: auto;
+            font-size: 13px;
+        }
+        /* 底栏右下角的「清空」：悬停描边跟节点 ID 序列号同色
+           （和 XMediaListGet 的清除按钮一致）。取不到序列号色时
+           退回品牌粉，不至于没反应。 */
+        .xlora-clear:hover {
+            border-color: var(--xlora-accent, var(--xlora-brand));
+        }
+        /* 指针拖动期间整块列表不接鼠标：悬停样式全部自然失效 */
+        body.xmlg-pointer-dragging .xlora-list {
+            pointer-events: none;
+        }
+        /* 跟手的那张卡片必须完全不透明。行的底色带一点透明度，克隆成
+           卡片后会透出下面那一行，看着像重影。垫一层底色把透明度吃掉
+           （卡片自己的颜色仍然是主题色）。 */
+        .xlora-row.xmlg-drag-ghost,
+        .xmlg-group-head.xmlg-drag-ghost {
+            background-color: var(--xdh-clr-canvas, #0c0c0e);
+            background-image: linear-gradient(
+                var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92)),
+                var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92))
+            );
+        }
+        /* 刷新时发现文件不在硬盘上了：危险色描边 + 淡底，
+           名字的悬停提示里也会写明「文件不存在」 */
+        .xlora-row.is-missing {
+            border-color: var(--xdh-color-danger, #d90429);
+            background: color-mix(
+                in srgb,
+                var(--xdh-color-danger, #d90429) 12%,
+                transparent
+            );
+        }
+        /* 组内行的序号用组色，和左侧竖线呼应 */
+        .xlora-row.is-grouped .xlora-seq {
+            color: var(--xmlg-group-stripe, var(--xlora-accent));
+            /* 组色本身是彩色，再压透明度就看不清了（媒体那边也是不透明） */
+            opacity: 1;
+        }
         .xlora-panel {
+            /* 悬停高亮统一用品牌粉。节点面板里不一定装到 XDataHub 那套
+               token（那些是 V2 应用里才有的），所以一路留到字面色，
+               取不到变量也不会退化成「白底灰边」。 */
+            --xlora-brand: var(
+                --xdh-brand-pink,
+                var(--xdh-clr-primary, #ff385c)
+            );
+            /* 正文色定在面板上（和 XMediaListGet 的 .xmlg-panel 完全一样，
+               连兜底色都一样），序号这类「继承色 + 半透明」的东西才不会
+               因为继承到别的色而变暗。 */
+            color: var(--xdh-clr-ink, #ffffff);
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -722,75 +1279,184 @@ function ensureStyles() {
             box-sizing: border-box;
             padding: 8px;
         }
+        /* 列表的视口：滚动发生在里面的 .xlora-list 上，这一层只负责
+           给提示条当定位父级（和 XMediaListGet 的 .xmlg-list-viewport 一样） */
+        .xlora-list-viewport {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 0;
+            min-height: 0;
+        }
+        .xlora-toast {
+            /* 贴列表顶端弹出，和 XMediaListGet 的提示条同一套坐标：
+               两边都是「视口顶部往下 42px」，不再一个在上一个在下 */
+            position: absolute;
+            left: 50%;
+            top: 42px;
+            transform: translateX(-50%);
+            max-width: 92%;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            color: var(--xdh-clr-ink, #f2f2f2);
+            font: var(
+                --xdh-font-micro-label,
+                700 12px/1.33 system-ui, -apple-system, sans-serif
+            );
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+            pointer-events: none;
+            display: none;
+            z-index: 40;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .xlora-toast.is-visible {
+            display: block;
+        }
+        .xlora-insert-line {
+            position: absolute;
+            left: 4px;
+            right: 4px;
+            height: 2px;
+            border-radius: 2px;
+            background: var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #7fb4ff)
+            );
+            box-shadow: 0 0 8px var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #7fb4ff)
+            );
+            pointer-events: none;
+            display: none;
+            z-index: 6;
+        }
+        .xlora-drop-label {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #2f6fed)
+            );
+            color: var(--xdh-clr-on-primary, #fff);
+            font-size: 11px;
+            font-weight: 600;
+            pointer-events: none;
+            display: none;
+            z-index: 7;
+            white-space: nowrap;
+        }
+        /* 徽章行：高度跟着徽章走（写死 20px 会让 26px 高的徽章上下顶出去，
+           看起来就是「序列号和撤销重做那一行贴在一起」）。XMediaListGet
+           用的是「最小 22、高度随内容」。 */
         .xlora-meta {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
-            min-height: 20px;
-            height: 20px;
-            flex: 0 0 20px;
+            min-height: 22px;
+            flex: 0 0 auto;
         }
         .xlora-list {
+            /* 插入线、胶囊标签用绝对定位贴在这一层上 */
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 8px;
-            min-height: 260px;
-            flex: 1 1 auto;
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-strong);
-            border-radius: var(--xdh-radius-sm);
-            padding: 8px;
+            min-height: 160px;
+            flex: 1 1 0;
+            border: none;
+            background: transparent;
+            border-radius: 0;
+            /* 右边不留白（和 XMediaListGet 的 .xmlg-list 同值）：滑块自己
+               带 2px 内缩，卡片到滑块 2px、滑块到列表边缘 2px，左右 1:1；
+               再给 padding 就会变成「左边比右边宽一倍」。 */
+            padding: 8px 0 8px 8px;
             box-sizing: border-box;
-            overflow-x: auto;
+            /* 和 XMediaListGet 的 .xmlg-list 一致：横向永不出现滚动条，
+               竖直方向常驻预留一条的位置。否则清单长到能滚/缩到不能滚
+               两种状态之间切换时，行宽会跟着变，看上去像整排被挤扁了。 */
+            overflow-x: hidden;
             overflow-y: scroll;
+            scrollbar-gutter: stable;
             overflow-anchor: none;
-            scrollbar-width: auto;
-            scrollbar-color: var(--xdh-scrollbar-thumb, #555) var(--xdh-scrollbar-track, transparent);
         }
+        /* 滚动条：和 XMediaListGet 的 .xmlg-list **完全一致**（那边以前用的
+           变量要等分组引擎注入才存在，拿不到值时整条声明失效，两个节点就
+           渲染成了两套不同的滚动条）。 */
         .xlora-list::-webkit-scrollbar {
             width: 10px;
             height: 10px;
         }
         .xlora-list::-webkit-scrollbar-track {
-            background: var(--xdh-scrollbar-track, transparent);
+            background: transparent;
         }
         .xlora-list::-webkit-scrollbar-thumb {
+            /* 透明边框 + background-clip：滑块只画中间 6px，两边各留
+               2px，看起来是一条悬着的小圆条，而不是贴着边缘的宽条 */
             background: var(--xdh-scrollbar-thumb, #555);
-            border-radius: 4px;
+            background-clip: content-box;
+            border: 2px solid transparent;
+            border-radius: 999px;
         }
         .xlora-list::-webkit-scrollbar-thumb:hover {
             background: var(--xdh-scrollbar-thumb-hover, #777);
+            background-clip: content-box;
         }
+        .xlora-list::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+        /* Firefox 不认 ::-webkit-scrollbar → 走标准属性 */
+        @supports not selector(::-webkit-scrollbar) {
+            .xlora-list {
+                scrollbar-width: thin;
+                scrollbar-color:
+                    var(--xdh-scrollbar-thumb, #555) transparent;
+            }
+        }
+        /* 工具栏里成组按钮之间的细竖线：刷新 / 建组 / 批量开关
+           是三件事，挨在一起会看成一组 */
+        .xlora-tb-divider {
+            flex: 0 0 auto;
+            width: 1px;
+            height: 14px;
+            margin: 0 2px;
+            background: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+        }
+        /* 列表卡片外面的一行：左边撤销重做，右边 Clip 开关（和
+           XMediaListGet 的那一行一样，只有内容、没有外框） */
         .xlora-toolbar {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: space-between;
-            gap: 10px;
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-strong);
-            border-radius: var(--xdh-radius-sm);
-            padding: 8px 10px;
-            box-sizing: border-box;
+            gap: 6px;
+            flex-wrap: wrap;
+            flex: 0 0 auto;
         }
-        .xlora-toolbar-copy {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            min-width: 0;
-            flex: 1 1 auto;
+        .xlora-toolbar-left {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
         }
-        .xlora-toolbar-desc {
-            font-size: 11px;
-            color: var(--xdh-color-text-primary);
-            opacity: 0.92;
-            line-height: 1.35;
-        }
-        .xlora-global-toggle {
+        /* Clip 开关：开关本体 + 文字，文字不能省——光一个开关没人知道
+           它管什么；更详细的解释挂在悬停提示上 */
+        .xlora-clip-toggle {
             display: inline-flex;
             align-items: center;
             gap: 7px;
             font-size: 11px;
-            color: var(--xdh-color-text-primary);
+            color: var(--xdh-color-text-primary, #ededed);
             user-select: none;
             white-space: nowrap;
             flex: 0 0 auto;
@@ -810,9 +1476,10 @@ function ensureStyles() {
             width: 24px;
             min-width: 24px;
             height: 14px;
-            border-radius: var(--xdh-radius-full);
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-strong);
+            border-radius: var(--xdh-radius-full, 999px);
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.16));
+            background: var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92));
             box-sizing: border-box;
             transition: background 0.15s ease, border-color 0.15s ease,
                 box-shadow 0.15s ease;
@@ -825,29 +1492,32 @@ function ensureStyles() {
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            background: var(--xdh-clr-ink);
+            background: var(--xdh-clr-ink, #f2f2f2);
             transition: transform 0.15s ease, background 0.15s ease;
         }
         .xlora-switch-input:checked + .xlora-switch-track {
-            border-color: var(--xdh-clr-primary);
-            background: var(--xdh-color-primary-muted);
+            border-color: var(--xdh-clr-primary, #ff385c);
+            background: var(
+                --xdh-color-primary-muted,
+                rgba(255, 56, 92, 0.28)
+            );
         }
         .xlora-switch-input:checked + .xlora-switch-track::after {
             transform: translateX(10px);
-            background: var(--xdh-clr-primary);
+            background: var(--xdh-clr-primary, #ff385c);
         }
         .xlora-switch-input:focus-visible + .xlora-switch-track {
-            box-shadow: 0 0 0 1px var(--xdh-clr-primary);
+            box-shadow: 0 0 0 1px var(--xdh-clr-primary, #ff385c);
         }
         .xlora-node-badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            border: 1px solid var(--xlora-accent);
-            border-radius: var(--xdh-radius-full);
-            background: var(--xdh-clr-surface-strong);
+            border: 1px solid var(--xlora-accent, var(--xlora-brand));
+            border-radius: var(--xdh-radius-full, 999px);
+            background: var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92));
             padding: 4px 12px;
-            color: var(--xdh-color-text-primary);
+            color: var(--xdh-clr-ink, #f2f2f2);
             flex: 0 0 auto;
         }
         .xlora-node-badge-chip {
@@ -856,15 +1526,16 @@ function ensureStyles() {
             font-variant-numeric: tabular-nums;
             font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
             letter-spacing: 0.15px;
-            color: var(--xlora-accent);
+            color: var(--xlora-accent, var(--xlora-brand));
             font-weight: 700;
         }
         .xlora-node-badge-swatch {
             width: 18px;
             height: 18px;
-            border-radius: var(--xdh-radius-xs);
-            background: var(--xlora-accent);
-            box-shadow: inset 0 0 0 1px var(--xdh-clr-hairline);
+            border-radius: var(--xdh-radius-xs, 4px);
+            background: var(--xlora-accent, var(--xlora-brand));
+            box-shadow: inset 0 0 0 1px
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
         }
         .xlora-kind-emoji {
             display: inline-flex;
@@ -883,29 +1554,101 @@ function ensureStyles() {
             margin-left: auto;
         }
         .xlora-list.drag-over {
-            border-color: var(--xdh-brand-pink);
-            box-shadow: 0 0 0 1px var(--xdh-brand-pink);
+            border-color: var(--xlora-brand);
+            box-shadow: 0 0 0 1px var(--xlora-brand);
         }
         .xlora-empty {
-            font: var(--xdh-font-micro-label);
+            font: var(
+                --xdh-font-micro-label,
+                700 12px/1.33 system-ui, -apple-system, sans-serif
+            );
             text-align: center;
-            color: var(--xdh-color-text-primary);
+            color: var(--xdh-clr-ink, #f2f2f2);
             opacity: 0.85;
             padding: 18px 8px;
             line-height: 1.5;
         }
+        /* 加载序号：单独一列，右边一条分隔线，和后面的开关分开
+           （和 XMediaListGet 的行首序号保持一致）。 */
+        .xlora-seq {
+            position: relative;
+            flex: 0 0 26px;
+            min-width: 26px;
+            /* 撑满整张卡片的高度，数字才在上下居中（不再偏到第一行） */
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 10px;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+            /* 颜色继承面板正文色：和 XMediaListGet 一样只靠透明度变淡，
+               再叠一层灰会明显比那边暗 */
+            color: inherit;
+            box-sizing: border-box;
+            /* 行左边有 8px 内边距：右边也留出同样的 8px，数字才在
+               「行左边框到分隔线」这一整段里居中（和 XMediaListGet 一致） */
+            padding-right: 8px;
+            opacity: 0.6;
+            user-select: none;
+        }
+        /* 序号右边那条竖线：画成绝对定位的细线，上下各拉出内边距那么多，
+           正好顶到行的上下边框上。用负外边距会跟着 flex 收缩算，位置会
+           溢出到胶囊描边之外（Chromium 实测溢出 3~4px）。 */
+        .xlora-seq::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            top: -8px;
+            bottom: -8px;
+            width: 1px;
+            background: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            pointer-events: none;
+        }
+        .xlora-row.inactive .xlora-seq {
+            opacity: 0.45;
+        }
+        .xlora-seq.is-skipped {
+            opacity: 0.5;
+        }
+        /* 行 = 左边一列序号（贯穿整张卡片、上下居中）+ 右边的正文。
+           序号单独占一列，数字才会在整行里居中、分隔线也从上贯到下。 */
         .xlora-row {
-            border: 1px solid var(--xdh-clr-hairline);
-            border-radius: var(--xdh-radius-sm);
-            background: var(--xdh-clr-surface-strong);
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            border-radius: var(--xdh-radius-sm, 8px);
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
             padding: 8px;
             box-sizing: border-box;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
+            align-items: stretch;
             gap: 8px;
             min-height: 60px;
             flex: 0 0 auto;
             overflow: visible;
+        }
+        .xlora-row-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1 1 auto;
+            min-width: 0;
+            /* 右侧那条分隔线落在行间距里（离移除按钮 8px），正文也留
+               同样的 8px，强度输入框才不会顶着线 */
+            padding-right: 8px;
+            box-sizing: border-box;
+        }
+        /* 悬停时只换边框颜色（品牌粉），和 XMediaListGet 的行一致。
+           必须写在 .dragging 之前：拖动中的虚线框有自己的一套颜色。 */
+        .xlora-row:hover {
+            border-color: var(
+                --xdh-brand-pink,
+                var(--xdh-clr-primary, #ff385c)
+            );
         }
         .xlora-row-main {
             width: 100%;
@@ -913,28 +1656,6 @@ function ensureStyles() {
             align-items: center;
             gap: 8px;
             min-width: 0;
-        }
-        .xlora-row.dragging {
-            opacity: 0.5;
-        }
-        .xlora-row.drag-target {
-            border-color: var(--xdh-brand-pink);
-            box-shadow: 0 0 0 1px var(--xdh-brand-pink);
-        }
-        .xlora-handle {
-            width: 20px;
-            min-width: 20px;
-            height: 20px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-clr-hairline);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font: var(--xdh-font-micro-label);
-            color: var(--xdh-color-text-primary);
-            cursor: grab;
-            user-select: none;
-            background: var(--xdh-clr-surface-strong);
         }
         .xlora-active {
             display: inline-flex;
@@ -948,15 +1669,35 @@ function ensureStyles() {
         .xlora-row.inactive {
             opacity: 0.62;
         }
-        .xlora-row.locked .xlora-handle {
-            opacity: 0.45;
-            cursor: not-allowed;
+        /* 拖动中的行：不能用「变淡」表示，那样和被禁用的行分不开。
+           改成虚线描边 + 强调色底 + 抬起的阴影，读作「正被搬走」。
+           这条必须写在 .inactive 之后：禁用的行同样可以拖，两个类同时
+           命中时以「正在拖动」为准。 */
+        .xlora-row.dragging {
+            opacity: 0.95;
+            border-width: 1px;
+            border-style: dashed;
+            border-color: var(
+                --xlora-accent,
+                var(--xdh-clr-primary, #7fb4ff)
+            );
+            background: color-mix(
+                in srgb,
+                var(--xlora-accent, var(--xdh-clr-primary, #7fb4ff)) 12%,
+                var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92))
+            );
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+            transform: scale(0.985);
+            cursor: grabbing;
         }
         .xlora-name {
             flex: 1 1 auto;
             min-width: 0;
-            font: var(--xdh-font-micro-label);
-            color: var(--xdh-color-text-primary);
+            font: var(
+                --xdh-font-micro-label,
+                700 12px/1.33 system-ui, -apple-system, sans-serif
+            );
+            color: var(--xdh-clr-ink, #f2f2f2);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -996,7 +1737,7 @@ function ensureStyles() {
         }
         .xlora-trigger-inline::-webkit-scrollbar-thumb {
             background: var(--xdh-scrollbar-thumb, #555);
-            border-radius: 3px;
+            border-radius: 4px;
         }
         .xlora-trigger-inline::-webkit-scrollbar-thumb:hover {
             background: var(--xdh-scrollbar-thumb-hover, #777);
@@ -1007,17 +1748,24 @@ function ensureStyles() {
             min-height: 24px;
             height: 24px;
             flex: 0 0 auto;
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-start;
-            border: 1px solid var(--xdh-color-primary);
-            background: var(--xdh-color-primary-muted);
-            color: var(--xdh-color-text-primary);
-            border-radius: var(--xdh-radius-full);
-            padding: 0 10px;
+            /* 用 block 而不是 inline-flex：inline-flex 会把文字变成一个
+               匿名弹性项，text-overflow: ellipsis 就失效了，长词只能被
+               硬切（"a very long trigger w"）。block + 行高居中就能出
+               省略号。 */
+            display: block;
+            text-align: left;
+            border: 1px solid var(--xdh-clr-primary, #ff385c);
+            background: color-mix(in srgb, var(--xlora-brand) 12%, transparent);
+            color: var(--xdh-clr-ink, #f2f2f2);
+            border-radius: var(--xdh-radius-full, 999px);
+            /* 右端常驻留出复制图标的位置（图标悬停才浮出来）。
+               不在悬停时才加内边距：那样鼠标一进胶囊文字就跳一下。 */
+            padding: 0 22px 0 10px;
+            position: relative;
             box-sizing: border-box;
             font-size: 11px;
-            line-height: 1.3;
+            /* 24px 高的胶囊，上下各 1px 边框：行高 22px 正好居中 */
+            line-height: 22px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -1027,20 +1775,25 @@ function ensureStyles() {
         .xlora-trigger-more {
             height: 24px;
             min-width: 54px;
-            border-radius: var(--xdh-radius-full);
-            border: 1px solid var(--xdh-color-border);
-            background: var(--xdh-color-surface-2);
-            color: var(--xdh-color-text-primary);
+            border-radius: var(--xdh-radius-full, 999px);
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(--xdh-clr-surface-soft, #161618);
+            color: var(--xdh-clr-ink, #f2f2f2);
             font-size: 11px;
             line-height: 1.3;
             padding: 0 10px;
             cursor: pointer;
             flex: 0 0 auto;
+            transition: border-color 0.15s ease;
+        }
+        .xlora-trigger-more:hover {
+            border-color: var(--xlora-brand);
         }
         .xlora-trigger-panel {
-            border: 1px solid var(--xdh-color-border);
-            background: var(--xdh-color-surface-2);
-            border-radius: var(--xdh-radius-sm);
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(--xdh-clr-surface-soft, #161618);
+            border-radius: var(--xdh-radius-sm, 8px);
             padding: 8px;
             display: flex;
             flex-direction: column;
@@ -1056,10 +1809,10 @@ function ensureStyles() {
             flex: 1 1 auto;
             min-width: 0;
             height: 24px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-color-border);
-            background: var(--xdh-color-surface-2);
-            color: var(--xdh-color-text-primary);
+            border-radius: var(--xdh-radius-xs, 4px);
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(--xdh-clr-surface-soft, #161618);
+            color: var(--xdh-clr-ink, #f2f2f2);
             padding: 0 8px;
             box-sizing: border-box;
             font-size: 11px;
@@ -1072,14 +1825,19 @@ function ensureStyles() {
         }
         .xlora-trigger-action {
             height: 24px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-color-border);
-            background: var(--xdh-color-surface-2);
-            color: var(--xdh-color-text-primary);
+            border-radius: var(--xdh-radius-sm, 8px);
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(--xdh-clr-surface-soft, #161618);
+            color: var(--xdh-clr-ink, #f2f2f2);
             font-size: 11px;
             line-height: 1;
             padding: 0 8px;
             cursor: pointer;
+            transition: border-color 0.15s ease;
+        }
+        .xlora-trigger-action:hover {
+            border-color: var(--xlora-brand);
         }
         .xlora-trigger-panel-list {
             display: flex;
@@ -1108,31 +1866,70 @@ function ensureStyles() {
         }
         .xlora-trigger-panel-empty {
             font-size: 11px;
-            color: var(--xdh-color-text-primary);
+            color: var(--xdh-clr-ink, #f2f2f2);
             opacity: 0.9;
             padding: 4px 2px;
         }
         .xlora-trigger-chip.is-disabled {
             opacity: 0.45;
-            background: var(--xdh-color-surface-2);
-            border-color: var(--xdh-color-border);
-            color: var(--xdh-color-text-primary);
+            background: var(--xdh-clr-surface-soft, #161618);
+            border-color: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            color: var(--xdh-clr-ink, #f2f2f2);
         }
         .xlora-trigger-chip.is-placeholder {
             cursor: default;
             border-style: dashed;
-            background: var(--xdh-color-surface-2);
-            border-color: var(--xdh-color-border);
-            color: var(--xdh-color-text-primary);
+            background: var(--xdh-clr-surface-soft, #161618);
+            border-color: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            color: var(--xdh-clr-ink, #f2f2f2);
         }
+        /* 胶囊右端的「复制」小图标：平时藏着，鼠标进胶囊才浮出来。
+           加它之前，想把某个触发词填进自己的提示词只能一个字一个字抄。 */
+        .xlora-trigger-copy {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--xdh-radius-full, 999px);
+            color: var(--xdh-clr-ink, #f2f2f2);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+        }
+        .xlora-trigger-chip:hover .xlora-trigger-copy,
+        .xlora-trigger-chip:focus-visible .xlora-trigger-copy {
+            opacity: 0.7;
+            pointer-events: auto;
+        }
+        .xlora-trigger-chip:hover .xlora-trigger-copy:hover {
+            opacity: 1;
+            background: color-mix(
+                in srgb,
+                var(--xdh-clr-primary, #ff385c) 45%,
+                transparent
+            );
+        }
+        /* 行内「刷新触发词」按钮：和工具栏的小方钮同一套外观。
+           以前用的是 V2 应用里才有的 token，节点面板里根本取不到值，
+           背景和描边整条声明失效，按钮就露出浏览器默认的白底灰边。 */
         .xlora-trigger-refresh {
             width: 22px;
             min-width: 22px;
             height: 22px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-color-border);
-            background: var(--xdh-color-surface-2);
-            color: var(--xdh-color-text-primary);
+            border-radius: var(--xdh-radius-sm, 8px);
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
+            color: inherit;
+            font: inherit;
             font-size: 12px;
             line-height: 1;
             cursor: pointer;
@@ -1140,6 +1937,10 @@ function ensureStyles() {
             align-items: center;
             justify-content: center;
             padding: 0;
+            transition: border-color 0.15s ease;
+        }
+        .xlora-trigger-refresh:hover {
+            border-color: var(--xlora-brand);
         }
         .xlora-trigger-refresh:disabled {
             opacity: 0.5;
@@ -1154,7 +1955,7 @@ function ensureStyles() {
         .xlora-label {
             font-size: 11px;
             opacity: 0.96;
-            color: var(--xdh-color-text-primary);
+            color: var(--xdh-clr-ink, #f2f2f2);
             font-weight: 700;
             letter-spacing: 0.02em;
             text-shadow: none;
@@ -1168,10 +1969,10 @@ function ensureStyles() {
         .xlora-input {
             width: 68px;
             height: 24px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-soft);
-            color: var(--xdh-color-text-primary);
+            border-radius: var(--xdh-radius-xs, 4px);
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(--xdh-clr-surface-soft, #161618);
+            color: var(--xdh-clr-ink, #f2f2f2);
             padding: 0 6px;
             box-sizing: border-box;
             font-size: 11px;
@@ -1180,30 +1981,68 @@ function ensureStyles() {
             width: 22px;
             min-width: 22px;
             height: 22px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-strong);
-            color: var(--xdh-color-text-primary);
-            font-size: 12px;
-            line-height: 1;
+            /* 和工具栏的小方钮同圆角（工具条上全是 8px） */
+            border-radius: var(--xdh-radius-sm, 8px);
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(
+                --xdh-clr-surface-strong,
+                rgba(32, 32, 36, 0.92)
+            );
+            color: var(--xdh-color-text-secondary, #9a9a9a);
+            line-height: 0;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             padding: 0;
         }
+        /* 图标用内联 SVG 画：⤒/⤓ 这类字符在小尺寸或缩放后会被字体
+           栅格化糊掉，矢量描边始终是清晰的一条线。 */
+        .xlora-pin-icon {
+            display: block;
+            pointer-events: none;
+        }
+        .xlora-lock-btn:hover {
+            color: var(--xdh-clr-ink, #f2f2f2);
+            border-color: var(--xlora-brand);
+        }
         .xlora-lock-btn.active {
-            border-color: var(--xdh-clr-primary);
-            color: var(--xdh-clr-primary);
+            border-color: var(--xdh-clr-primary, #7fb4ff);
+            color: var(--xdh-clr-primary, #7fb4ff);
+        }
+        /* 移除按钮待在自己的小格子里：格子撑满行高，竖线用绝对定位画，
+           上下各拉出内边距那么多 → 顶到行的上下边框，且不会越界。 */
+        .xlora-remove-cell {
+            position: relative;
+            flex: 0 0 auto;
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+        }
+        .xlora-remove-cell::before {
+            content: "";
+            position: absolute;
+            left: -8px;
+            top: -8px;
+            bottom: -8px;
+            width: 1px;
+            background: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            pointer-events: none;
         }
         .xlora-remove {
+            /* 单独站在行的右侧、竖向居中（行是 stretch 布局，这里要自己歪回来） */
+            align-self: center;
+            flex: 0 0 auto;
             width: 22px;
             min-width: 22px;
             height: 22px;
-            border-radius: var(--xdh-radius-xs);
-            border: 1px solid var(--xdh-clr-hairline);
-            background: var(--xdh-clr-surface-strong);
-            color: var(--xdh-color-text-primary);
+            /* 和工具栏按钮、XMediaListGet 的移除按钮同一个圆角 */
+            border-radius: var(--xdh-radius-sm, 8px);
+            border: 1px solid
+                var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92));
+            color: var(--xdh-color-text-primary, #ededed);
             font-size: 12px;
             line-height: 1;
             cursor: pointer;
@@ -1211,58 +2050,94 @@ function ensureStyles() {
             align-items: center;
             justify-content: center;
             padding: 0;
+            opacity: 0.8;
+            transition: background 0.15s ease, border-color 0.15s ease,
+                color 0.15s ease, opacity 0.15s ease;
+        }
+        /* 悬停：变红警告一下（和 XMediaListGet 的移除按钮同一套颜色） */
+        .xlora-remove:hover {
+            opacity: 1;
+            background: var(--xmlg-danger-soft, rgba(217, 4, 41, 0.16));
+            color: var(--xmlg-danger-text, #ff6b6b);
+            border-color: var(--xmlg-danger, #d90429);
         }
         .xlora-tooltip {
             position: fixed;
             z-index: 99999;
             pointer-events: none;
-            background: var(--xdh-color-surface-3);
-            border: 1px solid var(--xdh-clr-hairline);
-            border-radius: var(--xdh-radius-sm);
+            background: var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92));
+            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            border-radius: var(--xdh-radius-sm, 8px);
             padding: 8px;
-            width: 212px;
+            /* 宽度跟着内容走：只写「移除」这种短文字时，不该撑出
+               半个面板宽的空框；上限仍是 212px。带封面图的提示框
+               固定 212px（见 .xlora-tooltip.has-thumb）。 */
+            width: max-content;
+            min-width: 0;
             max-width: 212px;
             box-sizing: border-box;
-            color: var(--xdh-color-text-primary);
-            box-shadow: var(--xdh-shadow-popup);
+            color: var(--xdh-clr-ink, #f2f2f2);
+            box-shadow: var(
+                --xdh-shadow-popup,
+                0 10px 26px rgba(0, 0, 0, 0.45)
+            );
             display: none;
         }
-        .xlora-tooltip img {
+        .xlora-tooltip-media {
+            position: relative;
+            width: 120px;
+            margin: 0 auto;
+        }
+        .xlora-tooltip img,
+        .xlora-tooltip video {
             width: 120px;
             height: 120px;
             display: block;
             object-fit: contain;
             background: #000;
-            border-radius: var(--xdh-radius-xs);
-            margin: 0 auto;
+            border-radius: var(--xdh-radius-xs, 4px);
         }
         .xlora-tooltip-name {
-            font: var(--xdh-font-micro-label);
+            font: var(
+                --xdh-font-micro-label,
+                700 12px/1.33 system-ui, -apple-system, sans-serif
+            );
             line-height: 1.35;
             white-space: normal;
             word-break: keep-all;
             overflow-wrap: break-word;
         }
+        .xlora-tooltip.has-thumb {
+            width: 212px;
+        }
+        /* 没有封面图时把 120px 的图片位一起收掉，否则短文字的提示框
+           会被这个空位撑成一个偏宽的空盒子。 */
+        .xlora-tooltip:not(.has-thumb) .xlora-tooltip-media {
+            display: none;
+        }
         .xlora-tooltip.has-thumb .xlora-tooltip-name {
             margin-top: 8px;
             padding-top: 8px;
-            border-top: 1px solid var(--xdh-color-border);
+            border-top: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
         }
         .xlora-tooltip-divider {
             margin-top: 6px;
             padding-top: 6px;
-            border-top: 1px solid var(--xdh-color-border);
+            border-top: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
             display: none;
         }
         .xlora-tooltip-note {
             font-size: 11px;
             line-height: 1.35;
-            color: var(--xdh-color-text-primary);
+            color: var(--xdh-clr-ink, #f2f2f2);
             white-space: normal;
             overflow-wrap: break-word;
             word-break: break-word;
             display: none;
         }
+        /* 分组那一层的样式（组头胶囊、竖线、折叠、范围、对话框、拖动）
+           全部来自共享引擎，两个节点一份，改一处两边一起变。 */
+        ${groupStyles([".xlora-panel"])}
     `;
     document.head.appendChild(style);
 }
@@ -1282,18 +2157,279 @@ function ensureStorageWidget(node) {
     return widget || null;
 }
 
-function readStoredRows(node) {
-    const widget = ensureStorageWidget(node);
-    const raw = String(widget?.value || "").trim();
+/**
+ * 把存盘字符串里的行取出来。
+ *
+ * 新格式是 {version, rows, groups}，旧格式就是一个行数组——两种都得认，
+ * 否则打开老工作流整条 LoRA 栈会凭空消失。
+ */
+function parseStoredRows(raw) {
+    const text = String(raw || "").trim();
+    if (!text) {
+        return [];
+    }
+    let payload;
+    try {
+        payload = JSON.parse(text);
+    } catch {
+        return [];
+    }
+    const list = Array.isArray(payload) ? payload : payload?.rows;
+    // 「问过没有」由每行自己带着（见 serializeStoredRows）。这里不再一刀切
+    // 当成都问过：刚拖进来、还没来得及问的行会被一刀切埋掉，触发词和封面
+    // 就永久空白，只能手动刷新。
+    return normalizeRows(list);
+}
+
+/**
+ * 组记录（组名 / 颜色 / 折叠状态 / 序号）。
+ *
+ * 分组 UI 还没接上，这里只做一件事：存盘时原样带回去，别把数据丢了。
+ * 所以不在这里做整理，一个字都不改地读出来、写回去。
+ */
+function readStoredGroups(node) {
+    const raw = String(ensureStorageWidget(node)?.value || "").trim();
     if (!raw) {
         return [];
     }
     try {
-        return normalizeRows(JSON.parse(raw));
+        const payload = JSON.parse(raw);
+        if (!payload || Array.isArray(payload) || typeof payload !== "object") {
+            return [];
+        }
+        return Array.isArray(payload.groups) ? payload.groups : [];
     } catch {
         return [];
     }
 }
+
+function readStoredRows(node) {
+    const widget = ensureStorageWidget(node);
+    return parseStoredRows(widget?.value);
+}
+
+/* ---------------------------------------------------------------------
+ * 分组：和 XMediaListGet 共用一份实现（web/core/group-list.js）
+ *
+ * 引擎按「分类」组织列表（媒体有图片 / 视频 / 音频三类），LoRA 只有一类，
+ * 所以这里给它一个固定的占位分类，再补一层转接：
+ *
+ *   存盘里：{ rows: [...], groups: [...] }
+ *   引擎里：{ image: [...], video: [], audio: [], groups: { image: [...] } }
+ *
+ * 行归属存在每一行的 group 字段上（null = 没分组），组本身只记
+ * id / name / collapsed / color / seq 五个字段。
+ * ------------------------------------------------------------------- */
+const LORA_CATEGORY = "image";
+
+/** 造一个带类名（可选文字）的元素。 */
+function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) {
+        node.className = className;
+    }
+    if (text != null) {
+        node.textContent = String(text);
+    }
+    return node;
+}
+
+/** 行身份：LoRA 每一行本来就有唯一 id，直接用它。 */
+function loraKeyOf(row) {
+    return String(row?.id ?? "");
+}
+
+function emptyLoraItems() {
+    return {
+        image: [],
+        video: [],
+        audio: [],
+        groups: { image: [], video: [], audio: [] },
+    };
+}
+
+/**
+ * 用「行 + 组」拼出引擎要的形状。
+ *
+ * 每次渲染前重算一遍：组的连续性、空组清理都交给纯数据层，
+ * 免得两套数据各记一份、越走越远。
+ */
+function loraItemsFromState(state) {
+    const rows = enforcePinLayout(state.rows || []);
+    const normalized = normalizeGroups(rows, state.groups || []);
+    state.rows = normalized.items;
+    state.groups = normalized.groups;
+    state.items = {
+        image: state.rows,
+        video: [],
+        audio: [],
+        groups: { image: state.groups, video: [], audio: [] },
+    };
+    return state.items;
+}
+
+function readLoraItems(node) {
+    const state = node?.__xlora_panel?.state;
+    if (state) {
+        return loraItemsFromState(state);
+    }
+    const rows = readStoredRows(node);
+    const groups = readStoredGroups(node);
+    return {
+        ...emptyLoraItems(),
+        image: rows,
+        groups: { image: groups, video: [], audio: [] },
+    };
+}
+
+/**
+ * 引擎改完数据后写回来。
+ *
+ * 引擎只认 items（含 groups.image），这里把它拆回 state.rows / state.groups，
+ * 再走原来的存盘，所以 Python 那边看到的还是 rows + groups 两份。
+ */
+function writeLoraItems(node, items, options = {}) {
+    const state = node?.__xlora_panel?.state;
+    if (options.recordUndo !== false && state) {
+        // 先存一份「改之前」的样子，撤销才有东西可退
+        engine.pushUndoSnapshot(node);
+    }
+    const rows = enforcePinLayout(Array.isArray(items?.image) ? items.image : []);
+    const groups = Array.isArray(items?.groups?.image)
+        ? items.groups.image
+        : [];
+    if (state) {
+        state.rows = rows;
+        state.groups = groups;
+        state.items = {
+            image: rows,
+            video: [],
+            audio: [],
+            groups: { image: groups, video: [], audio: [] },
+        };
+    }
+    if (options.skipStore) {
+        // 拖动过程中的中间态：模型已经改好了，但先不落盘（理由同媒体列表）
+        engine.updateUndoButton(node);
+        return;
+    }
+    writeStoredRows(node, rows, { deferCanvas: options.deferCanvas });
+    engine.updateUndoButton(node);
+}
+
+/** 把某一行滚进视野（点组头收窄范围时用）。 */
+function scrollLoraRowIntoView(node, index) {
+    const list = node?.__xlora_panel?.list;
+    if (!list) {
+        return;
+    }
+    const el = list.querySelector(`.xlora-row[data-index="${index}"]`);
+    el?.scrollIntoView?.({ block: "nearest" });
+}
+
+/** 引擎以为存在这个函数；LoRA 的输出端口不随列表变，什么都不用做。 */
+function syncLoraOutputPortType() {}
+
+/** 拖进来几条：XDataHub 的拖拽自己会算，这里给个保底。 */
+function dragCountFromDataTransfer() {
+    return 1;
+}
+
+/** 「类型不对」的提示条：LoRA 列表用的是自己的 toast，没有这条。 */
+function hideTypeMismatch() {}
+
+/** 分组的小提示挂在 body 上（和行内的 tooltip 各走各的）。 */
+function hintHost() {
+    return document.body;
+}
+
+/**
+ * 分组引擎实例。
+ *
+ * 引擎负责组那一层（组头 / 竖线 / 折叠 / 拖拽 / 范围 / 撤销），
+ * 行的长相、存盘、文案都从这里注入进去。
+ */
+const engine = createGroupEngine({
+    keyOf: loraKeyOf,
+    // LoRA 行用 active 表示开 / 关（媒体那边叫 enabled）
+    isRowEnabled: (row) => !!row && row.active !== false,
+    setRowEnabled: (row, value) => {
+        if (row) {
+            row.active = !!value;
+        }
+    },
+    // 文案里的 {noun} 用的词：这一列表里装的是 LoRA，不是文件
+    nounMany: () => t("xdatahub.ui.group.noun_loras", "LoRAs"),
+    nounOne: () => t("xdatahub.ui.group.noun_lora", "LoRA"),
+    // 面板挂在节点上的字段名（引擎按它找面板）
+    panelKey: "__xlora_panel",
+    element,
+    t,
+    normalizeItems: (raw) => {
+        // 存盘数据 → 引擎数据（老工作流是纯数组，新的是 {rows, groups}）
+        const payload = Array.isArray(raw) ? { rows: raw } : (raw || {});
+        const rows = normalizeRows(payload.rows);
+        const groups = Array.isArray(payload.groups) ? payload.groups : [];
+        const normalized = normalizeGroups(rows, groups);
+        return {
+            image: normalized.items,
+            video: [],
+            audio: [],
+            groups: {
+                image: normalized.groups,
+                video: [],
+                audio: [],
+            },
+        };
+    },
+    emptyItems: emptyLoraItems,
+    writeItems: writeLoraItems,
+    renderPanel: (node) => renderNodeRows(node),
+    // 拖动时是就地搬位置（不重画），序号由这里补
+    refreshRowNumbers: refreshLoraRowNumbers,
+    ensureStorageWidget,
+    scrollRowIntoView: scrollLoraRowIntoView,
+    syncOutputPortType: syncLoraOutputPortType,
+    startDropAutoScroll: (node, dir) => {
+        const state = node?.__xlora_panel?.state;
+        if (state) {
+            startDropAutoScroll(node, state, dir);
+        }
+    },
+    stopDropAutoScroll: (nodeOrState) => {
+        const state = nodeOrState?.state
+            ? nodeOrState.state
+            : nodeOrState;
+        stopDropAutoScroll(state);
+    },
+    dragCountFromDataTransfer,
+    hideTypeMismatch,
+    hintHost,
+    buildRow: (node, category, row, index, seq) => (
+        buildLoraRow(node, row, index, seq)
+    ),
+    // 置顶/置底是硬约束：拖别的行到它们前面/后面都会被钳回去。
+    // 引擎在中途（拖动过程中）就调用这个钩子，所以不会出现「先挪过去、
+    // 过一会儿又被弹回原位」的怪象。
+    applyOrderConstraints: (node, rows) => enforcePinLayout(rows),
+    // 用户点档位时落盘（临时收窄不落盘，见引擎里的 selectScope）
+    writeEnableScope,
+    applyPointerDragStop: (node) => {
+        const pending = node?.__xlora_panel?.state?.pointerDrag;
+        if (!pending?.active) {
+            return;
+        }
+        if (pending.kind === "group") {
+            engine.liveMoveGroup(
+                node,
+                engine.resolveGroupGap(node, pending.clientY)
+            );
+            return;
+        }
+        const target = engine.resolveLiveRowTarget(node, pending.clientY);
+        engine.liveMoveRow(node, target.gap, target.groupId);
+    },
+});
 
 /**
  * 消费「画布拖拽建节点」时预置的种子行。
@@ -1332,8 +2468,9 @@ function consumePendingRows(node) {
         const widget = ensureStorageWidget(node);
         if (widget) {
             widget.value = JSON.stringify(
-                serializeStoredRows(
+                serializeStoredPayload(
                     nextRows,
+                    readStoredGroups(node),
                     readGlobalClipMode(node, nextRows)
                 )
             );
@@ -1346,9 +2483,19 @@ function consumePendingRows(node) {
     }
     writeStoredRows(node, nextRows);
     renderNodeRows(node);
-    syncAllRowTriggerWords(node, { force: true });
+    // 拖进来几条就只问这几条：已同步过的行安静跳过（以前会全量重拉）
+    syncAllRowTriggerWords(node);
     refreshNodeBadge(node);
     return true;
+}
+
+/** 存盘负载：行 + 组 + 版本号（Python 只读 rows）。 */
+function serializeStoredPayload(rows, groups, globalSeparateClip) {
+    return {
+        version: STORAGE_VERSION,
+        rows: serializeStoredRows(rows, globalSeparateClip),
+        groups: Array.isArray(groups) ? groups : [],
+    };
 }
 
 function serializeStoredRows(rows, globalSeparateClip) {
@@ -1365,20 +2512,36 @@ function serializeStoredRows(rows, globalSeparateClip) {
         trigger_words: normalizeTriggerWords(item.trigger_words),
         lora_note: String(item.lora_note || ""),
         thumb_url: item.thumb_url || "",
+        cover_kind: normalizeCoverKind(item.cover_kind),
+        cover_url: String(item.cover_url || ""),
         pin: item.pin || "none",
+        group: item.group || null,
+        // 触发词到底问过没有。不写这个标记的话，要么每次打开工作流都
+        // 全量重拉，要么（更糟）把「还没问到」的行当成问过了——缩略图和
+        // 触发词就永远停在空白上，只能手动点刷新。
+        trigger_words_synced: item.trigger_words_synced === true,
     }));
 }
 
-function writeStoredRows(node, rows) {
+function writeStoredRows(node, rows, options = {}) {
     const panel = node.__xlora_panel;
     const globalSeparateClip = !!panel?.state?.globalSeparateClip;
     const widget = ensureStorageWidget(node);
     if (!widget) {
         return;
     }
-    const payload = serializeStoredRows(rows, globalSeparateClip);
-    widget.value = JSON.stringify(payload);
-    node.setDirtyCanvas?.(true, true);
+    // 组记录：先把现有的读出来再覆盖（读和写在同一个 widget 上，顺序不能反）
+    const groups = Array.isArray(panel?.state?.groups)
+        ? panel.state.groups
+        : readStoredGroups(node);
+    widget.value = JSON.stringify(
+        serializeStoredPayload(rows, groups, globalSeparateClip)
+    );
+    if (!options.deferCanvas) {
+        // 拖动期间画布上什么都没变，不用每翻一格就整块重绘一次
+        // （重绘代价随节点数上涨）。收尾那次写盘会统一重绘。
+        node.setDirtyCanvas?.(true, true);
+    }
 }
 
 /**
@@ -1392,6 +2555,8 @@ function applyLoraCoverChange(payload) {
         return;
     }
     const thumbUrl = String(payload?.thumb_url || "");
+    const coverUrl = String(payload?.cover_url || "");
+    const coverKind = normalizeCoverKind(payload?.cover_kind || payload?.kind);
     for (const node of collectXLoraNodes()) {
         const panel = node?.__xlora_panel;
         const rows = Array.isArray(panel?.state?.rows) ? panel.state.rows : [];
@@ -1404,7 +2569,12 @@ function applyLoraCoverChange(payload) {
                 return row;
             }
             changed = true;
-            return { ...row, thumb_url: thumbUrl };
+            return {
+                ...row,
+                thumb_url: thumbUrl,
+                cover_kind: coverKind,
+                cover_url: coverUrl,
+            };
         });
         if (!changed) {
             continue;
@@ -1414,6 +2584,190 @@ function applyLoraCoverChange(payload) {
         writeStoredRows(node, nextRows);
         renderNodeRows(node);
     }
+}
+
+/**
+ * 把封面信息写到行上；服务端说没有封面时清空，避免留着旧地址。
+ */
+function applyRowCover(row, kind, thumbUrl, coverUrl) {
+    if (!row) {
+        return;
+    }
+    const nextKind = normalizeCoverKind(kind);
+    if (!nextKind) {
+        row.cover_kind = "";
+        row.cover_url = "";
+        row.thumb_url = "";
+        return;
+    }
+    row.cover_kind = nextKind;
+    row.cover_url = String(coverUrl || "");
+    row.thumb_url = String(thumbUrl || "");
+}
+
+/*
+ * 触发词是「一行一件」的活，不能牵动整张表。
+ *
+ * 这里以前图省事，行状态一变就整表重画：N 行一起同步 = N 次「清空 +
+ * 重建全部行」，总成本是行数的平方（200 行要重画 201 遍）。行多了以后
+ * 打开工作流会直接冻住。现在只补这一行的触发词格子 + 每帧最多写一次盘。
+ */
+
+/** 触发词接口同时最多问几行（一次性几百个请求会把后端打满）。 */
+const TRIGGER_SYNC_CONCURRENCY = 6;
+/** 正在等的请求数 / 排队中的请求（全局，按节点无关，接口就一个）。 */
+const triggerSyncGate = { active: 0, waiting: [] };
+
+/** 拿一个「问接口」的名额，拿到就执行；名额满了就排队。 */
+function withTriggerSyncSlot(task) {
+    if (triggerSyncGate.active < TRIGGER_SYNC_CONCURRENCY) {
+        triggerSyncGate.active += 1;
+        return Promise.resolve()
+            .then(task)
+            .finally(() => releaseTriggerSyncSlot());
+    }
+    return new Promise((resolve, reject) => {
+        triggerSyncGate.waiting.push({ task, resolve, reject });
+    });
+}
+
+function releaseTriggerSyncSlot() {
+    triggerSyncGate.active = Math.max(0, triggerSyncGate.active - 1);
+    const next = triggerSyncGate.waiting.shift();
+    if (!next) {
+        return;
+    }
+    triggerSyncGate.active += 1;
+    void Promise.resolve()
+        .then(next.task)
+        .then(next.resolve, next.reject)
+        .finally(() => releaseTriggerSyncSlot());
+}
+
+/** 每帧最多重画一次列表：一批改动合成一次，不再一人一遍。 */
+function scheduleRenderNodeRows(node, after = null) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    if (typeof after === "function") {
+        // 重画完要接着干的事（比如把焦点还给搜索框）攒在这里一起做
+        if (!Array.isArray(panel.renderAfter)) {
+            panel.renderAfter = [];
+        }
+        panel.renderAfter.push(after);
+    }
+    if (panel.renderScheduled) {
+        return;
+    }
+    panel.renderScheduled = true;
+    const run = () => {
+        panel.renderScheduled = false;
+        if (node.__xlora_panel !== panel) {
+            panel.renderAfter = [];
+            return;
+        }
+        renderNodeRows(node);
+        const after2 = panel.renderAfter || [];
+        panel.renderAfter = [];
+        for (const task of after2) {
+            task();
+        }
+    };
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    } else {
+        setTimeout(run, 16);
+    }
+}
+
+/** 每帧最多写一次盘：逐行同步时不用回回都序列化整张表。 */
+/**
+ * 立刻把当前列表写回存盘 widget（不等下一帧）。
+ *
+ * 「改完马上排队」是常规动作，而排队时 ComfyUI 是同步读 widget 值的。
+ * 只要写入被推到下一帧，那一瞬间读到的就是上一次的内容——看到的和跑的
+ * 不是一个数，出图自然对不上。
+ */
+function flushStoredRows(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    // 之前排过队的合帧写入照旧会跑，写两次内容一样（幂等），不用管它
+    writeStoredRows(node, panel.state?.rows || []);
+}
+
+function scheduleWriteStoredRows(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    if (panel.writeScheduled) {
+        return;
+    }
+    panel.writeScheduled = true;
+    const run = () => {
+        panel.writeScheduled = false;
+        const live = node.__xlora_panel;
+        if (!live) {
+            return;
+        }
+        writeStoredRows(node, live.state?.rows || []);
+    };
+    if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+    } else {
+        setTimeout(run, 16);
+    }
+}
+
+/** 按行身份找回屏幕上那一行的元素（行可能被折叠藏起来，找不到就算了）。 */
+function rowElementFor(node, item) {
+    const panel = node?.__xlora_panel;
+    if (!panel || !item) {
+        return null;
+    }
+    return panel.rowByRef?.get(loraKeyOf(item)) || null;
+}
+
+/**
+ * 把一行的「开关 / 强度 / 序号」按数据对齐（不重建这一行）。
+ *
+ * 开关和强度改完只需要动这一行：整表重画会把别的行的输入框、滚动位置、
+ * 缩略图全部重来一遍，行一多就是几百毫秒的顿感。
+ */
+function applyRowState(node, item, rowEl = null) {
+    const row = rowEl || rowElementFor(node, item);
+    if (!row || !item) {
+        return;
+    }
+    const parts = row.__parts || {};
+    const active = item.active !== false;
+    row.classList.toggle("inactive", !active);
+    if (parts.activeInput) {
+        parts.activeInput.checked = active;
+    }
+    if (parts.modelInput) {
+        parts.modelInput.disabled = !active;
+        parts.modelInput.value = String(item.strength_model);
+    }
+    if (parts.clipInput) {
+        parts.clipInput.disabled = !active;
+        parts.clipInput.value = String(item.strength_clip);
+    }
+}
+
+/** 只重画某一行的触发词格子；这一行不在屏幕上（折叠着）就先不管。 */
+function refreshRowTriggerCell(node, item) {
+    const panel = node?.__xlora_panel;
+    const rowEl = rowElementFor(node, item);
+    const cell = rowEl?.__triggerMain;
+    if (!panel || !cell) {
+        return false;
+    }
+    fillTriggerCell(node, panel.state, item, cell);
+    return true;
 }
 
 function syncRowTriggerWords(node, row, options = {}) {
@@ -1437,12 +2791,42 @@ function syncRowTriggerWords(node, row, options = {}) {
     }
     row.trigger_words_loading = true;
     row.trigger_words_error = "";
-    renderNodeRows(node);
-    void fetchLoraTriggerWords(row.lora_ref)
+    // 只把这一行画成「加载中」，不再拉着整张表一起重画
+    refreshRowTriggerCell(node, row);
+    /**
+     * 回包要写回**现在列表里那一行**。
+     *
+     * 请求在路上时列表可能被重读过（打开工作流、换封面广播、撤销…），
+     * 内存里那一行已经不是这里的闭包对象了。以前直接写闭包，结果整个
+     * 丢掉：触发词和封面一直空白，只能手动点刷新。
+     */
+    const liveRow = () => {
+        const rows = node.__xlora_panel?.state?.rows;
+        if (!Array.isArray(rows)) {
+            return row;
+        }
+        return rows.find((item) => item.lora_ref === row.lora_ref) || row;
+    };
+    void withTriggerSyncSlot(() => fetchLoraTriggerWords(row.lora_ref))
         .then((payload) => {
+            const row = liveRow();
             const words = normalizeTriggerWords(payload?.trigger_words || []);
             row.trigger_words = mergeTriggerWords(row.trigger_words, words);
             row.lora_note = String(payload?.lora_note || "").trim();
+            // 封面以服务端为准：目录里换了封面、或从别处拖进来的行，
+            // 都能在这里补齐（视频封面需要 kind 才能画第一帧）。
+            const beforeCover = `${row.cover_kind}|${row.cover_url}`
+                + `|${row.thumb_url}`;
+            applyRowCover(
+                row,
+                payload?.cover?.kind,
+                payload?.cover?.thumb_url,
+                payload?.cover?.url
+            );
+            // 悬停大图是建行时「按当时的值」挂上去的，封面真变了才需要
+            // 重画（而且这里合帧，一批刷新不会变成几百次重画）。
+            const coverChanged = `${row.cover_kind}|${row.cover_url}`
+                + `|${row.thumb_url}` !== beforeCover;
             if (row.strength_sync_pending === true) {
                 const fetchedModel = Number(payload?.strength_model);
                 const fetchedClip = Number(payload?.strength_clip);
@@ -1462,54 +2846,237 @@ function syncRowTriggerWords(node, row, options = {}) {
             }
             row.trigger_words_synced = true;
             row.trigger_words_error = "";
+            if (coverChanged) {
+                scheduleRenderNodeRows(node);
+            }
         })
         .catch(() => {
-            row.strength_sync_pending = false;
-            row.trigger_words_synced = true;
-            row.trigger_words_error = "load_failed";
+            const target = liveRow();
+            target.strength_sync_pending = false;
+            target.trigger_words_synced = true;
+            target.trigger_words_error = "load_failed";
         })
         .finally(() => {
-            row.trigger_words_loading = false;
-            writeStoredRows(node, node.__xlora_panel?.state?.rows || []);
-            renderNodeRows(node);
+            const target = liveRow();
+            target.trigger_words_loading = false;
+            scheduleWriteStoredRows(node);
+            // 回来以后只补这一行：开关和强度万一被服务端纠正，也一起对齐
+            applyRowState(node, target);
+            if (!refreshRowTriggerCell(node, target)) {
+                // 这一行正被折叠藏着，等展开时整表重画自然会带上
+                return;
+            }
         });
 }
 
 function syncAllRowTriggerWords(node, options = {}) {
     const rows = node?.__xlora_panel?.state?.rows || [];
+    const force = options.force === true;
     for (const row of rows) {
+        // 已经同步过的安静跳过，别一开工作流就几百个请求打出去
+        if (!force && row.trigger_words_synced === true) {
+            continue;
+        }
         syncRowTriggerWords(node, row, options);
     }
 }
 
-function buildPanel() {
+/* 复制图标的线条（Lucide copy 的形状）。用内联 SVG 不用 ⧉ 字符：
+   字符在不同字体下胖瘦不一，缩到 12px 会糊成一个小点。 */
+const COPY_GLYPH_PATHS = [
+    "M9 9V6.5A2.5 2.5 0 0 1 11.5 4h6A2.5 2.5 0 0 1 20 6.5v6"
+        + "a2.5 2.5 0 0 1-2.5 2.5H15",
+    "M4.5 9h6A2.5 2.5 0 0 1 13 11.5v6A2.5 2.5 0 0 1 10.5 20h-6"
+        + "A2.5 2.5 0 0 1 2 17.5v-6A2.5 2.5 0 0 1 4.5 9Z",
+];
+
+/**
+ * 胶囊右端那颗「复制」图标。
+ *
+ * 它是 span 不是 button：胶囊本身已经是 button，按钮套按钮浏览器不认。
+ * 点击同样交给列表的委托（`data-act="trigger-copy"`），一行还是只挂
+ * 一个监听器。
+ */
+function buildTriggerCopyIcon(triggerWord) {
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const icon = document.createElement("span");
+    icon.className = "xlora-trigger-copy";
+    icon.dataset.act = "trigger-copy";
+    icon.__triggerWord = triggerWord;
+    icon.setAttribute("role", "button");
+    icon.setAttribute(
+        "aria-label",
+        t(
+            "xdatahub.ui.node.xloraget.copy_trigger",
+            "Copy this trigger word"
+        )
+    );
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "12");
+    svg.setAttribute("height", "12");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    for (const d of COPY_GLYPH_PATHS) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+    }
+    icon.appendChild(svg);
+    return icon;
+}
+
+/**
+ * 一颗触发词胶囊：点一下就是开 / 关，右端小图标复制这个词。
+ *
+ * 点击不由胶囊自己接（那样一行要挂好几颗），统一交给列表的委托；
+ * 胶囊只把「我代表哪个词」记在元素上。
+ */
+function buildTriggerChip(node, triggerWord) {
+    const tooltip = node?.__xlora_panel?.tooltip || null;
+    const chip = document.createElement("button");
+    chip.className = "xlora-trigger-chip";
+    chip.type = "button";
+    if (triggerWord.enabled === false) {
+        chip.classList.add("is-disabled");
+    }
+    // 先写文字再挂图标：直接写 textContent 会把已经挂上去的子元素清掉
+    chip.textContent = triggerWord.text;
+    chip.dataset.act = "trigger-word";
+    chip.__triggerWord = triggerWord;
+    chip.appendChild(buildTriggerCopyIcon(triggerWord));
+    bindTooltip(
+        chip,
+        tooltip,
+        triggerWord.text,
+        "",
+        t(
+            "xdatahub.ui.node.xloraget.trigger_chip_hint",
+            "Click toggles Enabled / Disabled, the icon on the right copies"
+        )
+    );
+    return chip;
+}
+
+/**
+ * 画一行里的「触发词格子」：刷新按钮 + 前几个词 + 「+N」。
+ *
+ * 单独拿出来是为了能「只重画这一格」。以前逐行同步触发词时整张表重画，
+ * 行数一多就每行一次全表重建（成本是行数的平方）。
+ */
+function fillTriggerCell(node, state, item, cell) {
+    cell.textContent = "";
+    const createTriggerChip = (triggerWord) => buildTriggerChip(
+        node,
+        triggerWord
+    );
+
+    const triggerRefreshBtn = document.createElement("button");
+    triggerRefreshBtn.className = "xlora-trigger-refresh";
+    triggerRefreshBtn.type = "button";
+    triggerRefreshBtn.textContent = "↻";
+    bindTooltip(
+        triggerRefreshBtn,
+        null,
+        t(
+            "xdatahub.ui.node.xloraget.trigger_refresh",
+            "Refresh trigger words and notes from XDataHub"
+        )
+    );
+    triggerRefreshBtn.disabled = item.trigger_words_loading;
+    triggerRefreshBtn.dataset.act = "trigger-refresh";
+    cell.appendChild(triggerRefreshBtn);
+
+    const triggerInline = document.createElement("div");
+    triggerInline.className = "xlora-trigger-inline";
+    if (item.trigger_words_loading) {
+        const loadingChip = document.createElement("span");
+        loadingChip.className = "xlora-trigger-chip is-placeholder";
+        loadingChip.textContent = t(
+            "xdatahub.ui.node.xloraget.loading",
+            "Loading..."
+        );
+        triggerInline.appendChild(loadingChip);
+    } else if (item.trigger_words.length) {
+        const inlineWords = item.trigger_words.slice(
+            0,
+            TRIGGER_WORD_INLINE_LIMIT
+        );
+        inlineWords.forEach((triggerWord) => {
+            triggerInline.appendChild(createTriggerChip(triggerWord));
+        });
+        const extraCount = Math.max(
+            0,
+            item.trigger_words.length - TRIGGER_WORD_INLINE_LIMIT
+        );
+        if (extraCount > 0) {
+            const moreBtn = document.createElement("button");
+            moreBtn.className = "xlora-trigger-more";
+            moreBtn.type = "button";
+            const expanded = state.expandedTriggerRowId === item.id;
+            const moreTooltip = expanded
+                ? t(
+                    "xdatahub.ui.node.xloraget.collapse_title",
+                    "Collapse full trigger word list"
+                )
+                : t(
+                    "xdatahub.ui.node.xloraget.expand_title",
+                    "Expand {count} more trigger words"
+                ).replace("{count}", String(extraCount));
+            moreBtn.textContent = expanded
+                ? t("xdatahub.ui.node.xloraget.collapse", "Collapse")
+                : `+${extraCount}`;
+            bindTooltip(moreBtn, null, moreTooltip);
+            moreBtn.dataset.act = "trigger-more";
+            cell.appendChild(triggerInline);
+            cell.appendChild(moreBtn);
+            return;
+        }
+    } else {
+        const emptyChip = document.createElement("span");
+        emptyChip.className = "xlora-trigger-chip is-placeholder";
+        emptyChip.textContent = item.trigger_words_error
+            ? t(
+                "xdatahub.ui.node.xloraget.trigger_fail",
+                "Failed to load trigger words"
+            )
+            : t(
+                "xdatahub.ui.node.xloraget.no_trigger",
+                "No trigger words"
+            );
+        triggerInline.appendChild(emptyChip);
+    }
+    cell.appendChild(triggerInline);
+}
+
+function buildPanel(node) {
     ensureStyles();
     const panel = document.createElement("div");
     panel.className = "xlora-panel";
     const meta = document.createElement("div");
     meta.className = "xlora-meta";
-    const toolbar = document.createElement("div");
-    toolbar.className = "xlora-toolbar";
-    const toolbarCopy = document.createElement("div");
-    toolbarCopy.className = "xlora-toolbar-copy";
-    const toolbarDesc1 = document.createElement("div");
-    toolbarDesc1.className = "xlora-toolbar-desc";
-    toolbarDesc1.textContent = t("xdatahub.ui.node.xloraget.info_desc1", "Load order is top-to-bottom; trigger words in the second row can be toggled individually.");
-    const toolbarDesc2 = document.createElement("div");
-    toolbarDesc2.className = "xlora-toolbar-desc";
-    toolbarDesc2.textContent = t("xdatahub.ui.node.xloraget.info_desc2", "Adjusting Clip strength has no effect when Clip is not connected.");
-    toolbarCopy.appendChild(toolbarDesc1);
-    toolbarCopy.appendChild(toolbarDesc2);
+    // 列表卡片外面的一行：左撤销重做、右 Clip 开关（和 XMediaListGet 一致）
+    const toolbar = element("div", "xlora-toolbar");
+    const toolbarLeft = element("div", "xlora-toolbar-left");
+    // Clip 开关：开关本体 + 文字。文字不能省——只有一个开关看不出它干什么
     const globalToggle = document.createElement("label");
-    globalToggle.className = "xlora-global-toggle";
+    globalToggle.className = "xlora-clip-toggle";
     const globalToggleInput = document.createElement("input");
     globalToggleInput.type = "checkbox";
     globalToggleInput.className = "xlora-switch-input";
     const globalToggleTrack = document.createElement("span");
     globalToggleTrack.className = "xlora-switch-track";
     globalToggleTrack.setAttribute("aria-hidden", "true");
-    const globalToggleText = document.createElement("span");
-    globalToggleText.textContent = t("xdatahub.ui.node.xloraget.clip_toggle", "Separate Clip Strength");
+    const globalToggleText = element(
+        "span",
+        "xlora-clip-toggle-text",
+        t("xdatahub.ui.node.xloraget.clip_toggle", "Separate Clip Strength")
+    );
     globalToggle.appendChild(globalToggleInput);
     globalToggle.appendChild(globalToggleTrack);
     globalToggle.appendChild(globalToggleText);
@@ -1533,20 +3100,142 @@ function buildPanel() {
     meta.appendChild(badge);
     meta.appendChild(kindEmoji);
 
-    toolbar.appendChild(toolbarCopy);
+    // 撤销 / 重做：待在列表卡片外面那一行，管的是整个列表的改动
+    const undoButton = element("button", "xlora-tbtn", "↶");
+    undoButton.type = "button";
+    undoButton.disabled = true;
+    engine.bindHint(undoButton, () => t(
+        "xdatahub.ui.node.xloraget.undo_tooltip",
+        "Undo last step"
+    ));
+    const redoButton = element("button", "xlora-tbtn", "↷");
+    redoButton.type = "button";
+    redoButton.disabled = true;
+    engine.bindHint(redoButton, () => t(
+        "xdatahub.ui.node.xloraget.redo_tooltip",
+        "Redo last undo"
+    ));
+    toolbarLeft.appendChild(undoButton);
+    toolbarLeft.appendChild(redoButton);
+    toolbar.appendChild(toolbarLeft);
     toolbar.appendChild(globalToggle);
+
+    // 列表工具栏：刷新 │ 建组 │ ✔ ✖ ⇄ → 范围胶囊（组号长在里面）。
+    // 会「变宽」的只有范围胶囊（选出某一组时冒出组号），所以它排在
+    // 所有按钮后面：真要挤，挤的也是它右边的东西。
+    const listToolbar = element("div", "xlora-list-toolbar");
+    // 刷新：逐个问后端这些 LoRA 文件还在不在（和 XMediaListGet 的 ↻ 同位）
+    const refreshButton = element("button", "xlora-tbtn", "↻");
+    refreshButton.type = "button";
+    engine.bindHint(refreshButton, () => t(
+        "xdatahub.ui.node.xloraget.refresh_tooltip",
+        "Check again whether these LoRA files still exist on disk."
+    ));
+    // 建组用文字不用图标：图标（＋）和 ✔ ✖ ⇄ 挤在一起分不清谁是谁
+    const groupButton = element(
+        "button",
+        "xlora-tbtn xlora-group-btn",
+        t("xdatahub.ui.node.xloraget.new_group", "Create group")
+    );
+    groupButton.type = "button";
+    engine.bindHint(groupButton, () => t(
+        "xdatahub.ui.node.xloraget.new_group_tooltip",
+        "Create a group from the selected LoRAs that aren't in one yet."
+    ));
+    const enableAllButton = element("button", "xlora-tbtn", "✔");
+    enableAllButton.type = "button";
+    engine.bindHint(enableAllButton, () => t(
+        "xdatahub.ui.node.xloraget.enable_all_tooltip",
+        "All enabled"
+    ));
+    const disableAllButton = element("button", "xlora-tbtn", "✖");
+    disableAllButton.type = "button";
+    engine.bindHint(disableAllButton, () => t(
+        "xdatahub.ui.node.xloraget.disable_all_tooltip",
+        "All disabled"
+    ));
+    const invertButton = element("button", "xlora-tbtn", "⇄");
+    invertButton.type = "button";
+    engine.bindHint(invertButton, () => t(
+        "xdatahub.ui.node.xloraget.invert_tooltip",
+        "Invert switches"
+    ));
+    const {
+        scopeControl,
+        scopeChip,
+        scopeChipText,
+        scopeButtons,
+    } = engine.buildScopeControl(node);
+    listToolbar.appendChild(refreshButton);
+    listToolbar.appendChild(element("span", "xlora-tb-divider"));
+    listToolbar.appendChild(groupButton);
+    listToolbar.appendChild(element("span", "xlora-tb-divider"));
+    listToolbar.appendChild(enableAllButton);
+    listToolbar.appendChild(disableAllButton);
+    listToolbar.appendChild(invertButton);
+    listToolbar.appendChild(scopeControl);
+
     const list = document.createElement("div");
     list.className = "xlora-list";
+    // 插入线/标签放在列表内部：它们要跟着列表一起滚动，否则列表滚
+    // 下去以后指示线会停在面板上，指不到真正的位置。
+    const insertLine = document.createElement("div");
+    insertLine.className = "xlora-insert-line";
+    const dropLabel = document.createElement("div");
+    dropLabel.className = "xlora-drop-label";
+    list.appendChild(insertLine);
+    list.appendChild(dropLabel);
     const empty = document.createElement("div");
     empty.className = "xlora-empty";
     empty.textContent = t("xdatahub.ui.node.xloraget.empty", "Drag Lora cards from XDataHub here");
+    const toast = document.createElement("div");
+    toast.className = "xlora-toast";
+    // 底栏：一共几条 LoRA、开了几条（和 XMediaListGet 的底栏一样）
+    const footer = element("div", "xlora-footer");
+    const footerInfo = element("div", "xlora-footer-info");
+    const total = element("span", "xlora-total", "");
+    const footerDivider = element("span", "xlora-footer-divider");
+    const status = element("span", "xlora-status", "");
+    footerInfo.appendChild(total);
+    footerInfo.appendChild(footerDivider);
+    footerInfo.appendChild(status);
+    footer.appendChild(footerInfo);
+    // 右下角的清除：把这一整套 LoRA 清空（和 XMediaListGet 的底栏一致）
+    const clearButton = element("button", "xlora-tbtn xlora-clear", "🗑️");
+    clearButton.type = "button";
+    footer.appendChild(clearButton);
+    // 工具栏 + 视口 + 底栏合成一张卡片：顶盖是按钮条，中间滚动，
+    // 底栏报数。
+    const listShell = element("div", "xlora-list-shell");
+    listShell.appendChild(listToolbar);
+    /* 列表外面再套一层「视口」：提示条（toast）的定位父级必须是这一层，
+       不是卡片。卡片里还含顶盖，按卡片定位的话「距顶 42px」会跑进工具栏，
+       想让它露在列表上方就只能按底部定位——那样提示条会跑到列表最下面，
+       离刚操作的那一行十万八千里。套一层视口以后，两边用同一套坐标
+       （见 .xlora-toast 的 top）。 */
+    const listViewport = element("div", "xlora-list-viewport");
+    listViewport.appendChild(list);
+    // 提示条浮在列表上方，跟着视口走，不会跑道卡片外面的描述文字上。
+    listViewport.appendChild(toast);
+    listShell.appendChild(listViewport);
+    listShell.appendChild(footer);
     panel.appendChild(meta);
     panel.appendChild(toolbar);
-    panel.appendChild(list);
+    panel.appendChild(listShell);
     const tooltip = document.createElement("div");
     tooltip.className = "xlora-tooltip";
     tooltip.innerHTML = `
-        <img alt="thumb" style="display:none;">
+        <div class="xlora-tooltip-media">
+            <img alt="thumb" style="display:none;">
+            <video
+                muted
+                loop
+                autoplay
+                playsinline
+                preload="metadata"
+                style="display:none;"
+            ></video>
+        </div>
         <div class="xlora-tooltip-name"></div>
         <div class="xlora-tooltip-divider"></div>
         <div class="xlora-tooltip-note"></div>
@@ -1556,14 +3245,34 @@ function buildPanel() {
     return {
         panel,
         toolbar,
+        listToolbar,
+        footer,
+        total,
+        status,
+        clearButton,
+        refreshButton,
+        groupButton,
+        enableAllButton,
+        disableAllButton,
+        invertButton,
+        undoButton,
+        redoButton,
+        scopeControl,
+        scopeChip,
+        scopeChipText,
+        scopeButtons,
+        // 引擎按名字找的几样东西：LoRA 列表没有遮罩层，留空即可
+        overlay: null,
         globalToggleInput,
         list,
         empty,
+        insertLine,
+        dropLabel,
+        toast,
         tooltip,
         badge,
         badgeChip,
-        toolbarDesc1,
-        toolbarDesc2,
+        globalToggle,
         globalToggleText,
     };
 }
@@ -1647,9 +3356,21 @@ function upsertLoraRowFromMediaRef(
     }
     installNodeUi(node);
     const panel = node.__xlora_panel;
-    const rows = readStoredRows(node);
+    /* 内存里那份才是准的：正在同步触发词的行、刚改过强度的行都只活在内存里。
+       以前这里从存盘重读一遍，等于把整份 rows 换成「刚写下去时的样子」——
+       正在飞的那几个请求回来时，要写的那一行已经不在列表里了，结果全丢。
+       行一多，添加一次要解析/重建的东西也越多，所以越加越慢。 */
+    const rows = Array.isArray(panel?.state?.rows)
+        ? panel.state.rows.slice()
+        : readStoredRows(node);
     const existing = rows.find((item) => item.lora_ref === loraRef);
     const normalizedThumb = String(thumbUrl || "").trim();
+    const incomingCoverKind = normalizeCoverKind(
+        options.coverKind || options.cover_kind
+    );
+    const incomingCoverUrl = String(
+        options.coverUrl || options.cover_url || ""
+    ).trim();
     const hasExplicitStrengthModel = Number.isFinite(Number(strengthModel));
     const hasExplicitStrengthClip = Number.isFinite(Number(strengthClip));
     const strengthSyncPending = options.syncStrengthFromRemote === true
@@ -1672,6 +3393,10 @@ function upsertLoraRowFromMediaRef(
         if (normalizedThumb) {
             existing.thumb_url = normalizedThumb;
         }
+        if (incomingCoverKind) {
+            existing.cover_kind = incomingCoverKind;
+            existing.cover_url = incomingCoverUrl;
+        }
         existing.strength_model = normalizedModelStrength;
         existing.strength_clip = normalizedClipStrength;
         existing.separate_clip_strength = separateClipStrength;
@@ -1689,6 +3414,8 @@ function upsertLoraRowFromMediaRef(
                 strength_sync_pending: strengthSyncPending,
                 lora_note: normalizedLoraNote,
                 thumb_url: normalizedThumb,
+                cover_kind: incomingCoverKind,
+                cover_url: incomingCoverUrl,
                 pin: "none",
             })
         );
@@ -1711,7 +3438,7 @@ function refreshRowsByLoraRef(loraRef) {
     if (!target) {
         return;
     }
-    const nodes = (app.graph?._nodes || []).filter(
+    const nodes = (rootGraphOf(app)?._nodes || []).filter(
         (node) => String(node?.comfyClass || "") === TARGET_NODE_CLASS
     );
     for (const node of nodes) {
@@ -1785,6 +3512,329 @@ function ensureXLoraNodeMinSize(node) {
     };
 }
 
+/**
+ * 节点被删掉时收尾：tooltip 挂在 body 上，不主动摘掉会一直留着
+ * （里面的图片/视频也一起赖着）。
+ */
+function disposeNodeUi(node) {
+    stopDropAutoScroll(node?.__xlora_panel?.state);
+    engine.closeGroupDialog(node);
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    panel.state?.pointerDrag?.cleanup?.();
+    if (panel.state) {
+        panel.state.pointerDrag = null;
+    }
+    panel.railObserver?.disconnect();
+    panel.railObserver = null;
+    // 让位动画的收尾定时器也要停，否则面板拆了还会去碰已经不在的节点
+    window.clearTimeout(panel.slideTimer);
+    panel.slideTimer = 0;
+    if (panel.toastTimer) {
+        clearTimeout(panel.toastTimer);
+        panel.toastTimer = 0;
+    }
+    hideTooltip(panel.tooltip);
+    panel.tooltip?.remove();
+    panel.tooltip = null;
+    delete node.__xlora_panel;
+}
+
+/**
+ * 工作流读进来之后，把面板数据整个换成存盘里的内容。
+ *
+ * 行和组必须**一起**重读：只换行的话，行上挂的组号在组记录里找不到
+ * 对应的组，纯数据层会把它当成「没有这个组」，于是组凭空消失。
+ */
+function reloadPanelFromStorage(node) {
+    const panel = node?.__xlora_panel;
+    if (!panel) {
+        return;
+    }
+    panel.state.rows = readStoredRows(node);
+    panel.state.groups = readStoredGroups(node);
+    panel.state.globalSeparateClip = readGlobalClipMode(
+        node,
+        panel.state.rows
+    );
+    // 换了一批行，旧的选中、范围收窄、撤销记录都对不上了
+    panel.state.selection = new Set();
+    panel.state.scopeGroup = null;
+    panel.state.scopeGroupBack = null;
+    /* 档位跟着工作流走，但面板是「建节点那一刻」装的，那时 properties
+       还是空的。configure / loadedGraphNode 会把 properties 恢复好再叫
+       这里，所以必须在这重读一次。 */
+    panel.state.enableScope = readEnableScope(node);
+    panel.state.undoStack = [];
+    panel.state.redoStack = [];
+    // 丢失标记也是上一批文件的事，等用户再点一次刷新
+    panel.state.missing = new Set();
+    renderNodeRows(node);
+    // 档位按钮的高亮要跟着重读出来的档位走
+    engine.refreshScopeOnly(node);
+    // 注意：不要 force。存盘里已经带着触发词，一开工作流就对每一行
+    // 重新问一遍后端，会出现几百个请求（而且还伴随重画）。
+    // 新拖进来的行没标过「已同步」，它们会自动排队去问。
+    syncAllRowTriggerWords(node);
+}
+
+/**
+ * 行上的事件全部委托到列表上：整张表只挂一套监听器。
+ *
+ * 以前一行自己挂十多个（点选 / 拖动 / 开关 / 强度 / 移除 / 钉住 /
+ * 触发词的刷新和展开），一千行就是上万个监听器。行元素上只留数据
+ * （data-index、data-act、__parts、__triggerWord），由这里现查现算。
+ */
+function bindRowDelegation(node) {
+    const panel = node?.__xlora_panel;
+    const list = panel?.list;
+    if (!list || panel.rowDelegationBound) {
+        return;
+    }
+    panel.rowDelegationBound = true;
+
+    const itemsOf = () => (
+        node.__xlora_panel?.state?.items?.[LORA_CATEGORY]
+        || node.__xlora_panel?.state?.rows
+        || []
+    );
+    const rowHit = (rowEl) => {
+        const state = node.__xlora_panel?.state;
+        const index = Number(rowEl?.dataset?.index);
+        const item = state ? itemsOf()[index] : null;
+        return state && item ? { state, index, item } : null;
+    };
+    const rowOf = (target) => target?.closest?.(".xlora-row") || null;
+
+    list.addEventListener("click", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowHit(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const { state, item } = hit;
+        const action = event.target.closest?.("[data-act]")?.dataset?.act;
+
+        if (action === "remove") {
+            if (state.expandedTriggerRowId === item.id) {
+                setExpandedTriggerPanel(node, state, null);
+            }
+            // 位置会被拖动改掉，建行时记下的 index 早过期了——按元素身上
+            // 现在写着的位置删，否则删掉的是「原来站在这一格」的另一个 LoRA
+            const liveIndex = Number(rowEl.dataset.index);
+            const target = Number.isFinite(liveIndex) ? liveIndex : hit.index;
+            state.rows.splice(target, 1);
+            state.rows = enforcePinLayout(state.rows);
+            writeStoredRows(node, state.rows);
+            renderNodeRows(node);
+            return;
+        }
+        if (action === "pin") {
+            const pinEl = event.target.closest("[data-act]");
+            const position = pinEl?.dataset?.pin;
+            if (position !== "head" && position !== "tail") {
+                return;
+            }
+            const wasPinned = item.pin === position;
+            state.rows.forEach((rowItem) => {
+                if (rowItem.pin === position) {
+                    rowItem.pin = "none";
+                }
+            });
+            item.pin = wasPinned ? "none" : position;
+            applyPinToRow(state, item);
+            writeStoredRows(node, state.rows);
+            renderNodeRows(node);
+            return;
+        }
+        if (action === "trigger-copy") {
+            const icon = event.target.closest("[data-act]");
+            const word = icon?.__triggerWord;
+            if (!word || !word.text) {
+                return;
+            }
+            /* 点复制图标不能再往下跌进「点一下=开关」那一段（图标就在
+               胶囊内部，closest 找到的是图标自己）。 */
+            event.preventDefault();
+            event.stopPropagation();
+            hideTooltip(node?.__xlora_panel?.tooltip);
+            copyText(String(word.text)).then((ok) => {
+                if (ok) {
+                    showPanelToast(
+                        node,
+                        t(
+                            "xdatahub.ui.node.xloraget.copied",
+                            "Copied: {text}",
+                            { text: word.text }
+                        )
+                    );
+                    return;
+                }
+                showPanelToast(
+                    node,
+                    t(
+                        "xdatahub.ui.node.xloraget.copy_failed",
+                        "Could not copy, please select the text yourself"
+                    )
+                );
+            });
+            return;
+        }
+        if (action === "trigger-word") {
+            const chip = event.target.closest("[data-act]");
+            const word = chip?.__triggerWord;
+            if (!word) {
+                return;
+            }
+            word.enabled = word.enabled === false;
+            chip.classList.toggle("is-disabled", word.enabled === false);
+            refreshRowTriggerCell(node, item);
+            scheduleWriteStoredRows(node);
+            return;
+        }
+        if (action === "trigger-refresh") {
+            if (
+                state.expandedTriggerRowId != null
+                && String(state.expandedTriggerRowId) === String(item.id)
+            ) {
+                setExpandedTriggerPanel(node, state, null);
+                scheduleRenderNodeRows(node);
+            }
+            syncRowTriggerWords(node, item, { force: true });
+            return;
+        }
+        if (action === "trigger-more") {
+            if (state.expandedTriggerRowId === item.id) {
+                setExpandedTriggerPanel(node, state, null);
+            } else {
+                setExpandedTriggerPanel(node, state, item.id);
+                state.triggerSearchQuery = "";
+            }
+            renderNodeRows(node);
+            return;
+        }
+        // 开关 / 输入框 / 链接之类有自己的行为，不在这里抢
+        if (event.target.closest("button, input, label, .xlora-preview-flag")) {
+            return;
+        }
+        if (
+            state.suppressClickUntil
+            && performance.now() < state.suppressClickUntil
+        ) {
+            return;
+        }
+        engine.handleRowSelection(
+            node,
+            LORA_CATEGORY,
+            loraKeyOf(item),
+            hit.index,
+            event
+        );
+    });
+
+    list.addEventListener("change", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowHit(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const { item } = hit;
+        const parts = rowEl.__parts || {};
+        const target = event.target;
+        if (target === parts.activeInput) {
+            item.active = !!target.checked;
+            // 只对齐这一行 + 重算序号：整表重画会把别的行的输入框、
+            // 滚动位置、缩略图全拉起重来，行一多就是几百毫秒的顿感。
+            applyRowState(node, item, rowEl);
+            refreshLoraRowNumbers(node);
+            flushStoredRows(node);
+            return;
+        }
+        if (target === parts.modelInput) {
+            item.strength_model = toFloat(target.value, 1);
+            if (!item.separate_clip_strength) {
+                item.strength_clip = item.strength_model;
+            }
+            // 强度改了就影响「会不会加载」，序号得重算（只改文字）
+            refreshLoraRowNumbers(node);
+            flushStoredRows(node);
+            return;
+        }
+        if (target === parts.clipInput) {
+            item.strength_clip = toFloat(target.value, item.strength_model);
+            refreshLoraRowNumbers(node);
+            flushStoredRows(node);
+        }
+    });
+
+    /**
+     * 边打字边把强度记下来。
+     *
+     * `change` 只在「回车或离开输入框」时才来。用户改完强度直接按
+     * Ctrl+Enter 排队，输入框没失焦 → 根本没 change → 状态和存盘里还是
+     * 旧值，界面上明明写着 0.8，实际按老值（常见是 1.0）算。
+     * 节点的图，一半的锅是这种「看到的和跑的不是一个数」。
+     */
+    list.addEventListener("input", (event) => {
+        const rowEl = rowOf(event.target);
+        const hit = rowEl ? rowHit(rowEl) : null;
+        if (!hit) {
+            return;
+        }
+        const { item } = hit;
+        const parts = rowEl.__parts || {};
+        const target = event.target;
+        const isModel = target === parts.modelInput;
+        const isClip = target === parts.clipInput;
+        if (!isModel && !isClip) {
+            return;
+        }
+        // 半截输入（""、"-"、"0."）先不动状态，等它变成一个数
+        const value = Number(String(target.value ?? "").replace(",", "."));
+        if (!Number.isFinite(value)) {
+            return;
+        }
+        if (isModel) {
+            if (item.strength_model === value) {
+                return;
+            }
+            item.strength_model = value;
+            if (!item.separate_clip_strength) {
+                item.strength_clip = value;
+            }
+        } else {
+            if (item.strength_clip === value) {
+                return;
+            }
+            item.strength_clip = value;
+        }
+        flushStoredRows(node);
+    });
+
+    // 列表内排序走指针事件（浏览器自带拖放只有 10Hz 上下，一顿一顿的）
+    list.addEventListener("pointerdown", (event) => {
+        const rowEl = rowOf(event.target);
+        if (!rowEl) {
+            return;
+        }
+        const index = Number(rowEl.dataset.index);
+        const rows = itemsOf();
+        if (!canDragRow(rows, index)) {
+            return;
+        }
+        engine.armRowPointerDrag(node, LORA_CATEGORY, rowEl, event);
+    });
+
+    // 行里的图片 / 链接默认能被浏览器拖走，会把我们的拖动静悄悄掐断
+    list.addEventListener("dragstart", (event) => {
+        if (rowOf(event.target)) {
+            event.preventDefault();
+        }
+    });
+}
+
 function installNodeUi(node) {
     if (!node || String(node.comfyClass || "") !== TARGET_NODE_CLASS) {
         return;
@@ -1797,10 +3847,26 @@ function installNodeUi(node) {
         return;
     }
     ensureStorageWidget(node);
-    const ui = buildPanel();
+    const ui = buildPanel(node);
     const initialRows = readStoredRows(node);
     const state = {
         rows: initialRows,
+        // 组记录（组名 / 颜色 / 折叠状态 / 序号）
+        groups: readStoredGroups(node),
+        // 分组引擎按「分类」组织数据，LoRA 只有一类（见 LORA_CATEGORY）
+        category: LORA_CATEGORY,
+        items: emptyLoraItems(),
+        // 选中的行（按行 id 记）：建组、批量开关都靠它
+        selection: new Set(),
+        // 点过「刷新」后查出来已经不在硬盘上的文件（按 lora_ref 记）
+        missing: new Set(),
+        // ✔ ✖ ⇄ 打哪些行：all / files（未分组）/ groups（已分组）。
+        // 跟着工作流走：上次选的档位存在 node.properties 里（不塞进
+        // lora_stack，那个 JSON 是 Python 侧的，多字段要多一套迁移）。
+        enableScope: readEnableScope(node),
+        // 单击组头 = 临时只作用于那一组；scopeGroupBack 记住收窄前的档位
+        scopeGroup: null,
+        scopeGroupBack: null,
         globalSeparateClip: readGlobalClipMode(node, initialRows),
         dragIndex: -1,
         dragTargetEl: null,
@@ -1810,6 +3876,8 @@ function installNodeUi(node) {
         triggerSearchQuery: "",
     };
     node.__xlora_panel = { ...ui, state };
+    // 引擎要的数据形状先备好（渲染前每次都会重算，见 loraItemsFromState）
+    loraItemsFromState(state);
     if (typeof node.addDOMWidget === "function") {
         node.addDOMWidget("xlora_panel", "custom", ui.panel, {
             serialize: false,
@@ -1817,6 +3885,41 @@ function installNodeUi(node) {
     }
 
     // 转发滚轮到 ComfyUI 主画布（避开表单控件和可滚动区域内的原生滚轮）
+    // 工具栏：建组 / 批量开关 / 撤销重做（范围胶囊的接线在引擎里）
+    ui.groupButton.addEventListener("click", () => {
+        engine.createGroupFromCurrentSelection(node);
+    });
+    ui.enableAllButton.addEventListener("click", () => {
+        engine.setAllEnabled(node, true);
+    });
+    ui.disableAllButton.addEventListener("click", () => {
+        engine.setAllEnabled(node, false);
+    });
+    ui.invertButton.addEventListener("click", () => {
+        engine.invertEnabled(node);
+    });
+    ui.undoButton.addEventListener("click", () => {
+        engine.undoLastChange(node);
+    });
+    ui.redoButton.addEventListener("click", () => {
+        engine.redoLastChange(node);
+    });
+    ui.clearButton.addEventListener("click", () => {
+        clearLoraRows(node);
+    });
+    engine.bindHint(ui.clearButton, () => t(
+        "xdatahub.ui.node.xloraget.clear_tooltip",
+        "Remove every LoRA in this list."
+    ));
+    // Clip 开关有文字，这里补一句更细的解释（Clip 没连线时开了也没用）
+    engine.bindHint(ui.globalToggle, () => t(
+        "xdatahub.ui.node.xloraget.clip_tooltip",
+        "Give Clip its own strength value. Nothing happens when nothing is connected to the Clip input."
+    ));
+    ui.refreshButton.addEventListener("click", () => {
+        void refreshLoraMissing(node);
+    });
+
     ui.panel.addEventListener("wheel", function (e) {
         var tag = (e.target.tagName || "").toUpperCase();
         if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
@@ -1849,6 +3952,8 @@ function installNodeUi(node) {
         panel.addEventListener("pointerdown", function(e) {
             if (e.button !== 1) return;
             e.preventDefault();
+            // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+            panel.setPointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseDown !== "function") return;
             cvs.processMouseDown(e);
@@ -1861,6 +3966,7 @@ function installNodeUi(node) {
         });
         panel.addEventListener("pointerup", function(e) {
             if (e.button !== 1) return;
+            panel.releasePointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseUp !== "function") return;
             cvs.processMouseUp(e);
@@ -1876,8 +3982,12 @@ function installNodeUi(node) {
         renderNodeRows(node);
     });
     bindDnD(node);
+    // 行上的点选 / 拖动 / 开关 / 强度 / 触发词全部由列表委托
+    bindRowDelegation(node);
     renderNodeRows(node);
-    syncAllRowTriggerWords(node, { force: true });
+    // 首次装面板时存盘里的行已经是「已同步」的（见 parseStoredRows），
+    // 所以这里一般不会发请求；只有新拖进来的行才需要问
+    syncAllRowTriggerWords(node);
     refreshNodeBadge(node);
     // 若种子在面板之前就到了（异常时序），这里也会补上。
     consumePendingRows(node);
@@ -1888,6 +3998,41 @@ function clearDragTarget(state) {
         state.dragTargetEl.classList.remove("drag-target");
     }
     state.dragTargetEl = null;
+}
+
+// Lucide 的 arrow-up-to-line / arrow-down-to-line：一条箭头加一条横线，
+// 一看就是「钉到最上 / 钉到最下」。
+const PIN_ICON_PATHS = {
+    head: ["M5 3h14", "m18 13-6-6-6 6", "M12 7v14"],
+    tail: ["M5 21h14", "m6 11 6 6 6-6", "M12 3v14"],
+};
+
+/**
+ * 置顶/置底图标。用内联 SVG 而不是字符，缩放到任意大小都清晰。
+ */
+function buildPinIcon(direction) {
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    // 尺寸要给偶数：按钮 22px、去掉左右各 1px 边框后是 20px，
+    // 20-14=6，每边正好 3px。用 15px 的话每边 2.5px，落屏时被四舍五入
+    // 成一边 3 一边 2，图标看着就往右下偏了半个像素。
+    svg.setAttribute("width", "14");
+    svg.setAttribute("height", "14");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.4");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.classList.add("xlora-pin-icon");
+    for (const d of PIN_ICON_PATHS[direction] || []) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+    }
+    return svg;
 }
 
 function canDragRow(rows, index) {
@@ -1984,6 +4129,306 @@ function setExpandedTriggerPanel(node, state, nextExpandedRowId) {
     }
 }
 
+/**
+ * 这一行会不会真的被加载？
+ *
+ * 后端是按这个顺序筛的：`active` 为假直接跳过；`strength_model` 和
+ * `strength_clip` 都是 0 也跳过（等于没加载）。序列号只数会加载的行，
+ * 否则「第 3 个加载的 LoRA」就要靠用户自己心算。
+ */
+function rowWillLoad(item, clipConnected = true) {
+    if (!item || item.active === false) {
+        return false;
+    }
+    const model = Number(item.strength_model);
+    // 后端在 CLIP 没接的时候会把这段强度按 0 算，这里跟着一起看，
+    // 否则「M=0 + 只留 C」的行会被误算成会加载。
+    const clip = clipConnected ? Number(item.strength_clip) : 0;
+    return !(model === 0 && clip === 0);
+}
+
+/** CLIP 输入有没有接线；拿不到连线信息时按「已接」处理。 */
+function isClipConnected(node) {
+    const inputs = node?.inputs;
+    if (!Array.isArray(inputs)) {
+        return true;
+    }
+    const clipInput = inputs.find(
+        (input) => String(input?.name || "") === "clip"
+    );
+    if (!clipInput) {
+        return true;
+    }
+    return inputConnected(node, clipInput);
+}
+
+/** 重新排版加载序号（接线变化时用）。 */
+function refreshLoadSequence(node) {
+    const panel = node?.__xlora_panel;
+    if (panel?.state?.rows?.length) {
+        renderNodeRows(node);
+    }
+}
+
+/**
+ * 按屏幕上的顺序重写左侧的加载序号。
+ *
+ * 拖动时列表是「就地搬位置」，不走整表重画（否则拖动会跳），所以序号
+ * 得单独补一遍。序号只数「会真的加载」的行：关掉的行、以及强度全是 0
+ * 的行都不占号（后者在 CLIP 没接线时还要按 0 算）。
+ */
+function refreshLoraRowNumbers(node) {
+    const panel = node?.__xlora_panel;
+    const list = panel?.list;
+    if (!list) {
+        return;
+    }
+    // 拖动期间引擎把新顺序写在 state.items 上（state.rows 要等松手
+    // 落地时才同步），所以这里必须读 items，否则序号按旧顺序数。
+    const rows = panel.state.items?.[LORA_CATEGORY] || panel.state.rows || [];
+    const clipConnected = isClipConnected(node);
+    // 先按数据把号算好：折叠起来的组虽然不在屏幕上，里面的行照样会
+    // 加载、照样占号——屏幕上直接数会把这些号跳过去，后面的号就全错了。
+    const textByIndex = new Map();
+    let seq = 0;
+    rows.forEach((row, index) => {
+        const willLoad = rowWillLoad(row, clipConnected);
+        if (willLoad) {
+            seq += 1;
+        }
+        textByIndex.set(index, willLoad ? String(seq) : "–");
+    });
+    for (const el of list.querySelectorAll(".xlora-row")) {
+        const text = textByIndex.get(Number(el.dataset.index));
+        // 序号元素建行时就记住了：一千行时每行再查一次选择器会白费几十毫秒
+        const seqEl = el.__parts?.seq;
+        if (text === undefined || !seqEl || seqEl.textContent === text) {
+            continue;
+        }
+        seqEl.textContent = text;
+    }
+    // 头尾可能换了人：钉子不能留在旧的那一行上
+    syncRowPinButtons(node);
+}
+
+/** 底栏报数：一共几条、开了几条（名额上限是全局的，两个列表一样）。 */
+/**
+ * 清空整个 LoRA 列表（底栏右下角的 🗑️）。
+ *
+ * 会先问一句：这是不可撤销的大动作——虽然撤销能救回来，但一不小心点中
+ * 的代价是整条 LoRA 栈没了，还是让用户确认一下。
+ */
+function clearLoraRows(node) {
+    const panel = node?.__xlora_panel;
+    const state = panel?.state;
+    if (!state) {
+        return;
+    }
+    const rows = state.items?.[LORA_CATEGORY] || [];
+    if (!rows.length) {
+        return;
+    }
+    const message = t(
+        "xdatahub.ui.node.xloraget.clear_confirm",
+        "Remove all {count} LoRAs from this list?",
+        { count: rows.length }
+    );
+    if (!window.confirm(message)) {
+        return;
+    }
+    // 清空 = 行全部拿走，组自然也没成员了（纯数据层会把空组一起清掉）
+    writeLoraItems(node, emptyLoraItems());
+    renderNodeRows(node);
+}
+
+function updateListFooter(panel, rows) {
+    if (!panel?.total || !panel?.status) {
+        return;
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    const enabled = list.filter((row) => row?.active !== false).length;
+    panel.total.textContent = t(
+        "xdatahub.ui.group.total_items",
+        "{count} {noun}",
+        {
+            count: list.length,
+            noun: t("xdatahub.ui.group.noun_loras", "LoRAs"),
+        }
+    );
+    panel.status.textContent = t(
+        "xdatahub.ui.group.enabled_count",
+        "Enabled {count} / {limit}",
+        { count: enabled, limit: MAX_ENABLED }
+    );
+    // 「创建分组」只有在选中了还没分组的行时才点得动。不用真 disabled：
+    // 真 disabled 的按钮收不到悬停事件，用户看不到为什么点不动。
+    if (panel.groupButton) {
+        const state = panel.state || {};
+        const groupable = engine.ungroupedSelection(state, LORA_CATEGORY);
+        panel.groupButton.textContent = t(
+            "xdatahub.ui.node.xloraget.new_group",
+            "Create group"
+        );
+        panel.groupButton.classList.toggle("is-disabled", groupable < 1);
+        panel.groupButton.setAttribute(
+            "aria-disabled",
+            groupable < 1 ? "true" : "false"
+        );
+    }
+}
+
+/**
+ * 把这一轮的元素摆到正确顺序上，但**尽量别搬**。
+ *
+ * 「加一行」是最常见的重画：那时只有末尾多一个元素，其余几百个原地不动。
+ * 以前的做法是整表清空再一个个 appendChild——每个元素都要重新布局，
+ * 行一多，添加一次就要几十毫秒；而且整表搬动会让浏览器把整个列表重排。
+ *
+ * 这里先看现有顺序是不是目标顺序的子序列（是的话说明只是「插了几个」），
+ * 只插那几个；只有顺序真的乱了（拖动、分组变化）才整体重排。
+ */
+function placeChildren(list, ordered) {
+    if (!list || !Array.isArray(ordered)) {
+        return "none";
+    }
+    const wanted = new Set(ordered);
+    const current = Array.from(list.children).filter((el) => wanted.has(el));
+    let cursor = 0;
+    const missing = new Set();
+    for (const el of ordered) {
+        if (cursor < current.length && current[cursor] === el) {
+            cursor += 1;
+            continue;
+        }
+        missing.add(el);
+    }
+    if (cursor === current.length && !missing.size) {
+        return "none"; // 已经是对的
+    }
+    let ref = null;
+    for (let i = ordered.length - 1; i >= 0; i -= 1) {
+        const el = ordered[i];
+        if (missing.has(el)) {
+            list.insertBefore(el, ref);
+        }
+        ref = el;
+    }
+    if (cursor !== current.length) {
+        // 顺序乱了（不是子序列）：整体按目标顺序搬一遍，保证最终一致
+        for (const el of ordered) {
+            list.appendChild(el);
+        }
+        return "reorder";
+    }
+    return "insert";
+}
+
+/**
+ * 把列表里「这一轮没用到」的元素删掉。
+ *
+ * 只留两个常驻的：拖放落点和插入线（每次重画都会重新摆到末尾，删了就是白折腾）。
+ *
+ * **空列表那句提示不能留**：它只是「没有行时贴上去的一句话」，没有显示/隐藏
+ * 的开关。以前整表清空时会跟着消失，现在改成「只删没用到的」以后，如果连它
+ * 也一起留着，那么从空列表拖进第一张卡之后，这句「拖拽卡片到这里」会一直
+ * 盖在列表上面不下来。
+ */
+function dropUnusedChildren(list, reused) {
+    if (!list) {
+        return 0;
+    }
+    let removed = 0;
+    for (const child of Array.from(list.children)) {
+        if (reused.has(child)) {
+            continue;
+        }
+        const cls = child.classList;
+        if (
+            cls
+            && (cls.contains("xlora-insert-line")
+                || cls.contains("xlora-drop-label")
+                || cls.contains("xmlg-insert-line")
+                || cls.contains("xmlg-drop-label"))
+        ) {
+            continue;
+        }
+        child.remove();
+        removed += 1;
+    }
+    return removed;
+}
+
+/** 这一行排第几个加载（1 起；没加载算 0）。悬停时才问，不占渲染。 */
+function loraLoadIndex(node, item) {
+    const rows = node?.__xlora_panel?.state?.items?.[LORA_CATEGORY]
+        || node?.__xlora_panel?.state?.rows
+        || [];
+    const clipConnected = isClipConnected(node);
+    let seq = 0;
+    for (const row of rows) {
+        if (rowWillLoad(row, clipConnected)) {
+            seq += 1;
+        }
+        if (row === item) {
+            return seq;
+        }
+    }
+    return seq;
+}
+
+/** 一共几个行会真的加载（名额上限内、开着、强度非 0）。 */
+function loraLoadTotal(node) {
+    const rows = node?.__xlora_panel?.state?.items?.[LORA_CATEGORY]
+        || node?.__xlora_panel?.state?.rows
+        || [];
+    const clipConnected = isClipConnected(node);
+    return rows.filter((row) => rowWillLoad(row, clipConnected)).length;
+}
+
+/**
+ * 一行的「长相指纹」：数据 + 位置 + 选中 / 分组 / 折叠 / 序号。
+ *
+ * 只要指纹没变，这一次重画就可以直接搬用原来那个行元素（连缩略图、
+ * 输入框、提示绑定一起留着），不必重建。行一多，重建是主要开销；
+ * 而「加一行」这种操作其实只有一行变了，其余几百行纯属白干。
+ */
+function loraRowSignature(ctx, item, index) {
+    const state = ctx.state;
+    const missing = !!state.missing?.has(String(item.lora_ref || ""));
+    // 展开的那一行才吃搜索框的内容：搜索只过滤展开面板里的触发词，
+    // 把查询词算进每一行的指纹，等于每敲一个字就把整张表重画一遍。
+    const expanded = String(state.expandedTriggerRowId ?? "") === String(item.id);
+    const words = (item.trigger_words || [])
+        .map((word) => `${word.text}:${word.enabled === false ? 0 : 1}`)
+        .join(",");
+    return [
+        index,
+        item.active !== false ? 1 : 0,
+        item.strength_model,
+        item.strength_clip,
+        item.separate_clip_strength ? 1 : 0,
+        state.globalSeparateClip ? 1 : 0,
+        missing ? 1 : 0,
+        item.group || "",
+        item.group ? ctx.stripeByGroup.get(item.group) || "" : "",
+        state.selection?.has(loraKeyOf(item)) ? 1 : 0,
+        expanded ? 1 : 0,
+        expanded ? String(state.triggerSearchQuery || "") : "",
+        item.title || "",
+        item.lora_note || "",
+        item.thumb_url || "",
+        item.cover_kind || "",
+        item.cover_url || "",
+        item.pin || "",
+        // 行数不进指纹：钉子只认「是不是头尾」，而头尾由 index 决定，
+        // 末尾多一行时只有那一行的 index 变了。把总行数算进来会让每次添加
+        // 都把所有行判成「变了」，白建几百个行元素——正是越加越慢的根源。
+        ctx.loadSeq[index] || 0,
+        canDragRow(ctx.rows, index) ? 1 : 0,
+        words,
+    ].join("|");
+}
+
 function renderNodeRows(node) {
     const panel = node.__xlora_panel;
     if (!panel) {
@@ -1994,7 +4439,18 @@ function renderNodeRows(node) {
     const prevScrollLeft = list.scrollLeft;
     clearDragTarget(state);
     hideTooltip(tooltip);
-    list.innerHTML = "";
+    /* 不再整体清空：这一轮要用的元素（指纹没变的行）直接搬过来接着用，
+       收尾时把没用到的删掉。innerHTML="" 会把几百行、几千个节点全拆一遍，
+       而「加一行」其实只有一行是新的。 */
+    const reused = new Set();
+    const ordered = [];
+    const keepAlive = (el) => {
+        if (el) {
+            reused.add(el);
+            ordered.push(el);
+        }
+        return el;
+    };
     panel.globalToggleInput.checked = !!state.globalSeparateClip;
     const rows = enforcePinLayout(state.rows);
     state.rows = rows;
@@ -2013,78 +4469,129 @@ function renderNodeRows(node) {
         if (state.expandedTriggerRowId != null) {
             setExpandedTriggerPanel(node, state, null);
         }
+        dropUnusedChildren(list, reused);
         list.appendChild(empty);
+        // 行 / 组 / 竖线的索引一起清空，免得后面的就地重排拿着旧元素
+        panel.rowByRef = new Map();
+        panel.headByGroup = new Map();
+        panel.railHosts = new Map();
+        engine.refreshScopeOnly(node);
+        mountDropOverlay(panel);
+        updateListFooter(panel, rows);
         writeStoredRows(node, rows);
         list.scrollTop = prevScrollTop;
         list.scrollLeft = prevScrollLeft;
         return;
     }
-    rows.forEach((item, index) => {
+    // 分组：先按「同组连续」整理好数据，再按组的顺序排出渲染清单
+    loraItemsFromState(state);
+    const rowsNow = state.rows;
+    const groups = state.groups;
+    const stripeByGroup = new Map(
+        groups.map((group) => [group.id, engine.groupStripeColor(group)])
+    );
+    const loadSeq = new Array(rowsNow.length).fill(0);
+    const clipConnected = isClipConnected(node);
+    let loadTotal = 0;
+    rowsNow.forEach((item, index) => {
+        if (rowWillLoad(item, clipConnected)) {
+            loadTotal += 1;
+            loadSeq[index] = loadTotal;
+        }
+    });
+    const headByGroup = new Map();
+    const rowByRef = new Map();
+    const entries = buildRenderList(rowsNow, groups, {
+        keyOf: loraKeyOf,
+        willLoad: (entry) => entry.enabled !== false,
+    });
+    // 上一次画出来的行元素：指纹没变的直接搬过来（见 loraRowSignature）
+    const prevRowByRef = panel.rowByRef instanceof Map
+        ? panel.rowByRef
+        : new Map();
+    const rowCtx = {
+        state,
+        rows: rowsNow,
+        loadSeq,
+        stripeByGroup,
+    };
+    entries.forEach((entry) => {
+        // 组的头：和媒体列表同一套胶囊（序号 / 名字 / 计数 / 设置）
+        if (entry.type === "group") {
+            const head = engine.buildGroupHead(node, LORA_CATEGORY, entry);
+            headByGroup.set(entry.groupId, head);
+            keepAlive(head);
+            return;
+        }
+        const item = entry.row;
+        const index = entry.index;
+        const signature = loraRowSignature(rowCtx, item, index);
+        const cached = prevRowByRef.get(loraKeyOf(item));
+        if (cached && cached.__sig === signature) {
+            rowByRef.set(loraKeyOf(item), cached);
+            keepAlive(cached);
+            return;
+        }
         const row = document.createElement("div");
-        row.className = "xlora-row";
+        row.className = "xlora-row xmlg-row";
+        const rowBody = document.createElement("div");
+        rowBody.className = "xlora-row-body";
         const rowMain = document.createElement("div");
         rowMain.className = "xlora-row-main";
-        if (!canDragRow(rows, index)) {
+        if (!canDragRow(rowsNow, index)) {
             row.classList.add("locked");
         }
         row.setAttribute("data-index", String(index));
-        row.draggable = canDragRow(rows, index);
+        row.draggable = canDragRow(rowsNow, index);
+        // 属于哪一组：组色写在这一行上，序号跟着组色走
+        if (item.group) {
+            row.classList.add("is-grouped");
+            row.dataset.group = item.group;
+            row.style.setProperty(
+                "--xmlg-group-stripe",
+                stripeByGroup.get(item.group)
+                    || engine.groupStripeColor(item.group)
+            );
+        }
+        if (state.selection?.has(loraKeyOf(item))) {
+            row.classList.add("is-selected");
+        }
 
-        if (index === 0 || index === rows.length - 1) {
-            const lockBtn = document.createElement("button");
-            lockBtn.className = "xlora-lock-btn";
-            lockBtn.type = "button";
-            if (index === 0) {
-                lockBtn.textContent = "⤒";
-                bindTooltip(
-                    lockBtn,
-                    tooltip,
-                    t("xdatahub.ui.node.xloraget.pin_head", "Pin to top")
-                );
-                if (item.pin === "head") {
-                    lockBtn.classList.add("active");
-                }
-                lockBtn.addEventListener("click", () => {
-                    const wasHead = item.pin === "head";
-                    state.rows.forEach((rowItem) => {
-                        if (rowItem.pin === "head") {
-                            rowItem.pin = "none";
-                        }
-                    });
-                    item.pin = wasHead ? "none" : "head";
-                    state.rows = enforcePinLayout(state.rows);
-                    writeStoredRows(node, state.rows);
-                    renderNodeRows(node);
-                });
-            } else {
-                lockBtn.textContent = "⤓";
-                bindTooltip(
-                    lockBtn,
-                    tooltip,
-                    t("xdatahub.ui.node.xloraget.pin_tail", "Pin to bottom")
-                );
-                if (item.pin === "tail") {
-                    lockBtn.classList.add("active");
-                }
-                lockBtn.addEventListener("click", () => {
-                    const wasTail = item.pin === "tail";
-                    state.rows.forEach((rowItem) => {
-                        if (rowItem.pin === "tail") {
-                            rowItem.pin = "none";
-                        }
-                    });
-                    item.pin = wasTail ? "none" : "tail";
-                    state.rows = enforcePinLayout(state.rows);
-                    writeStoredRows(node, state.rows);
-                    renderNodeRows(node);
-                });
-            }
-            rowMain.appendChild(lockBtn);
-        } else {
-            const handle = document.createElement("span");
-            handle.className = "xlora-handle";
-            handle.textContent = "↕";
-            rowMain.appendChild(handle);
+        // 最左侧的加载序列号：只数真正会加载的行，被禁用（或强度为 0）
+        // 的行显示「–」，位置由 loadSeq 预算好。
+        const seq = document.createElement("span");
+        seq.className = "xlora-seq";
+        const loadIndex = loadSeq[index] || 0;
+        const willLoad = loadIndex > 0;
+        seq.textContent = willLoad ? String(loadIndex) : "–";
+        if (!willLoad) {
+            seq.classList.add("is-skipped");
+        }
+        bindTooltip(
+            seq,
+            tooltip,
+            t("xdatahub.ui.node.xloraget.load_order", "Load order"),
+            "",
+            willLoad
+                ? () => `${loraLoadIndex(node, item)} / ${loraLoadTotal(node)}`
+                : t(
+                    item.active === false
+                        ? "xdatahub.ui.node.xloraget.load_order_off"
+                        : "xdatahub.ui.node.xloraget.load_order_zero",
+                    item.active === false
+                        ? "Not loaded: disabled"
+                        : "Not loaded: strength is 0"
+                )
+        );
+        // 序号挂在「行」上，不挂在正文里：这样它才能横跨整张卡片、
+        // 数字在上下居中（和 XMediaListGet 的序号列一致）
+        row.appendChild(seq);
+
+        const pinPosition = pinPositionForIndex(index, rowsNow.length);
+        let pinBtn = null;
+        if (pinPosition) {
+            pinBtn = buildPinButton(node, item, pinPosition, tooltip);
+            rowMain.appendChild(pinBtn);
         }
 
         const active = document.createElement("label");
@@ -2105,17 +4612,19 @@ function renderNodeRows(node) {
             tooltip,
             t("xdatahub.ui.node.xloraget.activate", "Activate this Lora")
         );
-        activeInput.addEventListener("change", () => {
-            item.active = !!activeInput.checked;
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
         active.appendChild(activeInput);
         active.appendChild(activeTrack);
         rowMain.appendChild(active);
 
         if (item.active === false) {
             row.classList.add("inactive");
+        }
+        // 刷新按钮问出来的结果：这个文件已经不在硬盘上了
+        const missing = !!panel?.state?.missing?.has(
+            String(item.lora_ref || "")
+        );
+        if (missing) {
+            row.classList.add("is-missing");
         }
 
         const name = document.createElement("span");
@@ -2126,7 +4635,9 @@ function renderNodeRows(node) {
             tooltip,
             item.title || item.lora_name,
             item.thumb_url,
-            item.lora_note || ""
+            missingNoteText(missing, item.lora_note || ""),
+            item.cover_kind,
+            item.cover_url
         );
         rowMain.appendChild(name);
 
@@ -2143,36 +4654,23 @@ function renderNodeRows(node) {
         modelInput.step = "0.01";
         modelInput.value = String(item.strength_model);
         modelInput.disabled = item.active === false;
-        modelInput.addEventListener("change", () => {
-            item.strength_model = toFloat(modelInput.value, 1);
-            if (!item.separate_clip_strength) {
-                item.strength_clip = item.strength_model;
-            }
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
         controls.appendChild(modelInput);
 
+        let clipInput = null;
         if (state.globalSeparateClip) {
             const clipLabel = document.createElement("span");
             clipLabel.className = "xlora-label xlora-label-clip";
             clipLabel.textContent = "C";
             controls.appendChild(clipLabel);
 
-            const clipInput = document.createElement("input");
-            clipInput.className = "xlora-input";
-            clipInput.type = "number";
-            clipInput.step = "0.01";
-            clipInput.value = String(item.strength_clip);
-            clipInput.disabled = item.active === false;
-            clipInput.addEventListener("change", () => {
-                item.strength_clip = toFloat(
-                    clipInput.value,
-                    item.strength_model
-                );
-                writeStoredRows(node, state.rows);
-            });
-            controls.appendChild(clipInput);
+            const clipInputEl = document.createElement("input");
+            clipInputEl.className = "xlora-input";
+            clipInputEl.type = "number";
+            clipInputEl.step = "0.01";
+            clipInputEl.value = String(item.strength_clip);
+            clipInputEl.disabled = item.active === false;
+            controls.appendChild(clipInputEl);
+            clipInput = clipInputEl;
         }
         rowMain.appendChild(controls);
 
@@ -2185,128 +4683,16 @@ function renderNodeRows(node) {
             t("xdatahub.ui.node.xloraget.remove", "Remove")
         );
         removeBtn.textContent = "✕";
-        removeBtn.addEventListener("click", () => {
-            if (state.expandedTriggerRowId === item.id) {
-                setExpandedTriggerPanel(node, state, null);
-            }
-            state.rows.splice(index, 1);
-            state.rows = enforcePinLayout(state.rows);
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
-        rowMain.appendChild(removeBtn);
+        removeBtn.dataset.act = "remove";
 
         const triggerRow = document.createElement("div");
         triggerRow.className = "xlora-trigger-row";
-        const toggleTriggerWord = (triggerWord) => {
-            triggerWord.enabled = triggerWord.enabled === false;
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        };
-        const createTriggerChip = (triggerWord) => {
-            const chip = document.createElement("button");
-            chip.className = "xlora-trigger-chip";
-            chip.type = "button";
-            if (triggerWord.enabled === false) {
-                chip.classList.add("is-disabled");
-            }
-            chip.textContent = triggerWord.text;
-            bindTooltip(chip, tooltip, triggerWord.text);
-            chip.addEventListener("click", () => {
-                toggleTriggerWord(triggerWord);
-            });
-            return chip;
-        };
-
         const triggerMain = document.createElement("div");
         triggerMain.className = "xlora-trigger-row-main";
-        const triggerRefreshBtn = document.createElement("button");
-        triggerRefreshBtn.className = "xlora-trigger-refresh";
-        triggerRefreshBtn.type = "button";
-        triggerRefreshBtn.textContent = "↻";
-        bindTooltip(
-            triggerRefreshBtn,
-            tooltip,
-            t(
-                "xdatahub.ui.node.xloraget.trigger_refresh",
-                "Refresh trigger words and notes from XDataHub"
-            )
-        );
-        triggerRefreshBtn.disabled = item.trigger_words_loading;
-        triggerRefreshBtn.addEventListener("click", () => {
-            const panelState = node.__xlora_panel?.state;
-            if (
-                panelState
-                && panelState.expandedTriggerRowId != null
-                && String(panelState.expandedTriggerRowId)
-                    === String(item.id)
-            ) {
-                setExpandedTriggerPanel(node, panelState, null);
-                renderNodeRows(node);
-            }
-            syncRowTriggerWords(node, item, { force: true });
-        });
-        triggerMain.appendChild(triggerRefreshBtn);
-
-        const triggerInline = document.createElement("div");
-        triggerInline.className = "xlora-trigger-inline";
-        if (item.trigger_words_loading) {
-            const loadingChip = document.createElement("span");
-            loadingChip.className = "xlora-trigger-chip is-placeholder";
-            loadingChip.textContent = t("xdatahub.ui.node.xloraget.loading", "Loading...");
-            triggerInline.appendChild(loadingChip);
-        } else if (item.trigger_words.length) {
-            const inlineWords = item.trigger_words.slice(
-                0,
-                TRIGGER_WORD_INLINE_LIMIT
-            );
-            inlineWords.forEach((triggerWord) => {
-                triggerInline.appendChild(createTriggerChip(triggerWord));
-            });
-            const extraCount = Math.max(
-                0,
-                item.trigger_words.length - TRIGGER_WORD_INLINE_LIMIT
-            );
-            if (extraCount > 0) {
-                const moreBtn = document.createElement("button");
-                moreBtn.className = "xlora-trigger-more";
-                moreBtn.type = "button";
-                const expanded = state.expandedTriggerRowId === item.id;
-                const moreTooltip = expanded
-                    ? t(
-                        "xdatahub.ui.node.xloraget.collapse_title",
-                        "Collapse full trigger word list"
-                    )
-                    : t(
-                        "xdatahub.ui.node.xloraget.expand_title",
-                        "Expand {count} more trigger words"
-                    ).replace("{count}", String(extraCount));
-                moreBtn.textContent = expanded
-                    ? t("xdatahub.ui.node.xloraget.collapse", "Collapse")
-                    : `+${extraCount}`;
-                bindTooltip(moreBtn, tooltip, moreTooltip);
-                moreBtn.addEventListener("click", () => {
-                    if (state.expandedTriggerRowId === item.id) {
-                        setExpandedTriggerPanel(node, state, null);
-                    } else {
-                        setExpandedTriggerPanel(node, state, item.id);
-                        state.triggerSearchQuery = "";
-                    }
-                    renderNodeRows(node);
-                });
-                triggerMain.appendChild(moreBtn);
-            }
-        } else {
-            const emptyChip = document.createElement("span");
-            emptyChip.className = "xlora-trigger-chip is-placeholder";
-            emptyChip.textContent = item.trigger_words_error
-                ? t("xdatahub.ui.node.xloraget.trigger_fail", "Failed to load trigger words")
-                : t("xdatahub.ui.node.xloraget.no_trigger", "No trigger words");
-            triggerInline.appendChild(emptyChip);
-        }
-
-        triggerMain.appendChild(triggerInline);
+        fillTriggerCell(node, state, item, triggerMain);
         triggerRow.appendChild(triggerMain);
+        // 逐行同步触发词时只重画这一格（不牵动整张表）
+        row.__triggerMain = triggerMain;
 
         if (
             state.expandedTriggerRowId === item.id
@@ -2330,32 +4716,44 @@ function renderNodeRows(node) {
                 state.triggerSearchQuery = String(searchInput.value || "");
                 const start = searchInput.selectionStart;
                 const end = searchInput.selectionEnd;
-                renderNodeRows(node);
-                const nextInput = node.__xlora_panel?.panel?.querySelector(
-                    ".xlora-trigger-search"
-                );
-                if (nextInput instanceof HTMLInputElement) {
-                    nextInput.focus();
-                    if (start != null && end != null) {
-                        nextInput.setSelectionRange(start, end);
+                // 边打字边筛：合帧重画，并把光标还给搜索框
+                scheduleRenderNodeRows(node, () => {
+                    const nextInput = node.__xlora_panel?.panel?.querySelector(
+                        ".xlora-trigger-search"
+                    );
+                    if (nextInput instanceof HTMLInputElement) {
+                        nextInput.focus();
+                        if (start != null && end != null) {
+                            nextInput.setSelectionRange(start, end);
+                        }
                     }
-                }
+                });
             });
             panelHeader.appendChild(searchInput);
 
             const actions = document.createElement("div");
             actions.className = "xlora-trigger-actions";
 
+            const setAllTriggerWords = (enabled) => {
+                item.trigger_words.forEach((triggerWord) => {
+                    triggerWord.enabled = enabled;
+                });
+                // 展开面板里的胶囊就地改颜色，只顺手刷新行内那几个
+                for (const chip of panelList.querySelectorAll(
+                    ".xlora-trigger-chip"
+                )) {
+                    chip.classList.toggle("is-disabled", !enabled);
+                }
+                refreshRowTriggerCell(node, item);
+                scheduleWriteStoredRows(node);
+            };
+
             const enableAllBtn = document.createElement("button");
             enableAllBtn.className = "xlora-trigger-action";
             enableAllBtn.type = "button";
             enableAllBtn.textContent = t("xdatahub.ui.node.xloraget.enable_all", "Enable all");
             enableAllBtn.addEventListener("click", () => {
-                item.trigger_words.forEach((triggerWord) => {
-                    triggerWord.enabled = true;
-                });
-                writeStoredRows(node, state.rows);
-                renderNodeRows(node);
+                setAllTriggerWords(true);
             });
             actions.appendChild(enableAllBtn);
 
@@ -2364,11 +4762,7 @@ function renderNodeRows(node) {
             disableAllBtn.type = "button";
             disableAllBtn.textContent = t("xdatahub.ui.node.xloraget.disable_all", "Disable all");
             disableAllBtn.addEventListener("click", () => {
-                item.trigger_words.forEach((triggerWord) => {
-                    triggerWord.enabled = false;
-                });
-                writeStoredRows(node, state.rows);
-                renderNodeRows(node);
+                setAllTriggerWords(false);
             });
             actions.appendChild(disableAllBtn);
             panelHeader.appendChild(actions);
@@ -2426,7 +4820,10 @@ function renderNodeRows(node) {
                 panelList.appendChild(emptyTips);
             } else {
                 filteredWords.forEach((triggerWord) => {
-                    panelList.appendChild(createTriggerChip(triggerWord));
+                    panelList.appendChild(buildTriggerChip(
+                        node,
+                        triggerWord
+                    ));
                 });
             }
 
@@ -2439,67 +4836,555 @@ function renderNodeRows(node) {
             });
         }
 
-        row.appendChild(rowMain);
-        row.appendChild(triggerRow);
+        rowBody.appendChild(rowMain);
+        rowBody.appendChild(triggerRow);
+        row.appendChild(rowBody);
+        // 移除按钮挂在「行」上、竖向居中：和左边的序号一左一右对称，
+        // 不会看起来只贴着上面那一行。它待在自己的格子里，格子左边缘那条
+        // 竖线从顶贯到底，把「这一行」和「删掉它」隔开。
+        const removeCell = element("div", "xlora-remove-cell");
+        removeCell.appendChild(removeBtn);
+        row.appendChild(removeCell);
 
-        row.addEventListener("dragstart", (event) => {
-            if (!canDragRow(state.rows, index)) {
-                event.preventDefault();
-                return;
+        // 点选 / 拖动 / 开关 / 强度 / 触发词 / 钉住 / 移除全部由列表委托
+        // （见 bindRowDelegation）：一行挂十来个监听器的话，一千行就是
+        // 上万个，建列表时明显拖慢。
+        // 只改一行时（开关 / 强度 / 触发词）靠这几个引用当场对齐，
+        // 不用整表重画
+        row.__parts = {
+            activeInput,
+            modelInput,
+            clipInput,
+            name,
+            main: rowMain,
+            seq,
+            pinBtn,
+        };
+
+        row.__sig = signature;
+        // 引擎就地重排时要能找回这一行（不重建，缩略图不重载）
+        rowByRef.set(loraKeyOf(item), row);
+        keepAlive(row);
+    });
+    // 这一轮没用到的旧行 / 旧组头一起收走（放在建竖线之前，位置才算得准）
+    const removedCount = dropUnusedChildren(list, reused);
+    const placement = placeChildren(list, ordered);
+    panel.rowByRef = rowByRef;
+    // 每组一根贯穿竖线：从组头顶端画到最后一行底端（折叠组只到组头）
+    panel.railHosts = new Map();
+    for (const [groupId, head] of headByGroup) {
+        const rail = element("div", "xmlg-group-rail");
+        rail.dataset.group = groupId;
+        rail.style.setProperty(
+            "--xmlg-group-stripe",
+            stripeByGroup.get(groupId) || engine.groupStripeColor(groupId)
+        );
+        list.appendChild(rail);
+        panel.railHosts.set(groupId, { rail, head });
+    }
+    panel.headByGroup = headByGroup;
+    // 换了新的一批组头和行，竖线的测量缓存作废：不重置的话这次重画
+    // 会「宽度没变 → 跳过测量」，竖线就停在上一次的位置甚至干脆没有。
+    panel.railMeasured = false;
+    engine.layoutGroupRails(panel);
+    engine.ensureRailObserver(panel);
+    // 组没了 / 组数变了：范围胶囊、组号标签、✔ ✖ ⇄ 的可用状态一起刷新
+    engine.refreshScopeOnly(node);
+    mountDropOverlay(panel);
+    updateListFooter(panel, rowsNow);
+    // 刚展开的那一组：成员行从 0 高度长开（和 XMediaListGet 同一套动画）。
+    // 这一步还负责把「展开动画进行中」的锁放开——不做的话，展开以后
+    // 折叠按钮就再也不响应了。
+    if (panel.pendingExpand) {
+        engine.unfoldGroupRowsIn(panel, panel.pendingExpand, list.scrollTop);
+    }
+    writeStoredRows(node, rowsNow);
+    /**
+     * 滚动位置只在「真有东西被删掉 / 顺序被重排」时才需要摆回去。
+     *
+     * 只往末尾加一行时，上面的内容一个都没动，滚动位置自然不会变；
+     * 这时候去读一次 scrollTop 会逼浏览器立刻把整张列表布局完（几百行
+     * 要十几毫秒），纯属白等。读都省了，也就不写——写在值没变时同样
+     * 会触发一次重排。
+     */
+    if (removedCount > 0 || placement === "reorder") {
+        if (list.scrollTop !== prevScrollTop) {
+            list.scrollTop = prevScrollTop;
+        }
+        if (list.scrollLeft !== prevScrollLeft) {
+            list.scrollLeft = prevScrollLeft;
+        }
+    }
+}
+
+/**
+ * 引擎手里没有某一行时，让它现造一个。
+ *
+ * 正常渲染路径不会走到这里（行元素都在 rowByRef 里登记过）；真走到了
+ * 说明数据里多出一行而屏幕还没画，这里只保证「像一行、不报错」，
+ * 下一次完整渲染就会换成真正的行。
+ */
+function buildLoraRow(node, row, index) {
+    const el = element("div", "xlora-row xmlg-row");
+    el.dataset.index = String(index);
+    if (row?.group) {
+        el.classList.add("is-grouped");
+        el.dataset.group = row.group;
+    }
+    el.appendChild(element("span", "xlora-seq", "–"));
+    el.appendChild(element(
+        "span",
+        "xlora-name",
+        row?.title || row?.lora_name || row?.lora_ref || ""
+    ));
+    return el;
+}
+
+// ── 拖入即插入（对齐 XMediaListGet 的手感）──────────────────────────────
+
+/**
+ * 这一行该不该有钉住按钮、钉哪一头。
+ *
+ * 只有列表的头尾两行有：钉住的意思是「把这一端焊死」，中间的行先拖到端上
+ * 再钉。位置会变（拖动、增删），所以每次都要重算，不能只在建行时算一次。
+ */
+function pinPositionForIndex(index, total) {
+    if (!Number.isFinite(index) || index < 0) {
+        return "";
+    }
+    if (index === 0) {
+        return "head";
+    }
+    if (total > 0 && index === total - 1) {
+        return "tail";
+    }
+    return "";
+}
+
+/** 造一颗钉住按钮：↑ 钉到最前 / ↓ 钉到最后，再点一次取消。 */
+function buildPinButton(node, item, position, tooltip) {
+    const isHead = position === "head";
+    const lockBtn = document.createElement("button");
+    lockBtn.className = "xlora-lock-btn";
+    lockBtn.type = "button";
+    lockBtn.dataset.pin = position;
+    lockBtn.appendChild(buildPinIcon(position));
+    bindTooltip(
+        lockBtn,
+        tooltip,
+        t(
+            isHead
+                ? "xdatahub.ui.node.xloraget.pin_head"
+                : "xdatahub.ui.node.xloraget.pin_tail",
+            isHead ? "Pin to top" : "Pin to bottom"
+        )
+    );
+    if (item.pin === position) {
+        lockBtn.classList.add("active");
+    }
+    // 点击交给列表委托（dataset.pin 已经写明钉哪一头）
+    lockBtn.dataset.act = "pin";
+    return lockBtn;
+}
+
+/**
+ * 行被搬来搬去之后，钉子要跟着走。
+ *
+ * 拖动走的是「就地重排」（复用原来的行元素，不重建），所以头尾换了人时
+ * 钉子会留在旧的地方：新头尾没有钉子、旧头尾还挂着一颗。这里按最新位置
+ * 补回来——不然得再点一下别的东西（触发整表重画）钉子才「突然出现」。
+ */
+function syncRowPinButtons(node) {
+    const panel = node?.__xlora_panel;
+    const list = panel?.list;
+    if (!list) {
+        return;
+    }
+    const rows = panel.state.items?.[LORA_CATEGORY] || panel.state.rows || [];
+    for (const el of list.querySelectorAll(".xlora-row")) {
+        const index = Number(el.dataset.index);
+        const item = rows[index];
+        const parts = el.__parts;
+        const main = parts?.main;
+        if (!item || !main) {
+            continue;
+        }
+        const wanted = pinPositionForIndex(index, rows.length);
+        const current = parts.pinBtn;
+        if (current && current.dataset.pin === wanted) {
+            current.classList.toggle("active", !!wanted && item.pin === wanted);
+            continue;
+        }
+        if (current) {
+            current.remove();
+            parts.pinBtn = null;
+        }
+        if (!wanted) {
+            continue;
+        }
+        // 钉子永远排在开关前面
+        const next = buildPinButton(node, item, wanted, panel.tooltip);
+        main.insertBefore(next, parts.activeInput?.closest(".xlora-active")
+            || main.firstChild);
+        parts.pinBtn = next;
+    }
+}
+
+/**
+ * 钉住一行之后要做的两件事：
+ *
+ * 1. 挪到队首 / 队尾（`enforcePinLayout`）；
+ * 2. **退出所在分组**——置顶/置底的行位置由标记决定，不能再跟着组跑，
+ *    否则组里会夹着一个被挪到队首的成员，组的连贯性就断了。
+ *    组里没人了就顺手解散（`loraItemsFromState` 会收掉空组）。
+ */
+function applyPinToRow(state, item) {
+    if (item?.pin && item.pin !== "none" && item.group) {
+        item.group = null;
+    }
+    state.rows = enforcePinLayout(state.rows);
+    loraItemsFromState(state);
+}
+
+/** 把插入位置夹到「钉住区」以外：置顶行前不能插，置底行后不能插。 */
+function clampInsertIndex(rows, index) {
+    const total = Array.isArray(rows) ? rows.length : 0;
+    const minIndex = rows?.some?.((item) => item.pin === "head") ? 1 : 0;
+    const maxIndex = rows?.some?.((item) => item.pin === "tail")
+        ? total - 1
+        : total;
+    const raw = Number.isFinite(index) ? index : total;
+    return clamp(raw, Math.max(0, minIndex), Math.max(0, maxIndex));
+}
+
+/**
+ * 鼠标落在列表的哪一行之间。
+ *
+ * 判定用行中线：上半段插到这一行前面，下半段插到后面。没有「替换」
+ * 这一说——LoRA 行还带着强度、触发词和备注，静默替换会把它们一起
+ * 丢掉，代价太大。
+ */
+function resolveInsertIndex(list, rows, clientY, cachedEls) {
+    const rowEls = cachedEls
+        || Array.from(list.querySelectorAll(".xlora-row"));
+    let index = rowEls.length;
+    for (const rowEl of rowEls) {
+        const rect = rowEl.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+            index = Number(rowEl.dataset.index);
+            if (!Number.isFinite(index)) {
+                index = rowEls.indexOf(rowEl);
             }
-            state.dragIndex = index;
-            row.classList.add("dragging");
-            if (event.dataTransfer) {
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData(
-                    XLORA_ROW_MIME,
-                    String(item.id)
+            break;
+        }
+    }
+    return clampInsertIndex(rows, index);
+}
+
+function clearDropIndicator(panel) {
+    if (!panel) {
+        return;
+    }
+    if (panel.insertLine) {
+        panel.insertLine.style.display = "none";
+    }
+    if (panel.dropLabel) {
+        panel.dropLabel.style.display = "none";
+    }
+    // 忘掉「上次画的是哪个落点」和缓存的行走表，下次要能重新画
+    panel.dropSignature = "";
+    panel.dragRowEls = null;
+}
+
+/** 列表每次重画都会清空 innerHTML，画完把指示线挂回去。 */
+function mountDropOverlay(panel) {
+    if (!panel?.list) {
+        return;
+    }
+    clearDropIndicator(panel);
+    if (panel.insertLine) {
+        panel.list.appendChild(panel.insertLine);
+    }
+    if (panel.dropLabel) {
+        panel.list.appendChild(panel.dropLabel);
+    }
+}
+
+function showDropIndicator(panel, rows, index, count, kind = "insert") {
+    if (!panel?.list || !panel.insertLine || !panel.dropLabel) {
+        return;
+    }
+    // dragover 每秒几十次，落点大多没变。不变就一句话都别做：
+    // 每次事件都读计算样式 + 扫一遍行元素 + 写样式，会让浏览器
+    // 反复重排，节点一多就明显卡。
+    const signature = `${kind}|${index}|${count}`;
+    if (panel.dropSignature === signature) {
+        return;
+    }
+    panel.dropSignature = signature;
+    panel.dropKind = kind;
+    const rowEls = panel.dragRowEls
+        || (panel.dragRowEls = Array.from(
+            panel.list.querySelectorAll(".xlora-row")
+        ));
+    // 列表的内边距是固定值，量一次记住，不要每个事件都读计算样式
+    if (panel.listPaddingTop === undefined) {
+        panel.listPaddingTop = Number.parseFloat(
+            getComputedStyle(panel.list).paddingTop
+        ) || 0;
+    }
+    const padding = panel.listPaddingTop;
+    let top = padding;
+    const nextRow = rowEls.find(
+        (rowEl) => Number(rowEl.dataset.index) === index
+    );
+    if (nextRow) {
+        top = nextRow.offsetTop - 2;
+    } else if (rowEls.length) {
+        const last = rowEls[rowEls.length - 1];
+        top = last.offsetTop + last.offsetHeight + 1;
+    }
+    panel.insertLine.style.top = `${Math.max(0, top)}px`;
+    panel.insertLine.style.display = "block";
+    if (kind === "move") {
+        panel.dropLabel.textContent = t(
+            "xdatahub.ui.node.xloraget.move_here",
+            "Move here"
+        );
+    } else {
+        panel.dropLabel.textContent = count > 1
+            ? `+ ${
+                t(
+                    "xdatahub.ui.node.xloraget.insert_many",
+                    "Insert {count} LoRAs",
+                    { count }
+                )
+            }`
+            : `+ ${
+                t("xdatahub.ui.node.xloraget.insert_here", "Insert here")
+            }`;
+    }
+    panel.dropLabel.style.top = `${Math.max(0, top - 24)}px`;
+    panel.dropLabel.style.display = "block";
+}
+
+/**
+ * 内部拖动时的落点。
+ *
+ * `resolveInsertIndex` 给的是「插到第几格」，而移动是先把原行抽出来再
+ * 插回去：原行后面的位置要往前挪一格，否则往下拖会少走一位。
+ */
+/**
+ * 把「当前列表里的第几个缝」换算成「抽走自己之后要插到第几位」。
+ * 往下拖要减 1：自己一被抽走，下面的行整体前移一格。
+ */
+function moveTargetFromGap(gapIndex, fromIndex) {
+    return gapIndex > fromIndex ? gapIndex - 1 : gapIndex;
+}
+
+function resolveMoveIndex(list, rows, clientY, fromIndex) {
+    return moveTargetFromGap(
+        resolveInsertIndex(list, rows, clientY),
+        fromIndex
+    );
+}
+
+/** 拖到列表上下边缘时自动滚动，长列表才拖得到看不见的位置。 */
+function stopDropAutoScroll(state) {
+    if (state?.autoScrollRaf) {
+        cancelAnimationFrame(state.autoScrollRaf);
+        state.autoScrollRaf = 0;
+    }
+    if (state) {
+        state.autoScrollDir = 0;
+    }
+}
+
+function startDropAutoScroll(node, state, dir) {
+    if (!state || state.autoScrollDir === dir) {
+        return;
+    }
+    stopDropAutoScroll(state);
+    state.autoScrollDir = dir;
+    const step = () => {
+        if (!state.autoScrollDir) {
+            state.autoScrollRaf = 0;
+            return;
+        }
+        const list = node.__xlora_panel?.list;
+        if (list) {
+            list.scrollTop += state.autoScrollDir * DROP_AUTOSCROLL_STEP;
+            const panel = node.__xlora_panel;
+            if (panel?.dropIndex != null) {
+                showDropIndicator(
+                    panel,
+                    panel.state.rows,
+                    panel.dropIndex,
+                    panel.dropCount || 1
                 );
             }
-        });
-        row.addEventListener("dragend", () => {
-            state.dragIndex = -1;
-            row.classList.remove("dragging");
-            clearDragTarget(state);
-        });
-        row.addEventListener("dragover", (event) => {
-            if (state.dragIndex < 0) {
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            clearDragTarget(state);
-            state.dragTargetEl = row;
-            row.classList.add("drag-target");
-            if (event.dataTransfer) {
-                event.dataTransfer.dropEffect = "move";
-            }
-        });
-        row.addEventListener("drop", (event) => {
-            if (state.dragIndex < 0) {
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            const rect = row.getBoundingClientRect();
-            const target = Number(row.getAttribute("data-index") || "-1");
-            const insertAfter = event.clientY > (rect.top + rect.height / 2);
-            const nextTarget = insertAfter ? target + 1 : target;
-            state.rows = moveRowWithLocks(
-                state.rows,
-                state.dragIndex,
-                nextTarget
-            );
-            state.dragIndex = -1;
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-        });
+        }
+        state.autoScrollRaf = requestAnimationFrame(step);
+    };
+    state.autoScrollRaf = requestAnimationFrame(step);
+}
 
-        list.appendChild(row);
-    });
-    writeStoredRows(node, rows);
-    list.scrollTop = prevScrollTop;
-    list.scrollLeft = prevScrollLeft;
+function showPanelToast(node, text) {
+    const panel = node?.__xlora_panel;
+    if (!panel?.toast || !text) {
+        return;
+    }
+    panel.toast.textContent = text;
+    panel.toast.classList.add("is-visible");
+    if (panel.toastTimer) {
+        clearTimeout(panel.toastTimer);
+    }
+    panel.toastTimer = window.setTimeout(() => {
+        panel.toastTimer = 0;
+        panel.toast?.classList.remove("is-visible");
+    }, TOAST_DURATION_MS);
+}
+
+/** 从 XDataHub 的拖拽类型标记里数一下拖了几个。 */
+function dropCountFromDataTransfer(dataTransfer) {
+    const types = dataTransfer?.types;
+    if (!types || typeof types.length !== "number") {
+        return 1;
+    }
+    for (const type of Array.from(types)) {
+        const match = /^application\/x-xdatahub-count-(\d+)$/.exec(
+            String(type)
+        );
+        if (match) {
+            const count = Number(match[1]);
+            if (Number.isFinite(count) && count > 0) {
+                return count;
+            }
+        }
+    }
+    return 1;
+}
+
+/** 拖进来的不是 LoRA（图片/视频/音频/文本）时给出明确提示。 */
+function dragHasForeignType(dataTransfer) {
+    const types = dataTransfer?.types;
+    if (!types || typeof types.length !== "number") {
+        return false;
+    }
+    for (const type of Array.from(types)) {
+        const match = /^application\/x-xdatahub-type-([a-z]+)$/.exec(
+            String(type)
+        );
+        if (match) {
+            return match[1] !== "lora";
+        }
+    }
+    return false;
+}
+
+/**
+ * 在指定位置插入几行 LoRA。
+ *
+ * 已经在列表里的不重复插入、也不挪位置，只提示一声——重复拖入多半是
+ * 手滑，静默改动列表顺序比什么都不做更容易出事。
+ */
+function insertLoraRowsAt(node, entries, index) {
+    const panel = node?.__xlora_panel;
+    if (!panel?.state) {
+        return;
+    }
+    // 和「拖进来」那条路一样：以内存为准，别从存盘重读（会把正在同步的行换掉）
+    const rows = Array.isArray(panel.state.rows)
+        ? panel.state.rows.slice()
+        : readStoredRows(node);
+    const existingRefs = new Set(rows.map((row) => String(row.lora_ref || "")));
+    const fresh = [];
+    let skipped = 0;
+    for (const entry of entries) {
+        const ref = String(entry?.lora_ref || "").trim();
+        if (!ref) {
+            continue;
+        }
+        if (existingRefs.has(ref)) {
+            skipped += 1;
+            continue;
+        }
+        existingRefs.add(ref);
+        fresh.push(entry);
+    }
+    if (!fresh.length) {
+        if (skipped) {
+            showPanelToast(
+                node,
+                t(
+                    "xdatahub.ui.node.xloraget.already_present",
+                    "{count} already in the list",
+                    { count: skipped }
+                )
+            );
+        }
+        return;
+    }
+    const insertIndex = clampInsertIndex(rows, index);
+    const added = [];
+    for (const entry of fresh) {
+        const hasModel = Number.isFinite(Number(entry.strength_model));
+        const hasClip = Number.isFinite(Number(entry.strength_clip));
+        const model = hasModel ? toFloat(entry.strength_model, 1) : 1;
+        const clip = hasClip
+            ? toFloat(entry.strength_clip, model)
+            : model;
+        added.push(
+            makeRow({
+                lora_ref: entry.lora_ref,
+                title: String(entry.title || "lora"),
+                active: true,
+                separate_clip_strength: clip !== model,
+                strength_model: model,
+                strength_clip: clip,
+                // 拖拽数据里没带强度时，等节点拉取远端数据补全。
+                strength_sync_pending: !hasModel || !hasClip,
+                lora_note: "",
+                thumb_url: entry.thumb_url,
+                cover_kind: entry.cover_kind,
+                cover_url: entry.cover_url,
+                pin: "none",
+            })
+        );
+    }
+    const nextRows = enforcePinLayout([
+        ...rows.slice(0, insertIndex),
+        ...added,
+        ...rows.slice(insertIndex),
+    ]);
+    panel.state.rows = nextRows;
+    if (nextRows.some((row) => row.separate_clip_strength)) {
+        panel.state.globalSeparateClip = true;
+    }
+    writeStoredRows(node, nextRows);
+    renderNodeRows(node);
+    for (const row of nextRows) {
+        if (added.includes(row)) {
+            syncRowTriggerWords(node, row, { force: true });
+        }
+    }
+    const parts = [
+        t(
+            "xdatahub.ui.node.xloraget.inserted",
+            "Inserted {count} LoRAs",
+            { count: added.length }
+        ),
+    ];
+    if (skipped) {
+        parts.push(
+            t(
+                "xdatahub.ui.node.xloraget.already_present",
+                "{count} already in the list",
+                { count: skipped }
+            )
+        );
+    }
+    showPanelToast(node, parts.join(" · "));
 }
 
 function bindDnD(node) {
@@ -2516,51 +5401,84 @@ function bindDnD(node) {
         }
     };
     list.addEventListener("dragenter", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
-            return;
-        }
         consume(event);
         list.classList.add("drag-over");
     });
     list.addEventListener("dragover", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
-            event.preventDefault();
-            clearDragTarget(state);
-            list.classList.remove("drag-over");
-            if (event.dataTransfer) {
-                event.dataTransfer.dropEffect = "move";
-            }
-            return;
-        }
         consume(event);
         list.classList.add("drag-over");
+        // 列表只收 LoRA：拖图片/视频/音频/文本进来时明确拒绝，
+        // 不要让人以为「拖进去了但没反应」。
+        if (dragHasForeignType(event.dataTransfer)) {
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = "none";
+            }
+            clearDropIndicator(panel);
+            stopDropAutoScroll(state);
+            panel.dropIndex = null;
+            showPanelToast(
+                node,
+                t(
+                    "xdatahub.ui.node.xloraget.lora_only",
+                    "This list only accepts LoRAs"
+                )
+            );
+            return;
+        }
         if (event.dataTransfer) {
             event.dataTransfer.dropEffect = "copy";
         }
+        // 手指（鼠标）没动，落点不可能变：连量位置都省掉
+        if (panel.dragSpotY === event.clientY
+            && panel.dragSpotX === event.clientX) {
+            return;
+        }
+        panel.dragSpotY = event.clientY;
+        panel.dragSpotX = event.clientX;
+        const rows = panel.state.rows;
+        const rowEls = panel.dragRowEls
+            || (panel.dragRowEls = Array.from(
+                list.querySelectorAll(".xlora-row")
+            ));
+        const index = resolveInsertIndex(list, rows, event.clientY, rowEls);
+        panel.dropIndex = index;
+        panel.dropCount = dropCountFromDataTransfer(event.dataTransfer);
+        showDropIndicator(panel, rows, index, panel.dropCount);
+        // 拖到列表上下边缘时自动滚动
+        const rect = list.getBoundingClientRect();
+        if (event.clientY - rect.top < DROP_AUTOSCROLL_EDGE) {
+            startDropAutoScroll(node, state, -1);
+        } else if (rect.bottom - event.clientY < DROP_AUTOSCROLL_EDGE) {
+            startDropAutoScroll(node, state, 1);
+        } else {
+            stopDropAutoScroll(state);
+        }
     });
     list.addEventListener("dragleave", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
+        consume(event);
+        // 下一次拖拽的落点要从头算
+        panel.dragSpotY = undefined;
+        panel.dragSpotX = undefined;
+        const related = event.relatedTarget;
+        if (related instanceof Node && list.contains(related)) {
             return;
         }
-        consume(event);
         list.classList.remove("drag-over");
+        clearDropIndicator(panel);
+        stopDropAutoScroll(state);
+        panel.dropIndex = null;
     });
     list.addEventListener("drop", (event) => {
-        if (isInternalRowDrag(event.dataTransfer)) {
-            event.preventDefault();
-            clearDragTarget(state);
-            state.rows = moveRowWithLocks(
-                state.rows,
-                state.dragIndex,
-                state.rows.length
-            );
-            state.dragIndex = -1;
-            writeStoredRows(node, state.rows);
-            renderNodeRows(node);
-            return;
-        }
         consume(event);
         list.classList.remove("drag-over");
+        const dropIndex = resolveInsertIndex(
+            list,
+            panel.state.rows,
+            event.clientY
+        );
+        clearDropIndicator(panel);
+        stopDropAutoScroll(state);
+        panel.dropIndex = null;
         const payload = parseDragPayload(event.dataTransfer);
         if (!payload) {
             return;
@@ -2578,24 +5496,7 @@ function bindDnD(node) {
         }
         state.lastExternalDropKey = dropKey;
         state.lastExternalDropAt = now;
-        // 多选拖拽时按原顺序逐行插入。
-        for (const entry of entries) {
-            upsertLoraRowFromMediaRef(
-                node,
-                entry.lora_ref,
-                entry.title,
-                entry.thumb_url,
-                entry.strength_model,
-                entry.strength_clip,
-                "",
-                {
-                    syncStrengthFromRemote: (
-                        entry.strength_model == null
-                        && entry.strength_clip == null
-                    ),
-                }
-            );
-        }
+        insertLoraRowsAt(node, entries, dropIndex);
     });
 }
 
@@ -2603,16 +5504,10 @@ function applyPanelLocale(panelInfo) {
     if (!panelInfo) {
         return;
     }
-    if (panelInfo.toolbarDesc1) {
-        panelInfo.toolbarDesc1.textContent = t(
-            "xdatahub.ui.node.xloraget.info_desc1",
-            "Load order is top-to-bottom; trigger words in the second row can be toggled individually."
-        );
-    }
-    if (panelInfo.toolbarDesc2) {
-        panelInfo.toolbarDesc2.textContent = t(
-            "xdatahub.ui.node.xloraget.info_desc2",
-            "Adjusting Clip strength has no effect when Clip is not connected."
+    if (panelInfo.empty) {
+        panelInfo.empty.textContent = t(
+            "xdatahub.ui.node.xloraget.empty",
+            "Drag Lora cards from XDataHub here"
         );
     }
     if (panelInfo.globalToggleText) {
@@ -2621,16 +5516,10 @@ function applyPanelLocale(panelInfo) {
             "Separate Clip Strength"
         );
     }
-    if (panelInfo.empty) {
-        panelInfo.empty.textContent = t(
-            "xdatahub.ui.node.xloraget.empty",
-            "Drag Lora cards from XDataHub here"
-        );
-    }
 }
 
 function refreshAllPanelLocales() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -2653,7 +5542,7 @@ async function applyUiLocale(localeOverride = null) {
 }
 
 function installExistingNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -2813,23 +5702,24 @@ function initXLoraGetExtension() {
             }
             const origCreated = nodeType.prototype.onNodeCreated;
             const origConfigure = nodeType.prototype.onConfigure;
+            const origRemoved = nodeType.prototype.onRemoved;
             nodeType.prototype.onNodeCreated = function () {
                 origCreated?.apply(this, arguments);
                 installNodeUi(this);
             };
+            const origConnectionsChange = nodeType.prototype.onConnectionsChange;
+            nodeType.prototype.onConnectionsChange = function () {
+                origConnectionsChange?.apply(this, arguments);
+                refreshLoadSequence(this);
+            };
+            nodeType.prototype.onRemoved = function () {
+                disposeNodeUi(this);
+                origRemoved?.apply(this, arguments);
+            };
             nodeType.prototype.onConfigure = function () {
                 origConfigure?.apply(this, arguments);
                 installNodeUi(this);
-                const panel = this.__xlora_panel;
-                if (panel) {
-                    panel.state.rows = readStoredRows(this);
-                    panel.state.globalSeparateClip = readGlobalClipMode(
-                        this,
-                        panel.state.rows
-                    );
-                    renderNodeRows(this);
-                    syncAllRowTriggerWords(this, { force: true });
-                }
+                reloadPanelFromStorage(this);
             };
         },
         async nodeCreated(node) {
@@ -2837,16 +5727,7 @@ function initXLoraGetExtension() {
         },
         async loadedGraphNode(node) {
             installNodeUi(node);
-            const panel = node.__xlora_panel;
-            if (panel) {
-                panel.state.rows = readStoredRows(node);
-                panel.state.globalSeparateClip = readGlobalClipMode(
-                    node,
-                    panel.state.rows
-                );
-                renderNodeRows(node);
-                syncAllRowTriggerWords(node, { force: true });
-            }
+            reloadPanelFromStorage(node);
             refreshNodeBadge(node);
         },
         async setup() {
@@ -2948,7 +5829,11 @@ function initXLoraGetExtension() {
                         data.thumb_url || "",
                         data.strength_model,
                         data.strength_clip,
-                        data.lora_note || ""
+                        data.lora_note || "",
+                        {
+                            coverKind: data.cover_kind,
+                            coverUrl: data.cover_url,
+                        }
                     );
                     ack(true);
                 } catch (error) {

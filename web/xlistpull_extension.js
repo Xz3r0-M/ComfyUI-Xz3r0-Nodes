@@ -13,6 +13,11 @@
 
 import { app } from "../../scripts/app.js";
 import {
+    inputConnected,
+    inputLinkId,
+    outputLinkIds,
+} from "./core/slot-links.js";
+import {
     applyVisibleSlotWindow,
     installStableSlotView,
     refreshOutputLinkSources,
@@ -22,13 +27,18 @@ import {
 } from "./x_stable_slots.js";
 import {
     forEachNodeByComfyClass,
-    getLinkInfo as subgraphGetLinkInfo,
+    getLinkInfo,
+    resolveLinkSource,
 } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
+import {
+    isXMediaListGet,
+    mediaListEnabledCount,
+} from "./core/media-list-source.js";
 
 var NODE_CLASS = "XListPull";
 var LIST_CREATE_CLASS = "XListCreate";
 var LIST_RESTORE_CLASS = "XListRestore";
-var MEDIA_LIST_CLASS = "XMediaListGet";
 var MAX_OUTPUTS = 50;
 
 /** 获取当前 ComfyUI 语言设置 */
@@ -79,10 +89,7 @@ function outputLinkCount(node, index) {
     if (!node || index < 0 || index >= node.outputs.length) return 0;
     var output = node.outputs[index];
     if (!output) return 0;
-    if (Array.isArray(output.linkIds)) return output.linkIds.length;
-    if (Array.isArray(output.links)) return output.links.length;
-    if (output.linkId != null || output.link != null) return 1;
-    return 0;
+    return outputLinkIds(node, output).length;
 }
 
 function dataSlotNumber(name) {
@@ -101,10 +108,6 @@ function dataSlotNumber(name) {
 
 function stableDataName(num) {
     return "data_" + num;
-}
-
-function getLinkInfo(graph, linkId) {
-    return subgraphGetLinkInfo(graph, linkId);
 }
 
 function ensureOutputOrder(node) {
@@ -153,17 +156,21 @@ function ensureOutputOrder(node) {
     });
 }
 
+/**
+ * 上游节点。会穿过子图边界：子图里的一根线，源头是子图输入代理节点时，
+ * 真正的数据源在外层（详见 x_subgraph_utils 的 resolveLinkSource）。
+ */
 function getUpstreamNode(graph, linkId) {
+    var source = getUpstreamSource(graph, linkId);
+    return source ? source.node : null;
+}
+
+function getUpstreamSource(graph, linkId) {
     if (!graph || linkId == null) return null;
-    var link = graph.links
-        ? graph.links[linkId] || linkId
-        : linkId;
-    if (!link || typeof link !== "object") return null;
-    var originId = link.origin_id;
-    if (originId == null) return null;
-    return graph.getNodeById
-        ? graph.getNodeById(originId)
-        : graph._nodes_by_id && graph._nodes_by_id[originId];
+    // 调用方有时直接给连线对象，有时给 id，两种都收。
+    var link = typeof linkId === "object" ? linkId : getLinkInfo(graph, linkId);
+    if (!link) return null;
+    return resolveLinkSource(graph, link, rootGraphOf(app));
 }
 
 function countActiveInputs(node) {
@@ -172,7 +179,7 @@ function countActiveInputs(node) {
     for (var i = 0; i < node.inputs.length; i++) {
         var input = node.inputs[i];
         if (!input) continue;
-        if (isXListCreateAutogrowInput(input.name) && input.link != null) {
+        if (isXListCreateAutogrowInput(input.name) && inputConnected(node, input)) {
             cnt++;
         }
     }
@@ -185,7 +192,7 @@ function findNamedInputLink(node, name) {
     for (var i = 0; i < node.inputs.length; i++) {
         var inp = node.inputs[i];
         if (!inp || inp.name !== name) continue;
-        return inp.link != null ? inp.link : null;
+        return inputLinkId(node, inp);
     }
     return null;
 }
@@ -214,7 +221,7 @@ function findCountPort(node) {
         var inp = node.inputs[i];
         if (!inp) continue;
         if (inp.name === "count")
-            return { idx: i, linkId: inp.link != null ? inp.link : null };
+            return { idx: i, linkId: inputLinkId(node, inp) };
     }
     return { idx: -1, linkId: null };
 }
@@ -247,24 +254,14 @@ function resolveCount(node) {
             }
         }
         // XMediaListGet：三个 count 端口分别对应图片/视频/音频的启用数。
-        // 端口索引：0 images / 1 masks / 2 image_count / 3 videos /
-        // 4 video_count / 5 audios / 6 audio_count。
-        if (upstream && upstream.comfyClass === MEDIA_LIST_CLASS) {
-            var linkObj = getLinkInfo(node.graph, cp.linkId);
-            var originSlot = linkObj ? linkObj.origin_slot : null;
-            var counts = upstream.__xmlg_enabled_counts || null;
-            var countKey = originSlot === 2
-                ? "image"
-                : originSlot === 4
-                    ? "video"
-                    : originSlot === 6
-                        ? "audio"
-                        : "";
-            if (counts && countKey && counts[countKey] != null) {
-                return Math.min(Number(counts[countKey]), MAX_OUTPUTS);
-            }
-            var mediaCount = Number(upstream.__xmlg_enabled_count);
-            if (Number.isFinite(mediaCount) && mediaCount > 0) {
+        // 端口号和分类怎么对应，统一在 core/media-list-source.js 里。
+        if (isXMediaListGet(upstream)) {
+            var mediaSource = getUpstreamSource(node.graph, cp.linkId);
+            var mediaCount = mediaListEnabledCount(
+                upstream,
+                mediaSource ? mediaSource.slot : null,
+            );
+            if (mediaCount > 0) {
                 return Math.min(mediaCount, MAX_OUTPUTS);
             }
         }
@@ -291,13 +288,14 @@ function getListInputType(node) {
             break;
         }
     }
-    if (listInp && listInp.link != null && node.graph) {
-        var linkObj = getLinkInfo(node.graph, listInp.link);
+    var listLinkId = listInp ? inputLinkId(node, listInp) : null;
+    if (listLinkId != null && node.graph) {
+        var linkObj = getLinkInfo(node.graph, listLinkId);
         if (linkObj) {
             // 上游 list 输出端口的实时类型优先。连线建立时的 link.type 可能
             // 还是 “*”（那时 XListCreate 还没接输入、类型未确定），只读
             // link.type 会把下游 Data 端口也卡在 “*”。
-            var upstream = getUpstreamNode(node.graph, listInp.link);
+            var upstream = getUpstreamNode(node.graph, listLinkId);
             if (upstream && Array.isArray(upstream.outputs)) {
                 var originSlot = linkObj.origin_slot;
                 var upstreamOut = originSlot != null
@@ -669,7 +667,7 @@ function syncXListCreateInputLabels(node) {
 
 function fixXListCreateSizes(rootGraph) {
     // Walk the whole graph tree so Create nodes inside subgraphs are sized.
-    var root = rootGraph || app.graph;
+    var root = rootGraph || rootGraphOf(app);
     if (!root) return;
     forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
         normalizeXListCreate(node);
@@ -685,12 +683,12 @@ function scheduleRefreshAll(_graph) {
     _refreshTimer = setTimeout(function () {
         _refreshTimer = null;
         // Always refresh from the app root so nested subgraph Pulls update.
-        doRefreshAll(app.graph);
+        doRefreshAll(rootGraphOf(app));
     }, 50);
 }
 
 function doRefreshAll(rootGraph) {
-    var root = rootGraph || app.graph;
+    var root = rootGraph || rootGraphOf(app);
     if (!root) return;
     // 先把 XListCreate 的端口顺序与类型弄对，下游 XListPull 再按新类型同步。
     forEachNodeByComfyClass(root, LIST_CREATE_CLASS, function (node) {
@@ -713,14 +711,14 @@ app.registerExtension({
 
     afterConfigureGraph: function () {
         // Full tree: Pull/Create may live inside nested subgraphs.
-        doRefreshAll(app.graph);
-        fixXListCreateSizes(app.graph);
+        doRefreshAll(rootGraphOf(app));
+        fixXListCreateSizes(rootGraphOf(app));
         if (!window.__xlistpullMediaListListenerInstalled) {
             window.__xlistpullMediaListListenerInstalled = true;
             document.addEventListener(
                 "xmedialistget:count-changed",
                 function () {
-                    scheduleRefreshAll(app.graph);
+                    scheduleRefreshAll(rootGraphOf(app));
                 }
             );
         }

@@ -153,6 +153,18 @@ class XMediaListGet(io.ComfyNode):
                         "XListPull's count to size its split ports."
                     ),
                 ),
+                io.String.Output(
+                    "image_names",
+                    is_output_list=True,
+                    display_name="image_names",
+                    tooltip=(
+                        "File name of each enabled image, in the same "
+                        "order as the images output. Disabled and "
+                        "missing files are skipped here too, so it always "
+                        "lines up one-to-one. Feed it into XListToPipe's "
+                        "names input to give the pipe real names."
+                    ),
+                ),
                 io.Video.Output(
                     "videos",
                     is_output_list=True,
@@ -167,6 +179,15 @@ class XMediaListGet(io.ComfyNode):
                     display_name="video_count",
                     tooltip="How many videos this node outputs.",
                 ),
+                io.String.Output(
+                    "video_names",
+                    is_output_list=True,
+                    display_name="video_names",
+                    tooltip=(
+                        "File name of each enabled video, in the same "
+                        "order as the videos output."
+                    ),
+                ),
                 io.Audio.Output(
                     "audios",
                     is_output_list=True,
@@ -180,6 +201,15 @@ class XMediaListGet(io.ComfyNode):
                     "audio_count",
                     display_name="audio_count",
                     tooltip="How many audio files this node outputs.",
+                ),
+                io.String.Output(
+                    "audio_names",
+                    is_output_list=True,
+                    display_name="audio_names",
+                    tooltip=(
+                        "File name of each enabled audio file, in the "
+                        "same order as the audios output."
+                    ),
                 ),
             ],
         )
@@ -216,29 +246,34 @@ class XMediaListGet(io.ComfyNode):
         output_audios: bool = True,
     ) -> io.NodeOutput:
         # media_type 只用于面板显示；三个输出开关决定加载哪些类型。
-        images, masks = (
+        images, masks, image_names = (
             cls._load_section(media_items, "image")
             if output_images
-            else ([], [])
+            else ([], [], [])
         )
-        videos, _ = (
+        videos, _, video_names = (
             cls._load_section(media_items, "video")
             if output_videos
-            else ([], [])
+            else ([], [], [])
         )
-        audios, _ = (
+        audios, _, audio_names = (
             cls._load_section(media_items, "audio")
             if output_audios
-            else ([], [])
+            else ([], [], [])
         )
+        # 返回值必须按 define_schema 的端口顺序排：每一类的
+        # 「列表 / 遮罩 / 数量 / 名称」挨在一起，画布上一眼能对上。
         return io.NodeOutput(
             images or [None],
             masks or [None],
             len(images),
+            image_names or [""],
             videos or [None],
             len(videos),
+            video_names or [""],
             audios or [None],
             len(audios),
+            audio_names or [""],
         )
 
     @classmethod
@@ -246,9 +281,10 @@ class XMediaListGet(io.ComfyNode):
         cls,
         raw: str,
         category: str,
-    ) -> tuple[list[Any], list[Any]]:
+    ) -> tuple[list[Any], list[Any], list[str]]:
         loaded: list[Any] = []
         masks: list[Any] = []
+        names: list[str] = []
         for entry in cls._parse_items(raw, category):
             if entry.get("enabled", True) is False:
                 continue
@@ -266,13 +302,19 @@ class XMediaListGet(io.ComfyNode):
                     masks.append(mask)
                 else:
                     loaded.append(cls._load_item(category, path))
+                # 名字只在「真装上了一个」之后才记：上面任何一步跳过
+                # （禁用 / 文件找不到 / 读不出来），这里都不会执行，
+                # 否则第 3 张图会配到第 4 个名字。
+                # 优先用面板上那一行显示的名字（就是文件名），没有才回退
+                # 到磁盘上的真实文件名——两边的名字必须一模一样。
+                names.append(str(entry.get("title") or path.name))
             except Exception as exc:
                 LOGGER.warning(
                     "[XMediaListGet] skipped unreadable %s item: err=%s",
                     category,
                     type(exc).__name__,
                 )
-        return loaded, masks
+        return loaded, masks, names
 
     @staticmethod
     def _normalize_category(value: str) -> str:
@@ -312,6 +354,10 @@ class XMediaListGet(io.ComfyNode):
             normalized.append(
                 {
                     "ref": ref,
+                    # 面板上显示的那一行名字（就是文件名）。留着是为了让
+                    # 端口输出的名字和画布上看到的**完全一致**：前端就是
+                    # 拿这个字段实时算槽位标签的。
+                    "title": str(entry.get("title") or "").strip(),
                     "enabled": entry.get("enabled", True) is not False,
                     "mask_ref": str(entry.get("mask_ref") or ""),
                     "paint_ref": str(entry.get("paint_ref") or ""),
