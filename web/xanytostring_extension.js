@@ -245,6 +245,19 @@ function ensureStyles() {
         ".xanytostring-display.is-collapsed {",
         "  display: none;",
         "}",
+        /*
+         * Nodes 2.0 里整个节点就是一块 DOM，官方设计系统在 .lg-node 上
+         * 写了 user-select: none（免得拖节点时顺手选中一堆文字）。
+         * 我们这块文字框在里面，跟着一起选不中 —— 而这里的文字就是要
+         * 拿去复制粘贴的。所以明确改回来，选择器多套一层把那条压下去。
+         *
+         * 经典画布下面板是画布旁边的独立元素，本来就没这条限制。
+         */
+        ".xanytostring-wrap .xanytostring-display {",
+        "  user-select: text;",
+        "  -webkit-user-select: text;",
+        "  cursor: text;",
+        "}",
         ".xanytostring-display:empty::before {",
         "  content: attr(data-placeholder);",
         "  color: var(--descrip-text, #666);",
