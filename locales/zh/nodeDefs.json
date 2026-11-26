@@ -2097,27 +2097,47 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "分辨率设置节点，提供标准预设、自定义缩放、整除调整和偏移功能。",
+    "description": "分辨率设置节点：可以按固定尺寸（预设或宽高），也可以按「画面比例 + 百万像素」算，或者只填一条边让比例算出另一条边；三种方式都支持交换、整除和偏移。",
     "inputs": {
-      "preset": {
-        "name": "分辨率预设",
-        "tooltip": "分辨率预设（仅在未连接图像输入时生效；当 preset 不是 Custom 时，会覆盖自定义宽高）"
-      },
       "image_or_mask": {
         "name": "图像或遮罩",
-        "tooltip": "用于提供基础分辨率的图像或遮罩输入（优先级高于预设和自定义宽高）"
+        "tooltip": "接上后：Resolution 模式直接拿它的分辨率当尺寸；比例选「从图像」时用它提供画面比例"
+      },
+      "size_mode": {
+        "name": "尺寸模式",
+        "tooltip": "尺寸怎么定：Resolution = 直接给宽高；Megapixels = 定画面比例 + 总像素数；Width only / Height only = 只填一条边，另一条按比例算（比例选「自定义」会多出两个框让你填宽:高）"
+      },
+      "preset": {
+        "name": "分辨率预设",
+        "tooltip": "固定好的分辨率档位（只在 Resolution 模式下生效；不是 Custom 时会覆盖下面的宽高）"
       },
       "width": {
-        "name": "自定义宽度",
-        "tooltip": "自定义分辨率宽度（仅在 preset 为 Custom 且未连接图像输入时生效）"
+        "name": "宽度",
+        "tooltip": "宽度：Resolution 模式（预设为 Custom）下就是真实宽度；Width only 模式下就是要填的那条边；百万像素 / Height only 模式不用它"
       },
       "height": {
-        "name": "自定义高度",
-        "tooltip": "自定义分辨率高度（仅在 preset 为 Custom 且未连接图像输入时生效）"
+        "name": "高度",
+        "tooltip": "高度：Resolution 模式（预设为 Custom）下就是真实高度；Height only 模式下就是要填的那条边；百万像素 / Width only 模式不用它"
+      },
+      "aspect_ratio": {
+        "name": "画面比例",
+        "tooltip": "百万像素模式和两个「只给一边」模式用哪个比例（Resolution 模式不用）：默认项下面紧挨着两项特殊的——选「自定义」会多出两个框让你填宽:高，选「从图像」用所接图像的比例；再往下是常用固定比例"
+      },
+      "ratio_width": {
+        "name": "比例左值",
+        "tooltip": "自定义比例：宽:高 里左边那个数（只在比例选「自定义」时出现）"
+      },
+      "ratio_height": {
+        "name": "比例右值",
+        "tooltip": "自定义比例：宽:高 里右边那个数（只在比例选「自定义」时出现）"
+      },
+      "megapixels": {
+        "name": "百万像素",
+        "tooltip": "目标像素总数（单位百万像素），只在 Megapixels 模式下生效"
       },
       "scale": {
         "name": "缩放倍率",
-        "tooltip": "缩放倍率"
+        "tooltip": "缩放倍率（除百万像素模式外都生效）"
       },
       "swap": {
         "name": "交换宽高",
@@ -2149,11 +2169,11 @@
     "outputs": {
       "0": {
         "name": "宽度",
-        "tooltip": "输出分辨率宽度（在预设、缩放、交换、取整和偏移后）"
+        "tooltip": "输出分辨率宽度（在尺寸模式、交换、取整和偏移后）"
       },
       "1": {
         "name": "高度",
-        "tooltip": "输出分辨率高度（在预设、缩放、交换、取整和偏移后）"
+        "tooltip": "输出分辨率高度（在尺寸模式、交换、取整和偏移后）"
       }
     }
   },

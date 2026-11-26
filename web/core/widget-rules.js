@@ -57,7 +57,12 @@
  * 语义备忘：
  * - 表里**没提到**的项一律不碰（不会被强行点亮）。
  * - 同一项被多条规则提到时，只要有一条说「可以用」就算可以用。
- * - `targets` 的值可以是数组（可用值清单）或函数 `(驱动值) => 布尔`。
+ * - `targets` 的值可以是数组（可用值清单）、函数 `(驱动值, 节点) => 布尔`。
+ *   函数形式的第二参是节点本身，所以「两个下拉框共同决定一项」也能写
+ *   （例如「模式是 A 且比例是 Custom 时宽度才可用」）。
+ *   注意合并语义是「任一规则说可用就可用」：同一项被多条规则提到时，
+ *   几个函数都要算出**完整**的结论（而不是只看自己的驱动值），
+ *   否则最后会被其它规则的结果盖掉。
  * - 比较前会把字符串 "true"/"false" 归一成布尔，老工作流里的字符串开关
  *   也能正确匹配。
  */
@@ -95,10 +100,11 @@ function normalizeValue(value) {
 /**
  * 驱动值是否在「可用条件」里。
  *
- * allow 是数组时按清单比对；是函数时直接问它。
+ * allow 是数组时按清单比对；是函数时直接问它——函数拿得到节点，所以
+ * 「看两个下拉框一起判断」也能写（`(value, node) => ...`）。
  */
-function allowMatches(allow, value) {
-    if (typeof allow === "function") return !!allow(value);
+function allowMatches(allow, value, node) {
+    if (typeof allow === "function") return !!allow(value, node);
     const list = Array.isArray(allow) ? allow : [allow];
     const current = normalizeValue(value);
     for (let i = 0; i < list.length; i += 1) {
@@ -194,7 +200,7 @@ export function evaluateRules(node, compiled) {
         const value = widgetValue(node, rule.watch);
         rule.targets.forEach((target) => {
             const state = {
-                enabled: allowMatches(target.allow, value),
+                enabled: allowMatches(target.allow, value, node),
                 action: rule.action,
             };
             wanted.set(target.name, mergeState(wanted.get(target.name), state));

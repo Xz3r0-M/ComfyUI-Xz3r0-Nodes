@@ -2097,27 +2097,47 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "Resolution setting node with standard presets, custom scaling, divisible adjustment, and offset support.",
+    "description": "Resolution settings: a fixed size (preset or width and height), a megapixels target driven by an aspect ratio, or just one edge with the ratio working out the other one — plus swap, divisible adjustment and offsets.",
     "inputs": {
-      "preset": {
-        "name": "Preset",
-        "tooltip": "Resolution preset (used only when image input is not connected; if preset is not Custom, it overrides custom width/height)"
-      },
       "image_or_mask": {
         "name": "Image or Mask",
-        "tooltip": "Image or mask input for base resolution (takes priority over preset and custom width/height)"
+        "tooltip": "Image or mask input: in Resolution mode its resolution becomes the size; with the ratio set to From image, it supplies the aspect ratio"
+      },
+      "size_mode": {
+        "name": "Size Mode",
+        "tooltip": "How the size is decided: Resolution = the exact width and height, Megapixels = an aspect ratio plus a total pixel count, Width only / Height only = type one edge and the aspect ratio works out the other one (picking Custom in the ratio shows two extra boxes to type it)"
+      },
+      "preset": {
+        "name": "Preset",
+        "tooltip": "Fixed resolution preset (only used in Resolution mode; a preset other than Custom overrides the width and height below)"
       },
       "width": {
-        "name": "Custom Width",
-        "tooltip": "Custom resolution width (used only when preset is Custom and image input is not connected)"
+        "name": "Width",
+        "tooltip": "Width: the exact width in Resolution mode (when the preset is Custom) or the one edge you type in Width only mode; not used in Megapixels / Height only modes"
       },
       "height": {
-        "name": "Custom Height",
-        "tooltip": "Custom resolution height (used only when preset is Custom and image input is not connected)"
+        "name": "Height",
+        "tooltip": "Height: the exact height in Resolution mode (when the preset is Custom) or the one edge you type in Height only mode; not used in Megapixels / Width only modes"
+      },
+      "aspect_ratio": {
+        "name": "Aspect Ratio",
+        "tooltip": "Aspect ratio used by Megapixels / Width only / Height only (ignored in Resolution mode): right below the default are two special entries — Custom shows two boxes where you type the ratio, From image takes it from the connected image; the rest are common fixed ratios"
+      },
+      "ratio_width": {
+        "name": "Ratio Left",
+        "tooltip": "Custom aspect ratio: the left number of the width:height pair (only shown when the ratio is Custom)"
+      },
+      "ratio_height": {
+        "name": "Ratio Right",
+        "tooltip": "Custom aspect ratio: the right number of the width:height pair (only shown when the ratio is Custom)"
+      },
+      "megapixels": {
+        "name": "Megapixels",
+        "tooltip": "Target total pixel count in megapixels (only used in Megapixels mode)"
       },
       "scale": {
         "name": "Scale",
-        "tooltip": "Scale multiplier"
+        "tooltip": "Scale multiplier (every mode except Megapixels)"
       },
       "swap": {
         "name": "Swap",
@@ -2149,11 +2169,11 @@
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output resolution width (after preset, scaling, swap, divisible adjustment, and offset)"
+        "tooltip": "Output resolution width (after size mode, swap, divisible adjustment, and offset)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output resolution height (after preset, scaling, swap, divisible adjustment, and offset)"
+        "tooltip": "Output resolution height (after size mode, swap, divisible adjustment, and offset)"
       }
     }
   },
