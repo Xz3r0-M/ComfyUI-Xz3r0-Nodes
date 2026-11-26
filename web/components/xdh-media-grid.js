@@ -6,6 +6,7 @@ import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { t } from "../core/i18n.js?v=20261020-1";
 import { toggleMediaFavorite } from "../core/api.js?v=20260530-1";
+import { compareNaturalNames } from "../core/natural-sort.js";
 
 function normalizeText(value) {
     return String(value || "").trim();
@@ -675,6 +676,11 @@ function isFolderItem(item) {
     return !!(item?.isFolder || item?.type === "folder");
 }
 
+/** 排序用的名字：优先 sortName（= 服务端排的那一列），没有就退回显示名。 */
+function sortKeyOf(item) {
+    return String(item?.sortName || item?.name || "");
+}
+
 function compareSortedItems(left, right, sortOrder) {
     const leftIsFolder = isFolderItem(left);
     const rightIsFolder = isFolderItem(right);
@@ -684,10 +690,15 @@ function compareSortedItems(left, right, sortOrder) {
     }
 
     switch (sortOrder) {
+        // 按名字排要走「自然顺序」：1 → 2 → 10，而不是 1 → 10 → 2
+        // （直接比字符串会把数字按字符比，`10` 就跑到 `2` 前面了）
+        //
+        // 比的是 sortName 而不是页面上显示的名字：服务端排的是文件名，
+        // 改过标题的条目两列不一样，用显示名重排会和服务端的分页打架。
         case "name-asc":
-            return left.name.localeCompare(right.name);
+            return compareNaturalNames(sortKeyOf(left), sortKeyOf(right));
         case "name-desc":
-            return right.name.localeCompare(left.name);
+            return compareNaturalNames(sortKeyOf(right), sortKeyOf(left));
         case "date-asc":
             return (left.mtime || 0) - (right.mtime || 0);
         case "date-desc":

@@ -13,14 +13,14 @@ import { setLocale, t } from "./core/i18n.js?v=20261023-2";
 import "./components/xdh-button.js?v=20260403-383";
 import "./components/xdh-sidebar-filter.js?v=20260407-16";
 import "./components/xdh-folder-tree.js?v=20260407-93";
-import "./components/xdh-media-grid.js?v=20261023-7";
+import "./components/xdh-media-grid.js?v=20261023-8";
 import "./components/xdh-staging-dock.js?v=20261023-2";
 import "./components/xdh-node-picker.js?v=20261023-2";
 import "./core/node-bridge.js?v=20261023-2";
 import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
 import "./components/xdh-lightbox.js?v=20261023-5";
-import "./components/xdh-history-view.js?v=20261021-2";
+import "./components/xdh-history-view.js?v=20261021-3";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20261023-7";
 import "./components/xdh-settings-dialog.js?v=20261021-1";
@@ -936,6 +936,9 @@ function mapItem(item, category) {
         return {
             id: item.id || buildStableFallbackId(item, category, "folder"),
             name: item.title || item.path || "Folder",
+            // 排序用的名字必须和服务端排的那一列一致，否则「服务器分页」
+            // 和「浏览器重排」会给出两个不一样的顺序
+            sortName: item.title || item.path || "Folder",
             type: "folder",
             thumbUrl: "icons/folder.svg",
             mtime,
@@ -960,6 +963,8 @@ function mapItem(item, category) {
             || item.name
             || ref
             || "Unnamed";
+        // 显示用 title，排序用 filename（服务端排的就是 filename）
+        const sortName = item.filename || name;
         const thumbUrl = extra.thumb_url
             || item.thumb_url
             || (ref ? `/xz3r0/xdatahub/loras/thumb?ref=${encodeURIComponent(ref)}` : "");
@@ -979,6 +984,7 @@ function mapItem(item, category) {
         return {
             id: item.id || ref || buildStableFallbackId(item, category, "lora"),
             name,
+            sortName,
             type: "lora",
             coverKind,
             // 不用缩略图时退回封面原图（视频则是让浏览器抽首帧）
@@ -1001,6 +1007,7 @@ function mapItem(item, category) {
         return {
             id,
             name,
+            sortName: name,
             type: "record",
             thumbUrl: MOCK_THUMB,
             mtime,
@@ -1014,6 +1021,8 @@ function mapItem(item, category) {
     const mediaType = item.kind || item.extra?.media_type || item.media_type || "image";
     const id = item.id || buildStableFallbackId(item, category, mediaType);
     const name = item.title || item.filename || item.extra?.media_ref || id;
+    // 显示用 title，排序用 filename（服务端排的就是 filename）
+    const sortName = item.filename || name;
     const ref  = item.extra?.media_ref || item.public_ref || "";
     const isMock = item.extra?.isMock;
     const settings = appStore.state.xdatahubSettings || {};
@@ -1038,6 +1047,7 @@ function mapItem(item, category) {
     return {
         id,
         name,
+        sortName,
         type: mediaType,
         thumbUrl,
         fullUrl,

@@ -7,6 +7,7 @@ import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
 import { banner } from "../core/banner.js";
 import { t, getLocale } from "../core/i18n.js?v=20260406-16";
+import { compareNaturalNames } from "../core/natural-sort.js";
 
 function isHistoryCategory(category) {
     return category === "history" || category === "favorites";
@@ -45,10 +46,11 @@ function recordTimeValue(item) {
 function applyHistorySort(items, sortOrder) {
     const copy = [...items];
     switch (sortOrder) {
+        // 自然顺序：名字里的数字按大小比（否则 `10` 会跑到 `2` 前面）
         case "name-asc":
-            return copy.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+            return copy.sort((a, b) => compareNaturalNames(a.name, b.name));
         case "name-desc":
-            return copy.sort((a, b) => b.name.localeCompare(a.name, "zh-CN"));
+            return copy.sort((a, b) => compareNaturalNames(b.name, a.name));
         case "date-asc":
             return copy.sort((a, b) => recordTimeValue(a) - recordTimeValue(b));
         case "date-desc":

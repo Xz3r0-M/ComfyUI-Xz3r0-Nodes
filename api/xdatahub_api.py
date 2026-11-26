@@ -64,6 +64,19 @@ except ImportError:
         update_latest_image,
     )
 
+try:
+    from ..xz3r0_utils.natural_sort import (
+        NATURAL_COLLATION,
+        natural_collate,
+        natural_key,
+    )
+except ImportError:
+    from xz3r0_utils.natural_sort import (
+        NATURAL_COLLATION,
+        natural_collate,
+        natural_key,
+    )
+
 LOGGER = get_logger(__name__)
 
 SQLITE_BUSY_TIMEOUT_MS = 1000
@@ -1177,9 +1190,13 @@ def sort_folder_items(
     )
     ordered = list(items)
 
-    def _name_key(item: dict[str, Any]) -> tuple[str, str]:
+    def _name_key(item: dict[str, Any]) -> tuple[Any, ...]:
+        # 按名字排序要走自然顺序：1 → 2 → 10，而不是 1 → 10 → 2
+        # （直接比字符串会把数字按字符比，`10` 就跑到 `2` 前面了）
+        title = str(item.get("title") or "")
         return (
-            str(item.get("title") or "").lower(),
+            natural_key(title),
+            title.lower(),
             str(item.get("path") or "").lower(),
         )
 
@@ -1324,10 +1341,14 @@ def build_directory_items(
         sort_order=safe_sort_order,
     )
 
-    def _file_sort_name(row: sqlite3.Row) -> tuple[str, str]:
-        filename = str(row["filename"] or "").lower()
-        rel_path = str(row["rel_path"] or "").lower()
-        return (filename, rel_path)
+    def _file_sort_name(row: sqlite3.Row) -> tuple[Any, ...]:
+        # 同上：1frame / 2frame / 10frame 这种名字要按数字大小排
+        filename = str(row["filename"] or "")
+        return (
+            natural_key(filename),
+            filename.lower(),
+            str(row["rel_path"] or "").lower(),
+        )
 
     if safe_sort_by == "name":
         file_rows.sort(
@@ -2862,6 +2883,12 @@ class LoraStore:
             if safe_sort_by == "size":
                 sort_col = "size"
             order = "DESC" if safe_sort_order == "desc" else "ASC"
+            # 按名字排要走自然顺序（1 → 2 → 10，而不是 1 → 10 → 2）
+            sort_expr = (
+                f"{sort_col} COLLATE {NATURAL_COLLATION}"
+                if sort_col == "filename"
+                else sort_col
+            )
 
             if flat_view:
                 # 平铺视图：忽略目录层级，直接分页查询所有匹配文件
@@ -2896,7 +2923,7 @@ class LoraStore:
                         " mtime, size, trigger_words_json,"
                         " lora_note, strength_model, strength_clip"
                         f" FROM lora_items WHERE {flat_where}"
-                        f" ORDER BY {sort_col} {order}, filename"
+                        f" ORDER BY {sort_expr} {order}, filename"
                         " LIMIT ? OFFSET ?"
                     ),
                     [*flat_params, page_size, offset],
@@ -3021,7 +3048,13 @@ class LoraStore:
             if safe_sort_by == "size":
                 sort_col = "size"
             order = "DESC" if safe_sort_order == "desc" else "ASC"
-            query_files += f" ORDER BY {sort_col} {order}, filename"
+            # 按名字排要走自然顺序（1 → 2 → 10，而不是 1 → 10 → 2）
+            sort_expr = (
+                f"{sort_col} COLLATE {NATURAL_COLLATION}"
+                if sort_col == "filename"
+                else sort_col
+            )
+            query_files += f" ORDER BY {sort_expr} {order}, filename"
 
             for row in conn.execute(query_files, params_files):
                 public_ref = str(row[0] or "")
@@ -3505,6 +3538,9 @@ def connect_lora_trigger_db(
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA journal_mode=WAL")
+    # 名字按自然顺序排（1 → 2 → 10）：SQLite 默认按字节比，数字会排错。
+    # 注册成排序规则而不是「捞回 Python 排」，分页才能继续交给 SQLite。
+    conn.create_collation(NATURAL_COLLATION, natural_collate)
     return conn
 
 
