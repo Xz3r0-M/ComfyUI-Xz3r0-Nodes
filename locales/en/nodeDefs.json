@@ -2591,18 +2591,20 @@
       },
       "edge_mode": {
         "name": "Scale Mode",
-        "tooltip": "Select scaling mode: None=keep the original size, Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
+        "tooltip": "Select scaling mode: None=keep the original size, Long=long edge, Short=short edge, Width=width, Height=height, Megapixels=target pixels, Scale Multiplier=scale by multiplier. Every mode keeps the picture's own aspect ratio",
         "options": {
           "None": "None (keep the original size, only divisible, offset and pad apply)",
-                        "Long": "Long Edge (width for landscape, height for portrait)",
+          "Long": "Long Edge (width for landscape, height for portrait)",
           "Short": "Short Edge (height for landscape, width for portrait)",
+          "Width": "Width (scale by the width, no need to work out which edge is the long one)",
+          "Height": "Height (scale by the height, no need to work out which edge is the long one)",
           "Megapixels": "Megapixels (scale to exact pixel count)",
           "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
         }
       },
       "resize_condition": {
         "name": "Resize Condition",
-        "tooltip": "Resize trigger condition (applies only to Long/Short/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in Scale Multiplier mode. If the condition is not met, resizing is skipped, but divisible and offset are still applied.",
+        "tooltip": "Resize trigger condition (applies to Long/Short/Width/Height/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in None and Scale Multiplier modes. If the condition is not met, resizing is skipped, but divisible and offset are still applied.",
         "options": {
           "Always": "Always Resize",
           "Only if Larger": "Resize Only if Larger",
@@ -2611,7 +2613,7 @@
       },
       "target_edge": {
         "name": "Target Edge",
-        "tooltip": "Target edge length in pixels (ignored in megapixels mode)"
+        "tooltip": "Target edge length in pixels: the long edge, the short edge, the width or the height depending on the scale mode (ignored in None, Megapixels and Scale Multiplier modes)"
       },
       "megapixels": {
         "name": "Megapixels",
@@ -2646,6 +2648,13 @@
       "pad_enabled": {
         "name": "Pad to Canvas",
         "tooltip": "When enabled, the image is placed in the middle of a canvas of the target width and height, and the empty area is filled with the pad color. Nothing is cropped: a side already larger than its target keeps its own size, and if both sides are already large enough, the image is output unchanged. Padding runs after scaling, so if the scale mode already made the image bigger than the target nothing is padded — pick scale mode None to pad the original picture without scaling it."
+      },
+      "pad_ratio": {
+        "name": "Pad Ratio",
+        "tooltip": "Canvas shape when padding: None = no ratio, use the pad width and height exactly as typed. Pick a ratio and the canvas grows by itself to the smallest canvas of that shape that still holds the whole picture (a 1080x1080 picture with 16:9 becomes 1920x1080), so the pad width and height are ignored. Nothing is ever cropped.",
+        "options": {
+          "None": "None (use the pad width and height as typed)"
+        }
       },
       "pad_width": {
         "name": "Pad Width",

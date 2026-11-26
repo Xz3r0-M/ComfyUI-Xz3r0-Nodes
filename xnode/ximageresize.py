@@ -22,6 +22,25 @@ except ImportError:
 PIXELS_PER_MEGAPIXEL = 1_000_000  # 每百万像素的像素数
 MAX_MEGAPIXELS = 100.0  # 最大百万像素限制（防止显存溢出）
 MAX_CANVAS_SIZE = 16384  # 补边目标画布的最大边长
+DEFAULT_PAD_RATIO = "None"  # 补边比例默认（= 无比例，手填画布宽高）
+# 补边可用的画面比例（None 之外都是「长边 : 短边」的意思）
+PAD_RATIOS = {
+    "1:1": (1, 1),
+    "5:4": (5, 4),
+    "4:3": (4, 3),
+    "3:2": (3, 2),
+    "16:10": (16, 10),
+    "16:9": (16, 9),
+    "21:9": (21, 9),
+    "4:5": (5, 4),
+    "3:4": (4, 3),
+    "2:3": (3, 2),
+    "9:16": (16, 9),
+    "1:2": (2, 1),
+    "9:21": (21, 9),
+}
+# 这些档位是「竖着的」：宽 < 高，算画布时长边落在高度上
+PORTRAIT_PAD_RATIOS = {"4:5", "3:4", "2:3", "9:16", "1:2", "9:21"}
 DEFAULT_PAD_SIZE = 1024  # 补边目标宽高的默认值
 DEFAULT_PAD_COLOR = "#FFFFFF"  # 补边颜色默认值（白）
 # 补边颜色只认十六进制：#RRGGBB 或 #RGB，井号可省略
@@ -40,6 +59,7 @@ SETTINGS_FIELDS = (
     "width_offset",
     "height_offset",
     "pad_enabled",
+    "pad_ratio",
     "pad_width",
     "pad_height",
     "pad_color",
@@ -55,6 +75,8 @@ VALID_EDGE_MODES = {
     "None",
     "Long",
     "Short",
+    "Width",
+    "Height",
     "Megapixels",
     "Scale Multiplier",
 }
@@ -111,6 +133,7 @@ class XImageResize(io.ComfyNode):
         pad_width: 补边目标画布宽 (INT, 范围 16-16384)
         pad_height: 补边目标画布高 (INT, 范围 16-16384)
         pad_color: 补边颜色 (STRING, #RRGGBB 十六进制)
+        pad_ratio: 补边画布比例 (STRING，None=用画布宽高；选比例则自动算)
         skip_on_empty: 无输入时输出 None (BOOLEAN，默认关闭)
 
     输出：
@@ -191,6 +214,8 @@ class XImageResize(io.ComfyNode):
                         "None",
                         "Long",
                         "Short",
+                        "Width",
+                        "Height",
                         "Megapixels",
                         "Scale Multiplier",
                     ],
@@ -198,8 +223,10 @@ class XImageResize(io.ComfyNode):
                     tooltip="Select scaling mode: None=keep the original "
                     "size (only divisible, offset and pad apply), "
                     "Long=long edge, Short=short edge, "
+                    "Width=width, Height=height, "
                     "Megapixels=target pixels, "
-                    "Scale Multiplier=scale by multiplier",
+                    "Scale Multiplier=scale by multiplier. Every mode "
+                    "keeps the picture's own aspect ratio",
                 ),
                 io.Combo.Input(
                     "resize_condition",
@@ -209,13 +236,14 @@ class XImageResize(io.ComfyNode):
                         "Only if Smaller",
                     ],
                     default="Always",
-                    tooltip="Resize condition for Long/Short/Megapixels: "
+                    tooltip="Resize condition for Long/Short/Width/Height/"
+                    "Megapixels: "
                     "Always=always resize, "
                     "Only if Larger=resize only when image is larger than "
                     "target, "
                     "Only if Smaller=resize only when image is smaller than "
-                    "target. Ignored in Scale Multiplier mode. If the "
-                    "condition is not met, resizing is skipped, but "
+                    "target. Ignored in None and Scale Multiplier modes. "
+                    "If the condition is not met, resizing is skipped, but "
                     "divisible and offset are still applied.",
                 ),
                 io.Int.Input(
@@ -301,6 +329,18 @@ class XImageResize(io.ComfyNode):
                     "scale mode already made the image bigger than the "
                     "target nothing is padded - pick scale mode None to "
                     "pad the original picture without scaling it.",
+                ),
+                io.Combo.Input(
+                    "pad_ratio",
+                    options=[DEFAULT_PAD_RATIO, *PAD_RATIOS],
+                    default=DEFAULT_PAD_RATIO,
+                    tooltip="Canvas shape when padding: None = no "
+                    "ratio, use the pad width and height exactly as "
+                    "typed; pick a ratio = the canvas grows to the "
+                    "smallest canvas of that shape that still fits "
+                    "the whole picture (a 1080x1080 picture with "
+                    "16:9 gives a 1920x1080 canvas, so width and "
+                    "height are ignored). Nothing is ever cropped.",
                 ),
                 io.Int.Input(
                     "pad_width",
@@ -392,6 +432,7 @@ class XImageResize(io.ComfyNode):
         pad_width: int = DEFAULT_PAD_SIZE,
         pad_height: int = DEFAULT_PAD_SIZE,
         pad_color: str = DEFAULT_PAD_COLOR,
+        pad_ratio: str = DEFAULT_PAD_RATIO,
         resize_settings_in: Any = None,
         use_passed_settings: bool = True,
         output_resize_settings: bool = True,
@@ -459,6 +500,11 @@ class XImageResize(io.ComfyNode):
                 and cls._parse_pad_color(pad_color) is None
             ):
                 return "pad_color must be a hex color such as #FFFFFF"
+            if pad_ratio is not None and pad_ratio not in (
+                DEFAULT_PAD_RATIO,
+                *PAD_RATIOS,
+            ):
+                return "Invalid pad_ratio value"
 
         return True
 
@@ -480,6 +526,7 @@ class XImageResize(io.ComfyNode):
         pad_width: int = DEFAULT_PAD_SIZE,
         pad_height: int = DEFAULT_PAD_SIZE,
         pad_color: str = DEFAULT_PAD_COLOR,
+        pad_ratio: str = DEFAULT_PAD_RATIO,
         resize_settings_in: Any = None,
         use_passed_settings: bool = True,
         output_resize_settings: bool = True,
@@ -517,6 +564,7 @@ class XImageResize(io.ComfyNode):
                 pad_width=pad_width,
                 pad_height=pad_height,
                 pad_color=pad_color,
+                pad_ratio=pad_ratio,
                 skip_on_empty=skip_on_empty,
             )
             passed_settings = cls._parse_settings_input(
@@ -549,6 +597,7 @@ class XImageResize(io.ComfyNode):
             pad_width=pad_width,
             pad_height=pad_height,
             pad_color=pad_color,
+            pad_ratio=pad_ratio,
             skip_on_empty=skip_on_empty,
         )
         passed_settings = cls._parse_settings_input(resize_settings_in)
@@ -580,6 +629,7 @@ class XImageResize(io.ComfyNode):
         pad_width = effective_settings["pad_width"]
         pad_height = effective_settings["pad_height"]
         pad_color = effective_settings["pad_color"]
+        pad_ratio = effective_settings["pad_ratio"]
 
         _, height, width, _ = tensor.shape
 
@@ -617,6 +667,21 @@ class XImageResize(io.ComfyNode):
             # 不缩放：只留原尺寸，后面的整除/偏移/补边照常生效
             new_width = width
             new_height = height
+        elif edge_mode in ("Width", "Height"):
+            # 按宽 / 按高：明确指定用哪条边当基准，不用去猜长边短边
+            base_edge = width if edge_mode == "Width" else height
+            should_resize = cls._should_resize(
+                resize_condition,
+                base_edge,
+                target_edge,
+            )
+            if should_resize:
+                scale = target_edge / base_edge
+                new_width = round(width * scale)
+                new_height = round(height * scale)
+            else:
+                new_width = width
+                new_height = height
         else:
             if edge_mode == "Long":
                 base_edge = long_edge
@@ -673,11 +738,20 @@ class XImageResize(io.ComfyNode):
                 )
             before_width = output_tensor.shape[2]
             before_height = output_tensor.shape[1]
+            target_width, target_height = pad_width, pad_height
+            if pad_ratio != DEFAULT_PAD_RATIO:
+                # 选了比例：画布自动长到「刚好装下画面」的该比例尺寸，
+                # 手填的宽高这时不参与
+                target_width, target_height = cls._canvas_from_ratio(
+                    pad_ratio,
+                    before_width,
+                    before_height,
+                )
             output_tensor, new_width, new_height, pad_mask = (
                 cls._pad_to_target(
                     output_tensor,
-                    pad_width,
-                    pad_height,
+                    target_width,
+                    target_height,
                     input_kind,
                     pad_rgb,
                     content_mask,
@@ -692,8 +766,8 @@ class XImageResize(io.ComfyNode):
                     "target %sx%s",
                     before_width,
                     before_height,
-                    pad_width,
-                    pad_height,
+                    target_width,
+                    target_height,
                 )
         if pad_mask is None:
             # 没补边：没有需要重绘的地方，遮罩全 0
@@ -790,6 +864,7 @@ class XImageResize(io.ComfyNode):
         pad_width: int = DEFAULT_PAD_SIZE,
         pad_height: int = DEFAULT_PAD_SIZE,
         pad_color: str = DEFAULT_PAD_COLOR,
+        pad_ratio: str = DEFAULT_PAD_RATIO,
         skip_on_empty: bool = False,
     ) -> dict[str, Any]:
         """
@@ -807,6 +882,7 @@ class XImageResize(io.ComfyNode):
             "width_offset": width_offset,
             "height_offset": height_offset,
             "pad_enabled": pad_enabled,
+            "pad_ratio": pad_ratio,
             "pad_width": pad_width,
             "pad_height": pad_height,
             "pad_color": pad_color,
@@ -841,6 +917,7 @@ class XImageResize(io.ComfyNode):
         pad_width = resize_settings_in["pad_width"]
         pad_height = resize_settings_in["pad_height"]
         pad_color = resize_settings_in["pad_color"]
+        pad_ratio = resize_settings_in["pad_ratio"]
         skip_on_empty = resize_settings_in["skip_on_empty"]
 
         if scale_mode not in VALID_SCALE_MODES:
@@ -892,6 +969,11 @@ class XImageResize(io.ComfyNode):
             return None
         if pad_height < 16 or pad_height > MAX_CANVAS_SIZE:
             return None
+        if pad_ratio not in (DEFAULT_PAD_RATIO, *PAD_RATIOS):
+            # 没启用补边时旧的错写值统一成默认，不掐断整条设置链
+            if pad_enabled:
+                return None
+            pad_ratio = DEFAULT_PAD_RATIO
         if cls._parse_pad_color(pad_color) is None:
             # 补边关闭时颜色不参与计算：旧的错写值统一成默认值，
             # 不因此掐断整条设置链
@@ -914,6 +996,7 @@ class XImageResize(io.ComfyNode):
             pad_width=pad_width,
             pad_height=pad_height,
             pad_color=pad_color,
+            pad_ratio=pad_ratio,
             skip_on_empty=skip_on_empty,
         )
 
@@ -935,6 +1018,36 @@ class XImageResize(io.ComfyNode):
             int(digits[2:4], 16) / 255.0,
             int(digits[4:6], 16) / 255.0,
         )
+
+    @classmethod
+    def _canvas_from_ratio(
+        cls,
+        ratio_name: str,
+        width: int,
+        height: int,
+    ) -> tuple[int, int]:
+        """
+        按选定比例算出「刚好装得下画面」的最小画布。
+
+        画面不动、不裁，画布自己长大到该比例：1080x1080 的方图配 16:9，
+        画布就是 1920x1080；配 9:16 则反过来是 1080x1920。
+        另一条边向上取整，保证一定装得下（宁可多补一像素也不裁）。
+        """
+        long_side, short_side = PAD_RATIOS[ratio_name]
+        if ratio_name in PORTRAIT_PAD_RATIOS:
+            ratio_width, ratio_height = short_side, long_side
+        else:
+            ratio_width, ratio_height = long_side, short_side
+
+        # 画面比画布比例「更宽」时由宽度定，否则由高度定
+        if width * ratio_height >= height * ratio_width:
+            canvas_width = width
+            canvas_height = math.ceil(width * ratio_height / ratio_width)
+        else:
+            canvas_height = height
+            canvas_width = math.ceil(height * ratio_width / ratio_height)
+
+        return canvas_width, canvas_height
 
     @staticmethod
     def _pad_to_target(
