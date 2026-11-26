@@ -22,7 +22,7 @@ import "./components/xdh-pagination.js?v=20260426-4";
 import "./components/xdh-lightbox.js?v=20261023-5";
 import "./components/xdh-history-view.js?v=20261021-3";
 import "./components/xdh-banner.js?v=20260406-15";
-import "./components/xdh-lora-detail.js?v=20261023-7";
+import "./components/xdh-lora-detail.js?v=20261023-8";
 import "./components/xdh-settings-dialog.js?v=20261021-1";
 
 // Placeholder thumbnail for mock/offline mode

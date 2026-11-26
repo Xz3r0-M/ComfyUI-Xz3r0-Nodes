@@ -93,7 +93,8 @@ export class XdhLoraDetail extends BaseElement {
 
     async _open(detail) {
         if (!detail || !detail.ref) return;
-        this._currentRef = detail.ref;
+        const ref = detail.ref;
+        this._currentRef = ref;
         appStore.state.loraDetailOpen = true;
         this._isLoading = true;
         this._currentData = null;
@@ -103,13 +104,13 @@ export class XdhLoraDetail extends BaseElement {
         this._pendingCover = null;
         this.renderRoot();
 
-        this.$(".drawer-wrap")?.classList.add("open");
-
         try {
             const res = await apiGet(
                 "/xz3r0/xdatahub/loras/trigger-words",
-                { ref: this._currentRef }
+                { ref }
             );
+            // 中途换了另一个 LoRA（或已关闭）时，旧回包直接丢掉
+            if (this._currentRef !== ref) return;
             if (res && res.status === "success" && res.item) {
                 this._currentData = res.item;
                 const sm = this._currentData.strength_model ?? 1.0;
@@ -117,12 +118,14 @@ export class XdhLoraDetail extends BaseElement {
                 this._isLinked = (sm === sc);
             }
         } catch (e) {
+            if (this._currentRef !== ref) return;
             console.error("Failed to load Lora detail:", e);
             banner.error(t("lora.banner.load_fail"));
         } finally {
-            this._isLoading = false;
-            this.renderRoot();
-            this.$(".drawer-wrap")?.classList.add("open");
+            if (this._currentRef === ref) {
+                this._isLoading = false;
+                this.renderRoot();
+            }
         }
     }
 
@@ -242,9 +245,8 @@ export class XdhLoraDetail extends BaseElement {
     /* ── 封面：选择 / 上传 / 删除 / 预览 ────────────────── */
 
     _rerenderDrawer() {
-        // renderRoot 会重建 DOM（丢掉 open 类），重绘后必须重新挂上
+        // renderRoot 直接按 _currentRef 决定 open 类，重绘后仍然展开
         this.renderRoot();
-        this.$(".drawer-wrap")?.classList.add("open");
     }
 
     _renderConfirmDialog() {
@@ -535,7 +537,6 @@ export class XdhLoraDetail extends BaseElement {
 
     bindEvents() {
         this._watchCoverLoading();
-        this.$(".backdrop")?.addEventListener("click", () => this._close());
         this.$(".lb-close")?.addEventListener("click", () => this._close());
         this.$(".cancel-btn")?.addEventListener("click", () => this._close());
         this.$(".save-btn")?.addEventListener("click", () => this._save());
@@ -744,14 +745,14 @@ export class XdhLoraDetail extends BaseElement {
                 :host { display: contents; }
 
                 /* ── Wrapper ─────────────────────────── */
+                /* 侧栏不挡路：遮罩层整体不吃点击，只有面板本体
+                   （.drawer）可交互，底层列表照常能点能滚。
+                   打开的信息窗只由用户在本窗上操作关闭。 */
                 .drawer-wrap {
                     position: fixed;
                     inset: 0;
                     z-index: 600;
                     pointer-events: none;
-                }
-                .drawer-wrap.open {
-                    pointer-events: auto;
                 }
 
                 /* ── Backdrop ────────────────────────── */
@@ -759,10 +760,7 @@ export class XdhLoraDetail extends BaseElement {
                     position: absolute;
                     inset: 0;
                     background: rgba(0,0,0,0);
-                    transition: background 0.28s ease;
-                }
-                .drawer-wrap.open .backdrop {
-                    background: rgba(0,0,0,0.28);
+                    pointer-events: none;
                 }
 
                 /* ── Drawer panel ────────────────────── */
@@ -784,6 +782,7 @@ export class XdhLoraDetail extends BaseElement {
                 .drawer-wrap.open .drawer {
                     transform: translateX(0);
                     box-shadow: -6px 0 28px rgba(0,0,0,0.55);
+                    pointer-events: auto;
                 }
 
                 /* ── Header ─────────────────────────── */
@@ -1235,7 +1234,9 @@ export class XdhLoraDetail extends BaseElement {
                 }
             </style>
 
-            <div class="drawer-wrap">
+            <!-- open 直接写在标记里：任何一次全局重绘（主题/语言切换）
+                 都按 _currentRef 重新算，不会把已经打开的窗“重绘没了” -->
+            <div class="drawer-wrap open">
                 <div class="backdrop"></div>
                 <div class="drawer">
                     <div class="header">
