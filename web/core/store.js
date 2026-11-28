@@ -78,6 +78,7 @@ export const appStore = new Store({
         audio_preview_muted: false,
         audio_preview_loop: false,
         theme_mode: 'dark',
+        theme_overrides: { dark: {}, light: {} },
         auto_show_on_startup: false,
         hotkey_spec: 'Alt + X',
         default_open_layout: 'center',

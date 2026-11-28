@@ -17,6 +17,8 @@ import {
     removeWidgetInput,
 } from "./core/hidden-widget.js";
 import { forEachNode } from "./x_subgraph_utils.js";
+import { rootGraphOf } from "./core/root-graph.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 // =========================================================================
 // 本地化 Key 常量（参照 XImageGet2 模式）
@@ -90,11 +92,13 @@ var MATCH_OK_FB = "Resolutions match";
 var MATCH_DIFF_KEY = LOCALE_PREFIX + ".match_diff";
 var MATCH_DIFF_FB = "Resolutions differ";
 
-// 滑动方向按钮
-var SLIDE_DIR_TOGGLE_KEY = LOCALE_PREFIX + ".slide_dir_toggle";
-var SLIDE_DIR_TOGGLE_FB = "Direction (V/H)";
+// 滑动方向胶囊（横向 / 纵向）
 var SLIDE_DIR_TOGGLE_TIP_KEY = LOCALE_PREFIX + ".slide_dir_toggle_tip";
 var SLIDE_DIR_TOGGLE_TIP_FB = "Toggle slide direction between horizontal and vertical split";
+var SLIDE_DIR_H_KEY = LOCALE_PREFIX + ".slide_dir_h";
+var SLIDE_DIR_H_FB = "Horizontal";
+var SLIDE_DIR_V_KEY = LOCALE_PREFIX + ".slide_dir_v";
+var SLIDE_DIR_V_FB = "Vertical";
 
 // =========================================================================
 // 常量
@@ -278,40 +282,69 @@ function applyNodeLocale(state) {
         state.modeButtons[i].textContent = modeNames[i];
     }
 
-    // 曲线标签
-    if (state.curveLabel) {
-        state.curveLabel.textContent = t(CURVE_LABEL_KEY, CURVE_LABEL_FB);
-    }
-    // 滚轮开关文字
+    // 滚轮开关（文字 + 悬停提示）
     if (state.wheelToggle) {
-        state.wheelToggle.textContent = t(WHEEL_CTRL_KEY, WHEEL_CTRL_FB);
-        state.wheelToggle.title = t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB);
+        setComfyTip(
+            state.wheelToggle,
+            t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB)
+        );
+    }
+    if (state.wheelToggleText) {
+        state.wheelToggleText.textContent = t(WHEEL_CTRL_KEY, WHEEL_CTRL_FB);
     }
 
-    // 曲线按钮文字
+    // 曲线胶囊
+    if (state.curveGroup) {
+        setComfyTip(
+            state.curveGroup,
+            t(CURVE_LABEL_KEY, CURVE_LABEL_FB)
+        );
+    }
     if (state.curveButtons) {
         for (var ci = 0; ci < state.curveButtons.length; ci++) {
             state.curveButtons[ci].textContent = t(
                 PINGPONG_CURVES[ci].key,
                 PINGPONG_CURVES[ci].name
             );
-            state.curveButtons[ci].title = t(
-                PINGPONG_CURVES[ci].tipKey,
-                PINGPONG_CURVES[ci].tipFB
+            setComfyTip(
+                state.curveButtons[ci],
+                t(
+                    PINGPONG_CURVES[ci].tipKey,
+                    PINGPONG_CURVES[ci].tipFB
+                )
             );
         }
     }
 
-    // 实时预览按钮文字
+    // 实时预览开关（文字 + 悬停提示）
     if (state.livePreviewBtn) {
-        state.livePreviewBtn.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
-        state.livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
+        setComfyTip(
+            state.livePreviewBtn,
+            t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB)
+        );
+    }
+    if (state.livePreviewText) {
+        state.livePreviewText.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
     }
 
-    // 滑动方向按钮（固定文字，不随方向变化）
-    if (state.slideDirBtn) {
-        state.slideDirBtn.textContent = t(SLIDE_DIR_TOGGLE_KEY, SLIDE_DIR_TOGGLE_FB);
-        state.slideDirBtn.title = t(SLIDE_DIR_TOGGLE_TIP_KEY, SLIDE_DIR_TOGGLE_TIP_FB);
+    // 方向胶囊（横向 / 纵向）
+    if (state.slideDirGroup) {
+        setComfyTip(
+            state.slideDirGroup,
+            t(
+                SLIDE_DIR_TOGGLE_TIP_KEY,
+                SLIDE_DIR_TOGGLE_TIP_FB
+            )
+        );
+    }
+    if (state.slideDirButtons) {
+        var dirTexts = [
+            t(SLIDE_DIR_H_KEY, SLIDE_DIR_H_FB),
+            t(SLIDE_DIR_V_KEY, SLIDE_DIR_V_FB),
+        ];
+        for (var di = 0; di < state.slideDirButtons.length; di++) {
+            state.slideDirButtons[di].textContent = dirTexts[di];
+        }
     }
 
     // 控制标签
@@ -564,34 +597,44 @@ function injectStyles() {
         "  display: flex; align-items: center; gap: 4px;",
         "  padding: 0 6px;",
         "}",
+        /* 第二行：高度写死。方向胶囊 / 曲线胶囊 / 什么都没有（聚光、混合
+           模式）这三种情况行高必须一模一样，否则切模式时下面的滑块和画布
+           会上下跳一两个像素。写 min-height 不够：胶囊挂上后行会自己长高
+           0.5px（行内元素的基线留白），所以这里用固定 height + 让槽位变成
+           flex 容器（不再参与行内排版）。 */
         ".xcompare-toolbar-row.xcompare-label-row {",
-        "  margin-bottom: 3px; position: relative;",
-        "  min-height: 26px;",
+        "  margin-bottom: 3px;",
+        "  height: 26px;",
         "}",
-        ".xcompare-toolbar-row.xcompare-buttons-row {",
-        "  justify-content: center;",
+        /* 开关行 / 标签行：三列（左 1fr | 中 auto | 右 1fr）。
+           中间那块永远在正中间，与左右内容多宽无关 */
+        ".xcompare-toolbar-row.xcompare-buttons-row,",
+        ".xcompare-toolbar-row.xcompare-label-row {",
+        "  display: grid;",
+        "  grid-template-columns: 1fr auto 1fr;",
+        "  align-items: center;",
+        "  column-gap: 6px;",
+        "}",
+        ".xcompare-buttons-row > .xcompare-switch:first-child,",
+        ".xcompare-label-row > .xcompare-res-group {",
+        "  justify-self: start;",
+        "}",
+        ".xcompare-buttons-row > .xcompare-switch:last-child {",
+        "  justify-self: end;",
+        "}",
+        /* 方向 / 曲线胶囊的固定槽位：flex 容器（不是行内），这样不管里面
+           装的是两格胶囊、四格胶囊还是什么都没有，都不影响行高 */
+        ".xcompare-pill-slot {",
+        "  display: flex;",
+        "  align-items: center;",
+        "  justify-content: flex-end;",
+        "  justify-self: end;",
+        "  height: 100%;",
+        "  min-height: 0;",
+        "  min-width: 0;",
         "}",
         ".xcompare-toolbar-row.xcompare-slider-row {",
         "  padding: 4px 0;",
-        "}",
-        ".xcompare-toolbar button {",
-        "  padding: 3px 8px;",
-        "  border: 1px solid var(--border-color, #555);",
-        "  border-radius: var(--xdh-radius-sm, 3px); cursor: pointer;",
-        "  background: transparent;",
-        "  color: inherit;",
-        "  font: var(--xdh-font-micro-label, 11px sans-serif);",
-        "  white-space: nowrap;",
-        "  transition: border-color 120ms ease, background-color 120ms ease;",
-        "  flex: 0 0 auto;",
-        "}",
-        ".xcompare-toolbar button:hover {",
-        "  border-color: var(--xdh-clr-primary, #ff385c);",
-        "}",
-        ".xcompare-toolbar button.active {",
-        "  background: var(--xdh-clr-primary, #ff385c);",
-        "  color: #fff;",
-        "  border-color: var(--xdh-clr-primary, #ff385c);",
         "}",
         ".xcompare-toolbar input[type=\"range\"] {",
         "  --xcompare-slider-pct: 50%;",
@@ -669,7 +712,7 @@ function injectStyles() {
         "  color: inherit;",
         "  opacity: 0.78;",
         "  white-space: nowrap; text-align: center;",
-        "  position: absolute; left: 50%; transform: translateX(-50%);",
+        "  justify-self: center;",
         "}",
         ".xcompare-toolbar-res-a {",
         "  font: var(--xdh-font-caption-sm, 10px sans-serif);",
@@ -690,35 +733,87 @@ function injectStyles() {
         "  width: 7px; height: 7px; border-radius: 50%;",
         "  flex-shrink: 0;",
         "}",
-        ".xcompare-curve-group {",
-        "  display: flex; align-items: center; gap: 3px;",
-        "  margin-left: auto;",
-        "}",
-        ".xcompare-curve-btn {",
-        "  padding: 3px 6px;",
+        /* ---- 胶囊切换（跟 XLoraGet 的「未分组/全部/已分组」同一种） ---- */
+        ".xcompare-pill {",
+        "  display: inline-flex; align-items: center; gap: 2px;",
+        "  padding: 2px;",
         "  border: 1px solid var(--border-color, #555);",
-        "  border-radius: var(--xdh-radius-sm, 3px);",
-        "  cursor: pointer;",
+        "  border-radius: 999px;",
+        "  background: color-mix(in srgb, currentColor 7%, transparent);",
+        "  flex: 0 0 auto;",
+        "  box-sizing: border-box;",
+        "}",
+        ".xcompare-toolbar .xcompare-pill-btn {",
+        "  padding: 2px 9px;",
+        "  border: none;",
+        "  border-radius: 999px;",
         "  background: transparent;",
         "  color: inherit;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
+        "  line-height: 1.5;",
         "  white-space: nowrap;",
-        "  transition: border-color 120ms ease, background-color 120ms ease;",
+        "  cursor: pointer;",
+        "  opacity: 0.62;",
+        "  transition: background 120ms, opacity 120ms;",
         "}",
-        ".xcompare-curve-btn:hover {",
-        "  border-color: var(--xdh-clr-primary, #ff385c);",
+        ".xcompare-toolbar .xcompare-pill-btn:hover {",
+        "  border-color: transparent;",
+        "  opacity: 0.9;",
         "}",
-        ".xcompare-curve-label {",
+        ".xcompare-toolbar .xcompare-pill-btn.is-active {",
+        "  opacity: 1;",
+        "  background: color-mix(",
+        "    in srgb, var(--xdh-clr-primary, #ff385c) 26%, transparent);",
+        "  box-shadow: inset 0 0 0 1px color-mix(",
+        "    in srgb, var(--xdh-clr-primary, #ff385c) 45%, transparent);",
+        "}",
+        /* ---- 圆点开关（跟 XLoraGet 的 Clip 开关同一种） ---- */
+        ".xcompare-switch {",
+        "  display: inline-flex; align-items: center; gap: 7px;",
         "  font: var(--xdh-font-micro-label, 11px sans-serif);",
         "  color: inherit;",
-        "  opacity: 0.72;",
-        "  white-space: nowrap;",
-        "  margin-right: 4px;",
+        "  user-select: none; white-space: nowrap;",
+        "  cursor: pointer; flex: 0 0 auto;",
         "}",
-        ".xcompare-curve-btn.active {",
-        "  background: var(--xdh-clr-primary, #ff385c);",
-        "  color: #fff;",
+        ".xcompare-switch-input {",
+        "  position: absolute; opacity: 0;",
+        "  width: 0; height: 0; pointer-events: none;",
+        "}",
+        ".xcompare-switch-track {",
+        "  position: relative;",
+        "  display: inline-flex; align-items: center;",
+        "  width: 24px; min-width: 24px; height: 14px;",
+        "  border-radius: 999px;",
+        "  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);",
+        "  background: color-mix(in srgb, currentColor 10%, transparent);",
+        "  box-sizing: border-box;",
+        "  transition: background 150ms ease, border-color 150ms ease,",
+        "    box-shadow 150ms ease;",
+        "}",
+        ".xcompare-switch-track::after {",
+        "  content: \"\";",
+        "  position: absolute; top: 1px; left: 1px;",
+        "  width: 10px; height: 10px; border-radius: 50%;",
+        "  background: currentColor; opacity: 0.7;",
+        "  transition: transform 150ms ease, background 150ms ease,",
+        "    opacity 150ms ease;",
+        "}",
+        ".xcompare-switch-input:checked + .xcompare-switch-track {",
         "  border-color: var(--xdh-clr-primary, #ff385c);",
+        "  background: color-mix(",
+        "    in srgb, var(--xdh-clr-primary, #ff385c) 30%, transparent);",
+        "}",
+        ".xcompare-switch-input:checked + .xcompare-switch-track::after {",
+        "  transform: translateX(10px);",
+        "  background: var(--xdh-clr-primary, #ff385c);",
+        "  opacity: 1;",
+        "}",
+        ".xcompare-switch-input:focus-visible + .xcompare-switch-track {",
+        "  box-shadow: 0 0 0 1px var(--xdh-clr-primary, #ff385c);",
+        "}",
+        ".xcompare-switch:hover .xcompare-switch-track {",
+        "  border-color: color-mix(",
+        "    in srgb, currentColor 45%, transparent);",
         "}",
         ".xcompare-canvas-wrap {",
         "  position: relative; overflow: hidden;",
@@ -1220,6 +1315,54 @@ function getDisplayImages(state) {
 // UI 构建
 // =========================================================================
 
+/**
+ * 圆点开关：文字 + 轨道 + 圆点，跟 XLoraGet 的「Clip 开关」同一种长相。
+ * 文字不能省——只有一个开关没人知道它管什么，详细解释挂在悬停提示上。
+ */
+function createSwitch(opts) {
+    var label = document.createElement("label");
+    label.className = "xcompare-switch";
+    setComfyTip(label, t(opts.tipKey, opts.tipFallback));
+
+    var input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "xcompare-switch-input";
+
+    var track = document.createElement("span");
+    track.className = "xcompare-switch-track";
+    track.setAttribute("aria-hidden", "true");
+
+    var text = document.createElement("span");
+    text.className = "xcompare-switch-text";
+    text.textContent = t(opts.textKey, opts.textFallback);
+
+    label.appendChild(input);
+    label.appendChild(track);
+    label.appendChild(text);
+
+    input.addEventListener("change", function () {
+        opts.onChange(!!input.checked);
+    });
+
+    return { label: label, input: input, track: track, text: text };
+}
+
+/** 胶囊切换容器：一枚圆角胶囊里排几个选项，选中的那格有底色。 */
+function createPill(extraClass) {
+    var group = document.createElement("span");
+    group.className = "xcompare-pill" + (extraClass ? " " + extraClass : "");
+    return { group: group };
+}
+
+function createPillButton(text, onClick) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "xcompare-pill-btn";
+    btn.textContent = text;
+    btn.addEventListener("click", onClick);
+    return btn;
+}
+
 function createCompareUI(node) {
     if (node.__xcompareState) return;
 
@@ -1236,25 +1379,32 @@ function createCompareUI(node) {
     var toolbar = document.createElement("div");
     toolbar.className = "xcompare-toolbar";
 
-    // 第1行：实时预览开关（最左）+ 模式按钮（居中）+ 滚轮控制开关（靠右）
+    // 第1行：[实时预览 圆点开关] [对比模式 胶囊] [图片区域滚动 圆点开关]
+    // 三列网格：中间那个永远在正中间，左右各占 1fr
     var row1 = document.createElement("div");
     row1.className = "xcompare-toolbar-row xcompare-buttons-row";
-    row1.style.position = "relative";
 
-    // 实时预览开关按钮（最左侧，绝对定位）
-    var livePreviewBtn = document.createElement("button");
-    livePreviewBtn.className = "xcompare-live-preview-btn";
-    livePreviewBtn.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
-    livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
-    livePreviewBtn.style.cssText =
-        "position:absolute;left:6px;top:50%;transform:translateY(-50%);" +
-        "padding:3px 6px;font:var(--xdh-font-micro-label, 11px sans-serif);";
-    livePreviewBtn.addEventListener("click", function () {
-        toggleLivePreview(state);
+    // 实时预览开关（最左）
+    var liveSwitch = createSwitch({
+        textKey: LIVE_PREVIEW_KEY,
+        textFallback: LIVE_PREVIEW_FB,
+        tipKey: LIVE_PREVIEW_TIP_KEY,
+        tipFallback: LIVE_PREVIEW_TIP_FB,
+        onChange: function (on) {
+            state.livePreviewEnabled = on;
+            saveState(state);
+            if (!on && state._previewOverlay) {
+                state._previewOverlay.style.display = "none";
+            }
+        },
     });
-    row1.appendChild(livePreviewBtn);
-    state.livePreviewBtn = livePreviewBtn;
+    row1.appendChild(liveSwitch.label);
+    state.livePreviewBtn = liveSwitch.label;
+    state.livePreviewInput = liveSwitch.input;
+    state.livePreviewText = liveSwitch.text;
 
+    // 对比模式胶囊（居中）
+    var modePill = createPill("xcompare-mode-pill");
     var modeNames = [
         t(MODE_SLIDE_KEY, MODE_SLIDE_FB),
         t(MODE_SPOTLIGHT_KEY, MODE_SPOTLIGHT_FB),
@@ -1263,52 +1413,31 @@ function createCompareUI(node) {
     ];
     var modeButtons = [];
     for (var m = 0; m < MODE_COUNT; m++) {
-        var btn = document.createElement("button");
-        btn.textContent = modeNames[m];
-        btn.setAttribute("data-mode", String(m));
-        btn.addEventListener("click", (function (mode) {
+        var btn = createPillButton(modeNames[m], (function (mode) {
             return function () { setMode(state, mode); };
         })(m));
-        row1.appendChild(btn);
+        btn.setAttribute("data-mode", String(m));
+        modePill.group.appendChild(btn);
         modeButtons.push(btn);
     }
     state.modeButtons = modeButtons;
+    row1.appendChild(modePill.group);
 
-    // 画布悬停滚轮控制开关（第一行靠右）
-    var wheelToggle = document.createElement("button");
-    wheelToggle.textContent = t(WHEEL_CTRL_KEY, WHEEL_CTRL_FB);
-    wheelToggle.title = t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB);
-    wheelToggle.style.cssText = "position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:3px 6px;font:var(--xdh-font-micro-label, 11px sans-serif);";
-    wheelToggle.addEventListener("click", function () {
-        toggleWheelCtrl(state);
+    // 图片区域滚动开关（最右）
+    var wheelSwitch = createSwitch({
+        textKey: WHEEL_CTRL_KEY,
+        textFallback: WHEEL_CTRL_FB,
+        tipKey: WHEEL_CTRL_TIP_KEY,
+        tipFallback: WHEEL_CTRL_TIP_FB,
+        onChange: function (on) {
+            state.wheelControlEnabled = on;
+            saveState(state);
+        },
     });
-    row1.appendChild(wheelToggle);
-    state.wheelToggle = wheelToggle;
-
-    // 曲线选择按钮组（靠右，仅在 PINGPONG 模式显示）
-    var curveGroup = document.createElement("span");
-    curveGroup.className = "xcompare-curve-group";
-    curveGroup.style.display = "none";
-    // 曲线标签
-    var curveLabel = document.createElement("span");
-    curveLabel.className = "xcompare-curve-label";
-    curveLabel.textContent = t(CURVE_LABEL_KEY, CURVE_LABEL_FB);
-    curveGroup.appendChild(curveLabel);
-    state.curveLabel = curveLabel;
-    var curveButtons = [];
-    for (var c = 0; c < CURVE_COUNT; c++) {
-        var cBtn = document.createElement("button");
-        cBtn.textContent = t(PINGPONG_CURVES[c].key, PINGPONG_CURVES[c].name);
-        cBtn.className = "xcompare-curve-btn";
-        cBtn.title = t(PINGPONG_CURVES[c].tipKey, PINGPONG_CURVES[c].tipFB);
-        cBtn.addEventListener("click", (function (idx) {
-            return function () { setCurve(state, idx); };
-        })(c));
-        curveGroup.appendChild(cBtn);
-        curveButtons.push(cBtn);
-    }
-    state.curveButtons = curveButtons;
-    state.curveGroup = curveGroup;
+    row1.appendChild(wheelSwitch.label);
+    state.wheelToggle = wheelSwitch.label;
+    state.wheelToggleInput = wheelSwitch.input;
+    state.wheelToggleText = wheelSwitch.text;
 
     toolbar.appendChild(row1);
 
@@ -1340,19 +1469,57 @@ function createCompareUI(node) {
     ctrlLabel.textContent = t(LABEL_SPLIT_KEY, LABEL_SPLIT_FB) + ": 50%";
     state.ctrlLabel = ctrlLabel;
     row2.appendChild(ctrlLabel);
-    // 滑动方向切换按钮（靠右，仅 SLIDE 模式可见）
-    var slideDirBtn = document.createElement("button");
-    slideDirBtn.textContent = t(SLIDE_DIR_TOGGLE_KEY, SLIDE_DIR_TOGGLE_FB);
-    slideDirBtn.title = t(SLIDE_DIR_TOGGLE_TIP_KEY, SLIDE_DIR_TOGGLE_TIP_FB);
-    slideDirBtn.style.marginLeft = "auto";
-    slideDirBtn.addEventListener("click", function () {
-        toggleSlideDir(state);
-    });
-    state.slideDirBtn = slideDirBtn;
+    // 第3列：方向胶囊（仅 SLIDE）/ 曲线胶囊（仅 PINGPONG）
+    // 用一个槽位装两个胶囊：同时只显示一个，位置不变，切模式不会跳
+    var pillSlot = document.createElement("span");
+    pillSlot.className = "xcompare-pill-slot";
 
-    // 曲线选择按钮组移到第2行靠右
-    row2.appendChild(slideDirBtn);
-    row2.appendChild(curveGroup);
+    // 滑动方向胶囊：横向 / 纵向
+    var dirPill = createPill("xcompare-dir-pill");
+    setComfyTip(
+        dirPill.group,
+        t(SLIDE_DIR_TOGGLE_TIP_KEY, SLIDE_DIR_TOGGLE_TIP_FB)
+    );
+    dirPill.group.style.display = "none";
+    var dirButtons = [];
+    var dirDefs = [
+        { dir: SLIDE_DIR_H, key: SLIDE_DIR_H_KEY, fb: SLIDE_DIR_H_FB },
+        { dir: SLIDE_DIR_V, key: SLIDE_DIR_V_KEY, fb: SLIDE_DIR_V_FB },
+    ];
+    for (var d = 0; d < dirDefs.length; d++) {
+        var dBtn = createPillButton(
+            t(dirDefs[d].key, dirDefs[d].fb),
+            (function (dir) {
+                return function () { setSlideDir(state, dir); };
+            })(dirDefs[d].dir));
+        dBtn.setAttribute("data-dir", String(dirDefs[d].dir));
+        dirPill.group.appendChild(dBtn);
+        dirButtons.push(dBtn);
+    }
+    state.slideDirGroup = dirPill.group;
+    state.slideDirButtons = dirButtons;
+    pillSlot.appendChild(dirPill.group);
+
+    // 乒乓曲线胶囊（仅 PINGPONG）
+    var curveGroup = createPill("xcompare-curve-pill");
+    setComfyTip(curveGroup.group, t(CURVE_LABEL_KEY, CURVE_LABEL_FB));
+    curveGroup.group.style.display = "none";
+    var curveButtons = [];
+    for (var c = 0; c < CURVE_COUNT; c++) {
+        var cBtn = createPillButton(
+            t(PINGPONG_CURVES[c].key, PINGPONG_CURVES[c].name),
+            (function (idx) {
+                return function () { setCurve(state, idx); };
+            })(c));
+        setComfyTip(cBtn, t(PINGPONG_CURVES[c].tipKey, PINGPONG_CURVES[c].tipFB));
+        curveGroup.group.appendChild(cBtn);
+        curveButtons.push(cBtn);
+    }
+    state.curveButtons = curveButtons;
+    state.curveGroup = curveGroup.group;
+    pillSlot.appendChild(curveGroup.group);
+
+    row2.appendChild(pillSlot);
     toolbar.appendChild(row2);
 
     // 第3行：参数滑块（padding=0 对齐画布宽度）
@@ -1471,12 +1638,16 @@ function createCompareUI(node) {
 
     // --- 事件绑定 ---
     bindCanvasEvents(state);
+    // 2.0 下滚轮会被覆盖层的捕获监听抢走 → 必须在 window 捕获阶段先接住
+    installWheelCapture();
 
     // 中键拖拽平移画布 — 通过 LiteGraph Canvas API 直接转发真实事件
     (function(panel) {
         panel.addEventListener("pointerdown", function(e) {
             if (e.button !== 1) return;
             e.preventDefault();
+            // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+            panel.setPointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseDown !== "function") return;
             cvs.processMouseDown(e);
@@ -1489,6 +1660,7 @@ function createCompareUI(node) {
         });
         panel.addEventListener("pointerup", function(e) {
             if (e.button !== 1) return;
+            panel.releasePointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseUp !== "function") return;
             cvs.processMouseUp(e);
@@ -1535,9 +1707,10 @@ function setMode(state, newMode) {
         state.curveGroup.style.display = newMode === MODE.PINGPONG ? "" : "none";
     }
 
-    // 滑动方向按钮仅 SLIDE 模式可见
-    if (state.slideDirBtn) {
-        state.slideDirBtn.style.display = newMode === MODE.SLIDE ? "" : "none";
+    // 方向胶囊仅 SLIDE 模式可见
+    if (state.slideDirGroup) {
+        state.slideDirGroup.style.display =
+            newMode === MODE.SLIDE ? "" : "none";
     }
 
     saveState(state);
@@ -1546,45 +1719,22 @@ function setMode(state, newMode) {
 function updateModeButtons(state) {
     for (var i = 0; i < state.modeButtons.length; i++) {
         if (i === state.mode) {
-            state.modeButtons[i].classList.add("active");
+            state.modeButtons[i].classList.add("is-active");
         } else {
-            state.modeButtons[i].classList.remove("active");
+            state.modeButtons[i].classList.remove("is-active");
         }
     }
 }
 
-/** 切换滚轮控制开关 */
-function toggleWheelCtrl(state) {
-    state.wheelControlEnabled = !state.wheelControlEnabled;
-    updateWheelToggle(state);
-    saveState(state);
-}
-
 function updateWheelToggle(state) {
-    if (!state.wheelToggle) return;
-    if (state.wheelControlEnabled) {
-        state.wheelToggle.classList.add("active");
-    } else {
-        state.wheelToggle.classList.remove("active");
-    }
-}
-
-/** 切换实时预览开关 */
-function toggleLivePreview(state) {
-    state.livePreviewEnabled = !state.livePreviewEnabled;
-    updateLivePreviewBtn(state);
-    saveState(state);
-    if (!state.livePreviewEnabled && state._previewOverlay) {
-        state._previewOverlay.style.display = "none";
+    if (state.wheelToggleInput) {
+        state.wheelToggleInput.checked = !!state.wheelControlEnabled;
     }
 }
 
 function updateLivePreviewBtn(state) {
-    if (!state.livePreviewBtn) return;
-    if (state.livePreviewEnabled) {
-        state.livePreviewBtn.classList.add("active");
-    } else {
-        state.livePreviewBtn.classList.remove("active");
+    if (state.livePreviewInput) {
+        state.livePreviewInput.checked = !!state.livePreviewEnabled;
     }
 }
 
@@ -1610,25 +1760,34 @@ function updateCurveButtons(state) {
     if (!state.curveButtons) return;
     for (var i = 0; i < state.curveButtons.length; i++) {
         if (i === state.pingPongCurve) {
-            state.curveButtons[i].classList.add("active");
+            state.curveButtons[i].classList.add("is-active");
         } else {
-            state.curveButtons[i].classList.remove("active");
+            state.curveButtons[i].classList.remove("is-active");
         }
     }
 }
 
 /** 切换滑动方向（横向/纵向） */
-function toggleSlideDir(state) {
-    if (state.mode !== MODE.SLIDE) return;
-    state.slideDirection = state.slideDirection === SLIDE_DIR_H ? SLIDE_DIR_V : SLIDE_DIR_H;
+function setSlideDir(state, dir) {
+    if (dir !== SLIDE_DIR_H && dir !== SLIDE_DIR_V) return;
+    if (state.slideDirection === dir) return;
+    state.slideDirection = dir;
     updateSlideDirBtn(state);
     render(state);
     saveState(state);
 }
 
 function updateSlideDirBtn(state) {
-    // 按钮文字固定，无需随方向变化
-    // 保留作为 hook 供后续状态相关更新使用
+    if (!state.slideDirButtons) return;
+    for (var i = 0; i < state.slideDirButtons.length; i++) {
+        var isActive = Number(state.slideDirButtons[i].getAttribute("data-dir"))
+            === state.slideDirection;
+        if (isActive) {
+            state.slideDirButtons[i].classList.add("is-active");
+        } else {
+            state.slideDirButtons[i].classList.remove("is-active");
+        }
+    }
 }
 
 function updateSliderVisual(state) {
@@ -1709,6 +1868,59 @@ function onSliderChange(state, value) {
     updateCtrlLabel(state);
     render(state);
     saveState(state);
+}
+
+// =========================================================================
+// 滚轮拦截（Nodes 2.0 关键）
+// =========================================================================
+// 2.0 的 Vue 节点覆盖层（TransformPane）在 **window 之后的第一个捕获阶段**就
+// 把滚轮收走了：
+//
+//     <TransformPane @wheel.capture="forwardEventToCanvas">
+//     forwardEventToCanvas → preventDefault + stopPropagation + 转给画布
+//
+// 所以面板里自己的 wheel 监听在 2.0 下**根本不会被调用**——不管开关开没开，
+// 滚轮都变成画布缩放。唯一能抢在它前面的地方是 window 的捕获阶段。
+//
+// 因此这里在 window 上挂一个捕获监听：只处理「指针落在本节点面板里」的滚轮，
+// 其余一律放行（画布该怎么缩放还怎么缩放）。
+
+var wheelCaptureInstalled = false;
+
+/** 从事件目标找回它属于哪个节点面板（找不到返回 null）。 */
+function stateForWheelTarget(target) {
+    if (!target) return null;
+    for (var id in compareStates) {
+        if (!compareStates.hasOwnProperty(id)) continue;
+        var st = compareStates[id];
+        if (st && st.wrap && st.wrap.contains(target)) return st;
+    }
+    return null;
+}
+
+function handleWindowWheelCapture(event) {
+    var state = stateForWheelTarget(event.target);
+    if (!state) return;
+
+    // 滑块本身：任何时候滚轮都该改数值（1.0/2.0 一致）
+    var onSlider = !!state.slider
+        && (state.slider === event.target
+            || state.slider.contains(event.target));
+
+    if (!onSlider && !state.wheelControlEnabled) return; // 关：交给画布缩放
+
+    event.preventDefault();
+    event.stopPropagation();
+    onWheel(state, event);
+}
+
+function installWheelCapture() {
+    if (wheelCaptureInstalled || typeof window === "undefined") return;
+    wheelCaptureInstalled = true;
+    window.addEventListener("wheel", handleWindowWheelCapture, {
+        capture: true,
+        passive: false,
+    });
 }
 
 // =========================================================================
@@ -1933,9 +2145,12 @@ function loadImages(state, urlA, urlB) {
                     var same = imgA.naturalWidth === imgB.naturalWidth
                         && imgA.naturalHeight === imgB.naturalHeight;
                     state.matchDot.style.background = same ? "#4ade80" : "#f87171";
-                    state.matchDot.title = same
-                        ? t(MATCH_OK_KEY, MATCH_OK_FB)
-                        : t(MATCH_DIFF_KEY, MATCH_DIFF_FB);
+                    setComfyTip(
+                        state.matchDot,
+                        same
+                            ? t(MATCH_OK_KEY, MATCH_OK_FB)
+                            : t(MATCH_DIFF_KEY, MATCH_DIFF_FB)
+                    );
                     state.matchDot.style.display = "";
                 } else {
                     state.matchDot.style.display = "none";
@@ -2128,9 +2343,10 @@ function restoreState(state) {
         state.curveGroup.style.display = state.mode === MODE.PINGPONG ? "" : "none";
     }
 
-    // 滑动方向按钮仅 SLIDE 模式可见
-    if (state.slideDirBtn) {
-        state.slideDirBtn.style.display = state.mode === MODE.SLIDE ? "" : "none";
+    // 方向胶囊仅 SLIDE 模式可见
+    if (state.slideDirGroup) {
+        state.slideDirGroup.style.display =
+            state.mode === MODE.SLIDE ? "" : "none";
     }
 
     if (state.canvas) {
@@ -2276,7 +2492,7 @@ app.registerExtension({
         // 清理浮层（残留上一张预览图）。
         function _getAllStates() {
             var result = [];
-            forEachNode(app.graph, function (node) {
+            forEachNode(rootGraphOf(app), function (node) {
                 var state = node && node.__xcompareState;
                 if (state && state._previewOverlay) {
                     result.push(state);

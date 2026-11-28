@@ -424,12 +424,16 @@ class XVideoSave(io.ComfyNode):
     ):
         """
         在执行前校验 CRF，防止外部节点传入非法值。
+
+        接了上游线的输入在这一阶段拿到的是 None（真实值要等执行时才有），
+        所以只在有值时检查。
         """
-        try:
-            cls._normalize_crf(crf)
-        except ValueError as exc:
-            return str(exc)
-        if container not in ("MKV", "MP4"):
+        if crf is not None:
+            try:
+                cls._normalize_crf(crf)
+            except ValueError as exc:
+                return str(exc)
+        if container is not None and container not in ("MKV", "MP4"):
             return "container must be either MKV or MP4"
         return True
 

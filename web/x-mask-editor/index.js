@@ -1,9 +1,8 @@
-import { XMaskEditorController } from "./controller.js?v=20261023-14";
-import { openMaskEditorSession } from "./session.js?v=20261023-14";
-import { saveMaskArtifacts } from "./upload.js?v=20261023-14";
+import { XMaskEditorController } from "./controller.js?v=20261023-16";
+import { openMaskEditorSession } from "./session.js?v=20261023-16";
+import { saveMaskArtifacts } from "./upload.js?v=20261023-16";
 
-const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
-const EFFECTIVE_THEME_MODE_VALUES = new Set(["dark", "light"]);
+const THEME_MODE_VALUES = new Set(["dark", "light"]);
 const TEXT_EDITABLE_INPUT_TYPES = new Set([
     "email",
     "number",
@@ -20,11 +19,6 @@ function normalizeThemeMode(value) {
     return THEME_MODE_VALUES.has(mode) ? mode : "dark";
 }
 
-function normalizeEffectiveThemeMode(value) {
-    const mode = String(value || "").trim().toLowerCase();
-    return EFFECTIVE_THEME_MODE_VALUES.has(mode) ? mode : "dark";
-}
-
 async function resolveMaskEditorThemeMode() {
     try {
         const response = await fetch("/xz3r0/xdatahub/settings", {
@@ -32,13 +26,7 @@ async function resolveMaskEditorThemeMode() {
         });
         const payload = await response.json();
         if (response.ok && payload?.status === "success") {
-            const themeMode = normalizeThemeMode(payload?.settings?.theme_mode);
-            if (themeMode === "comfyui") {
-                return normalizeEffectiveThemeMode(
-                    document.body?.dataset?.theme
-                );
-            }
-            return normalizeEffectiveThemeMode(themeMode);
+            return normalizeThemeMode(payload?.settings?.theme_mode);
         }
     } catch {
         // Ignore request failures and keep the dark default.
@@ -46,7 +34,7 @@ async function resolveMaskEditorThemeMode() {
     const themedWindow = document.querySelector(
         ".xz3r0-datahub-window[data-theme]"
     );
-    return normalizeEffectiveThemeMode(
+    return normalizeThemeMode(
         themedWindow?.getAttribute?.("data-theme")
             || document.body?.dataset?.theme
     );
@@ -127,7 +115,7 @@ export async function openXMaskEditor(options = {}) {
     // 主题在 controller 建好之前就可能被应用，所以用个可空引用。
     let controllerRef = null;
     const applyThemeMode = (mode) => {
-        ui.overlay.dataset.theme = normalizeEffectiveThemeMode(mode);
+        ui.overlay.dataset.theme = normalizeThemeMode(mode);
         // 方格底色是从主题变量读的，换主题后要重新生成。
         controllerRef?.refreshCheckerboard?.();
     };

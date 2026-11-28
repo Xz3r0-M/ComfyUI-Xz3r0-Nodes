@@ -11,6 +11,7 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { setComfyTip } from "./core/tooltip.js?v=20261116-9";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XAnyToString";
 var NODE_CLASS = "XAnyToString";
@@ -21,6 +22,22 @@ var PROPERTY_COLLAPSED = "xanytostring_collapsed";
 var MIN_NODE_W = 280;
 var MIN_NODE_H_COLLAPSED = 88;
 var MIN_NODE_H_EXPANDED = 170;
+/*
+ * 面板本身（标题 + 文字框那块）有多高才算够用。
+ *
+ * 这个数要交给 ComfyUI（见 applyPanelHeightRequest）：自定义面板默认只报
+ * 50px，节点排布时就不会为它多留地方。于是「展开」只是把 setSize 的数字
+ * 改大，下一次排版又按「面板只要 50px」算回去，看着就像一点都没变高。
+ */
+var PANEL_MIN_H_EXPANDED = 120;
+var PANEL_MIN_H_COLLAPSED = 0;
+/*
+ * 新节点从没展开过时，「展开」一次长到多高。
+ *
+ * 只按最小高度长的话只有两百出头，文字框刚够露一条缝；给一个像样的默认值，
+ * 第一次展开就能直接看内容。用户自己拉过以后，就照他拉的那个尺寸来。
+ */
+var DEFAULT_EXPANDED_HEIGHT = 320;
 var LOCALE_PREFIX = "xdatahub.ui.node.xanytostring";
 var LOCALE_SYNC_INTERVAL = 1000;
 var uiLocalePrimary = null;
@@ -134,9 +151,12 @@ function applyLocale(state) {
         state.toggleBtn.textContent = state.collapsed
             ? EXPAND_ICON() + " " + tk("expand_label", "Expand")
             : COLLAPSE_ICON() + " " + tk("collapse_label", "Collapse");
-        state.toggleBtn.title = state.collapsed
-            ? tk("expand_tip", "Expand string output")
-            : tk("collapse_tip", "Collapse string output");
+        setComfyTip(
+            state.toggleBtn,
+            state.collapsed
+                ? tk("expand_tip", "Expand string output")
+                : tk("collapse_tip", "Collapse string output")
+        );
     }
     if (state.displayEl) {
         state.displayEl.setAttribute(
@@ -157,6 +177,18 @@ function ensureStyles() {
     style.id = STYLE_ID;
     style.textContent = [
         ".xanytostring-wrap {",
+        /*
+         * 颜色跟节点本体走（透色），不用 XDataHub 的那套。
+         * --node / --node-border / --foreground 是前端写在 <html> 上的活变量；
+         * 下面留的 --comfy-* 是老前端与老主题的退路。
+         * 注意用 --node（节点本体色），不是 --background（画布底色，更暗）。
+         */
+        "  --xanytostring-surface: var(--comfy-input-bg,",
+        "    color-mix(in srgb, var(--node, #1d1d20) 88%, var(--foreground, #ddd)));",
+        "  --xanytostring-text: var(--foreground, var(--input-text, #ddd));",
+        "  --xanytostring-muted: var(--descrip-text, color-mix(in srgb, var(--xanytostring-text) 62%, transparent));",
+        "  --xanytostring-border: var(--node-border, var(--border-color, #555));",
+        "  --xanytostring-accent: #ff385c;",
         "  position: relative;",
         "  width: 100%; height: 100%;",
         "  display: flex;",
@@ -172,7 +204,7 @@ function ensureStyles() {
         "  min-height: 0;",
         "  margin: 0;",
         "  padding: 5px 6px 6px;",
-        "  border: 1px solid var(--border-color, #555);",
+        "  border: 1px solid var(--xanytostring-border);",
         "  border-radius: 4px;",
         "  display: flex;",
         "  flex-direction: column;",
@@ -188,17 +220,17 @@ function ensureStyles() {
         "}",
         ".xanytostring-label {",
         "  font: var(--xdh-font-ui-md, 12px sans-serif);",
-        "  color: var(--descrip-text, #999);",
+        "  color: var(--xanytostring-muted);",
         "  font-weight: 600;",
         "  line-height: 1.3;",
         "}",
         ".xanytostring-toggle {",
         "  padding: 2px 6px;",
         "  gap: 3px;",
-        "  border: 1px solid var(--border-color, #555);",
+        "  border: 1px solid var(--xanytostring-border);",
         "  border-radius: 4px;",
-        "  background: var(--comfy-menu-secondary-bg, #2a2a2a);",
-        "  color: var(--input-text, #ddd);",
+        "  background: var(--xanytostring-surface);",
+        "  color: var(--xanytostring-text);",
         "  font-size: 11px;",
         "  font-family: inherit;",
         "  cursor: pointer;",
@@ -209,15 +241,15 @@ function ensureStyles() {
         "  transition: border-color 120ms ease;",
         "}",
         ".xanytostring-toggle:hover {",
-        "  border-color: var(--primary-color, #ff385c);",
+        "  border-color: var(--xanytostring-accent);",
         "}",
         ".xanytostring-display {",
         "  flex: 1 1 auto;",
         "  min-height: 40px;",
         "  padding: 6px 8px;",
         "  border-radius: 4px;",
-        "  background: var(--comfy-menu-secondary-bg, #2a2a2a);",
-        "  color: var(--input-text, #ddd);",
+        "  background: var(--xanytostring-surface);",
+        "  color: var(--xanytostring-text);",
         "  font: var(--xdh-font-mono-sm, 11px monospace);",
         "  line-height: 1.4;",
         "  white-space: pre-wrap;",
@@ -228,6 +260,19 @@ function ensureStyles() {
         "}",
         ".xanytostring-display.is-collapsed {",
         "  display: none;",
+        "}",
+        /*
+         * Nodes 2.0 里整个节点就是一块 DOM，官方设计系统在 .lg-node 上
+         * 写了 user-select: none（免得拖节点时顺手选中一堆文字）。
+         * 我们这块文字框在里面，跟着一起选不中 —— 而这里的文字就是要
+         * 拿去复制粘贴的。所以明确改回来，选择器多套一层把那条压下去。
+         *
+         * 经典画布下面板是画布旁边的独立元素，本来就没这条限制。
+         */
+        ".xanytostring-wrap .xanytostring-display {",
+        "  user-select: text;",
+        "  -webkit-user-select: text;",
+        "  cursor: text;",
         "}",
         ".xanytostring-display:empty::before {",
         "  content: attr(data-placeholder);",
@@ -353,6 +398,37 @@ function resolveMinHeight(state) {
         : MIN_NODE_H_COLLAPSED;
 }
 
+/**
+ * 告诉 ComfyUI 这个自定义面板需要多高。
+ *
+ * ComfyUI 用元素上的 --comfy-widget-min-height / --comfy-widget-height 两个
+ * CSS 变量来问「这个 DOM 面板最少要留多少地方」。不写就按 50px 算：节点
+ * 排版时永远只给一点点高度，折叠能压下去（内容藏起来了），展开却顶不上来。
+ *
+ * 折叠时给 0（好让节点真的能缩到最小），展开时给一个能放下标题和文字框
+ * 的高度，剩下的空间照样由用户自己拉。
+ */
+function applyPanelHeightRequest(state) {
+    var wrap = state && state.wrap;
+    if (!wrap || !wrap.style) return;
+    var minHeight = state.collapsed
+        ? PANEL_MIN_H_COLLAPSED
+        : PANEL_MIN_H_EXPANDED;
+    wrap.style.setProperty("--comfy-widget-min-height", minHeight + "px");
+    // 不写 --comfy-widget-height：那是「首选高度」，写死了用户拉高节点时
+    // 多出来的空间就分不到文字框了
+    wrap.style.removeProperty("--comfy-widget-height");
+}
+
+/** 折叠前的高度，展开时照原样还回去（用户自己拉高过的尺寸也算数）。 */
+function rememberExpandedHeight(state) {
+    if (!state || !state.node || state.collapsed) return;
+    var curH = (state.node.size && state.node.size[1]) || 0;
+    if (curH > 0) {
+        state.expandedHeight = Math.max(curH, MIN_NODE_H_EXPANDED);
+    }
+}
+
 function clampNodeSize(node, state) {
     if (!node) return;
 
@@ -407,6 +483,13 @@ function clampNodeSize(node, state) {
         var nw = Math.max((src && src[0]) || 0, resizeMinW);
         var nh = Math.max((src && src[1]) || 0, resizeMinH);
         this.size = [nw, nh];
+        // 展开状态下用户拉过的尺寸记下来，折叠再展开能还回去
+        if (st && !st.collapsed && nh > 0) {
+            st.expandedHeight = Math.max(
+                st.expandedHeight || 0,
+                nh
+            );
+        }
         this.setDirtyCanvas && this.setDirtyCanvas(true, true);
         if (typeof origOnResize === "function") {
             origOnResize.apply(this, arguments);
@@ -440,7 +523,20 @@ function persistCollapsed(state) {
 
 function setCollapsed(state, collapsed, options) {
     if (!state) return;
+    if (collapsed) {
+        // 压下去之前先记着：现在多高，展开时就还多高
+        rememberExpandedHeight(state);
+    } else if (!state.expandedHeight) {
+        // 从没展开过（刚拖出来的新节点、旧工作流里存成折叠的节点）：
+        // 用户亲手点展开时给一个像样的默认高度，别只露出两百来像素
+        state.expandedHeight = options && options.userAction
+            ? DEFAULT_EXPANDED_HEIGHT
+            : 0;
+    }
     state.collapsed = !!collapsed;
+    // 先改面板的高度需求，再算节点尺寸——顺序反了的话，clampNodeSize 里
+    // 的 computeSize() 读到的还是上一次（折叠时）的 0，展开又顶不上去
+    applyPanelHeightRequest(state);
     if (!options || options.persist !== false) {
         persistCollapsed(state);
     }
@@ -455,9 +551,12 @@ function setCollapsed(state, collapsed, options) {
         state.toggleBtn.textContent = state.collapsed
             ? EXPAND_ICON() + " " + tk("expand_label", "Expand")
             : COLLAPSE_ICON() + " " + tk("collapse_label", "Collapse");
-        state.toggleBtn.title = state.collapsed
-            ? tk("expand_tip", "Expand string output")
-            : tk("collapse_tip", "Collapse string output");
+        setComfyTip(
+            state.toggleBtn,
+            state.collapsed
+                ? tk("expand_tip", "Expand string output")
+                : tk("collapse_tip", "Collapse string output")
+        );
     }
     clampNodeSize(state.node, state);
     resizeNodeToFit(state);
@@ -469,9 +568,16 @@ function resizeNodeToFit(state) {
     var minH = resolveMinHeight(state);
     var curW = (node.size && node.size[0]) || MIN_NODE_W;
     var curH = (node.size && node.size[1]) || 0;
+    /*
+     * 折叠：压到最小。
+     * 展开：回到折叠前的高度（没有记录就按最小高度）。
+     *   以前展开只写 Math.max(当前高度, 最小高度)——折叠后当前高度本来就
+     *   已经被压到最小了，这个式子算出来永远等于「最小高度」，身高一点都
+     *   不涨，用户看到的就是「展开没反应」。
+     */
     var targetH = state.collapsed
-        ? Math.min(curH, minH)
-        : Math.max(curH, minH);
+        ? Math.min(curH || minH, minH)
+        : Math.max(state.expandedHeight || 0, curH, minH);
     if (typeof node.setSize === "function") {
         node.setSize([Math.max(curW, MIN_NODE_W), targetH]);
     } else {
@@ -507,7 +613,7 @@ function createDisplayUI(node) {
         "expand_label",
         "Expand"
     );
-    toggleBtn.title = tk("expand_tip", "Expand string output");
+    setComfyTip(toggleBtn, tk("expand_tip", "Expand string output"));
     header.appendChild(toggleBtn);
 
     var display = document.createElement("div");
@@ -529,12 +635,14 @@ function createDisplayUI(node) {
         toggleBtn: toggleBtn,
         displayEl: display,
         collapsed: resolveStoredCollapsed(node),
+        // 折叠前的高度；展开时照这个还回去
+        expandedHeight: 0,
     };
     node.__xanytostringState = state;
     nodeStates[String(node.id)] = state;
 
     toggleBtn.addEventListener("click", function () {
-        setCollapsed(state, !state.collapsed);
+        setCollapsed(state, !state.collapsed, { userAction: true });
     });
 
     if (typeof node.addDOMWidget === "function") {

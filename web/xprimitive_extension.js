@@ -20,6 +20,9 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { getComfyValue } from "./core/comfy-internals.js";
+import { outputLinkIds } from "./core/slot-links.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 var NODE_CLASS = "XPrimitiveCombo";
 var BRIDGE_OUTPUT_INDEX = 0;
@@ -65,7 +68,13 @@ function getWidgetConfig(slot) {
 }
 
 function getComfyWidgets() {
-    // ComfyWidgets 挂载在全局
+    // 官方前端把 ComfyWidgets 作为内部模块导出，打包时挂在
+    // window.comfyAPI.widgets 上（见 core/comfy-internals.js）。
+    // 老前端会把它挂到全局 window/globalThis，所以两种都认。
+    var official = getComfyValue("widgets", "ComfyWidgets");
+    if (official) {
+        return official;
+    }
     if (typeof globalThis !== "undefined" && globalThis.ComfyWidgets) {
         return globalThis.ComfyWidgets;
     }
@@ -81,7 +90,7 @@ function activeGraph() {
             app.canvas.getCurrentGraph &&
             app.canvas.getCurrentGraph()) ||
         (app.canvas && app.canvas.graph) ||
-        app.graph
+        rootGraphOf(app)
     );
 }
 
@@ -96,9 +105,10 @@ function onFirstConnection(node) {
     if (!node || !node.graph || !node.outputs) return;
 
     var output = node.outputs[BRIDGE_OUTPUT_INDEX];
-    if (!output || !output.links || !output.links.length) return;
+    var linkIds = outputLinkIds(node, output);
+    if (!linkIds.length) return;
 
-    var linkId = output.links[0];
+    var linkId = linkIds[0];
     var link = node.graph.links[linkId];
     if (!link) return;
 
@@ -317,9 +327,10 @@ function syncComboToTarget(node, specificTarget, specificSlot) {
 
     var value = control.value;
     var output = node.outputs[BRIDGE_OUTPUT_INDEX];
-    if (!output || !output.links || !node.graph) return;
+    if (!output || !node.graph) return;
 
-    var links = output.links;
+    var links = outputLinkIds(node, output);
+    if (!links.length) return;
     for (var i = 0; i < links.length; i++) {
         var link = node.graph.links[links[i]];
         if (!link) continue;
@@ -440,7 +451,7 @@ function hideComboStringWidget(node) {
 
 function restoreComboWidget(node) {
     var output = node.outputs[BRIDGE_OUTPUT_INDEX];
-    if (!output || !output.links || !output.links.length) return;
+    if (!outputLinkIds(node, output).length) return;
 
     // 已有控件则跳过
     if (findWidget(node, CONTROL_WIDGET_NAME)) return;
@@ -526,7 +537,7 @@ app.registerExtension({
                     }
                 } else {
                     var out = self.outputs[BRIDGE_OUTPUT_INDEX];
-                    if (!out || !out.links || !out.links.length) {
+                    if (!outputLinkIds(self, out).length) {
                         onLastDisconnect(self);
                     }
                 }

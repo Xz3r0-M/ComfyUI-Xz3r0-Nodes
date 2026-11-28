@@ -79,6 +79,8 @@ class XPipeGate(io.ComfyNode):
                 default=True,
                 label_on="Enabled",
                 label_off="Disabled",
+                # 调好就不动的纯显示开关：Nodes 2.0 下折进「显示高级输入」
+                advanced=True,
                 tooltip=(
                     "Show a warning when a channel output is connected "
                     "to an incompatible input type."

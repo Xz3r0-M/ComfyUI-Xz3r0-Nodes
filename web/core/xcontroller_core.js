@@ -206,17 +206,19 @@
         if (!element || !app || !app.canvas) return;
 
         /** 中键拖拽 → 画布平移。 */
-        element.addEventListener("mousedown", function (e) {
+        element.addEventListener("pointerdown", function (e) {
             if (e.button !== 1) return;
             e.preventDefault();
             e.stopPropagation();
+            // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+            element.setPointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (cvs && typeof cvs.processMouseDown === "function") {
                 cvs.processMouseDown(e);
             }
         });
 
-        element.addEventListener("mousemove", function (e) {
+        element.addEventListener("pointermove", function (e) {
             if (!(e.buttons & 4)) return; // 中键
             e.preventDefault();
             e.stopPropagation();
@@ -226,10 +228,11 @@
             }
         });
 
-        element.addEventListener("mouseup", function (e) {
+        element.addEventListener("pointerup", function (e) {
             if (e.button !== 1) return;
             e.preventDefault();
             e.stopPropagation();
+            element.releasePointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (cvs && typeof cvs.processMouseUp === "function") {
                 cvs.processMouseUp(e);

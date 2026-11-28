@@ -57,6 +57,7 @@
  */
 
 import { app } from "../../scripts/app.js";
+import { rootGraphOf } from "./core/root-graph.js";
 
 // ============================================
 // 工作流识别与管理
@@ -98,9 +99,10 @@ function cyrb53(str, seed = 0) {
  * @returns {string|null} 工作流标识符
  */
 function getWorkflowId() {
-    if (!app.graph || !app.graph.nodes) return null;
+    const graph = rootGraphOf(app);
+    if (!graph || !graph.nodes) return null;
 
-    const nodes = app.graph.nodes;
+    const nodes = graph.nodes;
     if (nodes.length === 0) return 'empty';
 
     // 为每个节点创建稳定的索引（基于节点在数组中的位置）
@@ -122,7 +124,7 @@ function getWorkflowId() {
         .join('|');
 
     // 包含连接信息 - 使用节点索引而非运行时 ID
-    const links = app.graph.links || {};
+    const links = graph.links || {};
     const linkList = Object.values(links).filter(l => l != null);
 
     const linkSignatures = linkList
@@ -629,9 +631,10 @@ function initSubgraphObserver() {
  * @returns {boolean} 画布是否为空（无节点）
  */
 function isCanvasEmpty() {
-    if (!app.graph || !app.graph.nodes) return true;
-    if (!Array.isArray(app.graph.nodes)) return true;
-    return app.graph.nodes.length === 0;
+    const graph = rootGraphOf(app);
+    if (!graph || !graph.nodes) return true;
+    if (!Array.isArray(graph.nodes)) return true;
+    return graph.nodes.length === 0;
 }
 
 /**
@@ -838,13 +841,13 @@ app.registerExtension({
         };
 
         // 如果画布已就绪，直接执行
-        if (app.canvas && app.graph) {
+        if (app.canvas && rootGraphOf(app)) {
             initFitView();
             this.setupWorkflowListener();
         } else {
             // 否则等待初始化完成
             const checkInterval = setInterval(() => {
-                if (app.canvas && app.graph) {
+                if (app.canvas && rootGraphOf(app)) {
                     clearInterval(checkInterval);
                     initFitView();
                     this.setupWorkflowListener();
@@ -871,16 +874,16 @@ app.registerExtension({
             return;
         }
 
-        if (!app.graph) {
+        if (!rootGraphOf(app)) {
             debugLog('Graph not ready, skipping workflow listener setup');
             return;
         }
 
         // 保存原始方法，避免重复包裹
-        originalGraphOnConfigure = app.graph.onConfigure;
+        originalGraphOnConfigure = rootGraphOf(app).onConfigure;
 
         // 重写 onConfigure 方法
-        app.graph.onConfigure = function(config) {
+        rootGraphOf(app).onConfigure = function(config) {
             debugLog('onConfigure called, workflowEnterMode:', settings.workflowEnterMode);
 
             // 调用原始方法

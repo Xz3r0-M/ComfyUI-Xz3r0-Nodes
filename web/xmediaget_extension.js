@@ -13,6 +13,9 @@ import {
     buildAudioPlayer,
     buildVideoPlayer,
 } from "./core/media-player.js";
+import { randomSuffix } from "./core/random-id.js";
+import { rootGraphOf } from "./core/root-graph.js";
+import { selectOnlyNode } from "./core/canvas-selection.js";
 
 const EXT_NAME = "xz3r0.xmediaget";
 const EXT_GUARD_KEY = "__xmediaget_extension_registered__";
@@ -150,13 +153,17 @@ function getTooltipElement() {
         position: "fixed",
         zIndex: "999999",
         pointerEvents: "none",
-        background: "var(--xdh-color-surface-3)",
-        border: "1px solid var(--xdh-clr-hairline, #666)",
+        // 浮层色跟官方主题走（挂 body，读不到面板变量）；中间那层是
+        // XDataHub 窗口里没有官方变量时的退路。
+        background: "var(--popover, var(--xdh-surf-overlay-bg, #252525))",
+        color: "var(--foreground, var(--xdh-surf-overlay-ink, #eee))",
+        border:
+            "1px solid var(--border,"
+            + " var(--xdh-surf-overlay-line, #3a3a3a))",
         borderRadius: "var(--xdh-radius-sm)",
         padding: "6px 10px",
         maxWidth: "240px",
         boxSizing: "border-box",
-        color: "var(--xdh-color-text-primary)",
         boxShadow: "var(--xdh-shadow-popup)",
         fontSize: "12px",
         lineHeight: "1.35",
@@ -972,7 +979,7 @@ function applyPanelLocale(panelInfo) {
 }
 
 function refreshAllPanelLocales() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -1400,23 +1407,7 @@ function createPreviewImageFromNode(node) {
 }
 
 function selectNodeForMaskEditor(node) {
-    const canvas = app?.canvas;
-    if (!canvas || !node) {
-        return;
-    }
-    try {
-        canvas.deselectAllNodes?.();
-    } catch {
-        // ignore
-    }
-    try {
-        canvas.selectNode?.(node, false);
-    } catch {
-        // ignore
-    }
-    canvas.current_node = node;
-    canvas.node_selected = node;
-    canvas.selected_nodes = { [node.id]: node };
+    selectOnlyNode(app?.canvas, node);
 }
 
 function clearTemporaryMaskEditorState(node) {
@@ -1623,9 +1614,7 @@ async function openMaskEditorForNode(node) {
                 delete node.properties.image;
             }
         }
-        const sessionToken = `${Date.now()}_${Math.random()
-            .toString(36)
-            .slice(2, 10)}`;
+        const sessionToken = `${Date.now()}_${randomSuffix(8)}`;
         node.__ximageget_mask_editor_session = sessionToken;
         node.__ximageget_mask_editor_prev_imgs = node.imgs;
         node.__ximageget_mask_editor_prev_images = node.images;
@@ -2046,6 +2035,8 @@ function installNodeUi(node) {
         panel.addEventListener("pointerdown", function(e) {
             if (e.button !== 1) return;
             e.preventDefault();
+            // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+            panel.setPointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseDown !== "function") return;
             cvs.processMouseDown(e);
@@ -2058,6 +2049,7 @@ function installNodeUi(node) {
         });
         panel.addEventListener("pointerup", function(e) {
             if (e.button !== 1) return;
+            panel.releasePointerCapture?.(e.pointerId);
             var cvs = app.canvas;
             if (!cvs || typeof cvs.processMouseUp !== "function") return;
             cvs.processMouseUp(e);
@@ -2273,7 +2265,7 @@ function restoreStoredData(node, stored, storedTitle = "") {
 }
 
 function installExistingNodes() {
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return;
     }
@@ -2331,7 +2323,7 @@ function getScopedNodeId(node) {
     if (!node) {
         return "";
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return "";
     }
@@ -2349,7 +2341,7 @@ function getNodeById(nodeId) {
     if (!targetId) {
         return null;
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return null;
     }
@@ -2416,7 +2408,7 @@ function collectNodesByClass(nodeClass) {
     if (!SUPPORTED_NODE_CLASSES.has(targetClass)) {
         return [];
     }
-    const rootGraph = app.graph;
+    const rootGraph = rootGraphOf(app);
     if (!rootGraph) {
         return [];
     }

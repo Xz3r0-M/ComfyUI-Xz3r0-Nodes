@@ -1545,7 +1545,7 @@
   },
   "XListToPipe": {
     "display_name": "XListToPipe",
-    "description": "Turn a list into an XPipe bundle so it can flow through the XPipe family. Items fill slots 1..N (up to 50); unused slots stay empty (None). The count input sets how many slots the bundle has.",
+    "description": "Turn a list into an XPipe bundle so it can flow through the XPipe family. Items fill slots 1..N (up to 50); unused slots stay empty (None). The count input sets how many slots the bundle has. Connect the names input to give each slot a real name.",
     "inputs": {
       "list_input": {
         "name": "List",
@@ -1558,6 +1558,10 @@
       "count_display": {
         "name": "Count",
         "tooltip": "How many slots the bundle has. Auto-disabled when the count port is connected; otherwise set it manually here."
+      },
+      "names": {
+        "name": "Names",
+        "tooltip": "Optional slot names, one per item, in the same order as the list. Connect XMediaListGet's image_names / video_names / audio_names so the bundle carries real file names instead of blank slots. Shorter than the list: the rest stay blank. Leave unconnected for blank names."
       }
     },
     "outputs": {
@@ -2093,27 +2097,47 @@
   },
   "XResolution": {
     "display_name": "XResolution",
-    "description": "Resolution setting node with standard presets, custom scaling, divisible adjustment, and offset support.",
+    "description": "Resolution settings: a fixed size (preset or width and height), a megapixels target driven by an aspect ratio, or just one edge with the ratio working out the other one — plus swap, divisible adjustment and offsets.",
     "inputs": {
-      "preset": {
-        "name": "Preset",
-        "tooltip": "Resolution preset (used only when image input is not connected; if preset is not Custom, it overrides custom width/height)"
-      },
       "image_or_mask": {
         "name": "Image or Mask",
-        "tooltip": "Image or mask input for base resolution (takes priority over preset and custom width/height)"
+        "tooltip": "Image or mask input: in Resolution mode its resolution becomes the size; with the ratio set to From image, it supplies the aspect ratio"
+      },
+      "size_mode": {
+        "name": "Size Mode",
+        "tooltip": "How the size is decided: Resolution = the exact width and height, Megapixels = an aspect ratio plus a total pixel count, Width only / Height only = type one edge and the aspect ratio works out the other one (picking Custom in the ratio shows two extra boxes to type it)"
+      },
+      "preset": {
+        "name": "Preset",
+        "tooltip": "Fixed resolution preset (only used in Resolution mode; a preset other than Custom overrides the width and height below)"
       },
       "width": {
-        "name": "Custom Width",
-        "tooltip": "Custom resolution width (used only when preset is Custom and image input is not connected)"
+        "name": "Width",
+        "tooltip": "Width: the exact width in Resolution mode (when the preset is Custom) or the one edge you type in Width only mode; not used in Megapixels / Height only modes"
       },
       "height": {
-        "name": "Custom Height",
-        "tooltip": "Custom resolution height (used only when preset is Custom and image input is not connected)"
+        "name": "Height",
+        "tooltip": "Height: the exact height in Resolution mode (when the preset is Custom) or the one edge you type in Height only mode; not used in Megapixels / Width only modes"
+      },
+      "aspect_ratio": {
+        "name": "Aspect Ratio",
+        "tooltip": "Aspect ratio used by Megapixels / Width only / Height only (ignored in Resolution mode): right below the default are two special entries — Custom shows two boxes where you type the ratio, From image takes it from the connected image; the rest are common fixed ratios"
+      },
+      "ratio_width": {
+        "name": "Ratio Left",
+        "tooltip": "Custom aspect ratio: the left number of the width:height pair (only shown when the ratio is Custom)"
+      },
+      "ratio_height": {
+        "name": "Ratio Right",
+        "tooltip": "Custom aspect ratio: the right number of the width:height pair (only shown when the ratio is Custom)"
+      },
+      "megapixels": {
+        "name": "Megapixels",
+        "tooltip": "Target total pixel count in megapixels (only used in Megapixels mode)"
       },
       "scale": {
         "name": "Scale",
-        "tooltip": "Scale multiplier"
+        "tooltip": "Scale multiplier (every mode except Megapixels)"
       },
       "swap": {
         "name": "Swap",
@@ -2145,11 +2169,11 @@
     "outputs": {
       "0": {
         "name": "width",
-        "tooltip": "Output resolution width (after preset, scaling, swap, divisible adjustment, and offset)"
+        "tooltip": "Output resolution width (after size mode, swap, divisible adjustment, and offset)"
       },
       "1": {
         "name": "height",
-        "tooltip": "Output resolution height (after preset, scaling, swap, divisible adjustment, and offset)"
+        "tooltip": "Output resolution height (after size mode, swap, divisible adjustment, and offset)"
       }
     }
   },
@@ -2567,17 +2591,20 @@
       },
       "edge_mode": {
         "name": "Scale Mode",
-        "tooltip": "Select scaling mode: Long=long edge, Short=short edge, Megapixels=target pixels, Scale Multiplier=scale by multiplier",
+        "tooltip": "Select scaling mode: None=keep the original size, Long=long edge, Short=short edge, Width=width, Height=height, Megapixels=target pixels, Scale Multiplier=scale by multiplier. Every mode keeps the picture's own aspect ratio",
         "options": {
+          "None": "None (keep the original size, only divisible, offset and pad apply)",
           "Long": "Long Edge (width for landscape, height for portrait)",
           "Short": "Short Edge (height for landscape, width for portrait)",
+          "Width": "Width (scale by the width, no need to work out which edge is the long one)",
+          "Height": "Height (scale by the height, no need to work out which edge is the long one)",
           "Megapixels": "Megapixels (scale to exact pixel count)",
           "Scale Multiplier": "Scale Multiplier (scale by multiplier, ignores target_edge)"
         }
       },
       "resize_condition": {
         "name": "Resize Condition",
-        "tooltip": "Resize trigger condition (applies only to Long/Short/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in Scale Multiplier mode. If the condition is not met, resizing is skipped, but divisible and offset are still applied.",
+        "tooltip": "Resize trigger condition (applies to Long/Short/Width/Height/Megapixels): Always=always resize, Only if Larger=resize only when image is larger than target, Only if Smaller=resize only when image is smaller than target. Ignored in None and Scale Multiplier modes. If the condition is not met, resizing is skipped, but divisible and offset are still applied.",
         "options": {
           "Always": "Always Resize",
           "Only if Larger": "Resize Only if Larger",
@@ -2586,7 +2613,7 @@
       },
       "target_edge": {
         "name": "Target Edge",
-        "tooltip": "Target edge length in pixels (ignored in megapixels mode)"
+        "tooltip": "Target edge length in pixels: the long edge, the short edge, the width or the height depending on the scale mode (ignored in None, Megapixels and Scale Multiplier modes)"
       },
       "megapixels": {
         "name": "Megapixels",
@@ -2618,6 +2645,29 @@
         "name": "Height Offset",
         "tooltip": "Add offset to output height (positive=increase, negative=decrease, default=0)"
       },
+      "pad_enabled": {
+        "name": "Pad to Canvas",
+        "tooltip": "When enabled, the image is placed in the middle of a canvas of the target width and height, and the empty area is filled with the pad color. Nothing is cropped: a side already larger than its target keeps its own size, and if both sides are already large enough, the image is output unchanged. Padding runs after scaling, so if the scale mode already made the image bigger than the target nothing is padded — pick scale mode None to pad the original picture without scaling it."
+      },
+      "pad_ratio": {
+        "name": "Pad Ratio",
+        "tooltip": "Canvas shape when padding: None = no ratio, use the pad width and height exactly as typed. Pick a ratio and the canvas grows by itself to the smallest canvas of that shape that still holds the whole picture (a 1080x1080 picture with 16:9 becomes 1920x1080), so the pad width and height are ignored. Nothing is ever cropped.",
+        "options": {
+          "None": "None (use the pad width and height as typed)"
+        }
+      },
+      "pad_width": {
+        "name": "Pad Width",
+        "tooltip": "Target canvas width in pixels. Only pads when the image is narrower than this value; ignored when pad is disabled."
+      },
+      "pad_height": {
+        "name": "Pad Height",
+        "tooltip": "Target canvas height in pixels. Only pads when the image is shorter than this value; ignored when pad is disabled."
+      },
+      "pad_color": {
+        "name": "Pad Color",
+        "tooltip": "Color of the padded area as #RRGGBB hex, for example #FFFFFF for white. Masks ignore the color: the padded area always counts as not masked."
+      },
       "skip_on_empty": {
         "name": "Skip on Empty",
         "tooltip": "When enabled, outputs None for all ports if no input image is connected, instead of raising an error."
@@ -2639,6 +2689,10 @@
       "3": {
         "name": "Resize Settings Out",
         "tooltip": "Outputs chain settings for downstream nodes. If valid upstream settings exist, this output keeps forwarding the chain-origin settings."
+      },
+      "4": {
+        "name": "Pad Mask",
+        "tooltip": "Mask of the newly added area: 1 where the canvas was filled, 0 on the original picture. Connect it to a sampling node's mask input to repaint only the new border. All 0 when nothing was padded."
       }
     }
   },
@@ -2861,20 +2915,32 @@
         "tooltip": "How many images were output. Connect to XListPull's count to size its split ports automatically."
       },
       "3": {
+        "name": "Image Names",
+        "tooltip": "File name of each image, in the same order as the image list. Disabled and missing files are skipped here too, so it always lines up one-to-one."
+      },
+      "4": {
         "name": "Video List",
         "tooltip": "Enabled videos in panel order. When there are none, one empty value is output."
       },
-      "4": {
+      "5": {
         "name": "Video Count",
         "tooltip": "How many videos were output."
       },
-      "5": {
+      "6": {
+        "name": "Video Names",
+        "tooltip": "File name of each video, in the same order as the video list."
+      },
+      "7": {
         "name": "Audio List",
         "tooltip": "Enabled audio files in panel order. When there is none, one empty value is output."
       },
-      "6": {
+      "8": {
         "name": "Audio Count",
         "tooltip": "How many audio files were output."
+      },
+      "9": {
+        "name": "Audio Names",
+        "tooltip": "File name of each audio file, in the same order as the audio list."
       }
     }
   },

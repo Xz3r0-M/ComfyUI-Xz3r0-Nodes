@@ -5,7 +5,7 @@ import {
 import { appStore } from '../core/store.js';
 import { buildThumbUrl } from '../core/api.js?v=20260601-5';
 import { icon, ICON_CSS, TOOLTIP_CSS } from '../core/icon.js';
-import { t } from '../core/i18n.js?v=20261023-2';
+import { t } from '../core/i18n.js?v=20261116-9';
 import { banner } from '../core/banner.js';
 import { resolveTokenAccentFromNode } from '../core/node-accent.js?v=20260402-400';
 import {

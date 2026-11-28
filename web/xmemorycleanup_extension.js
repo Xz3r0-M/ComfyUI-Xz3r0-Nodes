@@ -1,5 +1,6 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XMemoryCleanup";
 var NODE_CLASS = "XMemoryCleanup";
@@ -265,7 +266,7 @@ function applyPanelLocale(state) {
             if (!button || !spec) continue;
             button.dataset.label = spec.label;
             button.dataset.busyLabel = spec.busyLabel;
-            button.title = spec.tooltip;
+            setComfyTip(button, spec.tooltip);
             if (!state.isBusy) {
                 button.textContent = spec.label;
             }
@@ -424,6 +425,8 @@ function bindCanvasForwarding(panel) {
     panel.addEventListener("pointerdown", function (event) {
         if (event.button !== 1) return;
         event.preventDefault();
+        // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+        panel.setPointerCapture?.(event.pointerId);
         var canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseDown !== "function") return;
         canvas.processMouseDown(event);
@@ -436,6 +439,7 @@ function bindCanvasForwarding(panel) {
     });
     panel.addEventListener("pointerup", function (event) {
         if (event.button !== 1) return;
+        panel.releasePointerCapture?.(event.pointerId);
         var canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseUp !== "function") return;
         canvas.processMouseUp(event);
@@ -550,7 +554,7 @@ function createCleanupUI(node) {
         button.textContent = spec.label;
         button.dataset.label = spec.label;
         button.dataset.busyLabel = spec.busyLabel;
-        button.title = spec.tooltip;
+        setComfyTip(button, spec.tooltip);
         button.addEventListener("click", (function (action, btn) {
             return function () {
                 runCleanupAction(state, action, btn);

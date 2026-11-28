@@ -90,9 +90,17 @@ function getEl(parent = document.body) {
         Object.assign(_el.style, {
             position: "fixed",
             zIndex: "999999",
-            background: "var(--xdh-color-surface-2, #252525)",
-            color: "var(--xdh-color-text-primary, #eee)",
-            border: "1px solid var(--xdh-color-border, #3a3a3a)",
+            /* 浮层色跟官方主题走：tip 挂 body（有时挂进 fullscreenElement），
+               拿不到节点面板的变量，所以直接读前端写在 <html> 上的活变量。
+               官方自己的 tooltip 就是 bg --background / text --foreground /
+               border --border（见 design-system/TooltipContent.vue），
+               --popover 的默认值正是 --background，视觉完全一致。
+               中间那层是 XDataHub 窗口（iframe 里没有官方变量）的退路。 */
+            background: "var(--popover, var(--xdh-surf-overlay-bg, #252525))",
+            color: "var(--foreground, var(--xdh-surf-overlay-ink, #eee))",
+            border:
+                "1px solid var(--border,"
+                + " var(--xdh-surf-overlay-line, #3a3a3a))",
             boxShadow: "2px 6px 18px rgba(0, 0, 0, 0.55)",
             padding: "5px 11px",
             borderRadius: "7px",
@@ -255,6 +263,98 @@ export function hideTooltip(immediate = false) {
     _hideTimer = setTimeout(() => {
         setHiddenState();
     }, HIDE_DELAY);
+}
+
+/**
+ * ── 节点面板里的普通文字提示 ────────────────────────────────────────
+ *
+ * 目标：**能用官方的就用官方的**，够不着才退回浏览器原生。
+ *
+ * ComfyUI 从 **v1.61.8** 起把节点提示改成一个全局共享的浮层
+ * （`SharedNodeTooltip`）：元素只要带 `data-node-tooltip` 属性、并且落在
+ * 画布容器里面，鼠标划过去就由官方弹出它自己的提示框 —— 主题色、圆角、
+ * 边框、箭头、延迟全跟官方节点一致，我们一行样式都不用写。
+ *
+ * 更早的版本里没有这个机制（设了属性也没人理），所以退回浏览器原生
+ * `title`：样式不好看、延迟约 1 秒，但**至少有提示**。
+ *
+ * 三条铁律：
+ *  1. **默认必须是「有提示」的那条路**。读不到版本号就按「没有」处理，
+ *     一律用 title。绝不允许出现「两头都没有」——那是真实踩过的坑。
+ *  2. **两条路不能同时走**。判定为官方时要把 title 摘掉，否则系统气泡会
+ *     在官方提示之后又冒一个出来。
+ *  3. **只在节点面板里用**。官方浮层只认画布容器内的元素；XDataHub 浮动
+ *     窗口挂在 body 上、iframe 里的界面连父页面都够不到 —— 那些地方请用
+ *     自绘（`data-tooltip` + `installTooltips`）或保持原生 title。
+ */
+
+/** `data-node-tooltip` 机制最早的版本（已用 git tag --contains 核实）。 */
+export const COMFY_NODE_TIP_MIN_VERSION = "1.61.8";
+
+/**
+ * 比较两个版本号，返回 -1 / 0 / 1。
+ * 按数字段比，不按字符串比：字符串比较下 "1.61.10" 会小于 "1.61.8"。
+ * 先剥掉 `-1` 之类的构建后缀与开头的 v。
+ */
+export function compareVersion(a, b) {
+    const parse = (raw) => {
+        if (typeof raw !== "string") return [];
+        const core = raw.trim().replace(/^v/i, "").split(/[-+]/)[0];
+        return core.split(".").map((part) => {
+            const digits = part.replace(/\D.*$/, "");
+            return digits === "" ? 0 : Number(digits);
+        });
+    };
+    const left = parse(a);
+    const right = parse(b);
+    if (!left.length || !right.length) return -1;
+    const total = Math.max(left.length, right.length);
+    for (let i = 0; i < total; i += 1) {
+        const x = left[i] ?? 0;
+        const y = right[i] ?? 0;
+        if (x > y) return 1;
+        if (x < y) return -1;
+    }
+    return 0;
+}
+
+/** 当前前端有没有 `data-node-tooltip` 那套共享浮层。 */
+export function comfyNodeTipSupported() {
+    try {
+        const version = globalThis.__COMFYUI_FRONTEND_VERSION__;
+        return compareVersion(version, COMFY_NODE_TIP_MIN_VERSION) >= 0;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 给「节点面板里的普通文字提示」挂文案。
+ *
+ * @param {HTMLElement|null} el 目标元素
+ * @param {string} text 提示文字；空值表示摘掉提示
+ */
+export function setComfyTip(el, text) {
+    if (!el) return;
+    const value = text == null ? "" : String(text);
+    const useOfficial = comfyNodeTipSupported();
+    if (!value) {
+        delete el.dataset.nodeTooltip;
+        el.removeAttribute("title");
+        return;
+    }
+    if (useOfficial) {
+        if (el.dataset.nodeTooltip !== value) {
+            el.dataset.nodeTooltip = value;
+        }
+        // 两条路不能同时走：留着 title 会多冒一个系统气泡
+        el.removeAttribute("title");
+        return;
+    }
+    if (el.getAttribute("title") !== value) {
+        el.setAttribute("title", value);
+    }
+    delete el.dataset.nodeTooltip;
 }
 
 /** Install tooltip listeners on a shadow root via event delegation. */

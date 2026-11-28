@@ -5,7 +5,7 @@ import {
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { banner } from "../core/banner.js";
-import { t } from "../core/i18n.js?v=20261021-1";
+import { t } from "../core/i18n.js?v=20261116-9";
 
 const DEFAULT_HOTKEY_SPEC = "Alt + X";
 const HOST_CONTROLLED_SETTING_KEYS = new Set([
@@ -527,10 +527,16 @@ export class XdhSettingsDialog extends BaseElement {
                             [
                                 ["dark", "settings.theme_dark"],
                                 ["light", "settings.theme_light"],
-                                ["comfyui", "settings.theme_comfyui"],
                             ],
                             themeMode
                         )
+                    ),
+                    this._renderRow(
+                        "settings.theme_edit",
+                        `<button class="js-theme-edit xte-open-btn">
+                            ${t("settings.theme_edit")}
+                        </button>`,
+                        "settings.theme_edit_tooltip"
                     ),
                 ])}
                 ${this._renderSection("settings.sect.launch", [
@@ -934,6 +940,22 @@ export class XdhSettingsDialog extends BaseElement {
                 .folder-input:focus {
                     border-color: var(--xdh-clr-primary);
                 }
+                .xte-open-btn {
+                    flex-shrink: 0;
+                    background: var(--xdh-color-surface-2);
+                    border: 1px solid var(--xdh-color-border);
+                    color: var(--xdh-color-text-primary);
+                    border-radius: var(--xdh-radius-sm);
+                    padding: var(--xdh-space-xs) var(--xdh-space-md);
+                    font: var(--xdh-font-micro-label);
+                    cursor: pointer;
+                    transition: background 0.13s, border-color 0.13s;
+                    white-space: nowrap;
+                }
+                .xte-open-btn:hover {
+                    background: var(--xdh-color-surface-hover);
+                    border-color: var(--xdh-clr-primary);
+                }
                 .folder-add-btn {
                     flex-shrink: 0;
                     background: var(--xdh-color-surface-2);
@@ -1166,6 +1188,15 @@ export class XdhSettingsDialog extends BaseElement {
         // 清除缩略图按钮
         this.$(".js-clear-thumb")?.addEventListener("click", () => {
             this._openThumbClearConfirmDialog();
+        });
+        // 打开主题配色面板
+        this.$(".js-theme-edit")?.addEventListener("click", () => {
+            const editor = document.querySelector("xdh-theme-editor");
+            if (!editor || typeof editor.open !== "function") {
+                return;
+            }
+            this._close();
+            editor.open(this._settings);
         });
         this._refreshFolderDOM();
         if (Object.keys(this._settings).length > 0) {

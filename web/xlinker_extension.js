@@ -1,4 +1,11 @@
 import { app } from "../../scripts/app.js";
+import {
+    inputConnected,
+    inputLinkId,
+    outputLinkIds,
+} from "./core/slot-links.js";
+import { rootGraphOf } from "./core/root-graph.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 // XLinker 连线显隐透传节点前端扩展
 // ===================================
@@ -26,7 +33,8 @@ var HIGHLIGHT_BUTTON_TEXTS = ["☆", "★"];
 var BUTTON_GROUP = "xlinker_button_group";
 var BUTTON_GROUP_MARGIN = 15;
 var BUTTON_GROUP_GAP = 4;
-var BUTTON_GROUP_HEIGHT = 24;
+var BUTTON_GROUP_HEIGHT = 24;   // 胶囊那一行
+var SWITCH_ROW_HEIGHT = 18;     // 三个开关那一行
 var LINKER_EXTRA_HEIGHT = 10;
 var BUTTON_GROUP_STYLE_ID = "xlinker-button-group-style";
 var uiLocalePrimary = null;
@@ -41,6 +49,11 @@ var LOCALE_SYNC_INTERVAL_MS = 1000;
 var WARNING_COLOR = "#1a1a1a";
 var WARNING_GLOW = "rgba(255, 15, 15, 0.95)";
 var WARNING_BREATH_SPEED = 0.012;
+// 输出类型同步 / 警告环判定的轮询间隔。以前是每帧跑（挂 onDrawForeground），
+// 现在改成定时器：Nodes 2.0 下节点级绘制钩子不执行，而且绘制钩子本就
+// 不该改状态。200ms 比原来省 12 倍，肉眼无差别。
+var XLINKER_STATE_SYNC_MS = 200;
+var xlinkerStateTimer = null;
 function warningGlowBlur() {
     var t = Date.now() * WARNING_BREATH_SPEED;
     var breath = Math.sin(t) * 0.5 + 0.5;
@@ -53,7 +66,7 @@ function warningGlowBlur() {
 function activeGraph() {
     return (app.canvas && app.canvas.getCurrentGraph && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
-        || app.graph;
+        || rootGraphOf(app);
 }
 function nodeKey(node) {
     return String(node && node.id);
@@ -325,10 +338,6 @@ function setHiddenState(node, state) {
     }
 }
 
-function nextState(state) {
-    return (state + 1) % 4;
-}
-
 function updateTitleButtons(node) {
     ensureButtonGroupWidget(node);
     updateButtonGroupWidget(node);
@@ -341,37 +350,37 @@ function hideTitleKey(state) {
     return "show_all_links";
 }
 
-function clickHideButton(node) {
-    setHiddenState(node, nextState(hiddenState(node)));
-    updateTitleButtons(node);
+function markCanvasDirty() {
     if (app.canvas && typeof app.canvas.setDirty === "function") {
         app.canvas.setDirty(true, true);
     }
 }
 
-function clickHighlightButton(node) {
-    var key = nodeKey(node);
-    linkerLinksHighlighted[key] = !linkerLinksHighlighted[key];
+/** 胶囊点哪档就切到哪档（不再循环点） */
+function applyHideState(node, state) {
+    setHiddenState(node, state);
     updateTitleButtons(node);
-    if (app.canvas && typeof app.canvas.setDirty === "function") {
-        app.canvas.setDirty(true, true);
-    }
+    markCanvasDirty();
 }
 
-function clickTitleSyncButton(node) {
-    setTitleSyncEnabled(node, !titleSyncEnabled(node));
+function applyHighlight(node, enabled) {
+    linkerLinksHighlighted[nodeKey(node)] = !!enabled;
+    updateTitleButtons(node);
+    markCanvasDirty();
+}
+
+function applyTitleSync(node, enabled) {
+    setTitleSyncEnabled(node, !!enabled);
     updateTitleButtons(node);
     if (titleSyncEnabled(node)) {
         syncTitleFromNoteText(node);
     }
-    if (app.canvas && typeof app.canvas.setDirty === "function") {
-        app.canvas.setDirty(true, true);
-    }
+    markCanvasDirty();
 }
 
-function clickPortSyncButton(node) {
+function applyPortSync(node, enabled) {
     var wasEnabled = portSyncEnabled(node);
-    setPortSyncEnabled(node, !wasEnabled);
+    setPortSyncEnabled(node, !!enabled);
     updateTitleButtons(node);
     if (!wasEnabled) {
         // 刚刚开启，同步端口名称
@@ -380,9 +389,7 @@ function clickPortSyncButton(node) {
         // 刚刚关闭，还原原始端口名称
         resetPortNames(node);
     }
-    if (app.canvas && typeof app.canvas.setDirty === "function") {
-        app.canvas.setDirty(true, true);
-    }
+    markCanvasDirty();
 }
 
 function syncTitleFromNoteText(node) {
@@ -506,48 +513,133 @@ function ensureButtonGroupStyles() {
         "  flex-direction: column;",
         "  gap: " + BUTTON_GROUP_GAP + "px;",
         "}",
-        ".xlinker-button-row {",
-        "  display: flex;",
-        "  align-items: stretch;",
-        "  gap: " + BUTTON_GROUP_GAP + "px;",
-        "  width: 100%;",
-        "  min-height: " + BUTTON_GROUP_HEIGHT + "px;",
-        "}",
-        ".xlinker-button {",
+        /* 两行都写死高度：图形/文字换成别的也不会把节点顶高 */
+        ".xlinker-row {",
         "  display: flex;",
         "  align-items: center;",
-        "  justify-content: center;",
-        "  flex: 1 1 0;",
-        "  min-width: 0;",
+        "  gap: 6px;",
+        "  width: 100%;",
+        "  box-sizing: border-box;",
+        "}",
+        ".xlinker-pill-row {",
         "  height: " + BUTTON_GROUP_HEIGHT + "px;",
-        "  min-height: " + BUTTON_GROUP_HEIGHT + "px;",
-        "  padding: 0 8px;",
-        "  border: 1px solid var(--border-color, #555);",
-        "  border-radius: 4px;",
-        "  background: transparent;",
-        "  color: var(--input-text, #ddd);",
-        "  font: 12px sans-serif;",
+        "}",
+        ".xlinker-switch-row {",
+        "  height: " + SWITCH_ROW_HEIGHT + "px;",
+        "  justify-content: space-between;",
+        "}",
+        ".xlinker-row-label {",
+        "  flex: 0 0 auto;",
+        "  font: 11px sans-serif;",
         "  line-height: 1;",
+        "  opacity: 0.72;",
+        "  white-space: nowrap;",
+        "}",
+        /* 胶囊切换（跟 XLoraGet 的「未分组/全部/已分组」同一种） */
+        ".xlinker-pill {",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  gap: 2px;",
+        "  padding: 2px;",
+        "  border: 1px solid var(--border-color, #555);",
+        "  border-radius: 999px;",
+        "  background: color-mix(in srgb, currentColor 7%, transparent);",
+        "  box-sizing: border-box;",
+        "  flex: 0 0 auto;",
+        "}",
+        ".xlinker-pill-btn {",
+        "  padding: 2px 7px;",
+        "  border: none;",
+        "  border-radius: 999px;",
+        "  background: transparent;",
+        "  color: inherit;",
+        "  font: 11px/1.4 sans-serif;",
         "  letter-spacing: 0;",
-        "  text-align: center;",
         "  white-space: nowrap;",
         "  cursor: pointer;",
-        "  transition: border-color 120ms ease, color 120ms ease;",
+        "  opacity: 0.62;",
+        "  transition: background 120ms, opacity 120ms;",
         "  appearance: none;",
         "}",
-        ".xlinker-button:hover {",
-        "  border-color: var(--xdh-brand-pink, #ff385c);",
+        ".xlinker-pill-btn:hover {",
+        "  opacity: 0.9;",
         "}",
-        ".xlinker-button.active {",
-        "  color: var(--xdh-brand-pink, #ff385c);",
+        ".xlinker-pill-btn.is-active {",
+        "  opacity: 1;",
+        "  background: color-mix(",
+        "    in srgb, var(--xdh-brand-pink, #ff385c) 26%, transparent);",
+        "  box-shadow: inset 0 0 0 1px color-mix(",
+        "    in srgb, var(--xdh-brand-pink, #ff385c) 45%, transparent);",
+        "}",
+        /* 圆点开关（跟 XLoraGet 的 Clip 开关同一种） */
+        ".xlinker-switch {",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  gap: 5px;",
+        "  font: 11px sans-serif;",
+        "  line-height: 1;",
+        "  color: var(--input-text, #ddd);",
+        "  user-select: none;",
+        "  white-space: nowrap;",
+        "  cursor: pointer;",
+        /* 节点被拖窄时允许收缩（文字末尾出省略号），而不是溢出到节点外 */
+        "  flex: 0 1 auto;",
+        "  min-width: 0;",
+        "}",
+        ".xlinker-switch-text {",
+        "  overflow: hidden;",
+        "  text-overflow: ellipsis;",
+        "}",
+        ".xlinker-switch-input {",
+        "  position: absolute;",
+        "  opacity: 0;",
+        "  width: 0;",
+        "  height: 0;",
+        "  pointer-events: none;",
+        "}",
+        ".xlinker-switch-track {",
+        "  position: relative;",
+        "  display: inline-flex;",
+        "  align-items: center;",
+        "  flex: 0 0 auto;",
+        "  width: 22px;",
+        "  min-width: 22px;",
+        "  height: 12px;",
+        "  border-radius: 999px;",
+        "  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);",
+        "  background: color-mix(in srgb, currentColor 10%, transparent);",
+        "  box-sizing: border-box;",
+        "  transition: background 150ms ease, border-color 150ms ease,",
+        "    box-shadow 150ms ease;",
+        "}",
+        ".xlinker-switch-track::after {",
+        "  content: \"\";",
+        "  position: absolute;",
+        "  top: 1px;",
+        "  left: 1px;",
+        "  width: 8px;",
+        "  height: 8px;",
+        "  border-radius: 50%;",
+        "  background: currentColor;",
+        "  opacity: 0.7;",
+        "  transition: transform 150ms ease, background 150ms ease,",
+        "    opacity 150ms ease;",
+        "}",
+        ".xlinker-switch-input:checked + .xlinker-switch-track {",
+        "  border-color: var(--xdh-brand-pink, #ff385c);",
+        "  background: color-mix(",
+        "    in srgb, var(--xdh-brand-pink, #ff385c) 30%, transparent);",
+        "}",
+        ".xlinker-switch-input:checked + .xlinker-switch-track::after {",
+        "  transform: translateX(10px);",
+        "  background: var(--xdh-brand-pink, #ff385c);",
+        "  opacity: 1;",
+        "}",
+        ".xlinker-switch-input:focus-visible + .xlinker-switch-track {",
+        "  box-shadow: 0 0 0 1px var(--xdh-brand-pink, #ff385c);",
         "}",
     ].join("\n");
     (document.head || document.documentElement).appendChild(style);
-}
-
-function applyButtonVisual(button, active) {
-    if (!button) return;
-    button.classList.toggle("active", !!active);
 }
 
 function forwardPanelWheel(panel) {
@@ -577,6 +669,8 @@ function forwardPanelMiddleButton(panel) {
     panel.addEventListener("pointerdown", function (e) {
         if (e.button !== 1) return;
         e.preventDefault();
+        // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+        panel.setPointerCapture?.(e.pointerId);
         var cvs = app.canvas;
         if (!cvs || typeof cvs.processMouseDown !== "function") return;
         cvs.processMouseDown(e);
@@ -589,10 +683,39 @@ function forwardPanelMiddleButton(panel) {
     });
     panel.addEventListener("pointerup", function (e) {
         if (e.button !== 1) return;
+        panel.releasePointerCapture?.(e.pointerId);
         var cvs = app.canvas;
         if (!cvs || typeof cvs.processMouseUp !== "function") return;
         cvs.processMouseUp(e);
     });
+}
+
+/** 圆点开关：文字 + 轨道 + 圆点（跟 XLoraGet 的 Clip 开关同一种）。 */
+function createLinkerSwitch(opts) {
+    var label = document.createElement("label");
+    label.className = "xlinker-switch";
+
+    var input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "xlinker-switch-input";
+
+    var track = document.createElement("span");
+    track.className = "xlinker-switch-track";
+    track.setAttribute("aria-hidden", "true");
+
+    var text = document.createElement("span");
+    text.className = "xlinker-switch-text";
+    text.textContent = opts.label;
+
+    label.appendChild(input);
+    label.appendChild(track);
+    label.appendChild(text);
+
+    input.addEventListener("change", function () {
+        opts.onChange(!!input.checked);
+    });
+
+    return { label: label, input: input, track: track, text: text };
 }
 
 function createButtonGroupPanel(node) {
@@ -605,60 +728,61 @@ function createButtonGroupPanel(node) {
     var wrap = document.createElement("div");
     wrap.className = "xlinker-button-group";
 
+    // 第1行：连线 [◀▶ | ◁▶ | ◀▷ | ◁▷]
+    // 四档直接点，比原来「点一下轮一个」省事，也一眼看出当前哪档
     var row1 = document.createElement("div");
-    row1.className = "xlinker-button-row";
+    row1.className = "xlinker-row xlinker-pill-row";
+
+    var linksLabel = document.createElement("span");
+    linksLabel.className = "xlinker-row-label";
+    linksLabel.textContent = hideButtonLabel();
+    row1.appendChild(linksLabel);
+
+    var hidePill = document.createElement("span");
+    hidePill.className = "xlinker-pill";
+    var hideButtons = [];
+    for (var state = HIDE_NONE; state <= HIDE_BOTH; state++) {
+        var seg = document.createElement("button");
+        seg.type = "button";
+        seg.className = "xlinker-pill-btn";
+        seg.textContent = HIDE_BUTTON_TEXTS[state];
+        seg.setAttribute("data-hide", String(state));
+        seg.addEventListener("click", (function (target) {
+            return function () { applyHideState(node, target); };
+        })(state));
+        hidePill.appendChild(seg);
+        hideButtons.push(seg);
+    }
+    row1.appendChild(hidePill);
     wrap.appendChild(row1);
 
-    var hideButton = document.createElement("button");
-    hideButton.type = "button";
-    hideButton.className = "xlinker-button";
-    hideButton.textContent = hideButtonLabel() + " " + HIDE_BUTTON_TEXTS[HIDE_NONE];
-    hideButton.title = buttonGroupTooltip(node, "hide");
-    hideButton.setAttribute("aria-label", hideButton.title);
-    hideButton.addEventListener("click", function () {
-        clickHideButton(node);
-    });
-
-    var highlightButton = document.createElement("button");
-    highlightButton.type = "button";
-    highlightButton.className = "xlinker-button";
-    highlightButton.textContent = highlightButtonLabel()
-        + " " + HIGHLIGHT_BUTTON_TEXTS[0];
-    highlightButton.title = buttonGroupTooltip(node, "highlight");
-    highlightButton.setAttribute("aria-label", highlightButton.title);
-    highlightButton.addEventListener("click", function () {
-        clickHighlightButton(node);
-    });
-
-    row1.appendChild(hideButton);
-    row1.appendChild(highlightButton);
-
+    // 第2行：三个开关（高亮 / 标题 / 端口）
     var row2 = document.createElement("div");
-    row2.className = "xlinker-button-row";
+    row2.className = "xlinker-row xlinker-switch-row";
+
+    var highlightSwitch = createLinkerSwitch({
+        label: highlightButtonLabel(),
+        onChange: function (on) {
+            applyHighlight(node, on);
+        },
+    });
+    var titleSyncSwitch = createLinkerSwitch({
+        label: titleSyncButtonLabel(),
+        onChange: function (on) {
+            applyTitleSync(node, on);
+        },
+    });
+    var portSyncSwitch = createLinkerSwitch({
+        label: portSyncButtonLabel(),
+        onChange: function (on) {
+            applyPortSync(node, on);
+        },
+    });
+
+    row2.appendChild(highlightSwitch.label);
+    row2.appendChild(titleSyncSwitch.label);
+    row2.appendChild(portSyncSwitch.label);
     wrap.appendChild(row2);
-
-    var titleSyncButton = document.createElement("button");
-    titleSyncButton.type = "button";
-    titleSyncButton.className = "xlinker-button";
-    titleSyncButton.textContent = titleSyncButtonLabel();
-    titleSyncButton.title = buttonGroupTooltip(node, "title_sync");
-    titleSyncButton.setAttribute("aria-label", titleSyncButton.title);
-    titleSyncButton.addEventListener("click", function () {
-        clickTitleSyncButton(node);
-    });
-
-    var portSyncButton = document.createElement("button");
-    portSyncButton.type = "button";
-    portSyncButton.className = "xlinker-button";
-    portSyncButton.textContent = portSyncButtonLabel();
-    portSyncButton.title = buttonGroupTooltip(node, "port_sync");
-    portSyncButton.setAttribute("aria-label", portSyncButton.title);
-    portSyncButton.addEventListener("click", function () {
-        clickPortSyncButton(node);
-    });
-
-    row2.appendChild(titleSyncButton);
-    row2.appendChild(portSyncButton);
 
     forwardPanelWheel(wrap);
     forwardPanelMiddleButton(wrap);
@@ -667,7 +791,8 @@ function createButtonGroupPanel(node) {
         node.addDOMWidget(BUTTON_GROUP, "custom", wrap, {
             serialize: false,
             getMinHeight: function () {
-                return BUTTON_GROUP_HEIGHT * 2 + BUTTON_GROUP_GAP;
+                return BUTTON_GROUP_HEIGHT + SWITCH_ROW_HEIGHT
+                    + BUTTON_GROUP_GAP;
             },
             margin: 4,
         });
@@ -675,10 +800,12 @@ function createButtonGroupPanel(node) {
 
     node.__xlinkerButtonPanel = {
         wrap: wrap,
-        hideButton: hideButton,
-        highlightButton: highlightButton,
-        titleSyncButton: titleSyncButton,
-        portSyncButton: portSyncButton,
+        linksLabel: linksLabel,
+        hidePill: hidePill,
+        hideButtons: hideButtons,
+        highlightSwitch: highlightSwitch,
+        titleSyncSwitch: titleSyncSwitch,
+        portSyncSwitch: portSyncSwitch,
     };
     return node.__xlinkerButtonPanel;
 }
@@ -700,23 +827,46 @@ function updateButtonGroupWidget(node) {
     var titleSyncOn = titleSyncEnabled(node);
     var portSyncOn = portSyncEnabled(node);
 
-    panel.hideButton.textContent = hideButtonLabel() + " " + HIDE_BUTTON_TEXTS[hideState];
-    panel.highlightButton.textContent = highlightButtonLabel() + " "
-        + HIGHLIGHT_BUTTON_TEXTS[highlightOn ? 1 : 0];
-    panel.titleSyncButton.textContent = titleSyncButtonLabel();
-    panel.portSyncButton.textContent = portSyncButtonLabel();
-    panel.hideButton.title = buttonGroupTooltip(node, "hide");
-    panel.highlightButton.title = buttonGroupTooltip(node, "highlight");
-    panel.titleSyncButton.title = buttonGroupTooltip(node, "title_sync");
-    panel.portSyncButton.title = buttonGroupTooltip(node, "port_sync");
-    panel.hideButton.setAttribute("aria-label", panel.hideButton.title);
-    panel.highlightButton.setAttribute("aria-label", panel.highlightButton.title);
-    panel.titleSyncButton.setAttribute("aria-label", panel.titleSyncButton.title);
-    panel.portSyncButton.setAttribute("aria-label", panel.portSyncButton.title);
-    applyButtonVisual(panel.hideButton, hideState !== HIDE_NONE);
-    applyButtonVisual(panel.highlightButton, highlightOn);
-    applyButtonVisual(panel.titleSyncButton, titleSyncOn);
-    applyButtonVisual(panel.portSyncButton, portSyncOn);
+    // 胶囊：当前那档实心
+    if (panel.linksLabel) {
+        panel.linksLabel.textContent = hideButtonLabel();
+    }
+    if (panel.hidePill) {
+        setComfyTip(
+            panel.hidePill,
+            tk(hideTitleKey(hideState), "Show or hide links")
+        );
+        panel.hidePill.setAttribute("aria-label", panel.hidePill.title);
+    }
+    if (panel.hideButtons) {
+        for (var i = 0; i < panel.hideButtons.length; i++) {
+            var seg = panel.hideButtons[i];
+            if (i === hideState) {
+                seg.classList.add("is-active");
+            } else {
+                seg.classList.remove("is-active");
+            }
+            setComfyTip(seg, tk(hideTitleKey(i), "Show or hide links"));
+        }
+    }
+
+    // 开关：文字 + 勾选态 + 悬停解释
+    var switches = [
+        { box: panel.highlightSwitch, on: highlightOn, label: highlightButtonLabel() },
+        { box: panel.titleSyncSwitch, on: titleSyncOn, label: titleSyncButtonLabel() },
+        { box: panel.portSyncSwitch, on: portSyncOn, label: portSyncButtonLabel() },
+    ];
+    var roles = ["highlight", "title_sync", "port_sync"];
+    for (var k = 0; k < switches.length; k++) {
+        var item = switches[k];
+        if (!item.box) continue;
+        if (item.box.input) item.box.input.checked = !!item.on;
+        if (item.box.text) item.box.text.textContent = item.label;
+        if (item.box.label) {
+            setComfyTip(item.box.label, buttonGroupTooltip(node, roles[k]));
+            item.box.label.setAttribute("aria-label", item.box.label.title);
+        }
+    }
 }
 
 
@@ -750,9 +900,10 @@ function getXLinkerLinkWarning(link, graph) {
 }
 function xlinkerOutputHasWarning(node) {
     var output = node && node.outputs ? node.outputs[0] : null;
-    if (!output || !output.links) return false;
-    for (var i = 0; i < output.links.length; i++) {
-        if (getXLinkerLinkWarning(getLinkInfo(output.links[i], node.graph), node.graph)) {
+    if (!output) return false;
+    var linkIds = outputLinkIds(node, output);
+    for (var i = 0; i < linkIds.length; i++) {
+        if (getXLinkerLinkWarning(getLinkInfo(linkIds[i], node.graph), node.graph)) {
             return true;
         }
     }
@@ -763,24 +914,25 @@ function syncXLinkerOutputTypeFromInput(node) {
     // 用于处理上游节点（如 XPipe）静默改变输出类型时，
     // XLinker 也能自动更新并显示警告效果。
     //
-    // 性能：onDrawForeground 每帧触发，故此函数用快速路径避免
-    // 每帧 O(n) 遍历。仅当 link.type 与 output.type 不一致
-    // 时才进入慢路径（getNodeByIdInGraph 遍历节点列表）。
+    // 性能：由 installXLinkerStateTicker 每 200ms 调一次（以前是每帧），
+    // 快速路径：仅当 link.type 与 output.type 不一致时才进入慢路径
+    // （getNodeByIdInGraph 遍历节点列表）。
     if (!isXLinker(node) || !node.graph || !node.inputs || !node.outputs) return;
     var input = node.inputs[0];
     var output = node.outputs[0];
     if (!output) return;
 
-    if (!input || input.link == null) {
+    var inputLink = input ? inputLinkId(node, input) : null;
+    if (inputLink == null) {
         // 无输入连接：输出回退为通配符
         if (output.type !== "*") {
             output.type = "*";
-            syncLinkTypes(output, node.graph);
+            syncLinkTypes(node, output);
         }
         return;
     }
 
-    var link = getLinkInfo(input.link, node.graph);
+    var link = getLinkInfo(inputLink, node.graph);
     if (!link) return;
 
     // 快速路径：link.type 已与 output.type 一致且非通配符 → 跳过
@@ -797,15 +949,17 @@ function syncXLinkerOutputTypeFromInput(node) {
 
     if (output.type !== srcType) {
         output.type = srcType;
-        syncLinkTypes(output, node.graph);
+        syncLinkTypes(node, output);
     }
 }
-function syncLinkTypes(output, graph) {
+
+function syncLinkTypes(node, output) {
     // 将输出端口类型同步到所有下游链接的 type 元数据
-    if (!output || !output.links || !graph) return;
+    if (!node || !output || !node.graph) return;
     var newType = output.type;
-    for (var i = 0; i < output.links.length; i++) {
-        var outLink = getLinkInfo(output.links[i], graph);
+    var linkIds = outputLinkIds(node, output);
+    for (var i = 0; i < linkIds.length; i++) {
+        var outLink = getLinkInfo(linkIds[i], node.graph);
         if (outLink) outLink.type = newType;
     }
 }
@@ -813,7 +967,9 @@ function drawXLinkerWarningOutputRing(node, ctx) {
     if (!ctx || !isXLinker(node) || !node.outputs) return;
     var warnWidget = findWidget(node, "type_warning");
     if (warnWidget && !warnWidget.value) return;
-    if (!xlinkerOutputHasWarning(node)) return;
+    // 只读缓存：是否要画由 refreshXLinkerNodeState 预先算好。
+    // 绘制钩子每帧都跑，不能在这里做全图遍历。
+    if (!node.__xlinkerOutputWarning) return;
     var output = node.outputs[0];
     var lineWidth = 2.5;
     var radius = 7;
@@ -878,6 +1034,80 @@ function isLinkerHighlightedLink(link, graph) {
 // ---------------------------------------------------------------------------
 // Canvas hooks
 // ---------------------------------------------------------------------------
+function xlinkerNodesInActiveGraph() {
+    var graph = activeGraph();
+    var nodes = (graph && (graph._nodes || graph.nodes)) || [];
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+        if (isXLinker(nodes[i])) out.push(nodes[i]);
+    }
+    return out;
+}
+
+/**
+ * 同步一个 XLinker 节点的输出类型，并顺手缓存「要不要画警告环」。
+ * 两件事必须分开：类型同步是改状态，警告环是纯读取。
+ */
+function refreshXLinkerNodeState(node) {
+    if (!isXLinker(node)) return;
+    try {
+        syncXLinkerOutputTypeFromInput(node);
+        node.__xlinkerOutputWarning = xlinkerOutputHasWarning(node);
+    } catch (_e) {
+        node.__xlinkerOutputWarning = false;
+    }
+}
+
+function refreshAllXLinkerState() {
+    var nodes = xlinkerNodesInActiveGraph();
+    for (var i = 0; i < nodes.length; i++) {
+        refreshXLinkerNodeState(nodes[i]);
+    }
+}
+
+/**
+ * 定时器：每 XLINKER_STATE_SYNC_MS 同步一次输出类型 + 刷新警告环标记。
+ *
+ * 以前这两件事都挂在 node.onDrawForeground 里（借每帧执行当轮询）。
+ * 那样有两个问题：
+ *   1. Nodes 2.0 下 LGraphCanvas.drawNode() 直接 return，节点级绘制钩子
+ *      完全不执行 → 输出类型不再跟随上游（不报错，纯静默失效）。
+ *   2. 绘制钩子本就该只画、不改状态。
+ */
+function installXLinkerStateTicker() {
+    if (xlinkerStateTimer) return;
+    refreshAllXLinkerState();
+    xlinkerStateTimer = setInterval(refreshAllXLinkerState, XLINKER_STATE_SYNC_MS);
+}
+
+/**
+ * 警告环改挂**画布级** onDrawForeground：两种渲染器下都会执行。
+ * 坐标：此处的 ctx 已经包含画布缩放/平移，并且与节点用同一套坐标，
+ * 所以平移到 node.pos 后就能复用原来的绘制函数。
+ */
+function installXLinkerRingHook() {
+    var canvas = app.canvas;
+    if (!canvas || canvas.__xlinkerRingInstalled) return;
+    canvas.__xlinkerRingInstalled = true;
+    var orig = canvas.onDrawForeground;
+    canvas.onDrawForeground = function (ctx, area) {
+        if (orig) orig.apply(this, arguments);
+        try {
+            var graph = this.graph || activeGraph();
+            var nodes = (graph && (graph._nodes || graph.nodes)) || [];
+            for (var i = 0; i < nodes.length; i++) {
+                var node = nodes[i];
+                if (!node || !node.__xlinkerOutputWarning) continue;
+                if (!isXLinker(node) || !node.pos) continue;
+                ctx.save();
+                ctx.translate(node.pos[0], node.pos[1]);
+                drawXLinkerWarningOutputRing(node, ctx);
+                ctx.restore();
+            }
+        } catch (_e) { /* 忽略绘制失败，不影响画布其他内容 */ }
+    };
+}
+
 function installCanvasHooks() {
     if (canvasHooked || !app.canvas) {
         if (!app.canvas) setTimeout(installCanvasHooks, 200);
@@ -934,6 +1164,13 @@ function installCanvasHooks() {
         }
         origRenderLink && origRenderLink.apply(this, arguments);
     };
+
+    // 输出端口类型不兼容的呼吸光环（画布级，Nodes 2.0 下同样生效）
+    installXLinkerRingHook();
+
+    // 连线中点右键菜单（2.0 下节点/端口变成 Vue DOM 了，但连线还在
+    // canvas 上，showLinkMenu 依然会跑）
+    installLinkMenuHook(app.canvas);
 }
 // ---------------------------------------------------------------------------
 // 端口右键菜单：将连接转换为 XLinker
@@ -966,8 +1203,9 @@ function installXLinkerSlotMenu(nodeType) {
         var graph = this.graph;
         if (!graph) return options;
 
-        var hasOutputLinks = !!(slot.output && slot.output.links && slot.output.links.length > 0);
-        var hasInputLink = !!(slot.input && slot.input.link != null);
+        var hasOutputLinks = !!(slot.output
+            && outputLinkIds(this, slot.output).length > 0);
+        var hasInputLink = !!(slot.input && inputConnected(this, slot.input));
 
         if (!hasOutputLinks && !hasInputLink) return options;
 
@@ -1005,12 +1243,296 @@ function installXLinkerSlotMenu(nodeType) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Nodes 2.0（Vue 节点）：端口右键菜单
+// ---------------------------------------------------------------------------
+// 2.0 里端口是 Vue 组件里的 DOM（圆点带 data-slot-key="<nodeId>-out-<i>"），
+// 整个节点由 Vue 处理右键 → LGraphCanvas.processContextMenu 根本不会被
+// 调用，所以 1.0 那一套 getExtraSlotMenuOptions 在 2.0 下**永远不执行**。
+// 这里在 document 捕获阶段接管「右键落在槽位圆点上」的情况，
+// 用 LiteGraph.ContextMenu（浮层 DOM，两种模式都能用）弹自己的菜单。
+//
+// 认端口两条路，缺一不可：
+//   A. DOM 上的 data-slot-key（精确，但只有圆点本体有；24px 命中区没有）
+//   B. 鼠标坐标反算（兜底，跟 1.0 一样按「端口 20px 命中框」认）
+// 为什么一定要 B：圆点视觉只有 8px（画布 85% 缩放时更小），用户经常点在
+// 它周边 24px 的命中区上，那些 DOM 上根本没有 data-slot-key。
+var SLOT_KEY_RE = /^(.+?)-(in|out)-(\d+)$/;
+
+function isVueNodesMode() {
+    var lite = typeof LiteGraph !== "undefined" ? LiteGraph : null;
+    return !!(lite && lite.vueNodesMode);
+}
+
+/** 按 id 宽松匹配（下标里 id 可能是数字也可能是字符串）。 */
+function resolveNodeByLooseId(graph, rawId) {
+    var nodes = (graph && (graph._nodes || graph.nodes)) || [];
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i] && String(nodes[i].id) === String(rawId)) return nodes[i];
+    }
+    return null;
+}
+
+function currentCanvasGraph() {
+    if (app.canvas && app.canvas.graph) return app.canvas.graph;
+    try {
+        return activeGraph();
+    } catch (_error) {
+        return null;
+    }
+}
+
+/**
+ * 调试用：`window.__xlinkerSlotMenu` 里能看到「右键到底停在哪一步」。
+ * 只有几个数字，开销可忽略，出问题时让用户看一眼就行。
+ */
+function slotMenuStats() {
+    if (typeof window === "undefined") return null;
+    var stats = window.__xlinkerSlotMenu;
+    if (!stats) {
+        stats = window.__xlinkerSlotMenu = {
+            events: 0,
+            byDom: 0,
+            byPoint: 0,
+            menus: 0,
+            last: "",
+        };
+    }
+    return stats;
+}
+
+/** 记下「最后停在哪一步」（no-slot / not-connected / menu …）。 */
+function slotMenuNote(step) {
+    var stats = slotMenuStats();
+    if (stats) stats.last = step;
+    return step;
+}
+
+/** A 路：从 DOM 上认端口（连点元素可能在事件路径里的任一层）。 */
+function resolveSlotFromDom(event) {
+    var path = null;
+    if (typeof event.composedPath === "function") path = event.composedPath();
+    var elements = path && path.length ? path : [event.target];
+    var graph = currentCanvasGraph();
+    for (var i = 0; i < elements.length; i += 1) {
+        var el = elements[i];
+        if (!el || typeof el.getAttribute !== "function") continue;
+        var key = el.getAttribute("data-slot-key");
+        if (!key) continue;
+        var match = SLOT_KEY_RE.exec(String(key));
+        if (!match) continue;
+        var node = resolveNodeByLooseId(graph, match[1]);
+        if (!node) continue;
+        return {
+            node: node,
+            isOutput: match[2] === "out",
+            index: Number(match[3]),
+            via: "dom",
+        };
+    }
+    return null;
+}
+
+/** B 路：鼠标坐标反算（客户端坐标 → 画布坐标 → 端口命中框）。 */
+function resolveSlotByPoint(event) {
+    var canvas = app.canvas;
+    var graph = currentCanvasGraph();
+    if (!canvas || !graph || !canvas.canvas) return null;
+    var rect = canvas.canvas.getBoundingClientRect();
+    var scale = (canvas.ds && canvas.ds.scale) || 1;
+    var offset = (canvas.ds && canvas.ds.offset) || [0, 0];
+    var x = (event.clientX - rect.left) / scale - offset[0];
+    var y = (event.clientY - rect.top) / scale - offset[1];
+    var nodes = (graph._nodes || graph.nodes || []).slice().reverse();
+    for (var i = 0; i < nodes.length; i += 1) {
+        var node = nodes[i];
+        if (!node || typeof node.getSlotInPosition !== "function") continue;
+        var found = null;
+        try {
+            found = node.getSlotInPosition(x, y);
+        } catch (_error) {
+            found = null;
+        }
+        if (!found) continue;
+        return {
+            node: node,
+            isOutput: !!found.output,
+            index: Number(found.slot),
+            via: "point",
+        };
+    }
+    return null;
+}
+
+function showSlotMenu(node, slotIndex, isOutput, slot, event) {
+    var menuCtor = (typeof LiteGraph !== "undefined" && LiteGraph.ContextMenu)
+        || null;
+    if (!menuCtor) return slotMenuNote("no-context-menu");
+
+    var canvasRef = app.canvas;
+    var graphRef = node.graph || currentCanvasGraph();
+    var items = [{
+        content: isOutput
+            ? tk("convert_output_to_xlinker", "Convert Output to XLinker")
+            : tk("convert_input_to_xlinker", "Convert Input to XLinker"),
+        callback: function () {
+            if (isOutput) {
+                convertOutputToXLinker(node, slotIndex, graphRef, canvasRef);
+            } else {
+                convertInputToXLinker(node, slotIndex, graphRef, canvasRef);
+            }
+        },
+    }];
+
+    // 拦住：否则会继续冒泡到 Vue 节点的右键菜单（那是另一套菜单）
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+    }
+
+    new menuCtor(items, {
+        event: event,
+        title: String(slot.type || "*"),
+    });
+    return slotMenuNote("menu");
+}
+
+function handleVueSlotContextMenu(event) {
+    // 1.0 → 交给 LiteGraph 自己的端口菜单（有断开/重命名等完整项）
+    if (!isVueNodesMode()) return;
+    var stats = slotMenuStats();
+    if (stats) stats.events += 1;
+
+    var hit = resolveSlotFromDom(event) || resolveSlotByPoint(event);
+    if (!hit) return slotMenuNote("no-slot");
+    if (stats) {
+        if (hit.via === "dom") stats.byDom += 1;
+        else stats.byPoint += 1;
+    }
+
+    var target = hit.node;
+    if (!target) return slotMenuNote("no-node");
+    if (isXLinker(target)) return slotMenuNote("self");
+
+    var slot = hit.isOutput
+        ? (target.outputs || [])[hit.index]
+        : (target.inputs || [])[hit.index];
+    if (!slot) return slotMenuNote("no-slot-object");
+
+    var connected = hit.isOutput
+        ? outputLinkIds(target, slot).length > 0
+        : inputConnected(target, slot);
+    if (!connected) return slotMenuNote("not-connected");
+
+    if (stats) stats.menus += 1;
+    showSlotMenu(target, hit.index, hit.isOutput, slot, event);
+}
+
+function installVueSlotMenu() {
+    if (installVueSlotMenu.__installed) return;
+    if (typeof document === "undefined") return;
+    installVueSlotMenu.__installed = true;
+    document.addEventListener("contextmenu", handleVueSlotContextMenu, true);
+}
+
+// ---------------------------------------------------------------------------
+// 连线中点右键菜单（2.0 也能用 —— 连线是画在 canvas 上的）
+// ---------------------------------------------------------------------------
+// 2.0 里节点/端口都是 Vue DOM，但**连线依然画在 canvas 上**，所以
+// 「右键连线中点」走的是 LGraphCanvas.showLinkMenu()，这条路是活的。
+// 它内部 `new LiteGraph.ContextMenu([...])` 构造菜单，条目来自
+// getLinkMenuOptions()（没有扩展钩子、不能追加）→ 只能在构造那一下插一条。
+// 做法：临时把 LiteGraph.ContextMenu 换成包装版（**只在这次同步调用期间**），
+// 用完 finally 立刻还原，其它菜单一点不受影响。
+function linkMenuExtraItems(segment, canvas) {
+    if (!segment) return [];
+    var graph = (canvas && canvas.graph) || currentCanvasGraph();
+    var index = Number(segment.origin_slot);
+    if (!Number.isInteger(index) || index < 0) return [];
+    var upstream = resolveNodeByLooseId(graph, segment.origin_id);
+    if (!upstream || isXLinker(upstream)) return [];
+    var slot = (upstream.outputs || [])[index];
+    if (!slot) return [];
+    if (outputLinkIds(upstream, slot).length === 0) return [];
+    return [{
+        content: tk("convert_output_to_xlinker", "Convert Output to XLinker"),
+        callback: function () {
+            convertOutputToXLinker(upstream, index, upstream.graph, canvas);
+        },
+    }];
+}
+
+/** 把我们的项插到 Delete 之前（用 null 分隔线隔开）。 */
+function insertLinkMenuItems(values, extra) {
+    if (!Array.isArray(values)) return values;
+    var out = values.slice();
+    var at = -1;
+    for (var i = 0; i < out.length; i += 1) {
+        var entry = out[i];
+        var text = typeof entry === "string"
+            ? entry
+            : (entry && entry.content) || "";
+        if (String(text) === "Delete") {
+            at = i;
+            break;
+        }
+    }
+    if (at < 0) return out.concat([null], extra);
+    // Delete 前面本来就有分隔线 → 直接插在那条线之前，不再多插一条
+    if (out[at - 1] == null) {
+        return out.slice(0, at - 1).concat(extra, out.slice(at - 1));
+    }
+    return out.slice(0, at).concat(extra, [null], out.slice(at));
+}
+
+function installLinkMenuHook(canvas) {
+    var target = canvas || app.canvas;
+    if (!target) return;
+    var proto = Object.getPrototypeOf(target);
+    if (!proto || typeof proto.showLinkMenu !== "function") return;
+    if (proto.__xlinkerShowLinkMenuPatched) return;
+    proto.__xlinkerShowLinkMenuPatched = true;
+
+    var origShowLinkMenu = proto.showLinkMenu;
+    proto.showLinkMenu = function (segment, event, presentationLink) {
+        var extra = [];
+        try {
+            extra = linkMenuExtraItems(segment, this);
+        } catch (_error) {
+            extra = [];
+        }
+        if (!extra.length || typeof LiteGraph === "undefined") {
+            return origShowLinkMenu.apply(this, arguments);
+        }
+        var origMenu = LiteGraph.ContextMenu;
+        if (typeof origMenu !== "function") {
+            return origShowLinkMenu.apply(this, arguments);
+        }
+        var swapped = function (values, options) {
+            return new origMenu(
+                Array.isArray(values)
+                    ? insertLinkMenuItems(values, extra)
+                    : values,
+                options
+            );
+        };
+        swapped.prototype = origMenu && origMenu.prototype;
+        LiteGraph.ContextMenu = swapped;
+        try {
+            return origShowLinkMenu.apply(this, arguments);
+        } finally {
+            LiteGraph.ContextMenu = origMenu;
+        }
+    };
+}
+
 function convertOutputToXLinker(node, slotIndex, graph, canvas) {
     var output = node.outputs[slotIndex];
-    if (!output || !output.links || output.links.length === 0) return;
 
-    // 复制链接引用（断开前）
-    var linkIds = output.links.slice();
+    // 先取链接 id（断开后就连线库也查不到了）
+    var linkIds = outputLinkIds(node, output);
+    if (linkIds.length === 0) return;
 
     // 收集目标信息
     var targets = [];
@@ -1068,9 +1590,9 @@ function convertOutputToXLinker(node, slotIndex, graph, canvas) {
 
 function convertInputToXLinker(node, slotIndex, graph, canvas) {
     var input = node.inputs[slotIndex];
-    if (!input || input.link == null) return;
 
-    var linkId = input.link;
+    var linkId = input ? inputLinkId(node, input) : null;
+    if (linkId == null) return;
     var linkInfo = getLinkInfo(linkId, graph);
     if (!linkInfo) return;
 
@@ -1118,6 +1640,8 @@ app.registerExtension({
 
     async setup() {
         installCanvasHooks();
+        installXLinkerStateTicker();
+        installVueSlotMenu();
         applyUiLocale();
         installLocaleSync();
     },
@@ -1183,23 +1707,20 @@ app.registerExtension({
                 if (origOnConnectionsChange) {
                     origOnConnectionsChange.apply(this, arguments);
                 }
+
+                // 连线变化后立即刷新一次：输出类型 + 警告环标记
+                // 不用等 ticker 的 200ms，光环能马上出现
+                refreshXLinkerNodeState(this);
             };
         };
         // 推迟到下一个宏任务：此时 ComfyUI 的 MatchType 链已安装完成
         setTimeout(installOnConnectionsHook, 0);
 
-        // 在节点绘制前景上：同步输出类型 + 叠加警告环
-        // 解决上游节点（如 XPipe）静默改变输出类型时，XLinker
-        // 无法通过 onConnectionsChange 感知的问题。
-        var origOnDrawForeground = nodeType.prototype.onDrawForeground;
-        nodeType.prototype.onDrawForeground = function (ctx) {
-            if (origOnDrawForeground) origOnDrawForeground.apply(this, arguments);
-            try {
-                syncXLinkerOutputTypeFromInput(this);
-                drawXLinkerWarningOutputRing(this, ctx);
-            } catch (_e) { /* ignore */ }
-        };
-
+        // 注意：输出类型同步与警告环都**不再**挂在 node.onDrawForeground 上。
+        // 那个钩子在 Nodes 2.0（Vue 节点）下完全不执行（drawNode 直接 return），
+        // 而且绘制钩子不该改状态。现状：
+        //   - 类型同步 → installXLinkerStateTicker() 定时器 + onConnectionsChange
+        //   - 警告环   → installXLinkerRingHook() 的画布级 onDrawForeground
     },
 
     nodeCreated(node) {

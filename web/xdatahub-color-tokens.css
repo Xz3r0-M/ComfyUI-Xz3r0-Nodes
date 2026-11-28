@@ -62,6 +62,55 @@ body:not([data-theme]) {
     /* Scrim */
     --xdh-clr-scrim: rgba(0,0,0,0.7);
 
+    /* ── Surface families (4 families × 4 roles) ──
+       部件默认值必须 `var()` 引用这里，不要在部件里复制数值；
+       只要改上面 --xdh-clr-*，整族自动跟随。 */
+    --xdh-surf-canvas-bg:        var(--xdh-clr-canvas);
+    --xdh-surf-canvas-ink:       var(--xdh-clr-ink);
+    --xdh-surf-canvas-ink-muted: var(--xdh-clr-muted);
+    --xdh-surf-canvas-line:      var(--xdh-clr-hairline);
+
+    --xdh-surf-surface-bg:        var(--xdh-clr-surface-card);
+    --xdh-surf-surface-ink:       var(--xdh-clr-ink);
+    --xdh-surf-surface-ink-muted: var(--xdh-clr-muted);
+    --xdh-surf-surface-line:      var(--xdh-clr-hairline);
+
+    --xdh-surf-overlay-bg:        var(--xdh-clr-surface-strong);
+    --xdh-surf-overlay-ink:       var(--xdh-clr-ink);
+    --xdh-surf-overlay-ink-muted: var(--xdh-clr-body);
+    --xdh-surf-overlay-line:      var(--xdh-clr-hairline);
+
+    --xdh-surf-inset-bg:        var(--xdh-clr-surface-soft);
+    --xdh-surf-inset-ink:       var(--xdh-clr-body);
+    --xdh-surf-inset-ink-muted: var(--xdh-clr-muted);
+    --xdh-surf-inset-line:      var(--xdh-clr-hairline-soft);
+
+    /* ── Fullscreen preview family (dark) ──────────
+       窗口里的灯箱与节点里的全屏预览共用这一族。
+       两个实现各自的 --lb-* / --xmlg-fs-* 只作为局部别名。 */
+    --xdh-fs-scrim:        rgba(10, 10, 10, 0.5);
+    --xdh-fs-panel:        #111111;
+    --xdh-fs-panel-raised: #1a1a1a;
+    --xdh-fs-ink:          #ededed;
+    --xdh-fs-ink-2:        #a0a0a0;
+    --xdh-fs-ink-3:        #808080;
+    --xdh-fs-line:         rgba(255, 255, 255, 0.1);
+    --xdh-fs-line-soft:    rgba(255, 255, 255, 0.06);
+    --xdh-fs-btn:          rgba(255, 255, 255, 0.08);
+    --xdh-fs-btn-hover:    rgba(255, 255, 255, 0.14);
+    --xdh-fs-btn-active:   rgba(255, 255, 255, 0.2);
+    --xdh-fs-thumb:        rgba(255, 255, 255, 0.08);
+    --xdh-fs-wave:         rgba(255, 255, 255, 0.05);
+    --xdh-fs-focus:        hsl(212, 100%, 48%);
+    --xdh-fs-audio-1:      rgba(100, 120, 180, 0.3);
+    --xdh-fs-audio-2:      rgba(80, 100, 160, 0.2);
+    --xdh-fs-audio-3:      rgba(60, 90, 140, 0.3);
+    --xdh-fs-shadow-ring:  rgba(255, 255, 255, 0.1) 0 0 0 1px;
+    --xdh-fs-shadow-card:  rgba(255, 255, 255, 0.1) 0 0 0 1px,
+        rgba(0, 0, 0, 0.2) 0 2px 2px 0,
+        rgba(255, 255, 255, 0.03) 0 0 0 1px;
+    --xdh-fs-shadow:       0 2px 8px rgba(0, 0, 0, 0.18);
+
     /* ============================================ */
     /*  Typography (theme-agnostic)                 */
     /* ============================================ */
@@ -274,66 +323,6 @@ body:not([data-theme]) {
     --xdh-scrollbar-thumb-hover: var(--xdh-clr-primary);
 }
 
-:root[data-xdh-default-theme="light"] {
-    --xdh-clr-primary:         #ff385c;
-    --xdh-clr-primary-active:  #e00b41;
-    --xdh-clr-primary-disabled:#ffd1da;
-    --xdh-clr-on-primary:      #ffffff;
-    --xdh-clr-luxe:            #460479;
-    --xdh-clr-plus:            #92174d;
-
-    --xdh-clr-canvas:         #ffffff;
-    --xdh-clr-surface-soft:   #f7f7f7;
-    --xdh-clr-surface-card:   #ffffff;
-    --xdh-clr-surface-strong: #f2f2f2;
-
-    --xdh-clr-ink:        #222222;
-    --xdh-clr-body:       #3f3f3f;
-    --xdh-clr-muted:      #6a6a6a;
-    --xdh-clr-muted-soft: #929292;
-    --xdh-clr-star-rating:#222222;
-
-    --xdh-clr-hairline:       #dddddd;
-    --xdh-clr-hairline-soft:  #ebebeb;
-    --xdh-clr-border-strong:  #c1c1c1;
-
-    --xdh-clr-error:       #c13515;
-    --xdh-clr-error-hover: #b32505;
-    --xdh-clr-legal-link:  #428bff;
-
-    --xdh-clr-scrim: rgba(0,0,0,0.50);
-}
-
-:root[data-xdh-default-theme="dark"] {
-    --xdh-clr-primary:         #ff385c;
-    --xdh-clr-primary-active:  #e00b41;
-    --xdh-clr-primary-disabled:#ffd1da;
-    --xdh-clr-on-primary:      #ffffff;
-    --xdh-clr-luxe:            #460479;
-    --xdh-clr-plus:            #92174d;
-
-    --xdh-clr-canvas:         #0c0c0e;
-    --xdh-clr-surface-soft:   #161618;
-    --xdh-clr-surface-card:   #161618;
-    --xdh-clr-surface-strong: #1d1d20;
-
-    --xdh-clr-ink:        #ffffff;
-    --xdh-clr-body:       rgba(255,255,255,0.85);
-    --xdh-clr-muted:      rgba(255,255,255,0.6);
-    --xdh-clr-muted-soft: rgba(255,255,255,0.4);
-    --xdh-clr-star-rating:#ffffff;
-
-    --xdh-clr-hairline:       rgba(255,255,255,0.12);
-    --xdh-clr-hairline-soft:  rgba(255,255,255,0.06);
-    --xdh-clr-border-strong:  rgba(255,255,255,0.22);
-
-    --xdh-clr-error:       #c13515;
-    --xdh-clr-error-hover: #e04a20;
-    --xdh-clr-legal-link:  #428bff;
-
-    --xdh-clr-scrim: rgba(0,0,0,0.7);
-}
-
 body[data-theme="light"] {
     /* ============================================ */
     /*  Color Palette (Light)                       */
@@ -365,6 +354,51 @@ body[data-theme="light"] {
     --xdh-clr-legal-link:  #428bff;
 
     --xdh-clr-scrim: rgba(0,0,0,0.50);
+
+    /* ── Surface families (light) ──────────────── */
+    --xdh-surf-canvas-bg:        var(--xdh-clr-canvas);
+    --xdh-surf-canvas-ink:       var(--xdh-clr-ink);
+    --xdh-surf-canvas-ink-muted: var(--xdh-clr-muted);
+    --xdh-surf-canvas-line:      var(--xdh-clr-hairline);
+
+    --xdh-surf-surface-bg:        var(--xdh-clr-surface-card);
+    --xdh-surf-surface-ink:       var(--xdh-clr-ink);
+    --xdh-surf-surface-ink-muted: var(--xdh-clr-muted);
+    --xdh-surf-surface-line:      var(--xdh-clr-hairline);
+
+    --xdh-surf-overlay-bg:        var(--xdh-clr-surface-strong);
+    --xdh-surf-overlay-ink:       var(--xdh-clr-ink);
+    --xdh-surf-overlay-ink-muted: var(--xdh-clr-body);
+    --xdh-surf-overlay-line:      var(--xdh-clr-hairline);
+
+    --xdh-surf-inset-bg:        var(--xdh-clr-surface-soft);
+    --xdh-surf-inset-ink:       var(--xdh-clr-body);
+    --xdh-surf-inset-ink-muted: var(--xdh-clr-muted);
+    --xdh-surf-inset-line:      var(--xdh-clr-hairline-soft);
+
+    /* ── Fullscreen preview family (light) ─────── */
+    --xdh-fs-scrim:        rgba(255, 255, 255, 0.5);
+    --xdh-fs-panel:        #fafafa;
+    --xdh-fs-panel-raised: #ffffff;
+    --xdh-fs-ink:          #171717;
+    --xdh-fs-ink-2:        #4d4d4d;
+    --xdh-fs-ink-3:        #666666;
+    --xdh-fs-line:         rgba(0, 0, 0, 0.08);
+    --xdh-fs-line-soft:    rgba(0, 0, 0, 0.04);
+    --xdh-fs-btn:          rgba(0, 0, 0, 0.04);
+    --xdh-fs-btn-hover:    rgba(0, 0, 0, 0.08);
+    --xdh-fs-btn-active:   rgba(0, 0, 0, 0.12);
+    --xdh-fs-thumb:        rgba(0, 0, 0, 0.04);
+    --xdh-fs-wave:         rgba(0, 0, 0, 0.03);
+    --xdh-fs-focus:        hsl(212, 100%, 48%);
+    --xdh-fs-audio-1:      rgba(100, 120, 200, 0.15);
+    --xdh-fs-audio-2:      rgba(80, 100, 180, 0.1);
+    --xdh-fs-audio-3:      rgba(60, 90, 160, 0.15);
+    --xdh-fs-shadow-ring:  rgba(0, 0, 0, 0.08) 0 0 0 1px;
+    --xdh-fs-shadow-card:  rgba(0, 0, 0, 0.08) 0 0 0 1px,
+        rgba(0, 0, 0, 0.04) 0 2px 2px 0,
+        rgb(250, 250, 250) 0 0 0 1px;
+    --xdh-fs-shadow:       0 2px 8px rgba(0, 0, 0, 0.12);
 
     /* ============================================ */
     /*  Legacy Aliases (Light)                      */
@@ -580,4 +614,137 @@ body[data-theme="light"] {
     --xdh-scrollbar-thumb:     var(--xdh-clr-hairline);
     --xdh-scrollbar-track:     transparent;
     --xdh-scrollbar-thumb-hover: var(--xdh-clr-primary);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   节点面板透色
+   ────────────────────────────────────────────────────────────────────
+   这几块面板长在 ComfyUI 的节点里，旁边就是节点本体和别的节点。
+   所以它们不能用自己的配色——那会像「贴了块颜色不一样的补丁」。
+   这里的值优先读前端写在 <html> 上的活变量，老前端没有时退回
+   --comfy-* 与字面色。
+
+   注意用 --node（节点本体底色），不是 --background（画布底色，比节点暗）。
+   ════════════════════════════════════════════════════════════════════ */
+.xmlg-panel,
+.xlora-panel,
+.ximageget-panel,
+.xmlg-drag-ghost,
+.xmlg-preview {
+    --xmlg-accent: var(--xdh-clr-primary, #ff385c);
+    --xmlg-accent-muted: color-mix(
+        in srgb, var(--xmlg-accent) 14%, transparent
+    );
+    --xmlg-text: var(--foreground, var(--fg-color, #ffffff));
+    --xmlg-text-muted: color-mix(
+        in srgb, var(--xmlg-text) 62%, transparent
+    );
+    --xmlg-border: var(
+        --node-border,
+        var(--border, rgba(255, 255, 255, 0.12))
+    );
+    --xmlg-surface: var(--node, var(--comfy-menu-secondary-bg, #161618));
+    --xmlg-surface-strong: color-mix(
+        in srgb, var(--xmlg-surface) 88%, var(--xmlg-text)
+    );
+    --xmlg-canvas: var(--comfy-menu-bg, var(--background, #0c0c0e));
+    --xmlg-on-accent: var(--xdh-clr-on-primary, #ffffff);
+    --xmlg-danger: var(--destructive, #c13515);
+    --xmlg-danger-bright: #ff0000;
+    --xmlg-danger-text: color-mix(
+        in srgb, var(--xmlg-danger) 55%, var(--xmlg-text)
+    );
+    --xmlg-danger-soft: color-mix(
+        in srgb, var(--xmlg-danger) 12%, transparent
+    );
+    --xmlg-success: var(--success, #22c55e);
+    --xmlg-success-text: color-mix(
+        in srgb, var(--xmlg-success) 70%, var(--xmlg-text)
+    );
+    --xmlg-success-glow: color-mix(
+        in srgb, var(--xmlg-success) 65%, transparent
+    );
+    --xmlg-success-glow-fade: color-mix(
+        in srgb, var(--xmlg-success) 0%, transparent
+    );
+    --xmlg-warning: var(--warning, #f59e0b);
+    --xmlg-warning-strong: color-mix(
+        in srgb, var(--xmlg-warning) 80%, var(--xmlg-text)
+    );
+    /* 提示条：琥珀底上永远用深字（琥珀在深浅主题下都是亮色） */
+    --xmlg-warning-ink: #1a1a1a;
+    --xmlg-warning-text: color-mix(
+        in srgb, var(--xmlg-warning) 38%, var(--xmlg-text)
+    );
+    --xmlg-warning-surface: color-mix(
+        in srgb, var(--xmlg-warning) 16%, var(--xmlg-surface)
+    );
+    --xmlg-warning-soft: color-mix(
+        in srgb, var(--xmlg-warning) 12%, transparent
+    );
+    --xmlg-switch-off: var(--border, rgba(255, 255, 255, 0.22));
+    --xmlg-scrim: color-mix(in srgb, var(--xmlg-canvas) 72%, transparent);
+    --xmlg-toast-bg: var(--popover, var(--node, #1d1d20));
+    --xmlg-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --xmlg-thumb-bg: var(--comfy-input-bg, var(--comfy-menu-bg, #0c0c0e));
+    --xmlg-scroll-thumb: var(--xdh-scrollbar-thumb, #555);
+    --xmlg-scroll-track: var(--xdh-scrollbar-track, transparent);
+}
+
+/* 全屏预览（.xmlg-preview）跟 XDataHub 窗口里的灯箱同一族（--xdh-fs-*），
+   这样「窗口里看着对、进全屏就变样」不会再发生。 */
+.xmlg-preview {
+    --xmlg-text: var(--xdh-fs-ink, #ffffff);
+    --xmlg-text-muted: var(--xdh-fs-ink-2, rgba(255, 255, 255, 0.85));
+    --xmlg-border: var(--xdh-fs-line-soft, rgba(255, 255, 255, 0.06));
+    --xmlg-surface: var(--xdh-fs-panel, #161618);
+    --xmlg-surface-strong: var(--xdh-fs-panel-raised, #1d1d20);
+    --xmlg-canvas: var(--xdh-fs-panel, #0c0c0e);
+    --xmlg-thumb-bg: var(--xdh-fs-thumb, #0c0c0e);
+    --xmlg-scrim: var(--xdh-fs-scrim, rgba(0, 0, 0, 0.72));
+}
+
+/* ── 面板内把 XDataHub 的颜色名改接到上面 ────────────────────────────
+   面板里还散着几百处 `var(--xdh-clr-ink)` 这类老写法（V2 应用的颜色名）。
+   在这里就地重定向一次，它们全部自动跟着 ComfyUI 走——比逐条改几百处
+   引用安全得多，也不会漏。
+
+   刻意不改接的那几个：--xdh-clr-primary / --xdh-clr-on-primary 是
+   --xmlg-accent / --xmlg-on-accent 的来源，改了会绕成环。品牌色本来
+   就固定，不跟 ComfyUI 的主题色跑。 */
+.xmlg-panel,
+.xlora-panel,
+.ximageget-panel,
+.xmlg-drag-ghost,
+.xmlg-preview {
+    --xdh-clr-canvas: var(--xmlg-canvas);
+    --xdh-clr-surface-soft: var(--xmlg-surface);
+    --xdh-clr-surface-card: var(--xmlg-surface);
+    --xdh-clr-surface-strong: var(--xmlg-surface-strong);
+    --xdh-clr-ink: var(--xmlg-text);
+    --xdh-clr-body: var(--xmlg-text-muted);
+    --xdh-clr-muted: var(--xmlg-text-muted);
+    --xdh-clr-muted-soft: var(--xmlg-text-muted);
+    --xdh-clr-hairline: var(--xmlg-border);
+    --xdh-clr-hairline-soft: var(--xmlg-border);
+    --xdh-clr-border-strong: var(--xmlg-border);
+    --xdh-clr-scrim: var(--xmlg-scrim);
+    --xdh-clr-error: var(--xmlg-danger);
+    --xdh-clr-error-hover: var(--xmlg-danger);
+    --xdh-clr-legal-link: var(--xmlg-accent);
+    /* V1 旧名（XMediaGet / XImageGet2 / XAnyToString 还在用） */
+    --xdh-color-background: var(--xmlg-canvas);
+    --xdh-color-surface-1: var(--xmlg-canvas);
+    --xdh-color-surface-2: var(--xmlg-surface);
+    --xdh-color-surface-3: var(--xmlg-surface-strong);
+    --xdh-color-surface-4: var(--xmlg-border);
+    --xdh-color-surface-hover: var(--xmlg-surface-strong);
+    --xdh-color-border: var(--xmlg-border);
+    --xdh-color-text-primary: var(--xmlg-text);
+    --xdh-color-text-secondary: var(--xmlg-text-muted);
+    --xdh-color-hover: var(--xmlg-surface-strong);
+    --xdh-color-primary: var(--xmlg-accent);
+    --xdh-color-primary-muted: var(--xmlg-accent-muted);
+    --xdh-color-danger: var(--xmlg-danger);
+    --xdh-color-success: var(--xmlg-success);
 }

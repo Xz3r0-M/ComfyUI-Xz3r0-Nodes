@@ -9,7 +9,7 @@ import {
     SCROLLBAR_CSS,
     TOOLTIP_CSS,
 } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20261022-1";
+import { t } from "../core/i18n.js?v=20261116-9";
 import { toggleMediaFavorite } from "../core/api.js?v=20260407-416";
 
 function getPreviewSettings() {
@@ -326,10 +326,20 @@ export class XdhLightbox extends BaseElement {
         this._panStartY = 0;
         this._panStartOffsetX = 0;
         this._panStartOffsetY = 0;
-        this._onPreview = (e) => this._open(e.detail);
+        this._onPreview = (e) => {
+            // 配置页里的样张不参与全局预览，只有真灯箱才响应
+            if (this.hasAttribute("preview")) {
+                return;
+            }
+            void this._open(e.detail);
+        };
         this._onKeyDown = (event) => {
             const stage = this.$(".fs-stage");
             if (!stage || stage.dataset.active !== "true" || !this._navigation) {
+                return;
+            }
+            // 样张不接管方向键，别把配置页的键盘操作吃掉
+            if (this.hasAttribute("preview")) {
                 return;
             }
             if (event.defaultPrevented || event.altKey
@@ -1651,6 +1661,11 @@ export class XdhLightbox extends BaseElement {
 
     bindEvents() {
         const stage = this.$(".fs-stage");
+        if (stage instanceof HTMLElement && this.hasAttribute("preview")) {
+            // 样张：整块不可交互。放在这里是因为 bindEvents 在每次渲染后
+            // 都会跑，比单点调用更不容易漏。
+            stage.inert = true;
+        }
         if (!stage || stage._xdhWheelBound) {
             return;
         }
@@ -2036,6 +2051,17 @@ export class XdhLightbox extends BaseElement {
             return;
         }
 
+        // 预览模式（主题配置页）不抢浏览器全屏，画在容器里就够。
+        if (this.hasAttribute("preview")) {
+            // 样张只负责「长什么样」，不负责「能干什么」。
+            // inert 让整棵子树不命中鼠标、不接受聚焦、不触发 hover，
+            // 连按钮上挂的自绘提示都不会弹。
+            if (stage instanceof HTMLElement) {
+                stage.inert = true;
+            }
+            return;
+        }
+
         try {
             await requestElementFullscreen(stage);
             this._startPlayback();
@@ -2049,6 +2075,18 @@ export class XdhLightbox extends BaseElement {
     async _open(detail) {
         const navigation = normalizeNavigationContext(detail?.navigation, detail);
         await this._showDetail(detail, navigation);
+    }
+
+    /**
+     * 主题配置页用：不进入浏览器全屏，只把全屏界面画在本组件里。
+     * 传进来的 detail 跟正常预览一样（type / url / name），
+     * 只是不需要真的读图 —— 配置页会传一张内置占位图。
+     */
+    async previewMedia(detail) {
+        if (!this.hasAttribute("preview")) {
+            return;
+        }
+        await this._showDetail(detail, null);
     }
 
     _teardown(options = {}) {
@@ -2116,67 +2154,53 @@ export class XdhLightbox extends BaseElement {
                 /* ============================================
                    Vercel Design System - Theme Variables
                    ============================================ */
+                /* 全屏预览颜色：统一从 --xdh-fs-* 族取（定义在
+                   xdatahub-color-tokens.css），字面值只作为该族缺失时的兜底。
+                   节点里的全屏预览（--xmlg-fs-*）指向同一族，两边配色一致。 */
                 :host {
                     /* Dark Theme (Default) */
-                    --lb-bg: rgba(10, 10, 10, 0.5);
-                    --lb-surface: #111111;
-                    --lb-surface-elevated: #1a1a1a;
-                    --lb-text-primary: #ededed;
-                    --lb-text-secondary: #a0a0a0;
-                    --lb-text-tertiary: #808080;
-                    --lb-border: rgba(255, 255, 255, 0.1);
-                    --lb-border-light: rgba(255, 255, 255, 0.06);
-                    --lb-shadow-ring: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px;
-                    --lb-shadow-card: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px, rgba(0, 0, 0, 0.2) 0px 2px 2px 0px, rgba(255, 255, 255, 0.03) 0px 0px 0px 1px;
-                    --lb-btn-bg: rgba(255, 255, 255, 0.08);
-                    --lb-btn-bg-hover: rgba(255, 255, 255, 0.14);
-                    --lb-btn-bg-active: rgba(255, 255, 255, 0.2);
-                    --lb-thumb-bg: rgba(255, 255, 255, 0.08);
-                    --lb-waveform-bg: rgba(255, 255, 255, 0.05);
-                    --lb-focus: hsl(212, 100%, 48%);
-                    --lb-audio-gradient-start: rgba(100, 120, 180, 0.3);
-                    --lb-audio-gradient-mid: rgba(80, 100, 160, 0.2);
-                    --lb-audio-gradient-end: rgba(60, 90, 140, 0.3);
+                    --lb-bg: var(--xdh-fs-scrim, rgba(10, 10, 10, 0.5));
+                    --lb-surface: var(--xdh-fs-panel, #111111);
+                    --lb-surface-elevated: var(--xdh-fs-panel-raised, #1a1a1a);
+                    --lb-text-primary: var(--xdh-fs-ink, #ededed);
+                    --lb-text-secondary: var(--xdh-fs-ink-2, #a0a0a0);
+                    --lb-text-tertiary: var(--xdh-fs-ink-3, #808080);
+                    --lb-border: var(--xdh-fs-line, rgba(255, 255, 255, 0.1));
+                    --lb-border-light: var(--xdh-fs-line-soft, rgba(255, 255, 255, 0.06));
+                    --lb-shadow-ring: var(--xdh-fs-shadow-ring, rgba(255, 255, 255, 0.1) 0px 0px 0px 1px);
+                    --lb-shadow-card: var(--xdh-fs-shadow-card, rgba(255, 255, 255, 0.1) 0px 0px 0px 1px, rgba(0, 0, 0, 0.2) 0px 2px 2px 0px, rgba(255, 255, 255, 0.03) 0px 0px 0px 1px);
+                    --lb-btn-bg: var(--xdh-fs-btn, rgba(255, 255, 255, 0.08));
+                    --lb-btn-bg-hover: var(--xdh-fs-btn-hover, rgba(255, 255, 255, 0.14));
+                    --lb-btn-bg-active: var(--xdh-fs-btn-active, rgba(255, 255, 255, 0.2));
+                    --lb-thumb-bg: var(--xdh-fs-thumb, rgba(255, 255, 255, 0.08));
+                    --lb-waveform-bg: var(--xdh-fs-wave, rgba(255, 255, 255, 0.05));
+                    --lb-focus: var(--xdh-fs-focus, hsl(212, 100%, 48%));
+                    --lb-audio-gradient-start: var(--xdh-fs-audio-1, rgba(100, 120, 180, 0.3));
+                    --lb-audio-gradient-mid: var(--xdh-fs-audio-2, rgba(80, 100, 160, 0.2));
+                    --lb-audio-gradient-end: var(--xdh-fs-audio-3, rgba(60, 90, 140, 0.3));
                 }
 
                 :host-context(body[data-theme="light"]) {
                     /* Light Theme */
-                    --lb-bg: rgba(255, 255, 255, 0.5);
-                    --lb-surface: #fafafa;
-                    --lb-surface-elevated: #ffffff;
-                    --lb-text-primary: #171717;
-                    --lb-text-secondary: #4d4d4d;
-                    --lb-text-tertiary: #666666;
-                    --lb-border: rgba(0, 0, 0, 0.08);
-                    --lb-border-light: rgba(0, 0, 0, 0.04);
-                    --lb-shadow-ring: rgba(0, 0, 0, 0.08) 0px 0px 0px 1px;
-                    --lb-shadow-card: rgba(0, 0, 0, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.04) 0px 2px 2px 0px, rgb(250, 250, 250) 0px 0px 0px 1px;
-                    --lb-btn-bg: rgba(0, 0, 0, 0.04);
-                    --lb-btn-bg-hover: rgba(0, 0, 0, 0.08);
-                    --lb-btn-bg-active: rgba(0, 0, 0, 0.12);
-                    --lb-thumb-bg: rgba(0, 0, 0, 0.04);
-                    --lb-waveform-bg: rgba(0, 0, 0, 0.03);
-                    --lb-focus: hsl(212, 100%, 48%);
-                    --lb-audio-gradient-start: rgba(100, 120, 200, 0.15);
-                    --lb-audio-gradient-mid: rgba(80, 100, 180, 0.1);
-                    --lb-audio-gradient-end: rgba(60, 90, 160, 0.15);
-                }
-
-                /* Follow-ComfyUI theme: remap the lightbox's structural
-                   tokens onto the ComfyUI-derived --xdh-clr-* set. Applies
-                   ONLY in this theme (body[data-theme-source="comfyui"]);
-                   placed after the light block so it wins on equal
-                   specificity. The dark/light --lb-* blocks above are left
-                   untouched and remain the fallback for the built-in themes. */
-                :host-context(body[data-theme-source="comfyui"]) {
-                    --lb-bg: var(--xdh-clr-scrim);
-                    --lb-surface: var(--xdh-clr-surface-card);
-                    --lb-surface-elevated: var(--xdh-clr-surface-strong);
-                    --lb-text-primary: var(--xdh-clr-ink);
-                    --lb-text-secondary: var(--xdh-clr-body);
-                    --lb-text-tertiary: var(--xdh-clr-muted);
-                    --lb-border: var(--xdh-clr-hairline);
-                    --lb-border-light: var(--xdh-clr-hairline-soft);
+                    --lb-bg: var(--xdh-fs-scrim, rgba(255, 255, 255, 0.5));
+                    --lb-surface: var(--xdh-fs-panel, #fafafa);
+                    --lb-surface-elevated: var(--xdh-fs-panel-raised, #ffffff);
+                    --lb-text-primary: var(--xdh-fs-ink, #171717);
+                    --lb-text-secondary: var(--xdh-fs-ink-2, #4d4d4d);
+                    --lb-text-tertiary: var(--xdh-fs-ink-3, #666666);
+                    --lb-border: var(--xdh-fs-line, rgba(0, 0, 0, 0.08));
+                    --lb-border-light: var(--xdh-fs-line-soft, rgba(0, 0, 0, 0.04));
+                    --lb-shadow-ring: var(--xdh-fs-shadow-ring, rgba(0, 0, 0, 0.08) 0px 0px 0px 1px);
+                    --lb-shadow-card: var(--xdh-fs-shadow-card, rgba(0, 0, 0, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.04) 0px 2px 2px 0px, rgb(250, 250, 250) 0px 0px 0px 1px);
+                    --lb-btn-bg: var(--xdh-fs-btn, rgba(0, 0, 0, 0.04));
+                    --lb-btn-bg-hover: var(--xdh-fs-btn-hover, rgba(0, 0, 0, 0.08));
+                    --lb-btn-bg-active: var(--xdh-fs-btn-active, rgba(0, 0, 0, 0.12));
+                    --lb-thumb-bg: var(--xdh-fs-thumb, rgba(0, 0, 0, 0.04));
+                    --lb-waveform-bg: var(--xdh-fs-wave, rgba(0, 0, 0, 0.03));
+                    --lb-focus: var(--xdh-fs-focus, hsl(212, 100%, 48%));
+                    --lb-audio-gradient-start: var(--xdh-fs-audio-1, rgba(100, 120, 200, 0.15));
+                    --lb-audio-gradient-mid: var(--xdh-fs-audio-2, rgba(80, 100, 180, 0.1));
+                    --lb-audio-gradient-end: var(--xdh-fs-audio-3, rgba(60, 90, 160, 0.15));
                 }
 
                 /* ============================================
@@ -2202,6 +2226,37 @@ export class XdhLightbox extends BaseElement {
                     visibility: visible;
                     pointer-events: auto;
                     overflow: hidden;
+                }
+
+                /* 主题配置页里的预览模式：不进浏览器全屏，
+                   就在自己所在容器的范围里把全屏界面画出来，
+                   用绝对定位代替 fixed。
+
+                   这一档是「样张」：只看不点。按钮、左右切图、滚轮缩放、
+                   双击复位、拖拽平移全部不可用 —— JS 侧还给 stage 设了
+                   inert（那是彻底的一层）。CSS 这层是兜底：内部有三条
+                   规则显式写了 pointer-events: auto（顶栏、侧边按钮、
+                   底部面板），不加 !important 压不住。 */
+                :host([preview]) .fs-stage {
+                    position: absolute;
+                    inset: 0;
+                    padding: 0;
+                    opacity: 1;
+                    visibility: visible;
+                    pointer-events: none;
+                    overflow: hidden;
+                    z-index: 1;
+                }
+
+                :host([preview]) .fs-stage * {
+                    pointer-events: none !important;
+                    cursor: default !important;
+                }
+
+                /* 真全屏时的上下留白是给标题栏与底部列表的，
+                   预览窗口只有几百像素高，照搬会把画面挤没。 */
+                :host([preview]) .fs-media {
+                    padding: 42px 10px 56px;
                 }
 
                 .fs-media {

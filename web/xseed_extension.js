@@ -15,6 +15,8 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { rootGraphOf } from "./core/root-graph.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XSeed";
 var NODE_CLASS = "XSeed";
@@ -108,7 +110,7 @@ function refreshAllSeedLocales() {
     var graph = (app.canvas && app.canvas.getCurrentGraph
         && app.canvas.getCurrentGraph())
         || (app.canvas && app.canvas.graph)
-        || app.graph;
+        || rootGraphOf(app);
     var nodes = (graph && (graph._nodes || graph.nodes)) || [];
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
@@ -143,16 +145,19 @@ function applySeedLocale(state) {
         state.seedInput.placeholder = tk("placeholder_seed", "Seed");
     }
     if (state.genBtn) {
-        state.genBtn.title = tk("tip_generate", "Generate random seed based on digit limit");
+        setComfyTip(state.genBtn, tk("tip_generate", "Generate random seed based on digit limit"));
     }
     if (state.randomToggle) {
-        state.randomToggle.title = state.randomOnExecute
-            ? tk("tip_random_on", "Random on execute: enabled")
-            : tk("tip_random_off", "Random on execute: disabled");
+        setComfyTip(
+            state.randomToggle,
+            state.randomOnExecute
+                ? tk("tip_random_on", "Random on execute: enabled")
+                : tk("tip_random_off", "Random on execute: disabled")
+        );
     }
     if (state.useLastBtn) {
         state.useLastBtn.textContent = "\u{1F4CB} " + tk("btn_use_last", "Use Last Seed");
-        state.useLastBtn.title = tk("tip_use_last", "Copy last applied seed to current seed");
+        setComfyTip(state.useLastBtn, tk("tip_use_last", "Copy last applied seed to current seed"));
     }
 }
 
@@ -511,6 +516,8 @@ function bindCanvasForwarding(panel) {
     panel.addEventListener("pointerdown", function (event) {
         if (event.button !== 1) return;
         event.preventDefault();
+        // 锁住指针：中键拖出面板时不丢事件（否则平移会卡住）
+        panel.setPointerCapture?.(event.pointerId);
         var canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseDown !== "function") return;
         canvas.processMouseDown(event);
@@ -523,6 +530,7 @@ function bindCanvasForwarding(panel) {
     });
     panel.addEventListener("pointerup", function (event) {
         if (event.button !== 1) return;
+        panel.releasePointerCapture?.(event.pointerId);
         var canvas = app.canvas;
         if (!canvas || typeof canvas.processMouseUp !== "function") return;
         canvas.processMouseUp(event);
@@ -571,7 +579,7 @@ function createSeedUI(node) {
     genBtn.className = "xseed-btn";
     genBtn.type = "button";
     genBtn.textContent = "\u{1F3B2}"; // 🎲
-    genBtn.title = tk("tip_generate", "Generate random seed based on digit limit");
+    setComfyTip(genBtn, tk("tip_generate", "Generate random seed based on digit limit"));
     genBtn.disabled = state.randomOnExecute;
     row1.appendChild(genBtn);
 
@@ -608,9 +616,12 @@ function createSeedUI(node) {
     lastSeedLockBtn.style.width = "28px";
     lastSeedLockBtn.style.padding = "0";
     lastSeedLockBtn.textContent = state.lastSeedLocked ? "\u{1F512}" : "\u{1F513}";
-    lastSeedLockBtn.title = state.lastSeedLocked
-        ? tk("tip_last_seed_locked", "Last seed locked")
-        : tk("tip_last_seed_unlocked", "Last seed unlocked");
+    setComfyTip(
+        lastSeedLockBtn,
+        state.lastSeedLocked
+            ? tk("tip_last_seed_locked", "Last seed locked")
+            : tk("tip_last_seed_unlocked", "Last seed unlocked")
+    );
     // 首次使用时还没有上次种子值，禁用锁定
     lastSeedLockBtn.disabled = !readLastSeedString(node);
     row2.appendChild(lastSeedLockBtn);
@@ -641,7 +652,10 @@ function createSeedUI(node) {
     if (state.randomOnExecute) {
         randomToggle.classList.add("is-active");
         genBtn.disabled = true;
-        genBtn.title = tk("tip_gen_random_active", "Random mode active, manual generation disabled");
+        setComfyTip(
+            genBtn,
+            tk("tip_gen_random_active", "Random mode active, manual generation disabled")
+        );
     }
     if (state.lastSeedLocked) {
         lastSeedLockBtn.classList.add("is-active");
@@ -687,13 +701,19 @@ function createSeedUI(node) {
         } else {
             randomToggle.classList.remove("is-active");
         }
-        randomToggle.title = state.randomOnExecute
-            ? tk("tip_random_on", "Random on execute: enabled")
-            : tk("tip_random_off", "Random on execute: disabled");
+        setComfyTip(
+            randomToggle,
+            state.randomOnExecute
+                ? tk("tip_random_on", "Random on execute: enabled")
+                : tk("tip_random_off", "Random on execute: disabled")
+        );
         genBtn.disabled = state.randomOnExecute;
-        genBtn.title = state.randomOnExecute
-            ? tk("tip_gen_random_active", "Random mode active, manual generation disabled")
-            : tk("tip_generate", "Generate random seed based on digit limit");
+        setComfyTip(
+            genBtn,
+            state.randomOnExecute
+                ? tk("tip_gen_random_active", "Random mode active, manual generation disabled")
+                : tk("tip_generate", "Generate random seed based on digit limit")
+        );
         markDirty();
     });
 
@@ -705,9 +725,9 @@ function createSeedUI(node) {
             state.randomOnExecute = false;
             writeRandomOnExecute(node, false);
             randomToggle.classList.remove("is-active");
-            randomToggle.title = tk("tip_random_off", "Random on execute: disabled");
+            setComfyTip(randomToggle, tk("tip_random_off", "Random on execute: disabled"));
             genBtn.disabled = false;
-            genBtn.title = tk("tip_generate", "Generate random seed based on digit limit");
+            setComfyTip(genBtn, tk("tip_generate", "Generate random seed based on digit limit"));
         }
         seedInput.value = lastVal;
         writeSeedString(node, lastVal);
@@ -719,9 +739,12 @@ function createSeedUI(node) {
         writeLastSeedLocked(node, state.lastSeedLocked);
         lastSeedLockBtn.textContent = state.lastSeedLocked
             ? "\u{1F512}" : "\u{1F513}";
-        lastSeedLockBtn.title = state.lastSeedLocked
-            ? tk("tip_last_seed_locked", "Last seed locked")
-            : tk("tip_last_seed_unlocked", "Last seed unlocked");
+        setComfyTip(
+            lastSeedLockBtn,
+            state.lastSeedLocked
+                ? tk("tip_last_seed_locked", "Last seed locked")
+                : tk("tip_last_seed_unlocked", "Last seed unlocked")
+        );
         if (state.lastSeedLocked) {
             lastSeedLockBtn.classList.add("is-active");
         } else {
@@ -776,15 +799,21 @@ function refreshUIFromWidgets(node, state) {
         } else {
             state.randomToggle.classList.remove("is-active");
         }
-        state.randomToggle.title = randomOn
-            ? tk("tip_random_on", "Random on execute: enabled")
-            : tk("tip_random_off", "Random on execute: disabled");
+        setComfyTip(
+            state.randomToggle,
+            randomOn
+                ? tk("tip_random_on", "Random on execute: enabled")
+                : tk("tip_random_off", "Random on execute: disabled")
+        );
     }
     if (state.genBtn) {
         state.genBtn.disabled = randomOn;
-        state.genBtn.title = randomOn
-            ? tk("tip_gen_random_active", "Random mode active, manual generation disabled")
-            : tk("tip_generate", "Generate random seed based on digit limit");
+        setComfyTip(
+            state.genBtn,
+            randomOn
+                ? tk("tip_gen_random_active", "Random mode active, manual generation disabled")
+                : tk("tip_generate", "Generate random seed based on digit limit")
+        );
     }
     // 锁定开关
     var locked = readLastSeedLocked(node);
@@ -794,9 +823,12 @@ function refreshUIFromWidgets(node, state) {
     if (state.lastSeedLockBtn) {
         state.lastSeedLockBtn.disabled = !hasLast;
         state.lastSeedLockBtn.textContent = locked ? "\u{1F512}" : "\u{1F513}";
-        state.lastSeedLockBtn.title = locked
-            ? tk("tip_last_seed_locked", "Last seed locked")
-            : tk("tip_last_seed_unlocked", "Last seed unlocked");
+        setComfyTip(
+            state.lastSeedLockBtn,
+            locked
+                ? tk("tip_last_seed_locked", "Last seed locked")
+                : tk("tip_last_seed_unlocked", "Last seed unlocked")
+        );
         if (locked) {
             state.lastSeedLockBtn.classList.add("is-active");
         } else {
@@ -882,7 +914,7 @@ app.registerExtension({
             var graph = (app.canvas && app.canvas.getCurrentGraph
                 && app.canvas.getCurrentGraph())
                 || (app.canvas && app.canvas.graph)
-                || app.graph;
+                || rootGraphOf(app);
             if (!graph) return;
             var node = graph.getNodeById
                 ? graph.getNodeById(detail.node)

@@ -11,16 +11,18 @@
  * - rebind link origin_slot / target_slot after any reorder
  */
 
+import { slotLinkIds as coreSlotLinkIds } from "./core/slot-links.js";
+
 var HIDDEN_POS = [0, -100000];
 var HIDDEN_FLAG = "_xzr0Hidden";
 
+/**
+ * 读一个口子上的连线 id。
+ * 实现统一在 core/slot-links.js：新版前端走连线库，不读已弃用的
+ * `input.link` / `output.links`（读一次就打一条控制台警告）。
+ */
 function slotLinkIds(slot) {
-    if (!slot) return [];
-    if (Array.isArray(slot.linkIds)) return slot.linkIds.slice();
-    if (Array.isArray(slot.links)) return slot.links.slice();
-    if (slot.linkId != null) return [slot.linkId];
-    if (slot.link != null) return [slot.link];
-    return [];
+    return coreSlotLinkIds(null, slot);
 }
 
 /**
@@ -50,7 +52,7 @@ function slotLinkAt(node, direction, index, getLinkInfo) {
         if (direct) return direct;
     }
     if (typeof getLinkInfo !== "function" || !node.graph) return null;
-    var ids = slotLinkIds(slot);
+    var ids = coreSlotLinkIds(node, slot);
     for (var linkIndex = 0; linkIndex < ids.length; linkIndex++) {
         var link = getLinkInfo(node.graph, ids[linkIndex]);
         if (link) return link;
