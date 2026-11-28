@@ -7,7 +7,7 @@ import {
     loadFavoriteList, loadFavoriteIds,
 } from "./core/api.js?v=20260601-5";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20261023-2";
+import { setLocale, t } from "./core/i18n.js?v=20261116-8";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
@@ -19,11 +19,12 @@ import "./components/xdh-node-picker.js?v=20261023-2";
 import "./core/node-bridge.js?v=20261023-2";
 import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20261023-5";
+import "./components/xdh-lightbox.js?v=20261116-8";
 import "./components/xdh-history-view.js?v=20261021-3";
 import "./components/xdh-banner.js?v=20260406-15";
 import "./components/xdh-lora-detail.js?v=20261023-8";
-import "./components/xdh-settings-dialog.js?v=20261021-1";
+import "./components/xdh-settings-dialog.js?v=20261116-8";
+import "./components/xdh-theme-editor.js?v=20261116-8";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [
@@ -92,47 +93,29 @@ const DIRECTORY_VIEW_CATEGORIES = new Set([
 
 const LOCK_FALLBACK_POLL_INTERVAL_MS = 10000;
 const LOCK_EVENT_REFRESH_DEBOUNCE_MS = 80;
-const THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
+const THEME_MODE_VALUES = new Set(["dark", "light"]);
 const EFFECTIVE_THEME_VALUES = new Set(["dark", "light"]);
 const THEME_STORAGE_KEY = "XDataHub.V2.Theme";
-const THEME_VAR_KEYS = Object.freeze([
-    "--xdh-clr-primary",
-    "--xdh-clr-primary-active",
-    "--xdh-clr-on-primary",
-    "--xdh-clr-canvas",
-    "--xdh-clr-surface-soft",
-    "--xdh-clr-surface-card",
-    "--xdh-clr-surface-strong",
-    "--xdh-clr-ink",
-    "--xdh-clr-body",
-    "--xdh-clr-muted",
-    "--xdh-clr-muted-soft",
-    "--xdh-clr-hairline",
-    "--xdh-clr-hairline-soft",
-    "--xdh-clr-border-strong",
-    "--xdh-clr-scrim",
-]);
+const USER_THEME_STYLE_ID = "xdatahub-user-theme";
 
 let currentThemeContext = {
     theme_mode: "dark",
     effective_mode: "dark",
-    vars: {},
+    overrides: { dark: {}, light: {} },
 };
 
 // ── 初始主题检测：基于 prefers-color-scheme 设置 data-theme ──────────────
 (function initTheme() {
     try {
         const saved = localStorage.getItem(THEME_STORAGE_KEY);
-        if (saved === "light" || saved === "dark" || saved === "comfyui") {
+        if (saved === "light" || saved === "dark") {
             currentThemeContext.theme_mode = saved;
-            document.body.dataset.theme = saved === "light" ? "light" : "dark";
-            document.body.dataset.themeSource = getThemeSourceMode(saved);
+            document.body.dataset.theme = saved;
             return;
         }
     } catch { /* ignore */ }
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     document.body.dataset.theme = prefersDark ? "dark" : "light";
-    document.body.dataset.themeSource = "xdatahub";
 })();
 
 let lockRefreshTimer = 0;
@@ -154,10 +137,32 @@ function normalizeEffectiveThemeMode(mode) {
     return EFFECTIVE_THEME_VALUES.has(nextMode) ? nextMode : "dark";
 }
 
-function getThemeSourceMode(themeMode) {
-    return normalizeThemeMode(themeMode) === "comfyui"
-        ? "comfyui"
-        : "xdatahub";
+/** 只收 --xdh* 键、值必须是非空字符串。 */
+function normalizeThemeOverrides(value) {
+    const out = { dark: {}, light: {} };
+    if (!value || typeof value !== "object") {
+        return out;
+    }
+    for (const mode of ["dark", "light"]) {
+        const group = value[mode];
+        if (!group || typeof group !== "object") {
+            continue;
+        }
+        for (const [tokenName, tokenValue] of Object.entries(group)) {
+            if (!tokenName.startsWith("--xdh")) {
+                continue;
+            }
+            if (typeof tokenValue !== "string") {
+                continue;
+            }
+            const clean = tokenValue.trim();
+            if (!clean) {
+                continue;
+            }
+            out[mode][tokenName] = clean;
+        }
+    }
+    return out;
 }
 
 function normalizeMessageOrigin(value) {
@@ -200,25 +205,40 @@ function postThemeModeToHost(mode) {
     );
 }
 
-function clearThemeVars(target) {
-    if (!(target instanceof HTMLElement)) {
-        return;
+function buildThemeOverrideSheet(overrides) {
+    const lines = [];
+    const dark = Object.entries(overrides?.dark || {});
+    const light = Object.entries(overrides?.light || {});
+    if (dark.length) {
+        lines.push(':root,body[data-theme="dark"],body:not([data-theme]){');
+        for (const [name, value] of dark) {
+            lines.push(`  ${name}:${value};`);
+        }
+        lines.push("}");
     }
-    for (const tokenName of THEME_VAR_KEYS) {
-        target.style.removeProperty(tokenName);
+    if (light.length) {
+        lines.push('body[data-theme="light"]{');
+        for (const [name, value] of light) {
+            lines.push(`  ${name}:${value};`);
+        }
+        lines.push("}");
     }
+    return lines.join("\n");
 }
 
-function applyThemeVars(target, vars) {
-    if (!(target instanceof HTMLElement)) {
+function applyThemeOverridesToDocument(overrides) {
+    let styleEl = document.getElementById(USER_THEME_STYLE_ID);
+    const text = buildThemeOverrideSheet(overrides);
+    if (!text) {
+        styleEl?.remove();
         return;
     }
-    clearThemeVars(target);
-    for (const [tokenName, tokenValue] of Object.entries(vars || {})) {
-        if (typeof tokenValue === "string" && tokenValue.trim()) {
-            target.style.setProperty(tokenName, tokenValue);
-        }
+    if (!styleEl) {
+        styleEl = document.createElement("style");
+        styleEl.id = USER_THEME_STYLE_ID;
+        document.head.appendChild(styleEl);
     }
+    styleEl.textContent = text;
 }
 
 function applyThemeContext(context, options = {}) {
@@ -228,21 +248,18 @@ function applyThemeContext(context, options = {}) {
             effective_mode: normalizeEffectiveThemeMode(
                 context.effective_mode
             ),
-            vars: { ...(context.vars || {}) },
+            overrides: normalizeThemeOverrides(context.overrides),
         }
         : {
             theme_mode: normalizeThemeMode(context),
             effective_mode: normalizeEffectiveThemeMode(context),
-            vars: {},
+            overrides: normalizeThemeOverrides(null),
         };
     const prevEffective = currentThemeContext.effective_mode;
     const prevThemeMode = currentThemeContext.theme_mode;
     currentThemeContext = nextContext;
     document.body.dataset.theme = nextContext.effective_mode;
-    document.body.dataset.themeSource = getThemeSourceMode(
-        nextContext.theme_mode
-    );
-    applyThemeVars(document.body, nextContext.vars);
+    applyThemeOverridesToDocument(nextContext.overrides);
     try {
         localStorage.setItem(THEME_STORAGE_KEY, nextContext.theme_mode);
     } catch { /* ignore localStorage write errors */ }
@@ -535,7 +552,6 @@ window.addEventListener("message", (event) => {
             {
                 theme_mode: payload.theme_mode,
                 effective_mode: payload.theme_mode,
-                vars: {},
             },
             { notifyHost: false }
         );
@@ -648,7 +664,6 @@ function applyThemeV2(mode, options = {}) {
         {
             theme_mode: mode,
             effective_mode: mode === "light" ? "light" : "dark",
-            vars: {},
         },
         options
     );

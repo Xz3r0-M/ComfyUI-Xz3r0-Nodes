@@ -12,6 +12,7 @@ import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 import { outputLinkIds } from "./core/slot-links.js";
 import { rootGraphOf } from "./core/root-graph.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XController";
 var NODE_CLASS = "XController";
@@ -456,7 +457,10 @@ function refreshAllControlLocales() {
             node.__xcontrolControlLegend.textContent = t("Control");
         }
         if (node.__xcontrolToggleBtn) {
-            node.__xcontrolToggleBtn.title = t("Collapse/Expand settings");
+            setComfyTip(
+                node.__xcontrolToggleBtn,
+                t("Collapse/Expand settings")
+            );
         }
         if (node.__xcontrolTypeSelect) {
             Array.from(node.__xcontrolTypeSelect.options).forEach(function (option) {
@@ -1338,6 +1342,7 @@ function buildXControlUI(node) {
         var opt = document.createElement("option");
         opt.value = key;
         opt.textContent = optionLabel(key);
+        // <option> 不是普通可悬停元素，吃不到官方共享提示，保留原生
         opt.title = tt("Control type");
         typeSelect.appendChild(opt);
     });
@@ -1374,7 +1379,7 @@ function buildXControlUI(node) {
     // 折叠按钮（放在设置区 legend 内）
     var toggleBtn = document.createElement("button");
     toggleBtn.textContent = "▼";
-    toggleBtn.title = t("Collapse/Expand settings");
+    setComfyTip(toggleBtn, t("Collapse/Expand settings"));
     toggleBtn.style.cssText =
         "background:var(--comfy-menu-secondary-bg,#2a2a2a);" +
         "color:var(--input-text,#ddd);border:1px solid var(--border-color,#555);" +
@@ -1659,14 +1664,14 @@ function createRow(labelText) {
 }
 
 function applyTooltip(element, tooltip) {
-    if (element && tooltip) element.title = tooltip;
+    if (element && tooltip) setComfyTip(element, tooltip);
     return element;
 }
 
 function setRowTooltip(row, tooltip) {
     if (!row || !tooltip) return row;
-    row.title = tooltip;
-    if (row.firstChild) row.firstChild.title = tooltip;
+    setComfyTip(row, tooltip);
+    if (row.firstChild) setComfyTip(row.firstChild, tooltip);
     return row;
 }
 
@@ -1912,6 +1917,7 @@ function buildAnalogConfig(panel, node, includeShape) {
         tt("Value mode")
     );
     Array.from(modeSel.options).forEach(function (option) {
+        // 同上：下拉项只能用原生 title
         option.title = tt("Mode " + option.value);
     });
     modeSel.addEventListener("change", function () {

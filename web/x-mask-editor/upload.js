@@ -1,7 +1,7 @@
 import {
     nextClipspaceName,
     sanitizeFileBase,
-} from "./utils.js?v=20261023-15";
+} from "./utils.js?v=20261023-16";
 
 function buildAnnotatedRef(payload) {
     const name = String(payload?.name || "").trim();

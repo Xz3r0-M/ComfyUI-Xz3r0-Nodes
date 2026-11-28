@@ -1,6 +1,7 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 import { getComfyExport } from "./core/comfy-internals.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XControlPanel";
 var NODE_CLASS = "XControlPanel";
@@ -703,9 +704,12 @@ function applyPanelLocale(state) {
             "btn.open_manager",
             "Switch ComfyUI version"
         );
-        state.openManagerButton.title = tk(
-            "tip.open_manager",
-            "Open a window to see and switch ComfyUI versions."
+        setComfyTip(
+            state.openManagerButton,
+            tk(
+                "tip.open_manager",
+                "Open a window to see and switch ComfyUI versions."
+            )
         );
         if (state.openManagerLabelEl) {
             state.openManagerLabelEl.textContent =
@@ -727,9 +731,9 @@ function applyPanelLocale(state) {
             "btn.restart_busy",
             "Restarting ComfyUI..."
         );
-        state.restartButton.title = tk(
-            "tip.restart",
-            "Restart the ComfyUI server process."
+        setComfyTip(
+            state.restartButton,
+            tk("tip.restart", "Restart the ComfyUI server process.")
         );
         if (!state.isBusy && state.restartLabelEl) {
             state.restartLabelEl.textContent = state.restartButton.dataset.label;
@@ -740,9 +744,13 @@ function applyPanelLocale(state) {
     }
     if (state.tokenButtonEl) {
         state.tokenButtonEl.textContent = tk("btn.token", "GitHub token");
-        state.tokenButtonEl.title = tk(
-            "tip.token",
-            "Set a GitHub token to raise the request limit (5000/hour instead of 60)."
+        setComfyTip(
+            state.tokenButtonEl,
+            tk(
+                "tip.token",
+                "Set a GitHub token to raise the request limit"
+                    + " (5000/hour instead of 60)."
+            )
         );
     }
     if (state.searchEl) {
@@ -751,9 +759,12 @@ function applyPanelLocale(state) {
     if (state.refreshButton) {
         state.refreshButton.dataset.label = tk("btn.refresh", "Refresh");
         state.refreshButton.dataset.busyLabel = tk("btn.refresh_busy", "Refreshing…");
-        state.refreshButton.title = tk(
-            "tip.refresh",
-            "Fetch the latest official versions from GitHub."
+        setComfyTip(
+            state.refreshButton,
+            tk(
+                "tip.refresh",
+                "Fetch the latest official versions from GitHub."
+            )
         );
         if (!state.isRefreshing) {
             state.refreshButton.textContent = state.refreshButton.dataset.label;
@@ -762,9 +773,13 @@ function applyPanelLocale(state) {
     if (state.changeButton) {
         state.changeButton.dataset.label = tk("btn.change", "Switch version");
         state.changeButton.dataset.busyLabel = tk("btn.change_busy", "Updating…");
-        state.changeButton.title = tk(
-            "tip.change",
-            "Switch ComfyUI to the selected version and install its dependencies."
+        setComfyTip(
+            state.changeButton,
+            tk(
+                "tip.change",
+                "Switch ComfyUI to the selected version"
+                    + " and install its dependencies."
+            )
         );
         updateChangeButton(state);
     }

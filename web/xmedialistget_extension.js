@@ -51,7 +51,7 @@ import {
     buildRenderList,
     normalizeGroups,
 } from "./core/group-model.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-15";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-16";
 import { createHoverGuard } from "./core/hover-guard.js";
 import { rootGraphOf } from "./core/root-graph.js";
 
@@ -1382,27 +1382,29 @@ function ensureStyles() {
             white-space: nowrap;
         }
         .xmlg-tooltip {
-            /* tooltip 挂在 body 下，不在 .xmlg-panel 作用域内，
-               因此直接用 :root 上的 XDataHub token（带品牌色兜底）。 */
+            /* tip 挂在 body 下，拿不到 .xmlg-panel 上的变量，所以直接读
+               前端写在 <html> 上的浮层活变量（官方自己的 tooltip 就是
+               bg --background / text --foreground / border --border）。
+               中间那层是 XDataHub 窗口（iframe 里没有官方变量）的退路。 */
             --xmlg-tooltip-media-bg: #000;
             position: fixed;
             z-index: 99999;
             pointer-events: none;
             display: none;
             background: var(
-                --xdh-color-surface-3,
-                var(--xdh-clr-surface-strong, #1d1d20)
+                --popover,
+                var(--xdh-surf-overlay-bg, #1d1d20)
             );
             border: 1px solid var(
-                --xdh-clr-hairline,
-                rgba(255, 255, 255, 0.12)
+                --border,
+                var(--xdh-surf-overlay-line, rgba(255, 255, 255, 0.12))
             );
             border-radius: var(--xdh-radius-sm, 8px);
             padding: 8px;
             width: 212px;
             max-width: 212px;
             box-sizing: border-box;
-            color: var(--xdh-color-text-primary, var(--xdh-clr-ink, #ffffff));
+            color: var(--foreground, var(--xdh-surf-overlay-ink, #ffffff));
             box-shadow: var(
                 --xdh-shadow-popup,
                 0 8px 24px rgba(0, 0, 0, 0.15)
@@ -1474,14 +1476,19 @@ function ensureStyles() {
             display: none;
             flex-direction: column;
             /* 全屏后背后是浏览器黑底，半透明/毛玻璃只会发灰，
-               所以这里用不透明的主底色：浅色主题纯白、深色主题近黑。 */
-            --xmlg-fs-bg: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-fs-panel: var(--xdh-clr-surface-card, #161618);
-            --xmlg-fs-ring: var(--xdh-clr-hairline-soft,
-                rgba(255, 255, 255, 0.06));
-            --xmlg-fs-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+               所以这里用不透明的主底色：浅色主题纯白、深色主题近黑。
+               颜色统一从 --xdh-fs-* 族取（XDataHub 窗口里的灯箱用同一族），
+               字面值只作为该族缺失时的兜底。 */
+            --xmlg-fs-bg: var(--xdh-fs-panel, var(--xdh-clr-canvas, #0c0c0e));
+            --xmlg-fs-panel: var(--xdh-fs-panel-raised,
+                var(--xdh-clr-surface-card, #161618));
+            --xmlg-fs-ink: var(--xdh-fs-ink, var(--xdh-clr-ink, #ffffff));
+            --xmlg-fs-ink-2: var(--xdh-fs-ink-2, var(--xdh-clr-body, rgba(255, 255, 255, 0.85)));
+            --xmlg-fs-ring: var(--xdh-fs-line-soft,
+                var(--xdh-clr-hairline-soft, rgba(255, 255, 255, 0.06)));
+            --xmlg-fs-shadow: var(--xdh-fs-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
             background: var(--xmlg-fs-bg);
-            color: var(--xmlg-text);
+            color: var(--xmlg-fs-ink);
             font-size: 12px;
             box-sizing: border-box;
         }

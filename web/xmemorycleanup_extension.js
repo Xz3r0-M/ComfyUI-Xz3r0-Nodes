@@ -1,5 +1,6 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XMemoryCleanup";
 var NODE_CLASS = "XMemoryCleanup";
@@ -265,7 +266,7 @@ function applyPanelLocale(state) {
             if (!button || !spec) continue;
             button.dataset.label = spec.label;
             button.dataset.busyLabel = spec.busyLabel;
-            button.title = spec.tooltip;
+            setComfyTip(button, spec.tooltip);
             if (!state.isBusy) {
                 button.textContent = spec.label;
             }
@@ -553,7 +554,7 @@ function createCleanupUI(node) {
         button.textContent = spec.label;
         button.dataset.label = spec.label;
         button.dataset.busyLabel = spec.busyLabel;
-        button.title = spec.tooltip;
+        setComfyTip(button, spec.tooltip);
         button.addEventListener("click", (function (action, btn) {
             return function () {
                 runCleanupAction(state, action, btn);

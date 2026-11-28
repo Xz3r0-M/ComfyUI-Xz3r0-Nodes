@@ -4,7 +4,7 @@ import {
     getHashedAccentIndex as getNodeAccentIndex,
     getHexAccentFromHashedKey as getNodeAccentColor,
 } from "./core/node-accent.js";
-import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-15";
+import { openXMaskEditor } from "./x-mask-editor/index.js?v=20261023-16";
 import {
     applyHiddenWidgetLayers,
     removeWidgetInput,
@@ -205,13 +205,17 @@ function getTooltipElement() {
         position: "fixed",
         zIndex: "999999",
         pointerEvents: "none",
-        background: "var(--xdh-color-surface-3)",
-        border: "1px solid var(--xdh-clr-hairline, #666)",
+        // 浮层色跟官方主题走（挂 body，读不到面板变量）；中间那层是
+        // XDataHub 窗口里没有官方变量时的退路。
+        background: "var(--popover, var(--xdh-surf-overlay-bg, #252525))",
+        color: "var(--foreground, var(--xdh-surf-overlay-ink, #eee))",
+        border:
+            "1px solid var(--border,"
+            + " var(--xdh-surf-overlay-line, #3a3a3a))",
         borderRadius: "var(--xdh-radius-sm)",
         padding: "6px 10px",
         maxWidth: "240px",
         boxSizing: "border-box",
-        color: "var(--xdh-color-text-primary)",
         boxShadow: "var(--xdh-shadow-popup)",
         font: "var(--xdh-font-micro-label)",
         lineHeight: "1.35",

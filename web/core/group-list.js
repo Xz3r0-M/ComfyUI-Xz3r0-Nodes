@@ -333,58 +333,15 @@ const GROUP_ARROW_ICON_URL = new URL(
    由调用方指定，见 groupStyles。
 
    ⚠️ 改这里等于同时改 XMediaListGet 与 XLoraGet 的外观，改完两边都要看。 */
-const GROUP_CSS_TEXT = `__GROUP_HOSTS__,
-        /* 拖动时跟手的卡片挂在 body 上（见 spawnGhost），
-           颜色变量要在这里再给一份 */
-        .xmlg-drag-ghost,
-        .xmlg-preview {
-            /* 颜色收口：优先 XDataHub token（由 web/xdatahub.js 注入宿主页），
-               缺失时回退到品牌色/中性色。面板和全屏预览共用这套变量。 */
-            --xmlg-accent: var(--xdh-clr-primary, #ff385c);
-            --xmlg-accent-muted: color-mix(
-                in srgb,
-                var(--xmlg-accent) 14%,
-                transparent
-            );
-            --xmlg-text: var(--xdh-clr-ink, #ffffff);
-            --xmlg-text-muted: var(--xdh-clr-muted, rgba(255, 255, 255, 0.6));
-            --xmlg-border: var(--xdh-clr-hairline, rgba(255, 255, 255, 0.12));
-            --xmlg-surface: var(--xdh-clr-surface-soft, #161618);
-            --xmlg-surface-strong: var(--xdh-clr-surface-strong, #1d1d20);
-            --xmlg-canvas: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-on-accent: var(--xdh-clr-on-primary, #ffffff);
-            --xmlg-danger: var(--xdh-clr-error, #c13515);
-            --xmlg-danger-bright: #ff0000;
-            --xmlg-danger-text: color-mix(in srgb, var(--xmlg-danger) 55%, white);
-            --xmlg-danger-soft: color-mix(in srgb, var(--xmlg-danger) 12%, transparent);
-            --xmlg-success: #22c55e;
-            --xmlg-success-text: #4ade80;
-            --xmlg-success-glow: color-mix(in srgb, var(--xmlg-success) 65%, transparent);
-            --xmlg-success-glow-fade: color-mix(in srgb, var(--xmlg-success) 0%, transparent);
-            --xmlg-warning: #f59e0b;
-            --xmlg-warning-strong: #fbbf24;
-            /* 提示条：浅色主题用深琥珀字 + 米色底，深色主题反过来，
-               两边都是 6:1 以上的对比，避免「黄字压浅灰」看不清。 */
-            --xmlg-warning-text: color-mix(
-                in srgb,
-                var(--xmlg-warning) 38%,
-                var(--xmlg-text)
-            );
-            --xmlg-warning-surface: color-mix(
-                in srgb,
-                var(--xmlg-warning) 16%,
-                var(--xmlg-surface)
-            );
-            --xmlg-warning-soft: color-mix(in srgb, var(--xmlg-warning) 12%, transparent);
-            --xmlg-warning-ink: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-switch-off: var(--xdh-clr-border-strong, rgba(255, 255, 255, 0.22));
-            --xmlg-scrim: color-mix(in srgb, var(--xmlg-canvas) 72%, transparent);
-            --xmlg-toast-bg: var(--xdh-clr-surface-strong, #1d1d20);
-            --xmlg-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-            --xmlg-thumb-bg: var(--xdh-clr-canvas, #0c0c0e);
-            --xmlg-scroll-thumb: var(--xdh-scrollbar-thumb, #555);
-            --xmlg-scroll-track: var(--xdh-scrollbar-track, transparent);
-        }
+const GROUP_CSS_TEXT = `
+        /* ── 面板颜色（--xmlg-*）不在这里定义 ──────────────────
+           统一放在 xdatahub-color-tokens.css：那份样式表在父页面
+           一定会加载，四个带面板的节点（XMediaListGet / XLoraGet /
+           XMediaGet / XImageGet2）都吃得到。写在这里的话，后两个
+           节点根本加载不到这份 CSS，面板会一直是 XDataHub 的颜色。
+
+           占位符保留：分组元素自己不带颜色变量，靠所在面板兜住。 */
+        __GROUP_HOSTS__ {}
         /* ✔ ✖ ⇄ 打哪里：一枚胶囊里分三档，当前那档是实心圆点 */
         .xmlg-scope {
             display: inline-flex;
@@ -1070,8 +1027,9 @@ const GROUP_CSS_TEXT = `__GROUP_HOSTS__,
 /**
  * 返回分组那一层的样式表。
  *
- * hosts 是「颜色变量挂在哪些元素上」：分组元素自己不带变量，靠所在面板
- * 兜住（媒体面板传 .xmlg-panel，LoRA 面板传 .xlora-panel）。
+ * hosts 是「分组长在谁下面」：分组元素自己不带颜色变量，靠所在面板兜住
+ * （媒体面板传 .xmlg-panel，LoRA 面板传 .xlora-panel）。颜色本身定义在
+ * xdatahub-color-tokens.css，那里同时对四个带面板的节点生效。
  */
 function groupStyles(hosts = [".xmlg-panel"]) {
     return GROUP_CSS_TEXT.replace(
@@ -3495,7 +3453,7 @@ function spawnGhost(node, pending) {
     // 必须挂 body：ComfyUI 的画布（节点的祖先）带缩放/位移变换，
     // position: fixed 一旦落在这种祖先里，left/top 就按坐标系的算法算，
     // 卡片会跑到屏幕另一边去。挂列表里也不行（会被当成一行）。
-    // 颜色变量由 .xmlg-drag-ghost 这条样式自带一份。
+    // 颜色变量由 xdatahub-color-tokens.css 里的 .xmlg-drag-ghost 自带一份。
     document.body.appendChild(ghost);
     pending.ghost = ghost;
 

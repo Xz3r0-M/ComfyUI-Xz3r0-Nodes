@@ -11,6 +11,7 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
+import { setComfyTip } from "./core/tooltip.js?v=20261116-8";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XAnyToString";
 var NODE_CLASS = "XAnyToString";
@@ -150,9 +151,12 @@ function applyLocale(state) {
         state.toggleBtn.textContent = state.collapsed
             ? EXPAND_ICON() + " " + tk("expand_label", "Expand")
             : COLLAPSE_ICON() + " " + tk("collapse_label", "Collapse");
-        state.toggleBtn.title = state.collapsed
-            ? tk("expand_tip", "Expand string output")
-            : tk("collapse_tip", "Collapse string output");
+        setComfyTip(
+            state.toggleBtn,
+            state.collapsed
+                ? tk("expand_tip", "Expand string output")
+                : tk("collapse_tip", "Collapse string output")
+        );
     }
     if (state.displayEl) {
         state.displayEl.setAttribute(
@@ -173,6 +177,18 @@ function ensureStyles() {
     style.id = STYLE_ID;
     style.textContent = [
         ".xanytostring-wrap {",
+        /*
+         * 颜色跟节点本体走（透色），不用 XDataHub 的那套。
+         * --node / --node-border / --foreground 是前端写在 <html> 上的活变量；
+         * 下面留的 --comfy-* 是老前端与老主题的退路。
+         * 注意用 --node（节点本体色），不是 --background（画布底色，更暗）。
+         */
+        "  --xanytostring-surface: var(--comfy-input-bg,",
+        "    color-mix(in srgb, var(--node, #1d1d20) 88%, var(--foreground, #ddd)));",
+        "  --xanytostring-text: var(--foreground, var(--input-text, #ddd));",
+        "  --xanytostring-muted: var(--descrip-text, color-mix(in srgb, var(--xanytostring-text) 62%, transparent));",
+        "  --xanytostring-border: var(--node-border, var(--border-color, #555));",
+        "  --xanytostring-accent: #ff385c;",
         "  position: relative;",
         "  width: 100%; height: 100%;",
         "  display: flex;",
@@ -188,7 +204,7 @@ function ensureStyles() {
         "  min-height: 0;",
         "  margin: 0;",
         "  padding: 5px 6px 6px;",
-        "  border: 1px solid var(--border-color, #555);",
+        "  border: 1px solid var(--xanytostring-border);",
         "  border-radius: 4px;",
         "  display: flex;",
         "  flex-direction: column;",
@@ -204,17 +220,17 @@ function ensureStyles() {
         "}",
         ".xanytostring-label {",
         "  font: var(--xdh-font-ui-md, 12px sans-serif);",
-        "  color: var(--descrip-text, #999);",
+        "  color: var(--xanytostring-muted);",
         "  font-weight: 600;",
         "  line-height: 1.3;",
         "}",
         ".xanytostring-toggle {",
         "  padding: 2px 6px;",
         "  gap: 3px;",
-        "  border: 1px solid var(--border-color, #555);",
+        "  border: 1px solid var(--xanytostring-border);",
         "  border-radius: 4px;",
-        "  background: var(--comfy-menu-secondary-bg, #2a2a2a);",
-        "  color: var(--input-text, #ddd);",
+        "  background: var(--xanytostring-surface);",
+        "  color: var(--xanytostring-text);",
         "  font-size: 11px;",
         "  font-family: inherit;",
         "  cursor: pointer;",
@@ -225,15 +241,15 @@ function ensureStyles() {
         "  transition: border-color 120ms ease;",
         "}",
         ".xanytostring-toggle:hover {",
-        "  border-color: var(--primary-color, #ff385c);",
+        "  border-color: var(--xanytostring-accent);",
         "}",
         ".xanytostring-display {",
         "  flex: 1 1 auto;",
         "  min-height: 40px;",
         "  padding: 6px 8px;",
         "  border-radius: 4px;",
-        "  background: var(--comfy-menu-secondary-bg, #2a2a2a);",
-        "  color: var(--input-text, #ddd);",
+        "  background: var(--xanytostring-surface);",
+        "  color: var(--xanytostring-text);",
         "  font: var(--xdh-font-mono-sm, 11px monospace);",
         "  line-height: 1.4;",
         "  white-space: pre-wrap;",
@@ -535,9 +551,12 @@ function setCollapsed(state, collapsed, options) {
         state.toggleBtn.textContent = state.collapsed
             ? EXPAND_ICON() + " " + tk("expand_label", "Expand")
             : COLLAPSE_ICON() + " " + tk("collapse_label", "Collapse");
-        state.toggleBtn.title = state.collapsed
-            ? tk("expand_tip", "Expand string output")
-            : tk("collapse_tip", "Collapse string output");
+        setComfyTip(
+            state.toggleBtn,
+            state.collapsed
+                ? tk("expand_tip", "Expand string output")
+                : tk("collapse_tip", "Collapse string output")
+        );
     }
     clampNodeSize(state.node, state);
     resizeNodeToFit(state);
@@ -594,7 +613,7 @@ function createDisplayUI(node) {
         "expand_label",
         "Expand"
     );
-    toggleBtn.title = tk("expand_tip", "Expand string output");
+    setComfyTip(toggleBtn, tk("expand_tip", "Expand string output"));
     header.appendChild(toggleBtn);
 
     var display = document.createElement("div");

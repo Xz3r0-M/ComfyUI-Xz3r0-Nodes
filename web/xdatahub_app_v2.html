@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDataHub V2</title>
-    <link rel="stylesheet" href="xdatahub-color-tokens.css?v=20260618-2">
+    <link rel="stylesheet" href="xdatahub-color-tokens.css?v=20261116-8">
     <style>
         body {
             margin: 0;
@@ -84,11 +84,8 @@
     <script>
     (function() {
         var saved = localStorage.getItem('XDataHub.V2.Theme');
-        if (saved === 'light' || saved === 'dark' || saved === 'comfyui') {
-            document.body.dataset.theme = saved === 'light' ? 'light' : 'dark';
-            document.body.dataset.themeSource = saved === 'comfyui'
-                ? 'comfyui'
-                : 'xdatahub';
+        if (saved === 'light' || saved === 'dark') {
+            document.body.dataset.theme = saved;
         }
     })();
     </script>
@@ -112,8 +109,9 @@
     <xdh-lora-detail></xdh-lora-detail>
     <xdh-banner></xdh-banner>
     <xdh-settings-dialog></xdh-settings-dialog>
+    <xdh-theme-editor></xdh-theme-editor>
 
     <!-- ES Module Entry -->
-    <script type="module" src="xdatahub_app_v2.js?v=20261024-1"></script>
+    <script type="module" src="xdatahub_app_v2.js?v=20261116-8"></script>
 </body>
 </html>

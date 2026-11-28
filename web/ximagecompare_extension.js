@@ -18,6 +18,7 @@ import {
 } from "./core/hidden-widget.js";
 import { forEachNode } from "./x_subgraph_utils.js";
 import { rootGraphOf } from "./core/root-graph.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 // =========================================================================
 // 本地化 Key 常量（参照 XImageGet2 模式）
@@ -283,7 +284,10 @@ function applyNodeLocale(state) {
 
     // 滚轮开关（文字 + 悬停提示）
     if (state.wheelToggle) {
-        state.wheelToggle.title = t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB);
+        setComfyTip(
+            state.wheelToggle,
+            t(WHEEL_CTRL_TIP_KEY, WHEEL_CTRL_TIP_FB)
+        );
     }
     if (state.wheelToggleText) {
         state.wheelToggleText.textContent = t(WHEEL_CTRL_KEY, WHEEL_CTRL_FB);
@@ -291,7 +295,10 @@ function applyNodeLocale(state) {
 
     // 曲线胶囊
     if (state.curveGroup) {
-        state.curveGroup.title = t(CURVE_LABEL_KEY, CURVE_LABEL_FB);
+        setComfyTip(
+            state.curveGroup,
+            t(CURVE_LABEL_KEY, CURVE_LABEL_FB)
+        );
     }
     if (state.curveButtons) {
         for (var ci = 0; ci < state.curveButtons.length; ci++) {
@@ -299,16 +306,22 @@ function applyNodeLocale(state) {
                 PINGPONG_CURVES[ci].key,
                 PINGPONG_CURVES[ci].name
             );
-            state.curveButtons[ci].title = t(
-                PINGPONG_CURVES[ci].tipKey,
-                PINGPONG_CURVES[ci].tipFB
+            setComfyTip(
+                state.curveButtons[ci],
+                t(
+                    PINGPONG_CURVES[ci].tipKey,
+                    PINGPONG_CURVES[ci].tipFB
+                )
             );
         }
     }
 
     // 实时预览开关（文字 + 悬停提示）
     if (state.livePreviewBtn) {
-        state.livePreviewBtn.title = t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB);
+        setComfyTip(
+            state.livePreviewBtn,
+            t(LIVE_PREVIEW_TIP_KEY, LIVE_PREVIEW_TIP_FB)
+        );
     }
     if (state.livePreviewText) {
         state.livePreviewText.textContent = t(LIVE_PREVIEW_KEY, LIVE_PREVIEW_FB);
@@ -316,9 +329,12 @@ function applyNodeLocale(state) {
 
     // 方向胶囊（横向 / 纵向）
     if (state.slideDirGroup) {
-        state.slideDirGroup.title = t(
-            SLIDE_DIR_TOGGLE_TIP_KEY,
-            SLIDE_DIR_TOGGLE_TIP_FB
+        setComfyTip(
+            state.slideDirGroup,
+            t(
+                SLIDE_DIR_TOGGLE_TIP_KEY,
+                SLIDE_DIR_TOGGLE_TIP_FB
+            )
         );
     }
     if (state.slideDirButtons) {
@@ -1306,7 +1322,7 @@ function getDisplayImages(state) {
 function createSwitch(opts) {
     var label = document.createElement("label");
     label.className = "xcompare-switch";
-    label.title = t(opts.tipKey, opts.tipFallback);
+    setComfyTip(label, t(opts.tipKey, opts.tipFallback));
 
     var input = document.createElement("input");
     input.type = "checkbox";
@@ -1460,7 +1476,10 @@ function createCompareUI(node) {
 
     // 滑动方向胶囊：横向 / 纵向
     var dirPill = createPill("xcompare-dir-pill");
-    dirPill.group.title = t(SLIDE_DIR_TOGGLE_TIP_KEY, SLIDE_DIR_TOGGLE_TIP_FB);
+    setComfyTip(
+        dirPill.group,
+        t(SLIDE_DIR_TOGGLE_TIP_KEY, SLIDE_DIR_TOGGLE_TIP_FB)
+    );
     dirPill.group.style.display = "none";
     var dirButtons = [];
     var dirDefs = [
@@ -1483,7 +1502,7 @@ function createCompareUI(node) {
 
     // 乒乓曲线胶囊（仅 PINGPONG）
     var curveGroup = createPill("xcompare-curve-pill");
-    curveGroup.group.title = t(CURVE_LABEL_KEY, CURVE_LABEL_FB);
+    setComfyTip(curveGroup.group, t(CURVE_LABEL_KEY, CURVE_LABEL_FB));
     curveGroup.group.style.display = "none";
     var curveButtons = [];
     for (var c = 0; c < CURVE_COUNT; c++) {
@@ -1492,7 +1511,7 @@ function createCompareUI(node) {
             (function (idx) {
                 return function () { setCurve(state, idx); };
             })(c));
-        cBtn.title = t(PINGPONG_CURVES[c].tipKey, PINGPONG_CURVES[c].tipFB);
+        setComfyTip(cBtn, t(PINGPONG_CURVES[c].tipKey, PINGPONG_CURVES[c].tipFB));
         curveGroup.group.appendChild(cBtn);
         curveButtons.push(cBtn);
     }
@@ -2126,9 +2145,12 @@ function loadImages(state, urlA, urlB) {
                     var same = imgA.naturalWidth === imgB.naturalWidth
                         && imgA.naturalHeight === imgB.naturalHeight;
                     state.matchDot.style.background = same ? "#4ade80" : "#f87171";
-                    state.matchDot.title = same
-                        ? t(MATCH_OK_KEY, MATCH_OK_FB)
-                        : t(MATCH_DIFF_KEY, MATCH_DIFF_FB);
+                    setComfyTip(
+                        state.matchDot,
+                        same
+                            ? t(MATCH_OK_KEY, MATCH_OK_FB)
+                            : t(MATCH_DIFF_KEY, MATCH_DIFF_FB)
+                    );
                     state.matchDot.style.display = "";
                 } else {
                     state.matchDot.style.display = "none";

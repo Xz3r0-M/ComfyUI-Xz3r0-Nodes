@@ -90,7 +90,10 @@ FILE_WRITE_RETRY = 3
 FILE_WRITE_RETRY_DELAY_S = 0.05
 MEDIA_SORT_BY_VALUES = {"mtime", "name", "size"}
 MEDIA_SORT_ORDER_VALUES = {"asc", "desc"}
-THEME_MODE_VALUES = {"dark", "light", "comfyui"}
+THEME_MODE_VALUES = {"dark", "light"}
+THEME_OVERRIDE_MODES = ("dark", "light")
+THEME_OVERRIDE_MAX_ENTRIES = 80
+THEME_OVERRIDE_MAX_LENGTH = 160
 UI_LOCALE_VALUES = {"zh", "en"}
 MEDIA_STREAM_CHUNK_SIZE = 256 * 1024
 THUMB_MAX_PX = 300
@@ -4077,6 +4080,7 @@ def default_xdatahub_settings() -> dict[str, Any]:
         "store_lora_db_in_loras": False,
         "media_custom_roots": [],
         "theme_mode": "dark",
+        "theme_overrides": {"dark": {}, "light": {}},
         "auto_show_on_startup": False,
         "hotkey_spec": "Alt + X",
         "default_open_layout": "last",
@@ -4109,6 +4113,48 @@ XDATAHUB_CLOSE_BEHAVIOR_VALUES = {
     "hide",
     "destroy",
 }
+
+
+
+def normalize_theme_overrides(value: Any) -> dict[str, dict[str, str]]:
+    """清洗主题自定义颜色：只收 --xdh* 变量名 + 短字符串值。
+
+    白名单到前缀就够了：这些变量只会被写成 CSS 自定义属性，
+    不接受 url()、表达式或超长内容，避免把奇怪的东西塞进样式表。
+    """
+    out: dict[str, dict[str, str]] = {
+        mode: {} for mode in THEME_OVERRIDE_MODES
+    }
+    if not isinstance(value, dict):
+        return out
+    for mode in THEME_OVERRIDE_MODES:
+        group = value.get(mode)
+        if not isinstance(group, dict):
+            continue
+        cleaned: dict[str, str] = {}
+        for raw_name, raw_value in group.items():
+            if len(cleaned) >= THEME_OVERRIDE_MAX_ENTRIES:
+                break
+            if not isinstance(raw_name, str):
+                continue
+            name = raw_name.strip()
+            if not name.startswith("--xdh"):
+                continue
+            if not name[2:].replace("-", "").isalnum():
+                continue
+            if not isinstance(raw_value, str):
+                continue
+            text = raw_value.strip()
+            if not text or len(text) > THEME_OVERRIDE_MAX_LENGTH:
+                continue
+            lowered = text.lower()
+            if any(token in lowered for token in ("url(", "expression(")):
+                continue
+            if "<" in text or ">" in text:
+                continue
+            cleaned[name] = text
+        out[mode] = cleaned
+    return out
 
 
 def _normalize_hotkey_spec(value: Any) -> str | None:
@@ -4196,6 +4242,10 @@ def _parse_media_chip_patch(value: Any) -> dict[str, Any]:
         theme_mode = str(value.get("theme_mode") or "").strip().lower()
         if theme_mode in THEME_MODE_VALUES:
             patch["theme_mode"] = theme_mode
+    if "theme_overrides" in value:
+        patch["theme_overrides"] = normalize_theme_overrides(
+            value.get("theme_overrides")
+        )
     if "auto_show_on_startup" in value:
         patch["auto_show_on_startup"] = parse_bool(
             value.get("auto_show_on_startup")
@@ -4279,6 +4329,10 @@ def _parse_lora_db_conflict_action(value: Any) -> str | None:
 def normalize_xdatahub_settings(value: Any) -> dict[str, Any]:
     base = default_xdatahub_settings()
     base.update(_parse_media_chip_patch(value))
+    if isinstance(value, dict) and "theme_overrides" in value:
+        base["theme_overrides"] = normalize_theme_overrides(
+            value.get("theme_overrides")
+        )
     return base
 
 

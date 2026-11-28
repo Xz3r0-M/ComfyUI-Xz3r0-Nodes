@@ -5,6 +5,7 @@ import {
     outputLinkIds,
 } from "./core/slot-links.js";
 import { rootGraphOf } from "./core/root-graph.js";
+import { setComfyTip } from "./core/tooltip.js";
 
 // XLinker 连线显隐透传节点前端扩展
 // ===================================
@@ -831,7 +832,10 @@ function updateButtonGroupWidget(node) {
         panel.linksLabel.textContent = hideButtonLabel();
     }
     if (panel.hidePill) {
-        panel.hidePill.title = tk(hideTitleKey(hideState), "Show or hide links");
+        setComfyTip(
+            panel.hidePill,
+            tk(hideTitleKey(hideState), "Show or hide links")
+        );
         panel.hidePill.setAttribute("aria-label", panel.hidePill.title);
     }
     if (panel.hideButtons) {
@@ -842,7 +846,7 @@ function updateButtonGroupWidget(node) {
             } else {
                 seg.classList.remove("is-active");
             }
-            seg.title = tk(hideTitleKey(i), "Show or hide links");
+            setComfyTip(seg, tk(hideTitleKey(i), "Show or hide links"));
         }
     }
 
@@ -859,7 +863,7 @@ function updateButtonGroupWidget(node) {
         if (item.box.input) item.box.input.checked = !!item.on;
         if (item.box.text) item.box.text.textContent = item.label;
         if (item.box.label) {
-            item.box.label.title = buttonGroupTooltip(node, roles[k]);
+            setComfyTip(item.box.label, buttonGroupTooltip(node, roles[k]));
             item.box.label.setAttribute("aria-label", item.box.label.title);
         }
     }

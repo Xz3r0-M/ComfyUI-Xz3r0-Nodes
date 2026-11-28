@@ -136,166 +136,18 @@ const HOST_TABS = [
     { id: "audio", icon: "audio-lines", textKey: UI_KEYS.tabAudio },
     { id: "lora", icon: "wand-sparkles", textKey: UI_KEYS.tabLora },
 ];
-const XDATAHUB_ASSET_VER = "20261024-1";
+const XDATAHUB_ASSET_VER = "20261116-8";
 const XDATAHUB_THEME_CSS_ID = "xdatahub-color-tokens-css";
 const XDATAHUB_THEME_CSS_HREF =
     "/extensions/ComfyUI-Xz3r0-Nodes/xdatahub-color-tokens.css"
     + `?v=${XDATAHUB_ASSET_VER}`;
-const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light", "comfyui"]);
+const XDATAHUB_THEME_MODE_VALUES = new Set(["dark", "light"]);
 const XDATAHUB_EFFECTIVE_THEME_VALUES = new Set(["dark", "light"]);
 const XDATAHUB_THEME_CONTEXT_EVENT = "xdatahub:theme-context-applied";
-const XDATAHUB_THEME_VAR_KEYS = Object.freeze([
-    "--xdh-clr-primary",
-    "--xdh-clr-primary-active",
-    "--xdh-clr-on-primary",
-    "--xdh-clr-canvas",
-    "--xdh-clr-surface-soft",
-    "--xdh-clr-surface-card",
-    "--xdh-clr-surface-strong",
-    "--xdh-clr-btn-hover",
-    "--xdh-clr-ink",
-    "--xdh-clr-body",
-    "--xdh-clr-muted",
-    "--xdh-clr-muted-soft",
-    "--xdh-clr-hairline",
-    "--xdh-clr-hairline-soft",
-    "--xdh-clr-border-strong",
-    "--xdh-clr-scrim",
-    "--xdh-window-header-bg",
-]);
-const XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS = new Set([
-    "--xdh-clr-primary",
-    "--xdh-clr-primary-active",
-    "--xdh-clr-on-primary",
-]);
-const XDATAHUB_COMFY_THEME_VAR_CANDIDATES = Object.freeze({
-    "--xdh-clr-canvas": [
-        "--comfy-menu-bg",
-        "--p-surface-900",
-        "--panel-bg",
-        "--bg-color",
-    ],
-    "--xdh-clr-surface-soft": [
-        "--comfy-menu-secondary-bg",
-        "--comfy-input-bg",
-        "--p-surface-800",
-        "--content-bg",
-    ],
-    "--xdh-clr-surface-card": [
-        "--comfy-input-bg",
-        "--comfy-menu-secondary-bg",
-        "--p-surface-800",
-        "--content-bg",
-    ],
-    "--xdh-clr-surface-strong": [
-        "--comfy-menu-secondary-bg",
-        "--p-surface-700",
-        "--content-bg",
-    ],
-    "--xdh-clr-ink": [
-        "--fg-color",
-        "--input-text",
-        "--text-color",
-        "--p-text-color",
-    ],
-    "--xdh-clr-body": [
-        "--input-text",
-        "--fg-color",
-        "--text-color-secondary",
-        "--p-text-muted-color",
-    ],
-    "--xdh-clr-muted": [
-        "--descrip-text",
-        "--fg-color",
-        "--text-color-secondary",
-        "--p-text-muted-color",
-    ],
-    "--xdh-clr-muted-soft": [
-        "--descrip-text",
-        "--text-color-secondary",
-        "--p-text-muted-color",
-    ],
-    "--xdh-clr-hairline": [
-        "--border-color",
-        "--comfy-menu-border",
-        "--p-content-border-color",
-        "--tr-even-bg-color",
-    ],
-    "--xdh-clr-hairline-soft": [
-        "--border-color",
-        "--comfy-menu-border",
-        "--p-content-border-color",
-    ],
-    "--xdh-clr-border-strong": [
-        "--border-color",
-        "--comfy-menu-border",
-        "--p-content-border-color",
-    ],
-    "--xdh-clr-scrim": [
-        "--comfy-menu-bg",
-        "--bg-color",
-    ],
-    // Ordinary-button hover, ComfyUI-only. Maps to ComfyUI's semantic,
-    // theme-aware secondary-surface hover (dark #313235 / light #d9d9d9).
-    // Consumed by buttons via var(--xdh-clr-btn-hover, <original>) so the
-    // built-in dark/light themes fall back untouched.
-    "--xdh-clr-btn-hover": [
-        "--secondary-background-hover",
-        "--comfy-menu-secondary-bg",
-    ],
-    "--xdh-window-header-bg": [
-        "--comfy-menu-bg",
-        "--bg-color",
-    ],
-});
-// Surface tokens need mode-aware mapping: ComfyUI's surface variables do not
-// keep a consistent lightness order across its dark/light palettes (e.g.
-// --comfy-menu-bg is the darkest surface in dark themes but the lightest in
-// light themes), so a single candidate list would invert the elevation
-// hierarchy on one side. These per-mode lists keep canvas → soft = card →
-// strong monotonic in both directions (lighter-is-higher in dark,
-// darker-is-higher in light).
-const XDATAHUB_COMFY_SURFACE_CANDIDATES = Object.freeze({
-    dark: {
-        "--xdh-clr-canvas": ["--comfy-menu-bg", "--bg-color"],
-        "--xdh-clr-surface-soft": [
-            "--comfy-input-bg",
-            "--comfy-menu-secondary-bg",
-        ],
-        "--xdh-clr-surface-card": [
-            "--comfy-input-bg",
-            "--comfy-menu-secondary-bg",
-        ],
-        "--xdh-clr-surface-strong": [
-            "--comfy-menu-secondary-bg",
-            "--content-bg",
-        ],
-    },
-    light: {
-        "--xdh-clr-canvas": ["--comfy-menu-bg", "--bg-color"],
-        "--xdh-clr-surface-soft": [
-            "--comfy-menu-secondary-bg",
-            "--comfy-input-bg",
-        ],
-        "--xdh-clr-surface-card": [
-            "--comfy-menu-secondary-bg",
-            "--comfy-input-bg",
-        ],
-        "--xdh-clr-surface-strong": ["--bg-color", "--comfy-input-bg"],
-    },
-});
-// Tokens whose value is derived (via color-mix) from a resolved base color
-// rather than mapped directly, so the soft/strong tiers keep their relative
-// hierarchy instead of all collapsing onto one opaque ComfyUI variable.
-const XDATAHUB_COMFY_DERIVED_THEME_VAR_KEYS = new Set([
-    "--xdh-clr-hairline",
-    "--xdh-clr-hairline-soft",
-    "--xdh-clr-border-strong",
-    "--xdh-clr-muted-soft",
-]);
+const XDATAHUB_USER_THEME_STYLE_ID = "xdatahub-user-theme";
 let currentThemeMode = "dark";
 let currentEffectiveThemeMode = "dark";
-let currentThemeVars = {};
+let currentThemeOverrides = { dark: {}, light: {} };
 let lockEventBridgeInstalled = false;
 
 function normalizeThemeMode(value) {
@@ -308,34 +160,54 @@ function normalizeEffectiveThemeMode(value) {
     return XDATAHUB_EFFECTIVE_THEME_VALUES.has(mode) ? mode : "dark";
 }
 
-function getThemeSourceMode(themeMode) {
-    return normalizeThemeMode(themeMode) === "comfyui"
-        ? "comfyui"
-        : "xdatahub";
+/** 把保存下来的自定义颜色洗一遍：只收 --xdh-* 键、值必须是字符串。 */
+function normalizeThemeOverrides(value) {
+    const out = { dark: {}, light: {} };
+    if (!value || typeof value !== "object") {
+        return out;
+    }
+    for (const mode of ["dark", "light"]) {
+        const group = value[mode];
+        if (!group || typeof group !== "object") {
+            continue;
+        }
+        for (const [tokenName, tokenValue] of Object.entries(group)) {
+            if (!tokenName.startsWith("--xdh")) {
+                continue;
+            }
+            if (typeof tokenValue !== "string") {
+                continue;
+            }
+            const clean = tokenValue.trim();
+            if (!clean) {
+                continue;
+            }
+            out[mode][tokenName] = clean;
+        }
+    }
+    return out;
 }
 
 function buildThemeContext() {
     return {
         theme_mode: currentThemeMode,
         effective_mode: currentEffectiveThemeMode,
-        vars: { ...currentThemeVars },
+        overrides: {
+            dark: { ...currentThemeOverrides.dark },
+            light: { ...currentThemeOverrides.light },
+        },
     };
 }
 
 function resolveThemeContextForMode(mode) {
     const normalized = normalizeThemeMode(mode);
-    if (normalized === "comfyui") {
-        const comfyTheme = buildComfyThemeVars();
-        return {
-            theme_mode: normalized,
-            effective_mode: comfyTheme.effectiveMode,
-            vars: comfyTheme.vars,
-        };
-    }
     return {
         theme_mode: normalized,
         effective_mode: normalizeEffectiveThemeMode(normalized),
-        vars: {},
+        overrides: {
+            dark: { ...currentThemeOverrides.dark },
+            light: { ...currentThemeOverrides.light },
+        },
     };
 }
 
@@ -406,172 +278,49 @@ function ensureColorTokensStylesheet() {
     document.head.appendChild(link);
 }
 
-function readCssVarValue(style, name) {
-    return String(style?.getPropertyValue?.(name) || "").trim();
-}
-
-function resolveComputedCssValue(property, value) {
-    const probe = document.createElement("div");
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    probe.style.pointerEvents = "none";
-    probe.style[property] = value;
-    document.body.appendChild(probe);
-    const resolved = getComputedStyle(probe)[property] || "";
-    probe.remove();
-    return String(resolved || "").trim();
-}
-
-function getDefaultThemeTokenValue(themeMode, tokenName) {
-    const root = document.documentElement;
-    const body = document.body;
-    const previousTheme = root.getAttribute("data-xdh-default-theme");
-    const previousRootInline = root.style.getPropertyValue(tokenName);
-    const previousBodyInline = body?.style?.getPropertyValue(tokenName) || "";
-    root.setAttribute("data-xdh-default-theme", themeMode);
-    root.style.removeProperty(tokenName);
-    body?.style?.removeProperty(tokenName);
-    const resolved = readCssVarValue(getComputedStyle(root), tokenName)
-        || resolveComputedCssValue("color", `var(${tokenName})`);
-    if (previousRootInline) {
-        root.style.setProperty(tokenName, previousRootInline);
-    } else {
-        root.style.removeProperty(tokenName);
-    }
-    if (body) {
-        if (previousBodyInline) {
-            body.style.setProperty(tokenName, previousBodyInline);
-        } else {
-            body.style.removeProperty(tokenName);
-        }
-    }
-    if (previousTheme) {
-        root.setAttribute("data-xdh-default-theme", previousTheme);
-    } else {
-        root.removeAttribute("data-xdh-default-theme");
-    }
-    return resolved;
-}
-
-function inferEffectiveThemeModeFromComfy() {
-    const rootStyle = getComputedStyle(document.documentElement);
-    const canvas = resolveComputedCssValue(
-        "backgroundColor",
-        `var(${XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-canvas"][0]})`
-    ) || readCssVarValue(rootStyle, "--comfy-menu-bg");
-    const probe = document.createElement("div");
-    probe.style.color = canvas;
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    document.body.appendChild(probe);
-    const resolved = getComputedStyle(probe).color;
-    probe.remove();
-    const match = resolved.match(/\d+(?:\.\d+)?/g);
-    if (!match || match.length < 3) {
-        return "dark";
-    }
-    const [r, g, b] = match.slice(0, 3).map(Number);
-    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    return luminance >= 0.6 ? "light" : "dark";
-}
-
-function resolveComfyVarValue(rootStyle, candidates) {
-    for (const candidate of candidates || []) {
-        let resolved = resolveComputedCssValue("color", `var(${candidate})`);
-        if (resolved) {
-            return resolved;
-        }
-        resolved = readCssVarValue(rootStyle, candidate);
-        if (resolved) {
-            return resolveComputedCssValue("color", resolved) || resolved;
-        }
-    }
-    return "";
-}
-
-function mixToTransparent(color, percent) {
-    return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
-}
-
-function buildComfyThemeVars() {
-    const rootStyle = getComputedStyle(document.documentElement);
-    const effective = inferEffectiveThemeModeFromComfy();
-    const surfaceCandidates = XDATAHUB_COMFY_SURFACE_CANDIDATES[effective]
-        || XDATAHUB_COMFY_SURFACE_CANDIDATES.dark;
-    const vars = {};
-    const resolveTokenValue = (tokenName, candidates) =>
-        resolveComfyVarValue(rootStyle, candidates)
-            || getDefaultThemeTokenValue(effective, tokenName);
-    for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
-        if (XDATAHUB_COMFY_PRESERVED_THEME_VAR_KEYS.has(tokenName)) {
-            const preserved = getDefaultThemeTokenValue(effective, tokenName);
-            if (preserved) {
-                vars[tokenName] = preserved;
-            }
-            continue;
-        }
-        if (tokenName === "--xdh-clr-scrim") {
-            vars[tokenName] = effective === "light"
-                ? "rgba(0, 0, 0, 0.50)"
-                : "rgba(0, 0, 0, 0.70)";
-            continue;
-        }
-        // Derived border/text tiers are computed after the loop.
-        if (XDATAHUB_COMFY_DERIVED_THEME_VAR_KEYS.has(tokenName)) {
-            continue;
-        }
-        const candidates = surfaceCandidates[tokenName]
-            || XDATAHUB_COMFY_THEME_VAR_CANDIDATES[tokenName]
-            || [];
-        const resolved = resolveTokenValue(tokenName, candidates);
-        if (resolved) {
-            vars[tokenName] = resolved;
-        }
-    }
-    // Derive the three border tiers from a single ComfyUI border base so the
-    // hairline / hairline-soft / border-strong hierarchy is preserved instead
-    // of collapsing onto one opaque color.
-    const borderBase = resolveTokenValue(
-        "--xdh-clr-hairline",
-        XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-hairline"]
-    );
-    if (borderBase) {
-        vars["--xdh-clr-border-strong"] = borderBase;
-        vars["--xdh-clr-hairline"] = mixToTransparent(borderBase, 55);
-        vars["--xdh-clr-hairline-soft"] = mixToTransparent(borderBase, 26);
-    }
-    // Derive the softer muted text tier from the resolved muted base so
-    // muted-soft reads dimmer than muted instead of being identical.
-    const mutedBase = vars["--xdh-clr-muted"]
-        || resolveTokenValue(
-            "--xdh-clr-muted",
-            XDATAHUB_COMFY_THEME_VAR_CANDIDATES["--xdh-clr-muted"]
+/** 自定义颜色写成一张样式表挂在 <head> 最后。
+    不用内联变量：内联写到 <html> 上会压住 body 的主题块，
+    又会反过来被 light 块压住，谁赢取决于元素层级，说不清。
+    样式表追加在最后，同优先级下永远赢。 */
+function getThemeOverrideSheetText(overrides) {
+    const lines = [];
+    const dark = Object.entries(overrides?.dark || {});
+    const light = Object.entries(overrides?.light || {});
+    if (dark.length) {
+        lines.push(
+            ':root,body[data-theme="dark"],body:not([data-theme]){'
         );
-    if (mutedBase) {
-        vars["--xdh-clr-muted-soft"] = mixToTransparent(mutedBase, 65);
-    }
-    return { effectiveMode: effective, vars };
-}
-
-function clearThemeVars(target) {
-    if (!(target instanceof HTMLElement)) {
-        return;
-    }
-    for (const tokenName of XDATAHUB_THEME_VAR_KEYS) {
-        target.style.removeProperty(tokenName);
-    }
-}
-
-function applyThemeVarsToElement(target, vars) {
-    if (!(target instanceof HTMLElement)) {
-        return;
-    }
-    clearThemeVars(target);
-    for (const [tokenName, tokenValue] of Object.entries(vars || {})) {
-        if (typeof tokenValue === "string" && tokenValue.trim()) {
-            target.style.setProperty(tokenName, tokenValue);
+        for (const [name, value] of dark) {
+            lines.push(`  ${name}:${value};`);
         }
+        lines.push("}");
     }
+    if (light.length) {
+        lines.push('body[data-theme="light"]{');
+        for (const [name, value] of light) {
+            lines.push(`  ${name}:${value};`);
+        }
+        lines.push("}");
+    }
+    return lines.join("\n");
+}
+
+function applyThemeOverridesToElement(doc, overrides) {
+    if (!doc?.head) {
+        return;
+    }
+    let styleEl = doc.getElementById(XDATAHUB_USER_THEME_STYLE_ID);
+    const text = getThemeOverrideSheetText(overrides);
+    if (!text) {
+        styleEl?.remove();
+        return;
+    }
+    if (!styleEl) {
+        styleEl = doc.createElement("style");
+        styleEl.id = XDATAHUB_USER_THEME_STYLE_ID;
+        doc.head.appendChild(styleEl);
+    }
+    styleEl.textContent = text;
 }
 
 function applyThemeContextToHostWindow(context) {
@@ -580,21 +329,13 @@ function applyThemeContextToHostWindow(context) {
     }
     const windowEl = xdataHubRef.instance.windowEl;
     windowEl.setAttribute("data-theme", context.effective_mode);
-    windowEl.setAttribute(
-        "data-theme-source",
-        getThemeSourceMode(context.theme_mode)
-    );
-    applyThemeVarsToElement(windowEl, context.vars);
+    applyThemeOverridesToElement(windowEl.ownerDocument, context.overrides);
 }
 
 function applyThemeContextToDocument(context) {
     const effective = normalizeEffectiveThemeMode(context?.effective_mode);
-    const themeSource = getThemeSourceMode(context?.theme_mode);
-    document.documentElement.dataset.themeSource = themeSource;
     document.body.dataset.theme = effective;
-    document.body.dataset.themeSource = themeSource;
-    applyThemeVarsToElement(document.documentElement, context?.vars || {});
-    applyThemeVarsToElement(document.body, context?.vars || {});
+    applyThemeOverridesToElement(document, context?.overrides);
     document.dispatchEvent(
         new CustomEvent(XDATAHUB_THEME_CONTEXT_EVENT, {
             detail: context,
@@ -603,64 +344,47 @@ function applyThemeContextToDocument(context) {
 }
 
 function applyThemeMode(mode) {
-    const normalized = normalizeThemeMode(mode);
-    currentThemeMode = normalized;
-    const nextContext = resolveThemeContextForMode(normalized);
+    currentThemeMode = normalizeThemeMode(mode);
+    const nextContext = resolveThemeContextForMode(currentThemeMode);
     currentEffectiveThemeMode = nextContext.effective_mode;
-    currentThemeVars = nextContext.vars;
     applyThemeContextToDocument(nextContext);
     xdataHubRef?.instance?.applyThemeMode?.(nextContext);
 }
 
-function reapplyCurrentThemeContext() {
+/** 配置页改完颜色后调用：把新的自定义颜色应用到父页、XDataHub 窗口和 iframe。 */
+function applyThemeOverrides(overrides) {
+    currentThemeOverrides = normalizeThemeOverrides(overrides);
     applyThemeMode(currentThemeMode);
 }
 
-function installComfyThemeObserver() {
-    const refresh = () => {
-        if (currentThemeMode === "comfyui") {
-            reapplyCurrentThemeContext();
-        }
-    };
-    try {
-        const observer = new MutationObserver((mutations) => {
-            if (
-                mutations.some((mutation) =>
-                    mutation.attributeName === "data-theme"
-                    || mutation.attributeName === "class"
-                )
-            ) {
-                refresh();
-            }
-        });
-        observer.observe(document.body, {
-            attributes: true,
-            attributeFilter: ["class"],
-        });
-        observer.observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ["data-theme", "class"],
-        });
-    } catch {
-        // Ignore observer install failures.
+function applyThemeSettings(settings) {
+    if (!settings || typeof settings !== "object") {
+        return;
     }
-    window.addEventListener("focus", refresh);
-    window.addEventListener("pageshow", refresh);
+    if (Object.prototype.hasOwnProperty.call(settings, "theme_overrides")) {
+        currentThemeOverrides = normalizeThemeOverrides(
+            settings.theme_overrides
+        );
+    }
+    applyThemeMode(normalizeThemeMode(settings.theme_mode));
 }
 
 async function syncThemeModeFromSettings() {
+    let loaded = false;
     try {
         const response = await fetch("/xz3r0/xdatahub/settings");
         const payload = await response.json();
         if (response.ok && payload?.status === "success") {
             const s = payload.settings || {};
-            applyThemeMode(s.theme_mode);
-            return currentThemeMode;
+            applyThemeSettings(s);
+            loaded = true;
         }
     } catch {
         // 忽略拉取失败，保留本地默认值 dark。
     }
-    applyThemeMode(currentThemeMode);
+    if (!loaded) {
+        applyThemeMode(currentThemeMode);
+    }
     return currentThemeMode;
 }
 
@@ -3829,7 +3553,6 @@ const XDataHub = {
 xdataHubRef = XDataHub;
 api.addEventListener("execution_interrupted", notifyInterruptRequested);
 installLockEventBridge();
-installComfyThemeObserver();
 
 window.addEventListener("message", (event) => {
     const isFrameMessage = isTrustedDataFrameMessage(event);
@@ -3937,10 +3660,13 @@ window.addEventListener("message", (event) => {
     }
     if (payload.type === "xdatahub:host-settings-updated") {
         const settings = payload.settings;
-        if (settings && Object.prototype.hasOwnProperty.call(
-            settings, "theme_mode"
+        if (settings && (
+            Object.prototype.hasOwnProperty.call(settings, "theme_mode")
+            || Object.prototype.hasOwnProperty.call(
+                settings, "theme_overrides"
+            )
         )) {
-            applyThemeMode(settings.theme_mode);
+            applyThemeSettings(settings);
         }
         if (settings && Object.prototype.hasOwnProperty.call(
             settings, "edge_peek"
@@ -3963,14 +3689,26 @@ window.addEventListener("message", (event) => {
             currentEffectiveThemeMode = normalizeEffectiveThemeMode(
                 context.effective_mode
             );
-            currentThemeVars = { ...(context.vars || {}) };
-            applyThemeContextToDocument(buildThemeContext());
-            xdataHubRef?.instance?.applyThemeMode?.(buildThemeContext());
+            if (context.overrides) {
+                currentThemeOverrides = normalizeThemeOverrides(
+                    context.overrides
+                );
+            }
+            const nextContext = buildThemeContext();
+            applyThemeContextToDocument(nextContext);
+            xdataHubRef?.instance?.applyThemeMode?.(nextContext);
         }
         return;
     }
     if (payload.type === "xdatahub:theme-mode") {
         applyThemeMode(payload.theme_mode);
+        return;
+    }
+    if (payload.type === "xdatahub:theme-overrides") {
+        if (payload.theme_mode) {
+            currentThemeMode = normalizeThemeMode(payload.theme_mode);
+        }
+        applyThemeOverrides(payload.overrides);
         return;
     }
     if (payload.type === "xdatahub:ls-setting") {

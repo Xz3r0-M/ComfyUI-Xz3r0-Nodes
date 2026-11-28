@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20261020-1";
+import { t } from "../core/i18n.js?v=20261116-8";
 import { toggleMediaFavorite } from "../core/api.js?v=20260530-1";
 import { compareNaturalNames } from "../core/natural-sort.js";
 

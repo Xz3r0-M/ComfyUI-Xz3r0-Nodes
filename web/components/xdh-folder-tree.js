@@ -13,7 +13,7 @@ import {
     SCROLLBAR_CSS,
     TOOLTIP_CSS,
 } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20260406-15";
+import { t } from "../core/i18n.js?v=20261116-8";
 
 const MEDIA_CATEGORIES = new Set(["image", "video", "audio"]);
 const TREE_PAGE_SIZE = 200;

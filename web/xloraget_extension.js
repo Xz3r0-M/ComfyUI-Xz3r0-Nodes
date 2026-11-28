@@ -2062,11 +2062,21 @@ function ensureStyles() {
             border-color: var(--xmlg-danger, #d90429);
         }
         .xlora-tooltip {
+            /* tip 挂在 body 下，拿不到 .xlora-panel 上的变量，所以直接读
+               前端写在 <html> 上的浮层活变量（官方自己的 tooltip 就是
+               bg --background / text --foreground / border --border）。
+               中间那层是 XDataHub 窗口（iframe 里没有官方变量）的退路。 */
             position: fixed;
             z-index: 99999;
             pointer-events: none;
-            background: var(--xdh-clr-surface-strong, rgba(32, 32, 36, 0.92));
-            border: 1px solid var(--xdh-clr-hairline, rgba(255, 255, 255, 0.14));
+            background: var(
+                --popover,
+                var(--xdh-surf-overlay-bg, rgba(32, 32, 36, 0.92))
+            );
+            border: 1px solid var(
+                --border,
+                var(--xdh-surf-overlay-line, rgba(255, 255, 255, 0.14))
+            );
             border-radius: var(--xdh-radius-sm, 8px);
             padding: 8px;
             /* 宽度跟着内容走：只写「移除」这种短文字时，不该撑出
@@ -2076,7 +2086,7 @@ function ensureStyles() {
             min-width: 0;
             max-width: 212px;
             box-sizing: border-box;
-            color: var(--xdh-clr-ink, #f2f2f2);
+            color: var(--foreground, var(--xdh-surf-overlay-ink, #f2f2f2));
             box-shadow: var(
                 --xdh-shadow-popup,
                 0 10px 26px rgba(0, 0, 0, 0.45)
