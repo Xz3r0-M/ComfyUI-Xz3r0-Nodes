@@ -74,11 +74,27 @@
  * - 所以本工具会把点号前面的宿主（`"mode"`）一并盯上，宿主一变就**重新
  *   挂一遍**回调，再重算。不这么做的话：切一次模式，之后所有子项都「改了
  *   没反应、不报错」。
+ *
+ * 连线驱动的规则（`watch` 可以省）：
+ * - 有的项「接不接线」决定别的项能不能用，比如 XLatentLoad 接了
+ *   `latent_input`，文件下拉就完全没用处了。
+ * - 这时候没东西可 watch（接线状态不是 widget），就不写 `watch`，
+ *   只给**函数形式**的 targets：
+ *
+ *       { targets: { latent_file: (v, node) => !inputHasLink(node, "latent_input") } }
+ *
+ * - 本工具会自动挂 `onConnectionsChange` 重算，接线一变就刷新。
+ * - **必须写函数**：没有驱动值可比，数组形式会把目标全灰掉（写错了）。
+ *   写错时会在控制台留一条 [xwdrules] 警告。
+ *
+ * 读连线状态用 `inputHasLink(node, "输入名")` —— `slot-links.js` 的
+ * `inputConnected` 要的是输入口对象，规则表里写名字最自然，所以包一层。
  */
 
 // 注意深度：本文件在 web/core/ 下，比 web/ 根部的扩展文件多一层，
 // 所以要多退一级才能打到前端的 /scripts/app.js。
 import { app } from "../../../scripts/app.js";
+import { inputConnected } from "./slot-links.js";
 
 /* 挂到 node 上的私有状态：本节点记住了哪些规则。 */
 const STATE_KEY = "__xwdrules";
@@ -242,8 +258,27 @@ export function compileRules(rules) {
         if (watching.indexOf(name) < 0) watching.push(name);
     };
 
+    /* 有没有「连线驱动」的规则：没有 watch、全靠 targets 里的函数读节点状态。 */
+    let usesLinks = false;
+
     list.forEach((rule) => {
-        if (!rule || !rule.watch || !rule.targets) return;
+        if (!rule || !rule.targets) return;
+        const watch = rule.watch || null;
+        if (!watch) {
+            /* 连线驱动的规则必须写成函数：没有驱动值可比，只能看节点。
+               写成数组的话每次都是 false（把目标全灰掉），那是写错了。 */
+            const bad = Object.keys(rule.targets).filter(
+                (name) => typeof rule.targets[name] !== "function"
+            );
+            if (bad.length) {
+                console.warn(
+                    "[xwdrules] 没有 watch 的规则只能配函数形式的 targets：" +
+                    bad.join(", ")
+                );
+                return;
+            }
+            usesLinks = true;
+        }
         const action = rule.action === "hide" ? "hide" : "disable";
         const targets = Object.keys(rule.targets).map((name) => {
             /* 动态子输入（"mode.xxx"）：把宿主也盯上。见文件开头说明。 */
@@ -255,11 +290,11 @@ export function compileRules(rules) {
             }
             return { name, allow: rule.targets[name] };
         });
-        compiled.push({ watch: rule.watch, action, targets });
-        watchOnce(rule.watch);
+        compiled.push({ watch, action, targets });
+        if (watch) watchOnce(watch);
     });
 
-    return { rules: compiled, watching, remount };
+    return { rules: compiled, watching, remount, usesLinks };
 }
 
 /**
@@ -281,6 +316,26 @@ function mergeState(previous, next) {
 }
 
 /**
+ * 按名字判断某个输入口接没接线。
+ *
+ * 规则函数里直接调用即可：
+ *
+ *     { targets: { latent_file: (v, node) => !inputHasLink(node, "latent_input") } }
+ *
+ * `slot-links.js` 的 `inputConnected` 要的是输入口对象，不是名字，
+ * 而规则表里写名字最自然，所以在这里做一次查找。
+ */
+export function inputHasLink(node, name) {
+    const slots = (node && node.inputs) || [];
+    for (let i = 0; i < slots.length; i += 1) {
+        if (slots[i] && slots[i].name === name) {
+            return inputConnected(node, slots[i]);
+        }
+    }
+    return false;
+}
+
+/**
  * 按驱动项当前的值，算出「每一项该不该可用」。
  *
  * 返回 Map<widget 名, { enabled, action }>。
@@ -289,7 +344,7 @@ export function evaluateRules(node, compiled) {
     const wanted = new Map();
 
     compiled.rules.forEach((rule) => {
-        const value = widgetValue(node, rule.watch);
+        const value = rule.watch ? widgetValue(node, rule.watch) : undefined;
         rule.targets.forEach((target) => {
             const state = {
                 enabled: allowMatches(target.allow, value, node),
@@ -577,6 +632,20 @@ export function registerWidgetRules(options) {
                 if (compiled.watching.indexOf(name) >= 0) {
                     refreshAfterChange(this, compiled, name);
                 }
+                return result;
+            };
+
+            /* 连线驱动：有的项「接不接线」决定别的项能不能用
+               （比如 XLatentLoad 接了 latent_input，文件下拉就没意义了）。
+               连线变化不是 widget 变化，必须单独挂一口。
+               无脑重算：接线这个动作本来就低频，一次只算几项规则，
+               而「哪条规则读了连线」只有规则表自己知道，猜不如全算。 */
+            const origConnections = proto.onConnectionsChange;
+            proto.onConnectionsChange = function () {
+                const result = origConnections
+                    ? origConnections.apply(this, arguments)
+                    : undefined;
+                syncWidgetRules(this);
                 return result;
             };
         },
