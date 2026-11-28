@@ -65,6 +65,15 @@
  *   否则最后会被其它规则的结果盖掉。
  * - 比较前会把字符串 "true"/"false" 归一成布尔，老工作流里的字符串开关
  *   也能正确匹配。
+ *
+ * 动态子输入（DynamicCombo 的 `mode.xxx`）：
+ * - 目标名带点（`"mode.chain_resample"`）表示它是某个下拉框展开出来的子项。
+ *   这类子项在切换父下拉框时会被**整批销毁重建**（前端
+ *   `dynamicWidgets.ts` 的 `updateWidgets` 里 `removeWidget` + 重新 add），
+ *   挂在旧 widget 上的回调跟着一起没了。
+ * - 所以本工具会把点号前面的宿主（`"mode"`）一并盯上，宿主一变就**重新
+ *   挂一遍**回调，再重算。不这么做的话：切一次模式，之后所有子项都「改了
+ *   没反应、不报错」。
  */
 
 // 注意深度：本文件在 web/core/ 下，比 web/ 根部的扩展文件多一层，
@@ -81,6 +90,77 @@ const RETRY_DELAYS = [0, 120];
 
 /* 已经声明过的节点类，防止同一个类被注册两次。 */
 const REGISTERED = {};
+
+/*
+ * Nodes 2.0 的数值控件漏了禁用样式。
+ *
+ * 官方 2.0 里别的控件都做了：下拉框是整块 `opacity-50`，布尔按钮组和开关
+ * 是 `disabled:opacity-50`，加减按钮也有。只有数值输入（前端
+ * `ScrubableNumberInput.vue`）什么都没写——`:disabled` 只传给了内部的
+ * `<input>` 和左右按钮，外面那层容器没有禁用态。而 `<input>` 的文字颜色是从
+ * 父级继承来的 `text-foreground`（作者样式），直接把浏览器给禁用输入的默认灰
+ * 盖掉了。
+ *
+ * 结果就是：置灰后的数值项只有两侧的小加减按钮变暗，中间那串数字还是亮的，
+ * 一眼看过去看不出来它已经不能改了。（经典画布没这个问题：那边是
+ * `ctx.fillStyle = disabled ? disabledTextColor : text_color`，默认
+ * `WIDGET_DISABLED_TEXT_COLOR = '#666'`。）
+ *
+ * 所以这里给中间那串数字补上跟两侧按钮**完全相同**的一套：
+ * `--muted-foreground` + `opacity: 0.3`。
+ *
+ * 两侧按钮本身就是这么来的（v1.59.6 的 `ScrubableNumberInput.vue`）：
+ *
+ *     <Button variant="muted-textonly" class="... disabled:opacity-30">
+ *                           └ text-muted-foreground
+ *
+ * 也就是 `0.3 × #494a50 + 0.7 × #e1e1e1 ≈ #B3B3B3`——浅色主题下那层浅灰。
+ * 文字用同一套，整行就一个颜色了，而不是「按钮浅、数字深」。
+ *
+ * （试过的两个错版：`opacity: 0.5` 单独用 → 跟背景混，主题一变就变；
+ * `--node-foreground`（浅色 `#444444`）→ 比按钮深一截。）
+ *
+ * 为什么用 `inputmode="decimal"` 而不是 `data-part`：
+ * `data-part="widget-number"` / `data-part="widget-value"` 是前端**后来才
+ * 加**的定位标记，v1.59.6（用户机器上的版本）里压根没有，按那个写会一个
+ * 元素都选不到，看上去就是「补丁没生效」。而 `inputmode="decimal"` 是写死
+ * 在 `ScrubableNumberInput.vue` 模板上的，两个版本都有，而且只出现在数值
+ * 输入上（文本框不用它），正好就是我们要的范围。（教训：定论前先 `git
+ * show <用户版本 tag>:<文件>`，别拿本机 clone 的 HEAD 当回事。）
+ *
+ * 作用域限定在 `.lg-node`（只存在于 Nodes 2.0 的节点容器，两个版本都有），
+ * 经典画布不受影响——那边数值是 canvas 画的，没有 `<input>`。
+ *
+ * 将来官方自己补上后：
+ * - 如果官方给这个 input 也补了 `disabled:opacity-30` + 颜色，两边结果一样，
+ *   谁盖谁都无所谓；
+ * - 如果发现官方补过了，把下面四行删掉就行。
+ */
+const NODES2_DISABLED_STYLE_ID = "xwdrules-nodes2-disabled";
+const NODES2_DISABLED_CSS = `
+.lg-node input[inputmode="decimal"]:disabled {
+    color: var(--muted-foreground, var(--foreground));
+    opacity: 0.3;
+}
+`;
+
+/** 把上面那段样式插进页面（没插过的才插，重复调用无害）。 */
+function installNodes2DisabledStyle() {
+    try {
+        if (typeof document === "undefined") return;
+        if (document.getElementById(NODES2_DISABLED_STYLE_ID)) return;
+        const style = document.createElement("style");
+        style.id = NODES2_DISABLED_STYLE_ID;
+        style.textContent = NODES2_DISABLED_CSS;
+        const host = document.head || document.documentElement;
+        if (!host) return;
+        host.appendChild(style);
+    } catch (error) {
+        /* 样式补丁失败不该影响节点本身 */
+    }
+}
+
+installNodes2DisabledStyle();
 
 /**
  * 把驱动值统一成便于比较的样子。
@@ -155,19 +235,31 @@ export function compileRules(rules) {
     const list = Array.isArray(rules) ? rules : [rules];
     const compiled = [];
     const watching = [];
+    /* 宿主（`mode` 这种）→ 它一变化就把子 widget 全部重挂 */
+    const remount = [];
+
+    const watchOnce = (name) => {
+        if (watching.indexOf(name) < 0) watching.push(name);
+    };
 
     list.forEach((rule) => {
         if (!rule || !rule.watch || !rule.targets) return;
         const action = rule.action === "hide" ? "hide" : "disable";
-        const targets = Object.keys(rule.targets).map((name) => ({
-            name,
-            allow: rule.targets[name],
-        }));
+        const targets = Object.keys(rule.targets).map((name) => {
+            /* 动态子输入（"mode.xxx"）：把宿主也盯上。见文件开头说明。 */
+            const dot = name.indexOf(".");
+            if (dot > 0) {
+                const host = name.slice(0, dot);
+                if (remount.indexOf(host) < 0) remount.push(host);
+                watchOnce(host);
+            }
+            return { name, allow: rule.targets[name] };
+        });
         compiled.push({ watch: rule.watch, action, targets });
-        if (watching.indexOf(rule.watch) < 0) watching.push(rule.watch);
+        watchOnce(rule.watch);
     });
 
-    return { rules: compiled, watching };
+    return { rules: compiled, watching, remount };
 }
 
 /**
@@ -329,7 +421,7 @@ export function syncWidgetRules(node) {
  * 记下自己包出来的那一层：已经是最外层就不再套（防止一次改动跑多遍），
  * 但如果别人后来把 callback 换掉了，下次会重新包上，不至于静悄悄失效。
  */
-function watchWidget(node, name) {
+function watchWidget(node, name, compiled) {
     const widget = widgetOf(node, name);
     if (!widget || widget.callback === widget[WRAPPER_KEY]) return false;
 
@@ -337,12 +429,36 @@ function watchWidget(node, name) {
     const wrapper = function () {
         const result = original ? original.apply(this, arguments) : undefined;
         const owner = this && this.node ? this.node : node;
-        syncWidgetRules(owner);
+        refreshAfterChange(owner, compiled, name);
         return result;
     };
     widget[WRAPPER_KEY] = wrapper;
     widget.callback = wrapper;
     return true;
+}
+
+/**
+ * 把一个节点的所有驱动项都挂上回调（挂过的会被跳过）。
+ *
+ * 宿主变化后要重跑一遍：它底下的子 widget 已经换成新对象了。
+ */
+function mountWatched(node, compiled) {
+    compiled.watching.forEach((name) => {
+        watchWidget(node, name, compiled);
+    });
+}
+
+/**
+ * 某个驱动项变化之后要做的事。
+ *
+ * 普通驱动项只需重算；宿主（DynamicCombo 的 `mode`）要先重新挂一遍——
+ * 它一变化就把 `mode.*` 子 widget 整批换新，旧回调跟着旧 widget 一起没了。
+ */
+function refreshAfterChange(node, compiled, name) {
+    if (compiled && compiled.remount.indexOf(name) >= 0) {
+        mountWatched(node, compiled);
+    }
+    syncWidgetRules(node);
 }
 
 /**
@@ -358,9 +474,7 @@ export function watchWidgetRules(node, rules) {
     const state = stateOf(node);
     const isNew = state.sets.indexOf(compiled) < 0;
     if (isNew) state.sets.push(compiled);
-    compiled.watching.forEach((name) => {
-        watchWidget(node, name);
-    });
+    mountWatched(node, compiled);
     syncWidgetRules(node);
     return isNew;
 }
@@ -459,8 +573,9 @@ export function registerWidgetRules(options) {
                 const result = origWidgetChanged
                     ? origWidgetChanged.apply(this, arguments)
                     : undefined;
-                if (compiledOfEntry().watching.indexOf(name) >= 0) {
-                    syncWidgetRules(this);
+                const compiled = compiledOfEntry();
+                if (compiled.watching.indexOf(name) >= 0) {
+                    refreshAfterChange(this, compiled, name);
                 }
                 return result;
             };
