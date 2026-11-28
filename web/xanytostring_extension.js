@@ -11,7 +11,7 @@
 
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { setComfyTip } from "./core/tooltip.js?v=20261116-8";
+import { setComfyTip } from "./core/tooltip.js?v=20261116-9";
 
 var EXT_NAME = "ComfyUI.Xz3r0.XAnyToString";
 var NODE_CLASS = "XAnyToString";

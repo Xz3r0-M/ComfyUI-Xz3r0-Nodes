@@ -167,7 +167,22 @@ export function isThemeTokenAllowed(token) {
     if (!name.startsWith("--xdh")) {
         return false;
     }
-    return /^--xdh[a-z0-9-]+$/.test(name);
+    if (!/^--xdh[a-z0-9-]+$/.test(name)) {
+        return false;
+    }
+    // 名字合法还不够，必须是配置页里真能调的那 26 项。
+    // 否则导入一个捏造的文件就能往 body 上塞任意 --xdh-* 变量
+    // （包括「就地改名重定向」用的中间变量，塞进去会把重定向打断）。
+    return allowedTokenSet().has(name);
+}
+
+let ALLOWED_TOKEN_SET = null;
+
+function allowedTokenSet() {
+    if (!ALLOWED_TOKEN_SET) {
+        ALLOWED_TOKEN_SET = new Set(allThemeTokens());
+    }
+    return ALLOWED_TOKEN_SET;
 }
 
 function isSafeValue(value) {
@@ -243,7 +258,7 @@ export function buildOverrideSheet(overrides) {
 const HEX_RE = /^#([0-9a-f]{3,8})$/i;
 const RGB_RE = /^rgba?\(([^)]+)\)$/i;
 
-function parseColor(text) {
+export function parseColor(text) {
     const value = String(text || "").trim();
     const hex = value.match(HEX_RE);
     if (hex) {
@@ -296,7 +311,7 @@ function parseColor(text) {
 }
 
 /** 半透明色先压到背景上，否则对比度算不准（rgba 白 60% 会被当成纯白）。 */
-function flatten(color, backdrop) {
+export function flatten(color, backdrop) {
     if (color.a >= 1 || !backdrop) {
         return color;
     }
@@ -308,7 +323,7 @@ function flatten(color, backdrop) {
     };
 }
 
-function relativeLuminance({ r, g, b }) {
+export function relativeLuminance({ r, g, b }) {
     const channel = (value) => {
         const v = Math.min(255, Math.max(0, value)) / 255;
         return v <= 0.03928

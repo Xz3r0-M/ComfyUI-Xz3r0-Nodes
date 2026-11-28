@@ -6,7 +6,7 @@ import { appStore } from "../core/store.js";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
 import { addFavorite, removeFavorite } from "../core/api.js";
 import { banner } from "../core/banner.js";
-import { t, getLocale } from "../core/i18n.js?v=20261116-8";
+import { t, getLocale } from "../core/i18n.js?v=20261116-9";
 import { compareNaturalNames } from "../core/natural-sort.js";
 
 function isHistoryCategory(category) {

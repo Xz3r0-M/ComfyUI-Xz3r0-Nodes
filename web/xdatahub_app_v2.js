@@ -7,7 +7,7 @@ import {
     loadFavoriteList, loadFavoriteIds,
 } from "./core/api.js?v=20260601-5";
 import { banner } from "./core/banner.js";
-import { setLocale, t } from "./core/i18n.js?v=20261116-8";
+import { setLocale, t } from "./core/i18n.js?v=20261116-10";
 
 // Components (side-effect imports to register custom elements)
 import "./components/xdh-button.js?v=20260403-383";
@@ -19,12 +19,12 @@ import "./components/xdh-node-picker.js?v=20261023-2";
 import "./core/node-bridge.js?v=20261023-2";
 import "./components/xdh-content-nav.js?v=20260619-2";
 import "./components/xdh-pagination.js?v=20260426-4";
-import "./components/xdh-lightbox.js?v=20261116-8";
+import "./components/xdh-lightbox.js?v=20261116-10";
 import "./components/xdh-history-view.js?v=20261021-3";
-import "./components/xdh-banner.js?v=20260406-15";
+import "./components/xdh-banner.js?v=20261116-10";
 import "./components/xdh-lora-detail.js?v=20261023-8";
-import "./components/xdh-settings-dialog.js?v=20261116-8";
-import "./components/xdh-theme-editor.js?v=20261116-8";
+import "./components/xdh-settings-dialog.js?v=20261116-10";
+import "./components/xdh-theme-editor.js?v=20261116-10";
 
 // Placeholder thumbnail for mock/offline mode
 const MOCK_THUMB = [

@@ -4,7 +4,7 @@ import {
 } from "../core/base-element.js?v=20260403-2";
 import { banner } from "../core/banner.js";
 import { icon, ICON_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20261116-8";
+import { t } from "../core/i18n.js?v=20261116-9";
 
 function escapeHtml(v) {
     return String(v || "")
@@ -173,7 +173,13 @@ export class XdhBanner extends BaseElement {
                     backdrop-filter: blur(12px) saturate(1.4);
                     -webkit-backdrop-filter: blur(12px) saturate(1.4);
                     box-shadow: var(--xdh-shadow-dialog);
-                    z-index: 900;
+                    /* 通知不参与浮层层级竞争，永远压在最上面。
+                       以前这里是 900，结果被设置弹窗（5000）、主题配置页
+                       （9000/9001）、全屏预览（999999）依次盖住 —— 用户点
+                       「导出」后一句「已导出 26 项」直接被弹窗遮罩吃了。
+                       通知的价值就在于「看得见」，所以直接给到浏览器上限
+                       附近；新加的浮层再高也不会超过它。 */
+                    z-index: 2147483000;
                     white-space: nowrap;
                     animation: toast-in 0.22s cubic-bezier(0.34,1.56,0.64,1)
                                both;

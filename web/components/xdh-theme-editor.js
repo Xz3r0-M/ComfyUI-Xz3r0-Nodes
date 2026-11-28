@@ -17,18 +17,23 @@ import {
     registerCustomElement,
 } from "../core/base-element.js?v=20260403-2";
 import { icon, ICON_CSS, SCROLLBAR_CSS, TOOLTIP_CSS } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20261116-8";
+import { t } from "../core/i18n.js?v=20261116-9";
 import { banner } from "../core/banner.js";
 import {
     THEME_COLOR_GROUPS,
     THEME_CONTRAST_PAIRS,
     THEME_MIN_CONTRAST,
     THEME_OVERRIDE_MODES,
+    allThemeTokens,
     buildOverrideSheet,
     contrastRatio,
     normalizeThemeOverrides,
     toPickerHex,
-} from "../core/theme-tokens.js?v=20261116-8";
+} from "../core/theme-tokens.js?v=20261116-9";
+import {
+    mergeIntoDraft,
+    readThemeFile,
+} from "../core/theme-import.js?v=20261116-9";
 
 /** 预览用占位图：内联 SVG，不读用户素材，也不依赖额外文件。 */
 const PREVIEW_PLACEHOLDER = "data:image/svg+xml;charset=utf-8,"
@@ -76,6 +81,7 @@ export class XdhThemeEditor extends BaseElement {
         this._draft = cloneOverrides(null);
         this._frame = 0;
         this._savedInline = new Map();
+        this._presetCache = null;
         this._bound = false;
     }
 
@@ -90,6 +96,7 @@ export class XdhThemeEditor extends BaseElement {
         this._mode = this._savedMode;
         this._saved = cloneOverrides(source.theme_overrides);
         this._draft = cloneOverrides(source.theme_overrides);
+        this._presetCache = null;
         this._open = true;
         this.renderRoot();
         this._bindEvents();
@@ -138,6 +145,7 @@ export class XdhThemeEditor extends BaseElement {
                 return;
             }
             const group = this._draft[this._mode] || {};
+            const saved = this._saved[this._mode] || {};
             for (const [token, value] of Object.entries(group)) {
                 if (!this._savedInline.has(token)) {
                     this._savedInline.set(
@@ -148,13 +156,27 @@ export class XdhThemeEditor extends BaseElement {
                 body.style.setProperty(token, value);
             }
             for (const token of [...this._savedInline.keys()]) {
-                if (!(token in group)) {
-                    const original = this._savedInline.get(token) || "";
-                    if (original) {
-                        body.style.setProperty(token, original);
-                    } else {
-                        body.style.removeProperty(token);
+                if (token in group) {
+                    continue;
+                }
+                // 这一项「已经保存过、但草稿里删掉了」= 用户刚点了恢复默认。
+                //
+                // 光把内联删掉是不够的：已保存的值还躺在
+                // <style id="xdatahub-user-theme"> 里，删了内联反而把它
+                // 露出来 —— 面板显示「跟随预设」，窗口却一点没变。
+                // 所以显式用预设值盖住它，点「保存」后才由后端真正抹掉。
+                if (token in saved) {
+                    const preset = this._presetValues()[token];
+                    if (preset) {
+                        body.style.setProperty(token, preset);
+                        continue;
                     }
+                }
+                const original = this._savedInline.get(token) || "";
+                if (original) {
+                    body.style.setProperty(token, original);
+                } else {
+                    body.style.removeProperty(token);
                 }
             }
         });
@@ -176,20 +198,55 @@ export class XdhThemeEditor extends BaseElement {
 
     // ── 读「没改时实际是什么颜色」────────────────────────────────
 
-    _inheritedValue(token) {
+    /**
+     * 26 项的「预设值」—— 也就是没做任何自定义、纯 CSS 文件给的那套。
+     *
+     * 读的时候要把两层盖在上面的东西一起摘掉：
+     *   - body 的内联（正在预览的草稿）
+     *   - <style id="xdatahub-user-theme">（已经保存过的配置）
+     *
+     * 一次读全 26 项再缓存：挂在渲染循环里逐项摘/插 DOM 会明显掉帧。
+     * 失效点：open()（主题可能换过）、_switchMode()（深浅两套预设不同）。
+     */
+    _presetValues() {
+        if (this._presetCache) {
+            return this._presetCache;
+        }
         const body = document.body;
         if (!body) {
-            return "";
+            return {};
         }
-        const inline = body.style.getPropertyValue(token);
-        if (inline) {
-            body.style.removeProperty(token);
+        const sheet = document.getElementById(USER_THEME_STYLE_ID);
+        const sheetParent = sheet?.parentNode || null;
+        if (sheet) {
+            sheet.remove();
         }
-        const computed = getComputedStyle(body).getPropertyValue(token);
-        if (inline) {
+        const savedInline = new Map();
+        for (const token of allThemeTokens()) {
+            const inline = body.style.getPropertyValue(token);
+            if (inline) {
+                savedInline.set(token, inline);
+                body.style.removeProperty(token);
+            }
+        }
+        const out = {};
+        for (const token of allThemeTokens()) {
+            out[token] = String(
+                getComputedStyle(body).getPropertyValue(token) || ""
+            ).trim();
+        }
+        for (const [token, inline] of savedInline) {
             body.style.setProperty(token, inline);
         }
-        return String(computed || "").trim();
+        if (sheet && sheetParent) {
+            sheetParent.appendChild(sheet);
+        }
+        this._presetCache = out;
+        return out;
+    }
+
+    _inheritedValue(token) {
+        return this._presetValues()[token] || "";
     }
 
     _effectiveValue(token) {
@@ -361,6 +418,7 @@ export class XdhThemeEditor extends BaseElement {
         }
         this._releaseInline();
         this._mode = next;
+        this._presetCache = null;
         document.body.dataset.theme = next;
         this._refresh();
         this._applyDraftToDocument();
@@ -448,22 +506,43 @@ export class XdhThemeEditor extends BaseElement {
     }
 
     _exportFile() {
+        const overrides = normalizeThemeOverrides(this._draft);
+        const total = Object.keys(overrides.dark).length
+            + Object.keys(overrides.light).length;
+        const stamp = new Date().toISOString().slice(0, 10);
         const blob = new Blob(
             [JSON.stringify({
                 version: 1,
                 theme_mode: this._mode,
-                theme_overrides: normalizeThemeOverrides(this._draft),
+                theme_overrides: overrides,
             }, null, 2)],
             { type: "application/json" }
         );
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = "xdatahub-theme.json";
+        link.download = `xdatahub-theme-${stamp}.json`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        // 以前导出完一声不响，用户不知道文件落哪了、导了几个颜色。
+        banner.success?.(t("theme.exported", { count: total }));
     }
 
+    /**
+     * 导入。认两种文件：
+     *
+     *   1. 我们自己导出的（有 theme_overrides）
+     *   2. ComfyUI 官方主题 JSON（有 colors.theme / comfy_base / litegraph_base）
+     *      —— 官方只有 8 个字段能对上，其余 18 项按相对关系推算。
+     *
+     * 几条硬规矩：
+     *   - 解析出 0 项就说「没认出颜色」，绝对不能弹「导入成功」
+     *     （以前官方文件走到这一步，用户以为成功了，实际一个色都没进）。
+     *   - 只覆盖文件里**真正出现**的模式。以前是整个 _draft 换掉，
+     *     另一模式调了半天的一起没。
+     *   - 文件里写了哪个模式就切过去。以前写 "dark" 时反而保持当前界面，
+     *     变成「装的是深色，面板停在浅色」。
+     */
     async _importFile(input) {
         const file = input.files?.[0];
         input.value = "";
@@ -471,17 +550,32 @@ export class XdhThemeEditor extends BaseElement {
             return;
         }
         try {
-            const text = await file.text();
-            const parsed = JSON.parse(text);
-            const overrides = normalizeThemeOverrides(
-                parsed?.theme_overrides || parsed
-            );
-            const mode = parsed?.theme_mode === "light" ? "light" : this._mode;
-            this._draft = overrides;
-            this._mode = mode;
-            document.body.dataset.theme = mode;
+            const parsed = JSON.parse(await file.text());
+            const read = readThemeFile(parsed, file.name);
+            if (read.count === 0) {
+                banner.error?.(t("theme.import_empty"));
+                return;
+            }
+
+            const dirty = this._changedCount();
+            if (dirty > 0 && !window.confirm(t("theme.import_confirm", {
+                count: dirty,
+            }))) {
+                return;
+            }
+
+            // 合并：只替换文件里真给了内容的模式，其余一概不动。
+            this._draft = mergeIntoDraft(this._draft, read.incoming);
+            this._mode = read.modeHint || this._mode;
+            document.body.dataset.theme = this._mode;
             this._refresh();
-            banner.success?.(t("theme.imported"));
+
+            banner.success?.(read.official
+                ? t("theme.imported_official", {
+                    name: read.title,
+                    count: read.count,
+                })
+                : t("theme.imported_count", { count: read.count }));
         } catch (error) {
             banner.error?.(`${t("theme.import_failed")}: ${error.message}`);
         }

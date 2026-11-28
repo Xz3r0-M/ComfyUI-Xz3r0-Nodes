@@ -9,7 +9,7 @@ import {
     SCROLLBAR_CSS,
     TOOLTIP_CSS,
 } from "../core/icon.js";
-import { t } from "../core/i18n.js?v=20261116-8";
+import { t } from "../core/i18n.js?v=20261116-9";
 import { toggleMediaFavorite } from "../core/api.js?v=20260407-416";
 
 function getPreviewSettings() {
